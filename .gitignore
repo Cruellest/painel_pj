@@ -1,0 +1,41 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment variables
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Uploads (opcional - pode querer versionar estrutura vazia)
+sistemas/matriculas-confrontantes/uploads/*
+!sistemas/matriculas-confrontantes/uploads/.gitkeep
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Node modules (frontend React)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

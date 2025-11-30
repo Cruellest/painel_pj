@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrículas Confrontantes - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        },
+                        accent: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            200: '#bbf7d0',
+                            300: '#86efac',
+                            400: '#4ade80',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Scrollbar customization */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Animations */
+        .fade-in {
+            animation: fadeIn 0.2s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Tree view lines */
+        .tree-line {
+            border-left: 1px dashed #cbd5e1;
+            margin-left: 8px;
+            padding-left: 16px;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-4">
+            <a href="/dashboard" class="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-lg transition-colors" title="Voltar ao Portal">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+            <div class="border-l border-gray-300 pl-4 flex items-center gap-2">
+                <i class="fas fa-file-contract text-primary-600 text-xl"></i>
+                <div>
+                    <h1 class="text-lg font-semibold text-gray-800">Matrículas Confrontantes</h1>
+                    <span class="text-xs text-gray-500">Sistema de Análise Documental</span>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div id="api-status" class="text-sm text-gray-500 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+                <span>API não configurada</span>
+            </div>
+            <button id="btn-settings"
+                class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Configurações">
+                <i class="fas fa-cog"></i>
+            </button>
+            <button onclick="logout()"
+                class="p-2 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Sair">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex overflow-hidden">
+
+        <!-- Left Panel - File Manager (w-64) -->
+        <aside class="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+            <!-- AI Actions - Top and Visible -->
+            <div class="p-3 bg-gradient-to-r from-primary-50 to-accent-50 border-b border-gray-200">
+                <div class="mb-2 flex gap-2">
+                    <button id="btn-analyze"
+                        class="flex-1 px-3 py-2 text-sm text-white bg-accent-500 rounded-lg hover:bg-accent-600 transition-colors flex items-center justify-center gap-2 shadow-md font-medium">
+                        <i class="fas fa-brain"></i>
+                        Analisar
+                    </button>
+                    <button id="btn-reanalyze"
+                        class="px-3 py-2 text-sm text-orange-600 bg-orange-50 border border-orange-300 rounded-lg hover:bg-orange-100 transition-colors flex items-center justify-center gap-1"
+                        title="Forçar nova análise com IA">
+                        <i class="fas fa-redo"></i>
+                    </button>
+                </div>
+                <div class="text-xs text-gray-600 text-center" id="analysis-status">
+                    <i class="fas fa-info-circle text-gray-400"></i> Selecione um documento
+                </div>
+                <div class="text-xs text-gray-500 text-center mt-1">
+                    <i class="fas fa-lightbulb"></i> Relatório gerado automaticamente
+                </div>
+            </div>
+
+            <!-- Files Header with Import Button -->
+            <div class="p-3 border-b border-gray-100">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="font-semibold text-gray-700 text-sm flex items-center gap-2">
+                        <i class="fas fa-folder-open text-primary-500"></i>
+                        Matrículas
+                    </h2>
+                </div>
+
+                <!-- Import Button -->
+                <button id="btn-import"
+                    class="w-full px-3 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center justify-center gap-2">
+                    <i class="fas fa-upload"></i>
+                    Importar
+                </button>
+            </div>
+
+            <!-- File List -->
+            <div class="flex-1 overflow-y-auto p-2" id="file-list">
+                <!-- File items will be rendered here -->
+            </div>
+        </aside>
+
+        <!-- Center Content (60%) -->
+        <main class="flex-1 flex flex-col overflow-hidden" style="width: 60%;">
+
+            <!-- Upper - Report View (65%) -->
+            <section class="flex flex-col bg-white border-b border-gray-200" style="height: 65%;">
+                <div class="p-3 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <h2 class="font-semibold text-gray-800 text-sm flex items-center gap-2">
+                            <i class="fas fa-file-alt text-green-500"></i>
+                            Relatório da Análise
+                        </h2>
+                    </div>
+                    <div class="flex items-center gap-2" id="report-actions" style="display: none;">
+                        <button onclick="showRawDataModal()"
+                            class="px-3 py-1.5 text-xs text-purple-600 bg-purple-50 rounded hover:bg-purple-100 transition-colors flex items-center gap-1">
+                            <i class="fas fa-table"></i>
+                            Dados Extraídos
+                        </button>
+                        <button onclick="downloadReportDocx()"
+                            class="px-3 py-1.5 text-xs text-blue-600 bg-blue-50 rounded hover:bg-blue-100 transition-colors flex items-center gap-1">
+                            <i class="fas fa-file-word"></i>
+                            Word
+                        </button>
+                        <button onclick="printReportPdf()"
+                            class="px-3 py-1.5 text-xs text-red-600 bg-red-50 rounded hover:bg-red-100 transition-colors flex items-center gap-1">
+                            <i class="fas fa-file-pdf"></i>
+                            PDF
+                        </button>
+                    </div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4" id="report-view">
+                    <div class="text-center text-gray-400 py-12">
+                        <i class="fas fa-file-alt text-5xl mb-4"></i>
+                        <p class="text-lg">Relatório de Análise</p>
+                        <p class="text-sm mt-2">Analise um documento para gerar o relatório automaticamente</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Lower - Records Table (35%) -->
+            <section class="flex flex-col bg-white" style="height: 35%;">
+                <div class="p-2 border-b border-gray-100 flex items-center justify-between">
+                    <h2 class="font-semibold text-gray-800 text-xs flex items-center gap-2">
+                        <i class="fas fa-table text-primary-500"></i>
+                        Análises Realizadas
+                    </h2>
+                </div>
+                <div class="flex-1 overflow-auto">
+                    <table class="w-full text-xs">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr class="text-left text-gray-600">
+                                <th class="px-2 py-1.5 font-medium w-6"></th>
+                                <th class="px-2 py-1.5 font-medium w-32">Matrícula</th>
+                                <th class="px-2 py-1.5 font-medium">Lote</th>
+
+                                <th class="px-2 py-1.5 font-medium">Proprietário</th>
+                                <th class="px-2 py-1.5 font-medium">Confiança</th>
+                            </tr>
+                        </thead>
+                        <tbody id="records-table" class="divide-y divide-gray-100">
+                            <!-- Records will be rendered here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+
+        <!-- Right Panel - PDF Viewer (40%) -->
+        <aside class="bg-gray-100 border-l border-gray-200 flex flex-col flex-shrink-0" style="width: 40%;">
+            <!-- PDF Toolbar -->
+            <div class="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <span class="font-medium text-gray-700 flex items-center gap-2 text-sm">
+                        <i class="fas fa-file-pdf text-red-500"></i>
+                        Visualizador
+                    </span>
+                    <span class="text-xs text-gray-500 truncate max-w-[200px]" id="current-doc-name">Nenhum
+                        documento</span>
+                </div>
+                <div class="flex items-center gap-1">
+                    <button class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                        title="Diminuir Zoom">
+                        <i class="fas fa-search-minus text-sm"></i>
+                    </button>
+                    <span class="px-2 text-xs text-gray-600">100%</span>
+                    <button class="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+                        title="Aumentar Zoom">
+                        <i class="fas fa-search-plus text-sm"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- PDF Content -->
+            <div class="flex-1 overflow-auto p-4 flex items-start justify-center" id="pdf-viewer">
+                <div class="text-center text-gray-400 py-20">
+                    <i class="fas fa-file-pdf text-6xl mb-4"></i>
+                    <p class="text-lg">Visualização do Documento</p>
+                    <p class="text-sm mt-2">Selecione um arquivo para visualizar</p>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Footer - System Logs -->
+    <footer class="bg-gray-800 text-gray-300 border-t border-gray-700">
+        <div class="flex items-center justify-between px-4 py-1 bg-gray-900 border-b border-gray-700">
+            <span class="text-xs font-medium flex items-center gap-2">
+                <i class="fas fa-terminal"></i>
+                Logs do Sistema
+            </span>
+            <div class="flex items-center gap-2">
+                <button class="text-xs text-gray-400 hover:text-white transition-colors">
+                    <i class="fas fa-trash-alt"></i> Limpar
+                </button>
+                <button class="text-xs text-gray-400 hover:text-white transition-colors" id="toggle-logs">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+        </div>
+        <div class="h-24 overflow-y-auto px-4 py-2 font-mono text-xs" id="system-logs">
+            <!-- Log entries will be rendered here -->
+        </div>
+    </footer>
+
+    <script src="components.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>

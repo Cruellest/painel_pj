@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciar Prompts - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .prompt-editor {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+    
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-4">
+                    <a href="/dashboard" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-arrow-left"></i>
+                    </a>
+                    <a href="/dashboard" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                        <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+                    </a>
+                    <div class="border-l border-gray-300 pl-4">
+                        <h1 class="font-semibold text-gray-800">Configuração de Prompts e IA</h1>
+                        <p class="text-xs text-gray-500">Gerenciamento de prompts e modelos</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Título -->
+        <div class="mb-6 flex items-center justify-between">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">Gerenciamento de Prompts de IA</h2>
+                <p class="text-gray-500 mt-1">Configure os prompts utilizados pelos sistemas de análise</p>
+            </div>
+            <button 
+                onclick="resetDefaults()"
+                class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-2"
+            >
+                <i class="fas fa-undo"></i>
+                Restaurar Padrões
+            </button>
+        </div>
+
+        <!-- Filtros -->
+        <div class="mb-6 flex gap-4">
+            <select 
+                id="filter-sistema" 
+                onchange="loadPrompts()"
+                class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+                <option value="">Todos os sistemas</option>
+                <option value="matriculas">Matrículas Confrontantes</option>
+                <option value="assistencia">Assistência Judiciária</option>
+            </select>
+        </div>
+
+        <!-- Configuração de Modelos de IA -->
+        <div class="mb-8 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-robot text-primary-600"></i>
+                Modelos de IA por Sistema
+            </h3>
+            <p class="text-sm text-gray-500 mb-4">Configure qual modelo da OpenRouter será usado para cada sistema. Use o formato: provider/model (ex: google/gemini-2.5-flash)</p>
+            
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Assistência Judiciária -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-gavel text-blue-500 mr-1"></i>
+                        Assistência Judiciária
+                    </label>
+                    <div class="flex gap-2">
+                        <input 
+                            type="text" 
+                            id="modelo-assistencia"
+                            placeholder="google/gemini-2.5-flash"
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                        >
+                        <button 
+                            onclick="salvarModelo('assistencia_judiciaria')"
+                            class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm"
+                        >
+                            Salvar
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Modelo para análise de processos judiciais</p>
+                </div>
+                
+                <!-- Matrículas Confrontantes -->
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-file-alt text-green-500 mr-1"></i>
+                        Matrículas Confrontantes
+                    </label>
+                    <div class="flex gap-2">
+                        <input 
+                            type="text" 
+                            id="modelo-matriculas"
+                            placeholder="google/gemini-2.5-flash"
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                        >
+                        <button 
+                            onclick="salvarModelo('matriculas')"
+                            class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm"
+                        >
+                            Salvar
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Modelo para análise de matrículas imobiliárias</p>
+                </div>
+            </div>
+            
+            <div class="mt-4 p-3 bg-blue-50 rounded-lg">
+                <p class="text-xs text-blue-700">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Exemplos de modelos: google/gemini-2.5-flash, google/gemini-2.5-pro, anthropic/claude-3.5-sonnet, openai/gpt-4o, meta-llama/llama-3.3-70b-instruct
+                </p>
+            </div>
+        </div>
+
+        <!-- Lista de Prompts -->
+        <div id="prompts-container" class="space-y-4">
+            <div class="text-center py-12 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p>Carregando prompts...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal de Edição -->
+    <div id="edit-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col m-4">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-primary-50 to-blue-50">
+                <div>
+                    <h2 id="modal-title" class="text-lg font-semibold text-gray-800">Editar Prompt</h2>
+                    <p id="modal-subtitle" class="text-sm text-gray-500"></p>
+                </div>
+                <button onclick="closeEditModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-6">
+                <form id="edit-form" class="space-y-4">
+                    <input type="hidden" id="edit-id">
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Sistema</label>
+                            <input 
+                                type="text" 
+                                id="edit-sistema" 
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                                readonly
+                            >
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                            <input 
+                                type="text" 
+                                id="edit-tipo" 
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                                readonly
+                            >
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                        <input 
+                            type="text" 
+                            id="edit-nome" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        >
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                        <input 
+                            type="text" 
+                            id="edit-descricao" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        >
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Conteúdo do Prompt
+                            <span class="text-xs text-gray-400 ml-2">(Markdown e emojis suportados)</span>
+                        </label>
+                        <textarea 
+                            id="edit-conteudo" 
+                            class="prompt-editor w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            rows="20"
+                        ></textarea>
+                        <p class="text-xs text-gray-400 mt-1">
+                            <i class="fas fa-info-circle"></i>
+                            Para o prompt de relatório, use <code>{data_json}</code> como placeholder para os dados extraídos.
+                        </p>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="edit-active" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500">
+                        <label for="edit-active" class="text-sm text-gray-700">Prompt ativo</label>
+                    </div>
+                </form>
+            </div>
+            
+            <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-between">
+                <button 
+                    onclick="closeEditModal()"
+                    class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                    Cancelar
+                </button>
+                <button 
+                    onclick="savePrompt()"
+                    class="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
+                >
+                    <i class="fas fa-save"></i>
+                    Salvar Alterações
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="hidden fixed bottom-4 right-4 z-50">
+        <div class="bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+            <i id="toast-icon" class="fas fa-check-circle text-green-400"></i>
+            <span id="toast-message">Mensagem</span>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '';
+        let currentPrompts = [];
+
+        // Verifica autenticação e role admin
+        async function checkAdminAuth() {
+            const token = localStorage.getItem('access_token');
+            
+            if (!token) {
+                window.location.href = '/login';
+                return null;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error('Token inválido');
+
+                const user = await response.json();
+                
+                if (user.role !== 'admin') {
+                    alert('Acesso restrito a administradores');
+                    window.location.href = '/dashboard';
+                    return null;
+                }
+
+                return user;
+            } catch (error) {
+                localStorage.removeItem('access_token');
+                window.location.href = '/login';
+                return null;
+            }
+        }
+
+        // Carrega prompts
+        async function loadPrompts() {
+            const token = localStorage.getItem('access_token');
+            const sistema = document.getElementById('filter-sistema').value;
+            
+            let url = `${API_URL}/admin/prompts`;
+            if (sistema) url += `?sistema=${sistema}`;
+
+            console.log('[loadPrompts] Carregando de:', url);
+
+            try {
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                console.log('[loadPrompts] Status:', response.status);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('[loadPrompts] Erro:', errorText);
+                    throw new Error('Erro ao carregar prompts');
+                }
+
+                const data = await response.json();
+                console.log('[loadPrompts] Dados recebidos:', data);
+                console.log('[loadPrompts] Total prompts:', data.total);
+                
+                currentPrompts = data.prompts || [];
+                renderPrompts(currentPrompts);
+            } catch (error) {
+                console.error('[loadPrompts] Erro:', error);
+                showToast('Erro ao carregar prompts', 'error');
+            }
+        }
+
+        // Renderiza lista de prompts
+        function renderPrompts(prompts) {
+            const container = document.getElementById('prompts-container');
+            
+            console.log('[renderPrompts] Prompts a renderizar:', prompts?.length || 0);
+            
+            if (!prompts || prompts.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-2"></i>
+                        <p>Nenhum prompt encontrado</p>
+                        <button onclick="resetDefaults()" class="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                            Criar Prompts Padrão
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            // Agrupa por sistema
+            const grouped = {};
+            prompts.forEach(p => {
+                if (!grouped[p.sistema]) grouped[p.sistema] = [];
+                grouped[p.sistema].push(p);
+            });
+            
+            console.log('[renderPrompts] Agrupados:', Object.keys(grouped));
+
+            const sistemaLabels = {
+                'matriculas': 'Matrículas Confrontantes',
+                'assistencia': 'Assistência Judiciária'
+            };
+
+            const tipoLabels = {
+                'system': 'Prompt de Sistema',
+                'analise': 'Prompt de Análise',
+                'relatorio': 'Prompt de Relatório'
+            };
+
+            let html = '';
+            
+            for (const [sistema, sistemaPrompts] of Object.entries(grouped)) {
+                console.log('[renderPrompts] Sistema:', sistema, 'com', sistemaPrompts.length, 'prompts');
+                
+                html += `
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-4">
+                        <div class="px-6 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+                            <h3 class="text-lg font-semibold text-gray-800">
+                                <i class="fas fa-folder text-primary-500 mr-2"></i>
+                                ${sistemaLabels[sistema] || sistema}
+                            </h3>
+                        </div>
+                        <div class="divide-y divide-gray-100">
+                `;
+
+                sistemaPrompts.forEach(prompt => {
+                    const statusBadge = prompt.is_active 
+                        ? '<span class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">Ativo</span>'
+                        : '<span class="px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded-full">Inativo</span>';
+                    
+                    const updatedAt = new Date(prompt.updated_at).toLocaleString('pt-BR');
+                    const previewContent = (prompt.conteudo || '').substring(0, 200).replace(/\n/g, ' ');
+
+                    html += `
+                        <div class="px-6 py-4 hover:bg-gray-50 transition-colors">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-3 mb-2">
+                                        <span class="px-2 py-1 text-xs bg-primary-100 text-primary-700 rounded-full font-medium">
+                                            ${tipoLabels[prompt.tipo] || prompt.tipo}
+                                        </span>
+                                        ${statusBadge}
+                                    </div>
+                                    <h4 class="font-medium text-gray-800">${prompt.nome}</h4>
+                                    <p class="text-sm text-gray-500 mt-1">${prompt.descricao || ''}</p>
+                                    <p class="text-xs text-gray-400 mt-2 font-mono truncate">${previewContent}...</p>
+                                    <p class="text-xs text-gray-400 mt-2">
+                                        <i class="fas fa-clock"></i> Atualizado em ${updatedAt}
+                                        ${prompt.updated_by ? ' por ' + prompt.updated_by : ''}
+                                    </p>
+                                </div>
+                                <div class="flex-shrink-0">
+                                    <button 
+                                        onclick="editPrompt(${prompt.id})"
+                                        class="px-4 py-2 text-sm text-primary-600 bg-primary-50 hover:bg-primary-100 rounded-lg transition-colors flex items-center gap-2"
+                                    >
+                                        <i class="fas fa-edit"></i>
+                                        Editar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += '</div></div>';
+            }
+
+            container.innerHTML = html;
+            console.log('[renderPrompts] HTML renderizado');
+        }
+
+        // Abre modal de edição
+        function editPrompt(id) {
+            console.log('[editPrompt] Abrindo prompt ID:', id);
+            console.log('[editPrompt] Prompts disponíveis:', currentPrompts.map(p => p.id));
+            
+            const prompt = currentPrompts.find(p => p.id === id);
+            if (!prompt) {
+                console.error('[editPrompt] Prompt não encontrado!');
+                showToast('Prompt não encontrado', 'error');
+                return;
+            }
+            
+            console.log('[editPrompt] Prompt encontrado:', prompt.nome);
+
+            document.getElementById('edit-id').value = prompt.id;
+            document.getElementById('edit-sistema').value = prompt.sistema;
+            document.getElementById('edit-tipo').value = prompt.tipo;
+            document.getElementById('edit-nome').value = prompt.nome;
+            document.getElementById('edit-descricao').value = prompt.descricao || '';
+            document.getElementById('edit-conteudo').value = prompt.conteudo;
+            document.getElementById('edit-active').checked = prompt.is_active;
+
+            document.getElementById('modal-title').textContent = 'Editar: ' + prompt.nome;
+            document.getElementById('modal-subtitle').textContent = prompt.sistema + ' / ' + prompt.tipo;
+
+            document.getElementById('edit-modal').classList.remove('hidden');
+            console.log('[editPrompt] Modal aberto');
+        }
+
+        // Fecha modal
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.add('hidden');
+        }
+
+        // Salva prompt
+        async function savePrompt() {
+            const token = localStorage.getItem('access_token');
+            const id = document.getElementById('edit-id').value;
+            
+            console.log('[savePrompt] Salvando prompt ID:', id);
+
+            const data = {
+                nome: document.getElementById('edit-nome').value,
+                descricao: document.getElementById('edit-descricao').value,
+                conteudo: document.getElementById('edit-conteudo').value,
+                is_active: document.getElementById('edit-active').checked
+            };
+            
+            console.log('[savePrompt] Dados:', { nome: data.nome, descricao: data.descricao, is_active: data.is_active, conteudo_length: data.conteudo?.length });
+
+            try {
+                const response = await fetch(API_URL + '/admin/prompts/' + id, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + token
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                console.log('[savePrompt] Status:', response.status);
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('[savePrompt] Erro:', errorText);
+                    throw new Error('Erro ao salvar: ' + errorText);
+                }
+
+                const result = await response.json();
+                console.log('[savePrompt] Resultado:', result);
+
+                showToast('Prompt salvo com sucesso!', 'success');
+                closeEditModal();
+                loadPrompts();
+            } catch (error) {
+                console.error('[savePrompt] Erro:', error);
+                showToast('Erro ao salvar prompt: ' + error.message, 'error');
+            }
+        }
+
+        // Restaura padrões
+        async function resetDefaults() {
+            if (!confirm('Isso irá substituir TODOS os prompts pelos valores padrão. Deseja continuar?')) {
+                return;
+            }
+
+            const token = localStorage.getItem('access_token');
+
+            try {
+                const response = await fetch(`${API_URL}/admin/prompts/reset-defaults`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao restaurar');
+
+                showToast('Prompts restaurados para os valores padrão!', 'success');
+                loadPrompts();
+            } catch (error) {
+                console.error('Erro:', error);
+                showToast('Erro ao restaurar prompts', 'error');
+            }
+        }
+
+        // Toast notification
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            const msg = document.getElementById('toast-message');
+
+            msg.textContent = message;
+            
+            if (type === 'success') {
+                icon.className = 'fas fa-check-circle text-green-400';
+            } else if (type === 'error') {
+                icon.className = 'fas fa-exclamation-circle text-red-400';
+            } else {
+                icon.className = 'fas fa-info-circle text-blue-400';
+            }
+
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+
+        // Carrega modelos de IA configurados
+        async function loadModelosIA() {
+            const token = localStorage.getItem('access_token');
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/modelos-ia`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!response.ok) throw new Error('Erro ao carregar modelos');
+                
+                const data = await response.json();
+                
+                // Preenche os campos
+                if (data.assistencia_judiciaria) {
+                    document.getElementById('modelo-assistencia').value = data.assistencia_judiciaria.modelo || '';
+                }
+                if (data.matriculas) {
+                    document.getElementById('modelo-matriculas').value = data.matriculas.modelo || '';
+                }
+            } catch (error) {
+                console.error('Erro ao carregar modelos:', error);
+            }
+        }
+        
+        // Salva modelo de IA para um sistema
+        async function salvarModelo(sistema) {
+            const token = localStorage.getItem('access_token');
+            const inputId = sistema === 'assistencia_judiciaria' ? 'modelo-assistencia' : 'modelo-matriculas';
+            const modelo = document.getElementById(inputId).value.trim();
+            
+            if (!modelo) {
+                showToast('Digite o nome do modelo', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/admin/modelos-ia/${sistema}?modelo=${encodeURIComponent(modelo)}`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) throw new Error('Erro ao salvar modelo');
+                
+                showToast('Modelo salvo com sucesso!', 'success');
+            } catch (error) {
+                console.error('Erro ao salvar modelo:', error);
+                showToast('Erro ao salvar modelo', 'error');
+            }
+        }
+
+        // Inicialização
+        (async function() {
+            const user = await checkAdminAuth();
+            if (user) {
+                loadPrompts();
+                loadModelosIA();
+            }
+        })();
+    </script>
+</body>
+</html>

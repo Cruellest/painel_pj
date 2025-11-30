@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                        },
+                        pge: {
+                            blue: '#1e3a5f',
+                            orange: '#e67e22'
+                        },
+                        accent: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-gray-50">
+    
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Logo -->
+                <div class="flex items-center gap-3">
+                    <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-12 w-auto">
+                </div>
+
+                <!-- User Menu -->
+                <div class="flex items-center gap-4">
+                    <div id="user-info" class="text-right hidden sm:block">
+                        <p class="text-sm font-medium text-gray-700" id="user-name">Carregando...</p>
+                        <p class="text-xs text-gray-500" id="user-role"></p>
+                    </div>
+                    
+                    <div class="relative">
+                        <button 
+                            id="user-menu-btn"
+                            class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                        >
+                            <div class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                                <i class="fas fa-user text-primary-600 text-sm"></i>
+                            </div>
+                            <i class="fas fa-chevron-down text-gray-400 text-xs"></i>
+                        </button>
+
+                        <!-- Dropdown Menu -->
+                        <div 
+                            id="user-dropdown" 
+                            class="hidden absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-50"
+                        >
+                            <a href="/change-password" class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                <i class="fas fa-key text-gray-400"></i>
+                                Alterar Senha
+                            </a>
+                            <div id="admin-menu-items" class="hidden">
+                                <hr class="my-2">
+                                <a href="/admin/users" class="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                                    <i class="fas fa-users text-gray-400"></i>
+                                    Gerenciar Usuários
+                                </a>
+                            </div>
+                            <hr class="my-2">
+                            <button 
+                                id="logout-btn"
+                                class="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                            >
+                                <i class="fas fa-sign-out-alt"></i>
+                                Sair
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Boas-vindas -->
+        <div class="mb-8">
+            <h2 class="text-2xl font-bold text-gray-800">Bem-vindo ao Portal</h2>
+            <p class="text-gray-500 mt-1">Selecione um sistema para começar</p>
+        </div>
+
+        <!-- Cards dos Sistemas -->
+        <div class="grid md:grid-cols-2 gap-6">
+            
+            <!-- Card Assistência Judiciária -->
+            <a 
+                href="/assistencia/" 
+                class="group bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-primary-300 transition-all"
+            >
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-primary-100 rounded-xl flex items-center justify-center group-hover:bg-primary-200 transition-colors">
+                        <i class="fas fa-gavel text-primary-600 text-xl"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-gray-800 group-hover:text-primary-600 transition-colors">
+                            Assistência Judiciária
+                        </h3>
+                        <p class="text-gray-500 text-sm mt-1">
+                            Consulta de processos judiciais no TJ-MS com análise automática por IA.
+                        </p>
+                        <div class="flex items-center gap-2 mt-4 text-primary-600 text-sm font-medium">
+                            <span>Acessar sistema</span>
+                            <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Card Matrículas Confrontantes -->
+            <a 
+                href="/matriculas/" 
+                class="group bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-accent-300 transition-all"
+            >
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-accent-100 rounded-xl flex items-center justify-center group-hover:bg-accent-200 transition-colors">
+                        <i class="fas fa-file-contract text-accent-600 text-xl"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-gray-800 group-hover:text-accent-600 transition-colors">
+                            Matrículas Confrontantes
+                        </h3>
+                        <p class="text-gray-500 text-sm mt-1">
+                            Análise documental de matrículas imobiliárias com IA visual.
+                        </p>
+                        <div class="flex items-center gap-2 mt-4 text-accent-600 text-sm font-medium">
+                            <span>Acessar sistema</span>
+                            <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+        </div>
+
+        <!-- Painel Admin (visível apenas para admins) -->
+        <div id="admin-panel" class="hidden mt-8">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Administração</h3>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <a 
+                        href="/admin/users" 
+                        class="flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                        <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-users text-gray-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800">Usuários</p>
+                            <p class="text-xs text-gray-500">Gerenciar acessos</p>
+                        </div>
+                    </a>
+                    <a 
+                        href="/admin/prompts-config" 
+                        class="flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                        <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-brain text-purple-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800">Prompts de IA</p>
+                            <p class="text-xs text-gray-500">Configurar prompts</p>
+                        </div>
+                    </a>
+                    <a 
+                        href="/admin/feedbacks" 
+                        class="flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                        <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-chart-bar text-blue-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800">Dashboard Feedbacks</p>
+                            <p class="text-xs text-gray-500">Avaliar qualidade da IA</p>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-gray-200 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <p class="text-center text-gray-500 text-sm">
+                © 2024 Procuradoria-Geral do Estado de Mato Grosso do Sul
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        const API_URL = '';
+
+        // Verifica autenticação
+        async function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            
+            if (!token) {
+                window.location.href = '/login';
+                return null;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Token inválido');
+                }
+
+                return await response.json();
+            } catch (error) {
+                localStorage.removeItem('access_token');
+                window.location.href = '/login';
+                return null;
+            }
+        }
+
+        // Toggle dropdown do usuário
+        document.getElementById('user-menu-btn').addEventListener('click', function() {
+            document.getElementById('user-dropdown').classList.toggle('hidden');
+        });
+
+        // Fecha dropdown ao clicar fora
+        document.addEventListener('click', function(e) {
+            const dropdown = document.getElementById('user-dropdown');
+            const btn = document.getElementById('user-menu-btn');
+            
+            if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.classList.add('hidden');
+            }
+        });
+
+        // Logout
+        document.getElementById('logout-btn').addEventListener('click', async function() {
+            const token = localStorage.getItem('access_token');
+            
+            try {
+                await fetch(`${API_URL}/auth/logout`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+            } catch (e) {
+                // Ignora erros no logout
+            }
+
+            localStorage.removeItem('access_token');
+            window.location.href = '/login';
+        });
+
+        // Inicialização
+        (async function() {
+            const user = await checkAuth();
+            
+            if (user) {
+                // Atualiza informações do usuário
+                document.getElementById('user-name').textContent = user.full_name;
+                document.getElementById('user-role').textContent = 
+                    user.role === 'admin' ? 'Administrador' : 'Usuário';
+
+                // Mostra opções de admin se aplicável
+                if (user.role === 'admin') {
+                    document.getElementById('admin-panel').classList.remove('hidden');
+                    document.getElementById('admin-menu-items').classList.remove('hidden');
+                }
+
+                // Verifica se precisa trocar senha
+                if (user.must_change_password) {
+                    window.location.href = '/change-password';
+                }
+            }
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Feedbacks - Portal PGE</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' },
+                        pge: { blue: '#1e3a5f', orange: '#e67e22' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="/dashboard" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+                <div class="border-l border-gray-300 pl-4">
+                    <h1 class="text-lg font-bold text-gray-800">Dashboard de Feedbacks</h1>
+                    <p class="text-xs text-gray-500">Avaliações das análises de IA</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <button onclick="exportarDados()" class="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2">
+                    <i class="fas fa-download"></i>
+                    Exportar
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Cards de Estatísticas -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Total de Consultas</p>
+                        <p id="stat-total-consultas" class="text-3xl font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-search text-blue-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Feedbacks Recebidos</p>
+                        <p id="stat-total-feedbacks" class="text-3xl font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-comments text-purple-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Taxa de Acerto</p>
+                        <p id="stat-taxa-acerto" class="text-3xl font-bold text-green-600">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-check-circle text-green-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Sem Avaliação</p>
+                        <p id="stat-sem-feedback" class="text-3xl font-bold text-orange-600">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-clock text-orange-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gráficos -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Gráfico de Pizza - Avaliações -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Distribuição de Avaliações</h3>
+                <div class="h-64">
+                    <canvas id="chart-avaliacoes"></canvas>
+                </div>
+            </div>
+            
+            <!-- Gráfico de Linha - Feedbacks por Dia -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Feedbacks dos Últimos 7 Dias</h3>
+                <div class="h-64">
+                    <canvas id="chart-timeline"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modelos de IA Configurados -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-robot text-purple-500"></i>
+                Modelos de IA em Uso
+            </h3>
+            <div class="grid md:grid-cols-2 gap-4" id="modelos-ia-info">
+                <div class="flex items-center gap-3 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                    <i class="fas fa-gavel text-blue-600 text-xl"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Assistência Judiciária</p>
+                        <p id="modelo-aj" class="text-xs text-blue-600 font-mono">Carregando...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 p-4 bg-green-50 rounded-lg border border-green-100">
+                    <i class="fas fa-file-alt text-green-600 text-xl"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Matrículas Confrontantes</p>
+                        <p id="modelo-mat" class="text-xs text-green-600 font-mono">Carregando...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabela de Feedbacks por Usuário -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Feedbacks por Usuário (Top 10)</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Usuário</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Total</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Corretos</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Taxa</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-usuarios" class="divide-y divide-gray-100">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Pendentes de Feedback -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-exclamation-circle text-orange-500"></i>
+                Pendentes de Avaliação (Últimos 20)
+            </h3>
+            <p class="text-sm text-gray-500 mb-4">Usuários que geraram relatório mas ainda não avaliaram a resposta da IA</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-orange-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Sistema</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Processo/Arquivo</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Usuário</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Data</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-pendentes" class="divide-y divide-gray-100">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Lista de Feedbacks Recentes -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-gray-800">Feedbacks Recentes</h3>
+                <div class="flex items-center gap-4">
+                    <select id="filtro-avaliacao" onchange="carregarFeedbacks()" class="text-sm border border-gray-200 rounded-lg px-3 py-2">
+                        <option value="">Todas avaliações</option>
+                        <option value="correto">Corretas</option>
+                        <option value="parcial">Parciais</option>
+                        <option value="incorreto">Incorretas</option>
+                        <option value="erro_ia">Erro da IA</option>
+                    </select>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Sistema</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Processo/Arquivo</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Usuário</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Modelo IA</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Avaliação</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Comentário</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Data</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-feedbacks" class="divide-y divide-gray-100">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Paginação -->
+            <div class="p-4 border-t border-gray-100 flex items-center justify-between">
+                <p id="paginacao-info" class="text-sm text-gray-500"></p>
+                <div class="flex gap-2">
+                    <button id="btn-prev" onclick="paginaAnterior()" class="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200 disabled:opacity-50" disabled>
+                        <i class="fas fa-chevron-left"></i> Anterior
+                    </button>
+                    <button id="btn-next" onclick="proximaPagina()" class="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200 disabled:opacity-50">
+                        Próximo <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = '/sistema/assistencia-judiciaria';
+        let currentPage = 1;
+        let totalPages = 1;
+        let chartAvaliacoes = null;
+        let chartTimeline = null;
+
+        function getAuthToken() {
+            return localStorage.getItem('access_token');
+        }
+
+        function checkAuth() {
+            const token = getAuthToken();
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+            return true;
+        }
+
+        async function api(endpoint, options = {}) {
+            const token = getAuthToken();
+            const response = await fetch(endpoint, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    ...options.headers
+                }
+            });
+            
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return null;
+            }
+            
+            return response.json();
+        }
+
+        async function carregarDashboard() {
+            try {
+                const data = await api('/admin/feedbacks/dashboard');
+                
+                if (!data) return;
+
+                // Atualiza cards
+                document.getElementById('stat-total-consultas').textContent = data.total_consultas || 0;
+                document.getElementById('stat-total-feedbacks').textContent = data.total_feedbacks || 0;
+                document.getElementById('stat-taxa-acerto').textContent = `${data.taxa_acerto || 0}%`;
+                document.getElementById('stat-sem-feedback').textContent = data.consultas_sem_feedback || 0;
+
+                // Gráfico de pizza
+                const ctxPie = document.getElementById('chart-avaliacoes').getContext('2d');
+                if (chartAvaliacoes) chartAvaliacoes.destroy();
+                chartAvaliacoes = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Corretas', 'Parciais', 'Incorretas', 'Erro IA'],
+                        datasets: [{
+                            data: [
+                                data.avaliacoes?.correto || 0,
+                                data.avaliacoes?.parcial || 0,
+                                data.avaliacoes?.incorreto || 0,
+                                data.avaliacoes?.erro_ia || 0
+                            ],
+                            backgroundColor: ['#22c55e', '#eab308', '#ef4444', '#6b7280']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' }
+                        }
+                    }
+                });
+
+                // Gráfico de linha
+                const ctxLine = document.getElementById('chart-timeline').getContext('2d');
+                if (chartTimeline) chartTimeline.destroy();
+                chartTimeline = new Chart(ctxLine, {
+                    type: 'line',
+                    data: {
+                        labels: (data.feedbacks_recentes || []).map(f => {
+                            const d = new Date(f.data);
+                            return `${d.getDate()}/${d.getMonth() + 1}`;
+                        }),
+                        datasets: [{
+                            label: 'Feedbacks',
+                            data: (data.feedbacks_recentes || []).map(f => f.count),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+
+                // Tabela de usuários
+                const tabelaUsuarios = document.getElementById('tabela-usuarios');
+                tabelaUsuarios.innerHTML = (data.feedbacks_por_usuario || []).map(u => {
+                    const taxa = u.total > 0 ? Math.round((u.corretos / u.total) * 100) : 0;
+                    return `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3">${u.nome}</td>
+                            <td class="px-4 py-3 text-center">${u.total}</td>
+                            <td class="px-4 py-3 text-center text-green-600">${u.corretos}</td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-1 rounded text-xs ${taxa >= 70 ? 'bg-green-100 text-green-700' : taxa >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">
+                                    ${taxa}%
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-400">Nenhum dado disponível</td></tr>';
+
+                // Tabela de pendentes de feedback
+                const tabelaPendentes = document.getElementById('tabela-pendentes');
+                const sistemaLabels = {
+                    'assistencia_judiciaria': '<span class="text-blue-600"><i class="fas fa-gavel mr-1"></i>Assist. Jud.</span>',
+                    'matriculas': '<span class="text-green-600"><i class="fas fa-file-alt mr-1"></i>Matrículas</span>'
+                };
+                tabelaPendentes.innerHTML = (data.pendentes_feedback || []).map(p => {
+                    const dataFormatada = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
+                    return `
+                        <tr class="hover:bg-orange-50">
+                            <td class="px-4 py-3 text-xs">${sistemaLabels[p.sistema] || p.sistema}</td>
+                            <td class="px-4 py-3 font-mono text-xs">${p.identificador || '-'}</td>
+                            <td class="px-4 py-3">${p.usuario}</td>
+                            <td class="px-4 py-3 text-gray-500">${dataFormatada}</td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-400">Todos os relatórios foram avaliados!</td></tr>';
+
+            } catch (error) {
+                console.error('Erro ao carregar dashboard:', error);
+            }
+        }
+
+        async function carregarFeedbacks() {
+            try {
+                const avaliacao = document.getElementById('filtro-avaliacao').value;
+                const url = `/admin/feedbacks/lista?page=${currentPage}&per_page=20${avaliacao ? `&avaliacao=${avaliacao}` : ''}`;
+                
+                const data = await api(url);
+                if (!data) return;
+
+                totalPages = data.total_pages || 1;
+
+                // Atualiza info de paginação
+                document.getElementById('paginacao-info').textContent = 
+                    `Mostrando página ${data.page} de ${totalPages} (${data.total} registros)`;
+                
+                // Atualiza botões
+                document.getElementById('btn-prev').disabled = currentPage <= 1;
+                document.getElementById('btn-next').disabled = currentPage >= totalPages;
+
+                // Renderiza tabela
+                const tabela = document.getElementById('tabela-feedbacks');
+                tabela.innerHTML = (data.feedbacks || []).map(fb => {
+                    const badges = {
+                        'correto': 'bg-green-100 text-green-700',
+                        'parcial': 'bg-yellow-100 text-yellow-700',
+                        'incorreto': 'bg-red-100 text-red-700',
+                        'erro_ia': 'bg-gray-100 text-gray-700'
+                    };
+                    const labels = {
+                        'correto': 'Correta',
+                        'parcial': 'Parcial',
+                        'incorreto': 'Incorreta',
+                        'erro_ia': 'Erro IA'
+                    };
+                    const sistemaLabels = {
+                        'assistencia_judiciaria': '<span class="text-blue-600"><i class="fas fa-gavel mr-1"></i>Assist. Jud.</span>',
+                        'matriculas': '<span class="text-green-600"><i class="fas fa-file-alt mr-1"></i>Matrículas</span>'
+                    };
+                    const dataFormatada = fb.criado_em ? new Date(fb.criado_em).toLocaleDateString('pt-BR') : '-';
+                    const modeloFormatado = fb.modelo ? `<span class="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-mono">${fb.modelo}</span>` : '<span class="text-gray-400">N/A</span>';
+                    
+                    return `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3 text-xs">${sistemaLabels[fb.sistema] || fb.sistema || '-'}</td>
+                            <td class="px-4 py-3 font-mono text-xs">${fb.identificador || fb.cnj || '-'}</td>
+                            <td class="px-4 py-3">${fb.usuario}</td>
+                            <td class="px-4 py-3 text-center">${modeloFormatado}</td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-1 rounded text-xs ${badges[fb.avaliacao] || 'bg-gray-100'}">
+                                    ${labels[fb.avaliacao] || fb.avaliacao}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-gray-600 max-w-xs truncate" title="${fb.comentario || ''}">${fb.comentario || '-'}</td>
+                            <td class="px-4 py-3 text-gray-500">${dataFormatada}</td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-400">Nenhum feedback encontrado</td></tr>';
+
+            } catch (error) {
+                console.error('Erro ao carregar feedbacks:', error);
+            }
+        }
+
+        async function carregarModelosIA() {
+            try {
+                const data = await api('/admin/modelos-ia');
+                if (!data) return;
+                
+                document.getElementById('modelo-aj').textContent = data.assistencia_judiciaria?.modelo || 'Não configurado';
+                document.getElementById('modelo-mat').textContent = data.matriculas?.modelo || 'Não configurado';
+            } catch (error) {
+                console.error('Erro ao carregar modelos:', error);
+            }
+        }
+
+        function paginaAnterior() {
+            if (currentPage > 1) {
+                currentPage--;
+                carregarFeedbacks();
+            }
+        }
+
+        function proximaPagina() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                carregarFeedbacks();
+            }
+        }
+
+        async function exportarDados() {
+            try {
+                const data = await api('/admin/feedbacks/exportar');
+                if (!data) return;
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `feedbacks_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Erro ao exportar:', error);
+            }
+        }
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!checkAuth()) return;
+            
+            carregarDashboard();
+            carregarFeedbacks();
+            carregarModelosIA();
+        });
+    </script>
+</body>
+</html>

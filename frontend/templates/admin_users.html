@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciar Usuários - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-gray-50">
+    
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-4">
+                    <a href="/dashboard" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-arrow-left"></i>
+                    </a>
+                    <a href="/dashboard" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                        <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+                    </a>
+                    <div class="border-l border-gray-300 pl-4">
+                        <h1 class="font-semibold text-gray-800">Gerenciamento de Usuários</h1>
+                        <p class="text-xs text-gray-500">Administração de acessos</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4">
+                    <a href="/dashboard" class="text-gray-500 hover:text-gray-700 transition-colors">
+                        <i class="fas fa-arrow-left"></i> Voltar ao Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Título e Botão Novo -->
+        <div class="mb-6 flex items-center justify-between">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">Gerenciamento de Usuários</h2>
+                <p class="text-gray-500 mt-1">Controle de acessos ao Portal PGE-MS</p>
+            </div>
+            <button 
+                onclick="openCreateModal()"
+                class="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
+            >
+                <i class="fas fa-user-plus"></i>
+                Novo Usuário
+            </button>
+        </div>
+
+        <!-- Tabela de Usuários -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuário</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome Completo</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Perfil</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Criado em</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="users-table" class="divide-y divide-gray-200">
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-gray-400">
+                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                            <p>Carregando usuários...</p>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </main>
+
+    <!-- Modal de Criar/Editar Usuário -->
+    <div id="user-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden m-4">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-primary-50 to-blue-50">
+                <h2 id="modal-title" class="text-lg font-semibold text-gray-800">Novo Usuário</h2>
+                <button onclick="closeModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <form id="user-form" class="p-6 space-y-4">
+                <input type="hidden" id="user-id">
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Username *</label>
+                    <input 
+                        type="text" 
+                        id="user-username" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        required
+                    >
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Nome Completo *</label>
+                    <input 
+                        type="text" 
+                        id="user-fullname" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        required
+                    >
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input 
+                        type="email" 
+                        id="user-email" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Perfil *</label>
+                    <select 
+                        id="user-role" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    >
+                        <option value="user">Usuário</option>
+                        <option value="admin">Administrador</option>
+                    </select>
+                </div>
+                
+                <div id="password-section">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Senha</label>
+                    <input 
+                        type="password" 
+                        id="user-password" 
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        placeholder="Deixe em branco para usar senha padrão"
+                    >
+                    <p class="text-xs text-gray-400 mt-1">Senha padrão: <code>senha</code></p>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="user-active" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" checked>
+                    <label for="user-active" class="text-sm text-gray-700">Usuário ativo</label>
+                </div>
+            </form>
+            
+            <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-between">
+                <button 
+                    onclick="closeModal()"
+                    class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                    Cancelar
+                </button>
+                <button 
+                    onclick="saveUser()"
+                    class="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
+                >
+                    <i class="fas fa-save"></i>
+                    Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="hidden fixed bottom-4 right-4 z-50">
+        <div class="bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+            <i id="toast-icon" class="fas fa-check-circle text-green-400"></i>
+            <span id="toast-message">Mensagem</span>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '';
+        let currentUsers = [];
+        let editingUserId = null;
+
+        // Verifica autenticação e role admin
+        async function checkAdminAuth() {
+            const token = localStorage.getItem('access_token');
+            
+            if (!token) {
+                window.location.href = '/login';
+                return null;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error('Token inválido');
+
+                const user = await response.json();
+                
+                if (user.role !== 'admin') {
+                    alert('Acesso restrito a administradores');
+                    window.location.href = '/dashboard';
+                    return null;
+                }
+
+                return user;
+            } catch (error) {
+                localStorage.removeItem('access_token');
+                window.location.href = '/login';
+                return null;
+            }
+        }
+
+        // Carrega usuários
+        async function loadUsers() {
+            const token = localStorage.getItem('access_token');
+
+            try {
+                const response = await fetch(`${API_URL}/users`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao carregar usuários');
+
+                currentUsers = await response.json();
+                renderUsers(currentUsers);
+            } catch (error) {
+                console.error('Erro:', error);
+                showToast('Erro ao carregar usuários', 'error');
+            }
+        }
+
+        // Renderiza tabela de usuários
+        function renderUsers(users) {
+            const tbody = document.getElementById('users-table');
+            
+            if (!users || users.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="px-6 py-12 text-center text-gray-400">
+                            <i class="fas fa-users text-4xl mb-2"></i>
+                            <p>Nenhum usuário encontrado</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = users.map(user => {
+                const roleBadge = user.role === 'admin' 
+                    ? '<span class="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">Admin</span>'
+                    : '<span class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">Usuário</span>';
+                
+                const statusBadge = user.is_active
+                    ? '<span class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">Ativo</span>'
+                    : '<span class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-full">Inativo</span>';
+                
+                const createdAt = new Date(user.created_at).toLocaleDateString('pt-BR');
+
+                return `
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-user text-primary-600 text-sm"></i>
+                                </div>
+                                <span class="font-medium text-gray-800">${user.username}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-gray-600">${user.full_name}</td>
+                        <td class="px-6 py-4">${roleBadge}</td>
+                        <td class="px-6 py-4">${statusBadge}</td>
+                        <td class="px-6 py-4 text-gray-500 text-sm">${createdAt}</td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <button 
+                                    onclick="editUser(${user.id})"
+                                    class="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                                    title="Editar"
+                                >
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button 
+                                    onclick="resetPassword(${user.id}, '${user.username}')"
+                                    class="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
+                                    title="Resetar Senha"
+                                >
+                                    <i class="fas fa-key"></i>
+                                </button>
+                                ${user.username !== 'admin' ? `
+                                    <button 
+                                        onclick="deleteUser(${user.id}, '${user.username}')"
+                                        class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Excluir"
+                                    >
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Abre modal para criar usuário
+        function openCreateModal() {
+            editingUserId = null;
+            document.getElementById('modal-title').textContent = 'Novo Usuário';
+            document.getElementById('user-form').reset();
+            document.getElementById('user-username').disabled = false;
+            document.getElementById('password-section').style.display = 'block';
+            document.getElementById('user-modal').classList.remove('hidden');
+        }
+
+        // Abre modal para editar usuário
+        function editUser(id) {
+            const user = currentUsers.find(u => u.id === id);
+            if (!user) return;
+
+            editingUserId = id;
+            document.getElementById('modal-title').textContent = 'Editar Usuário';
+            document.getElementById('user-id').value = user.id;
+            document.getElementById('user-username').value = user.username;
+            document.getElementById('user-username').disabled = true;
+            document.getElementById('user-fullname').value = user.full_name;
+            document.getElementById('user-email').value = user.email || '';
+            document.getElementById('user-role').value = user.role;
+            document.getElementById('user-active').checked = user.is_active;
+            document.getElementById('password-section').style.display = 'none';
+            document.getElementById('user-modal').classList.remove('hidden');
+        }
+
+        // Fecha modal
+        function closeModal() {
+            document.getElementById('user-modal').classList.add('hidden');
+        }
+
+        // Salva usuário
+        async function saveUser() {
+            const token = localStorage.getItem('access_token');
+            
+            const data = {
+                username: document.getElementById('user-username').value,
+                full_name: document.getElementById('user-fullname').value,
+                email: document.getElementById('user-email').value || null,
+                role: document.getElementById('user-role').value,
+                is_active: document.getElementById('user-active').checked
+            };
+
+            // Se criando, adiciona senha
+            if (!editingUserId) {
+                const password = document.getElementById('user-password').value;
+                if (password) data.password = password;
+            }
+
+            try {
+                let response;
+                if (editingUserId) {
+                    // Atualizar
+                    response = await fetch(`${API_URL}/users/${editingUserId}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(data)
+                    });
+                } else {
+                    // Criar
+                    response = await fetch(`${API_URL}/users`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(data)
+                    });
+                }
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao salvar');
+                }
+
+                showToast(editingUserId ? 'Usuário atualizado!' : 'Usuário criado!', 'success');
+                closeModal();
+                loadUsers();
+            } catch (error) {
+                console.error('Erro:', error);
+                showToast(error.message || 'Erro ao salvar usuário', 'error');
+            }
+        }
+
+        // Resetar senha
+        async function resetPassword(id, username) {
+            if (!confirm(`Deseja resetar a senha de "${username}" para a senha padrão?`)) return;
+
+            const token = localStorage.getItem('access_token');
+
+            try {
+                const response = await fetch(`${API_URL}/users/${id}/reset-password`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao resetar senha');
+
+                showToast('Senha resetada para: senha', 'success');
+            } catch (error) {
+                showToast('Erro ao resetar senha', 'error');
+            }
+        }
+
+        // Excluir usuário
+        async function deleteUser(id, username) {
+            if (!confirm(`Deseja realmente excluir o usuário "${username}"?`)) return;
+
+            const token = localStorage.getItem('access_token');
+
+            try {
+                const response = await fetch(`${API_URL}/users/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao excluir');
+
+                showToast('Usuário excluído!', 'success');
+                loadUsers();
+            } catch (error) {
+                showToast('Erro ao excluir usuário', 'error');
+            }
+        }
+
+        // Toast notification
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            const msg = document.getElementById('toast-message');
+
+            msg.textContent = message;
+            
+            if (type === 'success') {
+                icon.className = 'fas fa-check-circle text-green-400';
+            } else if (type === 'error') {
+                icon.className = 'fas fa-exclamation-circle text-red-400';
+            } else {
+                icon.className = 'fas fa-info-circle text-blue-400';
+            }
+
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+
+        // Inicialização
+        (async function() {
+            const user = await checkAdminAuth();
+            if (user) {
+                loadUsers();
+            }
+        })();
+    </script>
+</body>
+</html>

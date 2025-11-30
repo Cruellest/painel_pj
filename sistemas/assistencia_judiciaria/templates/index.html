@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistência Judiciária - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- Marked.js para renderizar Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        },
+                        accent: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            200: '#bbf7d0',
+                            300: '#86efac',
+                            400: '#4ade80',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Scrollbar customization */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        
+        /* Markdown styles */
+        .markdown-content h1 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 0.5rem; color: #1e40af; }
+        .markdown-content h2 { font-size: 1.25rem; font-weight: 600; margin: 1rem 0 0.5rem; color: #1e40af; }
+        .markdown-content h3 { font-size: 1.1rem; font-weight: 600; margin: 0.75rem 0 0.25rem; color: #374151; }
+        .markdown-content p { margin: 0.5rem 0; line-height: 1.6; }
+        .markdown-content ul, .markdown-content ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+        .markdown-content li { margin: 0.25rem 0; }
+        .markdown-content strong { font-weight: 600; color: #111827; }
+        .markdown-content em { font-style: italic; }
+        .markdown-content blockquote { 
+            border-left: 3px solid #3b82f6; 
+            padding-left: 1rem; 
+            margin: 0.5rem 0;
+            color: #4b5563;
+            background: #f0f9ff;
+            padding: 0.5rem 1rem;
+            border-radius: 0 0.5rem 0.5rem 0;
+        }
+        
+        /* Loading spinner */
+        .spinner {
+            border: 3px solid #e5e7eb;
+            border-top: 3px solid #0ea5e9;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Toast notifications */
+        .toast {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shadow-sm">
+        <div class="flex items-center gap-4">
+            <a href="/dashboard" class="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-lg transition-colors" title="Voltar ao Portal">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+            <div class="border-l border-gray-300 pl-4 flex items-center gap-2">
+                <i class="fas fa-gavel text-primary-600 text-xl"></i>
+                <div>
+                    <h1 class="text-lg font-semibold text-gray-800">Assistência Judiciária</h1>
+                    <span class="text-xs text-gray-500">Consulta de Processos TJ-MS</span>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div id="api-status" class="text-sm text-gray-500 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-gray-400"></span>
+                <span>Verificando...</span>
+            </div>
+            <button id="btn-settings"
+                class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Configurações">
+                <i class="fas fa-cog"></i>
+            </button>
+            <button onclick="logout()"
+                class="p-2 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Sair">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Panel - Consulta -->
+        <aside class="w-80 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+            <!-- Formulário de Consulta -->
+            <div class="p-4 border-b border-gray-200">
+                <h2 class="font-semibold text-gray-700 text-sm flex items-center gap-2 mb-3">
+                    <i class="fas fa-search text-primary-500"></i>
+                    Consultar Processo
+                </h2>
+                
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">Número CNJ</label>
+                        <input type="text" id="input-cnj" 
+                            placeholder="0000000-00.0000.0.00.0000"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <p class="text-xs text-gray-400 mt-1">Ex: 0800123-45.2024.8.12.0001</p>
+                    </div>
+                    
+                    <button id="btn-consultar"
+                        class="w-full px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center justify-center gap-2 font-medium">
+                        <i class="fas fa-search"></i>
+                        Consultar
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Histórico de Consultas -->
+            <div class="flex-1 overflow-y-auto p-4">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Histórico Recente
+                </h3>
+                <div id="historico-list" class="space-y-2">
+                    <p class="text-sm text-gray-400 italic">Nenhuma consulta ainda</p>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Main Content Area -->
+        <main class="flex-1 flex flex-col overflow-hidden bg-gray-50">
+            
+            <!-- Estado inicial / Resultado -->
+            <div id="content-area" class="flex-1 overflow-y-auto p-6">
+                
+                <!-- Estado inicial -->
+                <div id="estado-inicial" class="h-full flex items-center justify-center">
+                    <div class="text-center max-w-md">
+                        <div class="w-20 h-20 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                            <i class="fas fa-balance-scale text-primary-600 text-3xl"></i>
+                        </div>
+                        <h2 class="text-xl font-semibold text-gray-700 mb-2">Consulta de Processos</h2>
+                        <p class="text-gray-500">
+                            Digite o número CNJ do processo para consultar informações no TJ-MS 
+                            e gerar um relatório automático com análise por IA.
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Loading -->
+                <div id="estado-loading" class="h-full flex items-center justify-center hidden">
+                    <div class="text-center">
+                        <div class="spinner mx-auto mb-4" style="width: 48px; height: 48px; border-width: 4px;"></div>
+                        <p class="text-gray-600 font-medium">Consultando processo...</p>
+                        <p class="text-sm text-gray-400 mt-1">Isso pode levar alguns segundos</p>
+                    </div>
+                </div>
+                
+                <!-- Resultado -->
+                <div id="estado-resultado" class="hidden">
+                    <!-- Header do resultado -->
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center">
+                                    <i class="fas fa-gavel text-primary-600"></i>
+                                </div>
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <h3 id="resultado-cnj" class="text-lg font-bold text-gray-800 font-mono"></h3>
+                                        <span id="cache-indicator" class="text-xs text-blue-600 hidden"></span>
+                                    </div>
+                                    <p class="text-xs text-gray-500">Número do Processo</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="reconsultarProcesso()"
+                                    class="px-3 py-1.5 text-sm text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors flex items-center gap-1"
+                                    title="Gerar nova análise com IA">
+                                    <i class="fas fa-redo"></i>
+                                    Reanalisar
+                                </button>
+                                <button id="btn-download-docx" 
+                                    class="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1">
+                                    <i class="fas fa-file-word"></i>
+                                    DOCX
+                                </button>
+                                <button id="btn-download-pdf"
+                                    class="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1">
+                                    <i class="fas fa-file-pdf"></i>
+                                    PDF
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Relatório IA -->
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                        <h4 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                            <i class="fas fa-robot text-accent-500"></i>
+                            Análise por IA
+                        </h4>
+                        <div id="resultado-relatorio" class="markdown-content text-sm text-gray-700">
+                            <!-- Preenchido via JS -->
+                        </div>
+                    </div>
+                    
+                    <!-- Feedback da Análise -->
+                    <div id="feedback-section" class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-200 p-4 mt-4">
+                        <h4 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                            <i class="fas fa-comment-dots text-blue-500"></i>
+                            Avalie a Análise da IA
+                        </h4>
+                        <p class="text-sm text-gray-600 mb-4">Sua avaliação nos ajuda a melhorar o sistema. Por favor, indique se a análise está correta.</p>
+                        
+                        <div id="feedback-buttons" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <button onclick="enviarFeedback('correto')" 
+                                class="feedback-btn px-4 py-3 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors flex flex-col items-center gap-1 border-2 border-transparent hover:border-green-400">
+                                <i class="fas fa-check-circle text-xl"></i>
+                                <span class="text-sm font-medium">Correta</span>
+                            </button>
+                            <button onclick="enviarFeedback('parcial')" 
+                                class="feedback-btn px-4 py-3 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-colors flex flex-col items-center gap-1 border-2 border-transparent hover:border-yellow-400">
+                                <i class="fas fa-adjust text-xl"></i>
+                                <span class="text-sm font-medium">Parcialmente</span>
+                            </button>
+                            <button onclick="enviarFeedback('incorreto')" 
+                                class="feedback-btn px-4 py-3 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors flex flex-col items-center gap-1 border-2 border-transparent hover:border-red-400">
+                                <i class="fas fa-times-circle text-xl"></i>
+                                <span class="text-sm font-medium">Incorreta</span>
+                            </button>
+                            <button onclick="enviarFeedback('erro_ia')" 
+                                class="feedback-btn px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex flex-col items-center gap-1 border-2 border-transparent hover:border-gray-400">
+                                <i class="fas fa-exclamation-triangle text-xl"></i>
+                                <span class="text-sm font-medium">Erro/Não gerou</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Feedback enviado -->
+                        <div id="feedback-enviado" class="hidden text-center py-4">
+                            <i class="fas fa-check-circle text-green-500 text-3xl mb-2"></i>
+                            <p class="text-green-700 font-medium">Obrigado pelo seu feedback!</p>
+                            <p id="feedback-enviado-tipo" class="text-sm text-gray-500"></p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Erro -->
+                <div id="estado-erro" class="h-full flex items-center justify-center hidden">
+                    <div class="text-center max-w-md">
+                        <div class="w-20 h-20 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                            <i class="fas fa-exclamation-triangle text-red-600 text-3xl"></i>
+                        </div>
+                        <h2 class="text-xl font-semibold text-gray-700 mb-2">Erro na Consulta</h2>
+                        <p id="erro-mensagem" class="text-gray-500"></p>
+                        <button onclick="voltarInicio()" class="mt-4 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                            Tentar novamente
+                        </button>
+                    </div>
+                </div>
+                
+            </div>
+        </main>
+    </div>
+    
+    <!-- Modal de Configurações -->
+    <div id="modal-settings" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 class="font-semibold text-gray-800">Configurações</h3>
+                <button onclick="fecharSettings()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">API Key (OpenRouter)</label>
+                    <input type="password" id="input-apikey" 
+                        placeholder="sk-or-v1-..."
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
+                    <select id="select-model" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="google/gemini-2.5-flash">Google Gemini 2.5 Flash</option>
+                        <option value="google/gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+                        <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                        <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+                    </select>
+                </div>
+            </div>
+            <div class="px-6 py-4 bg-gray-50 flex justify-end gap-2">
+                <button onclick="fecharSettings()" class="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors">
+                    Cancelar
+                </button>
+                <button onclick="salvarSettings()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+                    Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
