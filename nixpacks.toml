@@ -1,10 +1,8 @@
 # Nixpacks configuration for Railway
+# Let nixpacks handle Python automatically
 
 [phases.setup]
-nixPkgs = ["python311Full", "gcc", "libffi", "openssl"]
-
-[phases.install]
-cmds = ["python3 -m ensurepip --upgrade", "python3 -m pip install -r requirements.txt"]
+nixPkgs = ["gcc", "libffi", "openssl"]
 
 [start]
-cmd = "python3 -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
+cmd = "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
