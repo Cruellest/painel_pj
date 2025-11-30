@@ -131,9 +131,13 @@ async def consultar_processo(
     - **model**: Modelo de IA a ser usado (opcional)
     - **force**: Forçar nova consulta mesmo se já existir cache
     """
+    import logging
+    logger = logging.getLogger("assistencia_router")
+    
     try:
         # Normaliza o CNJ (remove caracteres não numéricos)
         cnj_limpo = re.sub(r'\D', '', req.cnj)
+        logger.info(f"Consultando processo: {cnj_limpo}")
         
         # Verifica se já existe consulta no cache (e não está forçando)
         if not req.force:
@@ -151,7 +155,9 @@ async def consultar_processo(
                 }
         
         # Faz nova consulta
+        logger.info("Iniciando full_flow...")
         dados, relatorio = full_flow(req.cnj, req.model)
+        logger.info("full_flow concluído com sucesso")
         
         # Salva ou atualiza no banco
         consulta = db.query(ConsultaProcesso).filter(
@@ -181,6 +187,9 @@ async def consultar_processo(
             "cached": False
         }
     except Exception as e:
+        import traceback
+        logger.error(f"Erro na consulta: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
