@@ -1,4 +1,5 @@
 # sistemas/assistencia_judiciaria/core/logic.py
+import os
 import re
 import json
 import html
@@ -11,7 +12,7 @@ import xml.etree.ElementTree as ET
 
 from config import (
     TJ_WSDL_URL, TJ_WS_USER, TJ_WS_PASS,
-    OPENROUTER_API_KEY, OPENROUTER_ENDPOINT, DEFAULT_MODEL,
+    OPENROUTER_ENDPOINT, DEFAULT_MODEL,
     STRICT_CNJ_CHECK, CLASSES_CUMPRIMENTO, NS
 )
 from database.connection import SessionLocal
@@ -19,6 +20,25 @@ from admin.models import PromptConfig, ConfiguracaoIA
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger("sistemas.assistencia_judiciaria.core.logic")
+
+def get_openrouter_api_key():
+    """Busca a API key dinamicamente do ambiente ou banco de dados."""
+    # Primeiro tenta do ambiente
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if api_key:
+        return api_key
+    
+    # Tenta buscar do banco de dados
+    try:
+        db = SessionLocal()
+        config = db.query(ConfiguracaoIA).filter_by(sistema="geral", chave="openrouter_api_key").first()
+        if config:
+            return config.valor
+        db.close()
+    except:
+        pass
+    
+    return ""
 
 def make_session() -> requests.Session:
     s = requests.Session()
@@ -47,7 +67,9 @@ def validate_config() -> Tuple[bool, str]:
     if not TJ_WSDL_URL: miss.append("TJ_WSDL_URL")
     if not TJ_WS_USER:  miss.append("TJ_WS_USER")
     if not TJ_WS_PASS:  miss.append("TJ_WS_PASS")
-    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "SUA_CHAVE_AQUI":
+    
+    api_key = get_openrouter_api_key()
+    if not api_key or api_key == "SUA_CHAVE_AQUI":
         miss.append("OPENROUTER_API_KEY")
     if miss:
         return False, "Variáveis ausentes no config: " + ", ".join(miss)
@@ -296,8 +318,12 @@ A resposta deve ser redigida em **Markdown**, no formato de relatório jurídico
     ]
 
 def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, timeout=120) -> str:
+    api_key = get_openrouter_api_key()
+    if not api_key:
+        return "Erro: OPENROUTER_API_KEY não configurada."
+    
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "HTTP-Referer": "https://pge-ms.lab",
         "X-Title": "Relatório TJMS",

@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 
 from config import (
-    OPENROUTER_API_KEY, OPENROUTER_ENDPOINT, 
+    OPENROUTER_ENDPOINT, 
     DEFAULT_MODEL, FULL_REPORT_MODEL,
     UPLOAD_FOLDER, ALLOWED_EXTENSIONS
 )
@@ -54,25 +54,34 @@ def get_file_size(filepath: Path) -> str:
     return f"{size / (1024 * 1024):.1f} MB"
 
 
-def load_api_key() -> str:
-    """Carrega a API Key do arquivo de configuração"""
+def get_openrouter_api_key() -> str:
+    """Busca a API key dinamicamente do ambiente ou arquivo de configuração."""
+    # Primeiro tenta do ambiente
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if api_key:
+        return api_key
+    
+    # Tenta do arquivo config.ini
     try:
         import configparser
         config_path = Path(__file__).parent / "config.ini"
-        if not config_path.exists():
-            return OPENROUTER_API_KEY or ""
-        
-        config = configparser.ConfigParser()
-        config.read(config_path)
-        
-        if 'API' in config and 'openrouter_key' in config['API']:
-            encoded_key = config['API']['openrouter_key']
-            decoded_key = base64.b64decode(encoded_key.encode()).decode()
-            return decoded_key
-        
-        return OPENROUTER_API_KEY or ""
-    except Exception:
-        return OPENROUTER_API_KEY or ""
+        if config_path.exists():
+            config = configparser.ConfigParser()
+            config.read(config_path)
+            
+            if 'API' in config and 'openrouter_key' in config['API']:
+                encoded_key = config['API']['openrouter_key']
+                decoded_key = base64.b64decode(encoded_key.encode()).decode()
+                return decoded_key
+    except:
+        pass
+    
+    return ""
+
+
+def load_api_key() -> str:
+    """Carrega a API Key do arquivo de configuração"""
+    return get_openrouter_api_key()
 
 
 def save_api_key(api_key: str) -> bool:
