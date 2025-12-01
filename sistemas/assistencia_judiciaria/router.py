@@ -118,6 +118,25 @@ async def update_settings(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/test-tjms")
+async def test_tjms_connection(current_user: User = Depends(get_current_active_user)):
+    """Testa conexão com o TJ-MS (endpoint de debug)"""
+    import requests
+    from config import TJ_WSDL_URL
+    
+    try:
+        r = requests.get(TJ_WSDL_URL, timeout=10)
+        return {
+            "status": "ok",
+            "status_code": r.status_code,
+            "url": TJ_WSDL_URL
+        }
+    except requests.exceptions.Timeout:
+        return {"status": "timeout", "url": TJ_WSDL_URL}
+    except requests.exceptions.RequestException as e:
+        return {"status": "error", "error": str(e), "url": TJ_WSDL_URL}
+
+
 @router.post("/consultar")
 async def consultar_processo(
     req: ConsultationRequest,
