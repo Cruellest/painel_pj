@@ -26,6 +26,7 @@ def get_openrouter_api_key():
     # Primeiro tenta do ambiente
     api_key = os.getenv("OPENROUTER_API_KEY", "")
     if api_key:
+        logger.info("API key encontrada no ambiente")
         return api_key
     
     # Tenta buscar do banco de dados (configuração global)
@@ -33,12 +34,14 @@ def get_openrouter_api_key():
         db = SessionLocal()
         config = db.query(ConfiguracaoIA).filter_by(sistema="global", chave="openrouter_api_key").first()
         if config and config.valor:
+            logger.info("API key encontrada no banco de dados")
             db.close()
             return config.valor
         db.close()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"Erro ao buscar API key do banco: {e}")
     
+    logger.warning("API key não encontrada em nenhuma fonte")
     return ""
 
 def make_session() -> requests.Session:

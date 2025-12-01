@@ -88,7 +88,15 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check para monitoramento"""
-    return {"status": "ok", "service": "portal-pge"}
+    import os
+    has_api_key = bool(os.getenv("OPENROUTER_API_KEY", ""))
+    has_db_url = bool(os.getenv("DATABASE_URL", ""))
+    return {
+        "status": "ok", 
+        "service": "portal-pge",
+        "has_openrouter_key": has_api_key,
+        "has_database_url": has_db_url
+    }
 
 
 # ==================================================
