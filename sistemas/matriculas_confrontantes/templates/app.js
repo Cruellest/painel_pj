@@ -1533,7 +1533,7 @@ function showResultModal(result) {
                     <div class="grid grid-cols-2 gap-4">
                         <div class="bg-primary-50 p-4 rounded-lg">
                             <p class="text-sm text-gray-600">Confiança</p>
-                            <p class="text-2xl font-bold text-primary-700">${result.confidence ? Math.round(result.confidence * 100) : 0}%</p>
+                            <p class="text-2xl font-bold text-primary-700">${result.confidence ? Math.round(result.confidence <= 1 ? result.confidence * 100 : result.confidence) : 0}%</p>
                         </div>
                         <div class="bg-green-50 p-4 rounded-lg">
                             <p class="text-sm text-gray-600">Confrontantes</p>
@@ -1635,7 +1635,7 @@ function showRawDataModal() {
                 <div class="grid grid-cols-4 gap-4">
                     <div class="bg-primary-50 p-4 rounded-lg text-center">
                         <p class="text-xs text-gray-600">Confiança</p>
-                        <p class="text-2xl font-bold text-primary-700">${data.confidence ? Math.round(data.confidence) : 0}%</p>
+                        <p class="text-2xl font-bold text-primary-700">${data.confidence ? Math.round(data.confidence <= 1 ? data.confidence * 100 : data.confidence) : 0}%</p>
                     </div>
                     <div class="bg-green-50 p-4 rounded-lg text-center">
                         <p class="text-xs text-gray-600">Matrículas</p>
