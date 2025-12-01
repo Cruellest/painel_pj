@@ -55,57 +55,24 @@ def get_file_size(filepath: Path) -> str:
 
 
 def get_openrouter_api_key() -> str:
-    """Busca a API key dinamicamente do ambiente ou arquivo de configuração."""
-    # Primeiro tenta do ambiente
-    api_key = os.getenv("OPENROUTER_API_KEY", "")
-    if api_key:
-        return api_key
-    
-    # Tenta do arquivo config.ini
-    try:
-        import configparser
-        config_path = Path(__file__).parent / "config.ini"
-        if config_path.exists():
-            config = configparser.ConfigParser()
-            config.read(config_path)
-            
-            if 'API' in config and 'openrouter_key' in config['API']:
-                encoded_key = config['API']['openrouter_key']
-                decoded_key = base64.b64decode(encoded_key.encode()).decode()
-                return decoded_key
-    except:
-        pass
-    
-    return ""
+    """Busca a API key dinamicamente do ambiente."""
+    # Tenta do ambiente
+    return os.getenv("OPENROUTER_API_KEY", "")
 
 
 def load_api_key() -> str:
-    """Carrega a API Key do arquivo de configuração"""
+    """Carrega a API Key do ambiente"""
     return get_openrouter_api_key()
 
 
 def save_api_key(api_key: str) -> bool:
-    """Salva a API Key no arquivo de configuração"""
-    try:
-        import configparser
-        config_path = Path(__file__).parent / "config.ini"
-        
-        config = configparser.ConfigParser()
-        if config_path.exists():
-            config.read(config_path)
-        
-        if 'API' not in config:
-            config.add_section('API')
-        
-        encoded_key = base64.b64encode(api_key.encode()).decode()
-        config['API']['openrouter_key'] = encoded_key
-        
-        with open(config_path, 'w') as f:
-            config.write(f)
-        
-        return True
-    except Exception:
-        return False
+    """
+    OBSOLETO: Salvar API Key em arquivo é inseguro.
+    Esta função agora apenas retorna False para indicar que a operação não é suportada.
+    Configure a variável de ambiente OPENROUTER_API_KEY.
+    """
+    print("⚠️ Tentativa de salvar API Key em arquivo ignorada por segurança.")
+    return False
 
 
 def result_to_dict(result) -> dict:
