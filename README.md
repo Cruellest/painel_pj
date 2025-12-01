@@ -76,10 +76,6 @@ SECRET_KEY=sua-chave-secreta-muito-forte
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=sua-senha-admin
 
-# TJ-MS
-TJ_WS_USER=PGEMS
-TJ_WS_PASS=SAJ03PGEMS
-
 # OpenRouter (IA)
 OPENROUTER_API_KEY=sua-api-key
 ```
