@@ -946,7 +946,7 @@ async def gerar_relatorio(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Gera relatório completo usando IA"""
+    """Gera relatório completo usando IA ou retorna o salvo"""
     import logging
     logger = logging.getLogger("matriculas_router")
     
@@ -961,6 +961,18 @@ async def gerar_relatorio(
     
     if not analise.resultado_json:
         return RelatorioResponse(success=False, error="Análise sem resultado JSON")
+    
+    # Se já tem relatório salvo, retorna ele
+    if analise.relatorio_texto:
+        logger.info(f"Retornando relatório salvo para {analise.file_id}")
+        payload = analise.resultado_json or {}
+        payload_json = json.dumps(payload, ensure_ascii=False, indent=2)
+        return RelatorioResponse(
+            success=True,
+            report=analise.relatorio_texto,
+            payload=payload_json,
+            cached=True
+        )
     
     if not state.api_key:
         # Tenta buscar API key do banco
@@ -1011,7 +1023,14 @@ async def gerar_relatorio(
             api_key=state.api_key
         )
         
-        state.cached_report = report_text.strip()
+        report_text = report_text.strip()
+        
+        # Salva relatório no banco para não precisar regenerar
+        analise.relatorio_texto = report_text
+        db.commit()
+        logger.info(f"Relatório salvo no banco para {analise.file_id}")
+        
+        state.cached_report = report_text
         state.cached_report_payload = payload_json
         state.cached_report_file_id = analise.file_id
         
@@ -1019,7 +1038,7 @@ async def gerar_relatorio(
         
         return RelatorioResponse(
             success=True,
-            report=state.cached_report,
+            report=report_text,
             payload=payload_json,
             cached=False
         )

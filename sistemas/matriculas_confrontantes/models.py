@@ -58,6 +58,9 @@ class Analise(Base):
     proprietario = Column(String(500), nullable=True)
     num_confrontantes = Column(Integer, default=0)
     
+    # Relatório gerado pela IA (persistido para não precisar regenerar)
+    relatorio_texto = Column(Text, nullable=True)
+    
     # Relacionamento com feedback
     feedback = relationship("FeedbackMatricula", back_populates="analise", uselist=False)
 

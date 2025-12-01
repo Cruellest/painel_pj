@@ -52,12 +52,13 @@ body {
 }
 
 .tooltip-content {
-    visibility: hidden;
-    opacity: 0;
+    visibility: hidden !important;
+    opacity: 0 !important;
     position: absolute;
-    left: 50%;
+    left: auto;
+    right: 0;
     bottom: calc(100% + 10px);
-    transform: translateX(-50%);
+    transform: none;
     width: 280px;
     padding: 12px 14px;
     background: #1e293b;
@@ -66,24 +67,24 @@ body {
     line-height: 1.5;
     border-radius: 8px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-    z-index: 1000;
+    z-index: 9999;
     transition: opacity 0.2s ease, visibility 0.2s ease;
     text-align: left;
+    pointer-events: none;
 }
 
 .tooltip-content::after {
     content: '';
     position: absolute;
     top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
+    right: 8px;
     border: 8px solid transparent;
     border-top-color: #1e293b;
 }
 
 .tooltip-container:hover .tooltip-content {
-    visibility: visible;
-    opacity: 1;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 
 .tooltip-content strong {
