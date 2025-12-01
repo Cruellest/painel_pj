@@ -570,16 +570,59 @@ async function generateAndShowReport() {
             window.currentReportText = result.report;
             window.currentReportPayload = result.payload;
 
-            // Renderiza relatório no div
+            // Renderiza relatório no div com seção de feedback
             reportView.innerHTML = `
                 <div class="prose prose-sm max-w-none">
                     ${renderMarkdown(result.report)}
+                </div>
+                
+                <!-- Seção de Feedback Inline -->
+                <div id="feedback-section-inline" class="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-4">
+                    <h4 class="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <i class="fas fa-comment-dots text-blue-500"></i>
+                        Avalie a Análise da IA
+                    </h4>
+                    <p class="text-sm text-gray-600 mb-4">Sua avaliação nos ajuda a melhorar o sistema.</p>
+                    
+                    <div id="feedback-buttons-inline" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <button onclick="enviarFeedbackMatricula('correto')" 
+                            class="px-4 py-3 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors flex flex-col items-center gap-1 border-2 border-transparent hover:border-green-400">
+                            <i class="fas fa-check-circle text-xl"></i>
+                            <span class="text-sm font-medium">Correta</span>
+                        </button>
+                        <button onclick="enviarFeedbackMatricula('parcial')" 
+                            class="px-4 py-3 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-colors flex flex-col items-center gap-1 border-2 border-transparent hover:border-yellow-400">
+                            <i class="fas fa-adjust text-xl"></i>
+                            <span class="text-sm font-medium">Parcialmente</span>
+                        </button>
+                        <button onclick="enviarFeedbackMatricula('incorreto')" 
+                            class="px-4 py-3 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors flex flex-col items-center gap-1 border-2 border-transparent hover:border-red-400">
+                            <i class="fas fa-times-circle text-xl"></i>
+                            <span class="text-sm font-medium">Incorreta</span>
+                        </button>
+                        <button onclick="enviarFeedbackMatricula('erro_ia')" 
+                            class="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex flex-col items-center gap-1 border-2 border-transparent hover:border-gray-400">
+                            <i class="fas fa-exclamation-triangle text-xl"></i>
+                            <span class="text-sm font-medium">Erro/Não gerou</span>
+                        </button>
+                    </div>
+                    
+                    <div id="feedback-enviado-inline" class="hidden text-center py-4">
+                        <i class="fas fa-check-circle text-green-500 text-3xl mb-2"></i>
+                        <p class="text-green-700 font-medium">Obrigado pelo seu feedback!</p>
+                        <p id="feedback-enviado-tipo-inline" class="text-sm text-gray-500"></p>
+                    </div>
                 </div>
             `;
 
             // Mostra botões de ação
             if (reportActions) {
                 reportActions.style.display = 'flex';
+            }
+            
+            // Verifica se já tem feedback
+            if (appState.currentAnaliseId) {
+                verificarFeedbackInline(appState.currentAnaliseId);
             }
         } else {
             reportView.innerHTML = `
@@ -888,21 +931,28 @@ async function enviarFeedbackMatricula(avaliacao) {
         });
         
         if (result && result.success) {
-            // Mostra feedback enviado
-            const buttons = document.getElementById('feedback-buttons-matriculas');
-            const enviado = document.getElementById('feedback-enviado-matriculas');
-            
-            if (buttons) buttons.classList.add('hidden');
-            if (enviado) enviado.classList.remove('hidden');
-            
             const tipoTexto = {
                 'correto': 'Análise marcada como correta',
                 'parcial': 'Análise marcada como parcialmente correta',
                 'incorreto': 'Análise marcada como incorreta',
                 'erro_ia': 'Reportado como erro da IA'
             };
-            const tipoEl = document.getElementById('feedback-enviado-tipo-matriculas');
-            if (tipoEl) tipoEl.textContent = tipoTexto[avaliacao] || '';
+            
+            // Atualiza feedback no modal (se existir)
+            const buttonsModal = document.getElementById('feedback-buttons-matriculas');
+            const enviadoModal = document.getElementById('feedback-enviado-matriculas');
+            if (buttonsModal) buttonsModal.classList.add('hidden');
+            if (enviadoModal) enviadoModal.classList.remove('hidden');
+            const tipoElModal = document.getElementById('feedback-enviado-tipo-matriculas');
+            if (tipoElModal) tipoElModal.textContent = tipoTexto[avaliacao] || '';
+            
+            // Atualiza feedback inline (se existir)
+            const buttonsInline = document.getElementById('feedback-buttons-inline');
+            const enviadoInline = document.getElementById('feedback-enviado-inline');
+            if (buttonsInline) buttonsInline.classList.add('hidden');
+            if (enviadoInline) enviadoInline.classList.remove('hidden');
+            const tipoElInline = document.getElementById('feedback-enviado-tipo-inline');
+            if (tipoElInline) tipoElInline.textContent = tipoTexto[avaliacao] || '';
             
             showToast('Feedback registrado!', 'success');
         } else {
@@ -942,6 +992,40 @@ async function verificarFeedbackMatriculaExistente(analiseId) {
         // Em caso de erro, mostra botões
         const buttons = document.getElementById('feedback-buttons-matriculas');
         const enviado = document.getElementById('feedback-enviado-matriculas');
+        if (buttons) buttons.classList.remove('hidden');
+        if (enviado) enviado.classList.add('hidden');
+    }
+}
+
+async function verificarFeedbackInline(analiseId) {
+    try {
+        const result = await api(`/feedback/${analiseId}`);
+        
+        const buttons = document.getElementById('feedback-buttons-inline');
+        const enviado = document.getElementById('feedback-enviado-inline');
+        
+        if (result && result.has_feedback) {
+            // Já tem feedback, mostra o estado de enviado
+            if (buttons) buttons.classList.add('hidden');
+            if (enviado) enviado.classList.remove('hidden');
+            
+            const tipoTexto = {
+                'correto': 'Análise marcada como correta',
+                'parcial': 'Análise marcada como parcialmente correta',
+                'incorreto': 'Análise marcada como incorreta',
+                'erro_ia': 'Reportado como erro da IA'
+            };
+            const tipoEl = document.getElementById('feedback-enviado-tipo-inline');
+            if (tipoEl) tipoEl.textContent = tipoTexto[result.avaliacao] || '';
+        } else {
+            // Não tem feedback, mostra botões
+            if (buttons) buttons.classList.remove('hidden');
+            if (enviado) enviado.classList.add('hidden');
+        }
+    } catch (error) {
+        // Em caso de erro, mostra botões
+        const buttons = document.getElementById('feedback-buttons-inline');
+        const enviado = document.getElementById('feedback-enviado-inline');
         if (buttons) buttons.classList.remove('hidden');
         if (enviado) enviado.classList.add('hidden');
     }
@@ -1366,6 +1450,7 @@ function startBatchPolling(grupoId) {
                 // Carrega resultado do grupo
                 const resultado = await api(`/grupo/${grupoId}/resultado`);
                 appState.documentDetails = resultado;
+                appState.currentAnaliseId = resultado.analise_id || null;
                 
                 // Gera relatório
                 await generateAndShowReport();

@@ -445,7 +445,15 @@ async def resultado_grupo(
     if not grupo.resultado_json:
         raise HTTPException(status_code=404, detail="Resultado ainda não disponível")
     
-    return grupo.resultado_json
+    resultado = grupo.resultado_json.copy() if isinstance(grupo.resultado_json, dict) else {}
+    
+    # Adiciona ID da primeira análise do grupo para feedback
+    primeira_analise = db.query(Analise).filter(Analise.grupo_id == grupo_id).first()
+    if primeira_analise:
+        resultado["analise_id"] = primeira_analise.id
+    resultado["grupo_id"] = grupo_id
+    
+    return resultado
 
 
 def run_batch_analysis_task(grupo_id: int, file_ids: List[str], file_paths: List[str], 
