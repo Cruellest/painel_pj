@@ -334,6 +334,10 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
     """Task de análise executada em background - não armazena o PDF, apenas o JSON"""
     from database.connection import SessionLocal
     from admin.models import ConfiguracaoIA
+    import logging
+    logger = logging.getLogger("matriculas_task")
+    
+    logger.info(f"Iniciando análise para {file_id}")
     
     db = SessionLocal()
     try:
@@ -351,8 +355,10 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
         # Importa função de análise
         from sistemas.matriculas_confrontantes.services_ia import analyze_with_vision_llm
         
+        logger.info(f"Chamando analyze_with_vision_llm para {file_id}")
         result = analyze_with_vision_llm(model, file_path, api_key)
         result_dict = result_to_dict(result)
+        logger.info(f"Análise concluída para {file_id}, salvando no banco...")
         
         # Extrai dados principais
         matricula_principal = result_dict.get("matricula_principal")
@@ -399,6 +405,7 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
         analise.file_path = None  # Limpa o caminho do arquivo se existia
         
         db.commit()
+        logger.info(f"Análise salva no banco com sucesso: {file_id}, id={analise.id}")
         
         # Limpa cache de relatório
         state.cached_report = None
@@ -416,6 +423,10 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
             print(f"Erro ao remover arquivo: {e}")
         
     except Exception as e:
+        import traceback
+        logger.error(f"Erro na análise {file_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+        db.rollback()
         add_log(db, f"Erro na análise: {str(e)[:100]}", "error")
     finally:
         state.processing[file_id] = False
