@@ -1992,4 +1992,87 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('[Init] Aplicação iniciada');
 });
 
+// ============================================
+// Help Modal - Análise em Lote
+// ============================================
 
+function showBatchHelpModal() {
+    const modal = document.createElement('div');
+    modal.id = 'batch-help-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50';
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+            <div class="bg-gradient-to-r from-purple-500 to-purple-600 px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-semibold text-white flex items-center gap-2">
+                        <i class="fas fa-layer-group"></i>
+                        Análise em Lote
+                    </h3>
+                    <button onclick="document.getElementById('batch-help-modal').remove()" 
+                        class="text-white/80 hover:text-white transition-colors">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-question text-purple-600"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">Quando usar?</h4>
+                        <p class="text-sm text-gray-600 mt-1">
+                            Use quando tiver <strong>múltiplas matrículas</strong> que fazem parte do 
+                            <strong>mesmo processo de usucapião</strong>.
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-file-alt text-blue-600"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">Exemplo</h4>
+                        <p class="text-sm text-gray-600 mt-1">
+                            A matrícula principal do imóvel + matrículas dos confrontantes anexadas ao processo.
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="flex items-start gap-3">
+                    <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-brain text-green-600"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-semibold text-gray-800">O que a IA faz?</h4>
+                        <p class="text-sm text-gray-600 mt-1">
+                            Analisa todos os documentos em conjunto, cruzando informações para identificar 
+                            a matrícula principal e validar as confrontações.
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 rounded-lg p-4 mt-4">
+                    <h4 class="font-semibold text-gray-800 text-sm mb-2">
+                        <i class="fas fa-keyboard text-gray-500"></i> Como selecionar múltiplos arquivos:
+                    </h4>
+                    <p class="text-sm text-gray-600">
+                        Segure <kbd class="px-2 py-1 bg-gray-200 rounded text-xs font-mono">Ctrl</kbd> 
+                        e clique nos arquivos desejados.
+                    </p>
+                </div>
+            </div>
+            <div class="px-6 py-4 bg-gray-50 border-t">
+                <button onclick="document.getElementById('batch-help-modal').remove()" 
+                    class="w-full px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors font-medium">
+                    Entendi
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}

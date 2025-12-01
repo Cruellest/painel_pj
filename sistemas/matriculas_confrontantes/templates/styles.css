@@ -42,61 +42,6 @@ body {
 }
 
 /* ============================================
-   Tooltip Styles
-   ============================================ */
-
-.tooltip-container {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-}
-
-.tooltip-content {
-    visibility: hidden !important;
-    opacity: 0 !important;
-    position: absolute;
-    left: auto;
-    right: 0;
-    bottom: calc(100% + 10px);
-    transform: none;
-    width: 280px;
-    padding: 12px 14px;
-    background: #1e293b;
-    color: #f1f5f9;
-    font-size: 12px;
-    line-height: 1.5;
-    border-radius: 8px;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-    z-index: 9999;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
-    text-align: left;
-    pointer-events: none;
-}
-
-.tooltip-content::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    right: 8px;
-    border: 8px solid transparent;
-    border-top-color: #1e293b;
-}
-
-.tooltip-container:hover .tooltip-content {
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-
-.tooltip-content strong {
-    color: #a78bfa;
-    font-size: 13px;
-}
-
-.tooltip-content b {
-    color: #c4b5fd;
-}
-
-/* ============================================
    Scrollbar Customization
    ============================================ */
 
