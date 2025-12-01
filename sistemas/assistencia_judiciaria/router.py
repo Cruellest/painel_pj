@@ -119,8 +119,8 @@ async def update_settings(
 
 
 @router.get("/test-tjms")
-async def test_tjms_connection(current_user: User = Depends(get_current_active_user)):
-    """Testa conexão com o TJ-MS (endpoint de debug)"""
+async def test_tjms_connection():
+    """Testa conexão com o TJ-MS (endpoint de debug - sem auth)"""
     import requests
     from config import TJ_WSDL_URL
     
