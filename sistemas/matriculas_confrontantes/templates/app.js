@@ -37,8 +37,10 @@ let appState = {
     registros: [],
     logs: [],
     selectedFileId: null,
+    selectedFileIds: [],  // Para seleção múltipla (análise em lote)
     documentDetails: null,
     currentAnaliseId: null,
+    currentGrupoId: null,  // Para análise em lote
     config: {
         version: '1.0.0',
         model: 'google/gemini-2.5-flash',
@@ -985,13 +987,17 @@ function renderFileList() {
         return;
     }
 
-    container.innerHTML = files.map(file => `
-        <div class="file-item group p-3 rounded-lg cursor-pointer transition-all ${String(file.id) === String(appState.selectedFileId) ? 'bg-primary-50 border border-primary-200' : 'hover:bg-gray-50 border border-transparent'}" 
-             onclick="selectFile('${file.id}')">
+    container.innerHTML = files.map(file => {
+        const isSelected = appState.selectedFileIds.includes(String(file.id));
+        const isMultiSelect = appState.selectedFileIds.length > 1;
+        return `
+        <div class="file-item group p-3 rounded-lg cursor-pointer transition-all ${isSelected ? (isMultiSelect ? 'bg-purple-50 border border-purple-200' : 'bg-primary-50 border border-primary-200') : 'hover:bg-gray-50 border border-transparent'}" 
+             onclick="selectFile('${file.id}', event)">
             <div class="flex items-start gap-3">
                 <div class="flex-shrink-0 w-10 h-10 rounded-lg ${file.type === 'pdf' ? 'bg-red-100' : 'bg-blue-100'} flex items-center justify-center relative">
                     <i class="fas ${file.type === 'pdf' ? 'fa-file-pdf text-red-500' : 'fa-image text-blue-500'}"></i>
                     ${file.analyzed ? '<span class="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center"><i class="fas fa-check text-white text-xs"></i></span>' : ''}
+                    ${isSelected && isMultiSelect ? '<span class="absolute -bottom-1 -left-1 w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center text-white text-xs font-bold">' + (appState.selectedFileIds.indexOf(String(file.id)) + 1) + '</span>' : ''}
                 </div>
                 <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium text-gray-800 truncate">${file.name}</p>
@@ -1005,7 +1011,7 @@ function renderFileList() {
                 </div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 /**
@@ -1236,17 +1242,160 @@ function renderSystemLogs() {
 // ============================================
 
 /**
- * Select a file
+ * Select a file (supports multi-select with Ctrl+Click)
  */
-async function selectFile(id) {
+async function selectFile(id, event) {
     // Garante que id seja string para comparação consistente
     const fileId = String(id);
-    appState.files.forEach(file => file.selected = String(file.id) === fileId);
-    appState.selectedFileId = fileId;
+    
+    // Verifica se é seleção múltipla (Ctrl+Click)
+    if (event && event.ctrlKey) {
+        const index = appState.selectedFileIds.indexOf(fileId);
+        if (index === -1) {
+            // Adiciona à seleção
+            appState.selectedFileIds.push(fileId);
+        } else {
+            // Remove da seleção
+            appState.selectedFileIds.splice(index, 1);
+        }
+        // Atualiza selectedFileId para o último selecionado
+        if (appState.selectedFileIds.length > 0) {
+            appState.selectedFileId = appState.selectedFileIds[appState.selectedFileIds.length - 1];
+        } else {
+            appState.selectedFileId = null;
+        }
+    } else {
+        // Seleção simples - limpa múltipla seleção
+        appState.selectedFileIds = [fileId];
+        appState.selectedFileId = fileId;
+    }
+    
+    // Atualiza estado de seleção nos arquivos
+    appState.files.forEach(file => {
+        file.selected = appState.selectedFileIds.includes(String(file.id));
+    });
+    
     renderFileList();
-    await loadDocumentDetails(fileId);
+    updateBatchAnalyzeButton();
+    
+    // Carrega detalhes apenas do último arquivo selecionado
+    if (appState.selectedFileId) {
+        await loadDocumentDetails(appState.selectedFileId);
+    }
+    
     updateAnalysisStatus();
-    addLog('info', `Arquivo selecionado: ${appState.files.find(f => String(f.id) === fileId)?.name || fileId}`);
+    
+    if (appState.selectedFileIds.length > 1) {
+        addLog('info', `${appState.selectedFileIds.length} arquivos selecionados para análise em lote`);
+    } else {
+        addLog('info', `Arquivo selecionado: ${appState.files.find(f => String(f.id) === fileId)?.name || fileId}`);
+    }
+}
+
+/**
+ * Update batch analyze button state
+ */
+function updateBatchAnalyzeButton() {
+    const batchBtn = document.getElementById('btn-analyze-batch');
+    if (batchBtn) {
+        if (appState.selectedFileIds.length >= 2) {
+            batchBtn.disabled = false;
+            batchBtn.innerHTML = `<i class="fas fa-layer-group"></i> Analisar ${appState.selectedFileIds.length} arquivos`;
+        } else {
+            batchBtn.disabled = true;
+            batchBtn.innerHTML = `<i class="fas fa-layer-group"></i> Análise em Lote`;
+        }
+    }
+}
+
+/**
+ * Analyze multiple documents together
+ */
+async function analisarEmLote(fileIds) {
+    if (!fileIds || fileIds.length < 2) {
+        showToast('Selecione pelo menos 2 documentos', 'warning');
+        return;
+    }
+    
+    try {
+        showToast(`Iniciando análise de ${fileIds.length} documentos...`, 'info');
+        addLog('info', `Iniciando análise em lote de ${fileIds.length} documentos`);
+        
+        const result = await api('/analisar-lote', {
+            method: 'POST',
+            body: JSON.stringify({
+                file_ids: fileIds,
+                nome_grupo: `Análise de ${fileIds.length} matrículas`
+            })
+        });
+        
+        if (result?.success) {
+            appState.currentGrupoId = result.grupo_id;
+            showToast('Análise em lote iniciada!', 'success');
+            
+            // Inicia polling do status do grupo
+            startBatchPolling(result.grupo_id);
+        } else {
+            showToast(result?.detail || 'Erro ao iniciar análise em lote', 'error');
+        }
+    } catch (error) {
+        console.error('Erro na análise em lote:', error);
+        showToast('Erro ao iniciar análise em lote', 'error');
+    }
+}
+
+/**
+ * Poll batch analysis status
+ */
+function startBatchPolling(grupoId) {
+    const statusEl = document.getElementById('analysis-status');
+    
+    const pollInterval = setInterval(async () => {
+        try {
+            const status = await api(`/grupo/${grupoId}/status`);
+            
+            if (status.status === 'concluido') {
+                clearInterval(pollInterval);
+                showToast('Análise em lote concluída!', 'success');
+                addLog('success', `Análise em lote concluída: ${status.total_arquivos} arquivos`);
+                
+                if (statusEl) {
+                    statusEl.innerHTML = '<i class="fas fa-check-circle text-green-500"></i> Análise em lote concluída';
+                }
+                
+                // Carrega resultado do grupo
+                const resultado = await api(`/grupo/${grupoId}/resultado`);
+                appState.documentDetails = resultado;
+                
+                // Gera relatório
+                await generateAndShowReport();
+                
+                // Recarrega lista de arquivos
+                await loadFiles();
+                await loadAnalyses();
+                
+            } else if (status.status === 'erro') {
+                clearInterval(pollInterval);
+                showToast('Erro na análise em lote', 'error');
+                addLog('error', 'Erro na análise em lote');
+                
+                if (statusEl) {
+                    statusEl.innerHTML = '<i class="fas fa-exclamation-circle text-red-500"></i> Erro na análise';
+                }
+                
+            } else {
+                // Ainda processando
+                if (statusEl) {
+                    statusEl.innerHTML = '<i class="fas fa-spinner fa-spin text-purple-500"></i> Analisando ' + status.total_arquivos + ' arquivos...';
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao verificar status do lote:', error);
+        }
+    }, 3000); // Poll a cada 3 segundos
+    
+    // Guarda referência para poder cancelar
+    appState.pollingIntervals['batch_' + grupoId] = pollInterval;
 }
 
 /**
@@ -1648,6 +1797,19 @@ function setupAIActions() {
             }
         });
         console.log('[Setup] Botão reanalisar configurado');
+    }
+
+    // Botão de análise em lote
+    const batchAnalyzeBtn = document.getElementById('btn-analyze-batch');
+    if (batchAnalyzeBtn) {
+        batchAnalyzeBtn.addEventListener('click', () => {
+            if (appState.selectedFileIds.length >= 2) {
+                analisarEmLote(appState.selectedFileIds);
+            } else {
+                showToast('Selecione pelo menos 2 documentos (Ctrl+Click)', 'warning');
+            }
+        });
+        console.log('[Setup] Botão análise em lote configurado');
     }
 
     // Botão de excluir arquivo

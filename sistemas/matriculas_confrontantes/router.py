@@ -22,7 +22,7 @@ from auth.dependencies import get_current_active_user, get_current_user_from_tok
 from auth.models import User
 from config import UPLOAD_FOLDER, ALLOWED_EXTENSIONS, DEFAULT_MODEL, FULL_REPORT_MODEL
 
-from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula
+from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise
 from sistemas.matriculas_confrontantes.schemas import (
     FileInfo, FileUploadResponse, AnaliseResponse, AnaliseStatusResponse,
     ResultadoAnalise, RegistroCreate, RegistroUpdate, RegistroResponse,
@@ -35,6 +35,12 @@ from sistemas.matriculas_confrontantes.services import (
 )
 
 router = APIRouter(tags=["Matrículas Confrontantes"])
+
+
+# Schema para análise em lote
+class AnaliseLoteRequest(BaseModel):
+    file_ids: List[str]
+    nome_grupo: Optional[str] = None
 
 
 # Schema para feedback
@@ -330,6 +336,295 @@ async def analisar_documento(
     return {"success": True, "message": "Análise iniciada"}
 
 
+@router.post("/analisar-lote")
+async def analisar_lote(
+    request: AnaliseLoteRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Inicia análise conjunta de múltiplos documentos"""
+    from admin.models import ConfiguracaoIA
+    
+    if not request.file_ids or len(request.file_ids) == 0:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo selecionado")
+    
+    # Verifica se todos os arquivos existem
+    file_paths = []
+    for file_id in request.file_ids:
+        filepath = UPLOAD_FOLDER / file_id
+        if not filepath.exists():
+            raise HTTPException(status_code=404, detail=f"Arquivo não encontrado: {file_id}")
+        file_paths.append(str(filepath))
+    
+    # Busca API key
+    import os
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    
+    if not api_key:
+        config_api = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "global",
+            ConfiguracaoIA.chave == "openrouter_api_key"
+        ).first()
+        api_key = config_api.valor if config_api and config_api.valor else None
+    
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API Key não configurada")
+    
+    # Cria grupo de análise
+    grupo = GrupoAnalise(
+        nome=request.nome_grupo or f"Análise de {len(request.file_ids)} documentos",
+        status="processando",
+        usuario_id=current_user.id
+    )
+    db.add(grupo)
+    db.commit()
+    db.refresh(grupo)
+    
+    # Marca arquivos como em processamento
+    for file_id in request.file_ids:
+        state.processing[file_id] = True
+    
+    add_log(db, f"Iniciando análise em lote: {len(request.file_ids)} arquivos (grupo {grupo.id})", "info")
+    
+    # Executa análise em background
+    background_tasks.add_task(
+        run_batch_analysis_task,
+        grupo.id,
+        request.file_ids,
+        file_paths,
+        state.model,
+        api_key,
+        current_user.id
+    )
+    
+    return {
+        "success": True, 
+        "message": f"Análise em lote iniciada com {len(request.file_ids)} arquivos",
+        "grupo_id": grupo.id
+    }
+
+
+@router.get("/grupo/{grupo_id}/status")
+async def status_grupo(
+    grupo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna status de um grupo de análise"""
+    grupo = db.query(GrupoAnalise).filter(GrupoAnalise.id == grupo_id).first()
+    
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo não encontrado")
+    
+    analises = db.query(Analise).filter(Analise.grupo_id == grupo_id).all()
+    
+    return {
+        "id": grupo.id,
+        "nome": grupo.nome,
+        "status": grupo.status,
+        "total_arquivos": len(analises),
+        "arquivos": [a.file_id for a in analises],
+        "criado_em": grupo.criado_em.isoformat() if grupo.criado_em else None,
+        "has_result": grupo.resultado_json is not None
+    }
+
+
+@router.get("/grupo/{grupo_id}/resultado")
+async def resultado_grupo(
+    grupo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna resultado consolidado de um grupo de análise"""
+    grupo = db.query(GrupoAnalise).filter(GrupoAnalise.id == grupo_id).first()
+    
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo não encontrado")
+    
+    if not grupo.resultado_json:
+        raise HTTPException(status_code=404, detail="Resultado ainda não disponível")
+    
+    return grupo.resultado_json
+
+
+def run_batch_analysis_task(grupo_id: int, file_ids: List[str], file_paths: List[str], 
+                            model: str, api_key: str, user_id: int):
+    """Task de análise em lote - processa múltiplos PDFs em uma única chamada à IA"""
+    from database.connection import SessionLocal
+    from admin.models import ConfiguracaoIA
+    from sistemas.matriculas_confrontantes.services_ia import (
+        pdf_to_images, image_to_base64, call_openrouter_vision, 
+        get_system_prompt, get_analysis_prompt, clean_json_response,
+        get_config_from_db
+    )
+    import logging
+    logger = logging.getLogger("matriculas_batch_task")
+    
+    logger.info(f"Iniciando análise em lote para grupo {grupo_id} com {len(file_ids)} arquivos")
+    
+    db = SessionLocal()
+    try:
+        # Verifica se há modelo configurado no banco
+        try:
+            config_model = db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "matriculas",
+                ConfiguracaoIA.chave == "modelo"
+            ).first()
+            if config_model and config_model.valor:
+                model = config_model.valor
+        except Exception as e:
+            logger.warning(f"Erro ao buscar modelo do banco: {e}")
+        
+        # Coleta todas as imagens de todos os PDFs
+        all_images_b64 = []
+        file_page_map = {}  # Mapeia qual página pertence a qual arquivo
+        
+        for idx, (file_id, file_path) in enumerate(zip(file_ids, file_paths)):
+            logger.info(f"Processando arquivo {idx+1}/{len(file_ids)}: {file_id}")
+            
+            ext = os.path.splitext(file_path.lower())[1]
+            
+            if ext == ".pdf":
+                from PIL import Image
+                images = pdf_to_images(file_path, max_pages=None)
+            elif ext in [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"]:
+                from PIL import Image
+                images = [Image.open(file_path)]
+            else:
+                logger.warning(f"Formato não suportado: {ext}")
+                continue
+            
+            start_page = len(all_images_b64)
+            for img in images:
+                if img and hasattr(img, 'size'):
+                    b64 = image_to_base64(img, max_size=1536)
+                    if b64:
+                        all_images_b64.append(b64)
+            
+            file_page_map[file_id] = {
+                "start": start_page,
+                "end": len(all_images_b64),
+                "file_name": os.path.basename(file_path)
+            }
+        
+        if not all_images_b64:
+            raise ValueError("Não foi possível extrair imagens dos arquivos")
+        
+        logger.info(f"Total de {len(all_images_b64)} páginas extraídas de {len(file_ids)} arquivos")
+        
+        # Monta prompt especial para análise em lote
+        system_prompt = get_system_prompt()
+        base_prompt = get_analysis_prompt()
+        
+        # Adiciona instruções específicas para análise em lote
+        batch_instructions = f"""
+ATENÇÃO: Esta é uma ANÁLISE CONJUNTA de {len(file_ids)} documentos que devem ser analisados como um único processo de usucapião.
+
+Os documentos anexados são:
+{chr(10).join([f"- {info['file_name']} (páginas {info['start']+1} a {info['end']})" for file_id, info in file_page_map.items()])}
+
+INSTRUÇÕES ESPECIAIS PARA ANÁLISE EM LOTE:
+1. Identifique a MATRÍCULA PRINCIPAL (objeto do usucapião) entre todos os documentos
+2. As demais matrículas são provavelmente dos CONFRONTANTES
+3. Cruze as informações entre os documentos para validar confrontações
+4. Se um lote confrontante menciona matrícula X, verifique se X está entre os documentos anexados
+5. Consolide todas as informações em um único resultado estruturado
+
+"""
+        vision_prompt = batch_instructions + base_prompt
+        
+        # Obtém configurações do banco
+        temperatura = float(get_config_from_db("matriculas", "temperatura_analise") or "0.1")
+        max_tokens = int(get_config_from_db("matriculas", "max_tokens_analise") or "100000")
+        modelo_analise = get_config_from_db("matriculas", "modelo_analise") or model
+        
+        # Faz chamada à IA com todas as imagens
+        data = call_openrouter_vision(
+            model=modelo_analise,
+            system_prompt=system_prompt,
+            user_prompt=vision_prompt,
+            images_base64=all_images_b64,
+            temperature=temperatura,
+            max_tokens=max_tokens,
+            api_key=api_key
+        )
+        
+        content = data["choices"][0]["message"].get("content", "")
+        clean_content = clean_json_response(content)
+        
+        try:
+            parsed = json.loads(clean_content)
+        except json.JSONDecodeError:
+            parsed = {
+                "matriculas_encontradas": [],
+                "matricula_principal": None,
+                "erro": "Falha ao processar resposta da IA"
+            }
+        
+        # Adiciona metadados do lote
+        parsed["analise_em_lote"] = True
+        parsed["arquivos_analisados"] = [info["file_name"] for info in file_page_map.values()]
+        parsed["total_paginas"] = len(all_images_b64)
+        
+        # Atualiza grupo com resultado
+        grupo = db.query(GrupoAnalise).filter(GrupoAnalise.id == grupo_id).first()
+        if grupo:
+            grupo.resultado_json = parsed
+            grupo.status = "concluido"
+            grupo.confianca = parsed.get("confidence", 0)
+        
+        # Cria registros de análise para cada arquivo
+        matricula_principal = parsed.get("matricula_principal")
+        lotes = parsed.get("lotes_confrontantes", [])
+        
+        for file_id, info in file_page_map.items():
+            analise = db.query(Analise).filter(Analise.file_id == file_id).first()
+            if not analise:
+                analise = Analise(
+                    file_id=file_id,
+                    file_name=info["file_name"],
+                    usuario_id=user_id
+                )
+                db.add(analise)
+            
+            analise.grupo_id = grupo_id
+            analise.resultado_json = parsed  # Mesmo resultado para todos
+            analise.matricula_principal = matricula_principal
+            analise.confianca = parsed.get("confidence", 0)
+            analise.num_confrontantes = len(lotes)
+            analise.analisado_em = datetime.utcnow()
+        
+        db.commit()
+        logger.info(f"Análise em lote concluída para grupo {grupo_id}")
+        
+        # Limpa cache de relatório
+        state.cached_report = None
+        state.cached_report_payload = None
+        state.cached_report_file_id = None
+        
+        add_log(db, f"Análise em lote concluída: {len(file_ids)} arquivos", "success")
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"Erro na análise em lote {grupo_id}: {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        # Atualiza grupo com erro
+        grupo = db.query(GrupoAnalise).filter(GrupoAnalise.id == grupo_id).first()
+        if grupo:
+            grupo.status = "erro"
+            grupo.resultado_json = {"erro": str(e)}
+        
+        db.commit()
+        add_log(db, f"Erro na análise em lote: {str(e)[:100]}", "error")
+    finally:
+        # Limpa flags de processamento
+        for file_id in file_ids:
+            state.processing[file_id] = False
+        db.close()
+
+
 def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, user_id: int):
     """Task de análise executada em background - não armazena o PDF, apenas o JSON"""
     from database.connection import SessionLocal
@@ -414,13 +709,7 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
         
         add_log(db, f"Análise concluída: {file_id}", "success")
         
-        # Deleta o arquivo PDF após análise bem-sucedida (não armazena PDFs)
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                add_log(db, f"Arquivo temporário removido: {file_id}", "info")
-        except Exception as e:
-            print(f"Erro ao remover arquivo: {e}")
+        # PDF permanece no disco até o usuário excluir manualmente pelo frontend
         
     except Exception as e:
         import traceback

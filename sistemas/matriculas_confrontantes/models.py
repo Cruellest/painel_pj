@@ -9,6 +9,31 @@ from sqlalchemy.orm import relationship
 from database.connection import Base
 
 
+class GrupoAnalise(Base):
+    """Modelo para agrupar múltiplos arquivos em uma única análise"""
+    
+    __tablename__ = "grupos_analise"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(255), nullable=True)  # Nome opcional do grupo
+    descricao = Column(Text, nullable=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Status do grupo: 'pendente', 'processando', 'concluido', 'erro'
+    status = Column(String(20), default="pendente")
+    
+    # Resultado consolidado da análise do grupo
+    resultado_json = Column(JSON, nullable=True)
+    confianca = Column(Float, default=0.0)
+    
+    # Relacionamento com análises individuais
+    analises = relationship("Analise", back_populates="grupo")
+
+    def __repr__(self):
+        return f"<GrupoAnalise(id={self.id}, status='{self.status}')>"
+
+
 class Analise(Base):
     """Modelo para análises de documentos"""
     
@@ -17,12 +42,16 @@ class Analise(Base):
     id = Column(Integer, primary_key=True, index=True)
     file_id = Column(String(255), unique=True, index=True, nullable=False)
     file_name = Column(String(255), nullable=False)
-    file_path = Column(String(500), nullable=True)  # Nullable - PDFs não são mais armazenados
+    file_path = Column(String(500), nullable=True)
     matricula_principal = Column(String(50), nullable=True)
     resultado_json = Column(JSON, nullable=True)
     confianca = Column(Float, default=0.0)
     analisado_em = Column(DateTime, default=datetime.utcnow)
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Referência ao grupo de análise (opcional - análise pode ser individual)
+    grupo_id = Column(Integer, ForeignKey("grupos_analise.id"), nullable=True)
+    grupo = relationship("GrupoAnalise", back_populates="analises")
     
     # Campos adicionais extraídos do resultado
     lote = Column(String(50), nullable=True)
