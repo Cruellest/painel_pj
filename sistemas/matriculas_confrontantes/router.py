@@ -634,14 +634,36 @@ async def gerar_relatorio(
     db: Session = Depends(get_db)
 ):
     """Gera relatório completo usando IA"""
+    import logging
+    logger = logging.getLogger("matriculas_router")
+    
     # Busca última análise
     analise = db.query(Analise).order_by(Analise.id.desc()).first()
     
     if not analise:
+        logger.error("Nenhuma análise encontrada no banco")
         return RelatorioResponse(success=False, error="Nenhum resultado para gerar relatório")
     
+    logger.info(f"Análise encontrada: {analise.file_id}, resultado_json existe: {bool(analise.resultado_json)}")
+    
+    if not analise.resultado_json:
+        return RelatorioResponse(success=False, error="Análise sem resultado JSON")
+    
     if not state.api_key:
-        return RelatorioResponse(success=False, error="API Key não configurada")
+        # Tenta buscar API key do banco
+        import os
+        from admin.models import ConfiguracaoIA
+        api_key = os.getenv("OPENROUTER_API_KEY", "")
+        if not api_key:
+            config = db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "global",
+                ConfiguracaoIA.chave == "openrouter_api_key"
+            ).first()
+            api_key = config.valor if config else None
+        
+        if not api_key:
+            return RelatorioResponse(success=False, error="API Key não configurada")
+        state.api_key = api_key
     
     # Verifica cache
     if state.cached_report and state.cached_report_file_id == analise.file_id:
