@@ -122,19 +122,64 @@ async def update_settings(
 async def test_tjms_connection():
     """Testa conexão com o TJ-MS (endpoint de debug - sem auth)"""
     import requests
-    from config import TJ_WSDL_URL
+    from config import TJ_WSDL_URL, TJ_WS_USER, TJ_WS_PASS
     
+    result = {
+        "url": TJ_WSDL_URL,
+        "user": TJ_WS_USER,
+        "pass_configured": bool(TJ_WS_PASS),
+    }
+    
+    # Teste 1: GET simples no WSDL
     try:
         r = requests.get(TJ_WSDL_URL, timeout=30)
-        return {
-            "status": "ok",
-            "status_code": r.status_code,
-            "url": TJ_WSDL_URL
-        }
+        result["wsdl_status"] = r.status_code
+        result["wsdl_ok"] = r.status_code == 200
     except requests.exceptions.Timeout:
-        return {"status": "timeout", "url": TJ_WSDL_URL}
+        result["wsdl_status"] = "timeout"
+        result["wsdl_ok"] = False
     except requests.exceptions.RequestException as e:
-        return {"status": "error", "error": str(e), "url": TJ_WSDL_URL}
+        result["wsdl_status"] = str(e)
+        result["wsdl_ok"] = False
+    
+    # Teste 2: POST SOAP com credenciais (processo fictício para testar auth)
+    if result.get("wsdl_ok"):
+        try:
+            envelope = f"""
+            <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                              xmlns:ser="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/"
+                              xmlns:tip="http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2">
+                <soapenv:Header/>
+                <soapenv:Body>
+                    <ser:consultarProcesso>
+                        <tip:idConsultante>{TJ_WS_USER}</tip:idConsultante>
+                        <tip:senhaConsultante>{TJ_WS_PASS}</tip:senhaConsultante>
+                        <tip:numeroProcesso>00000000000000000000</tip:numeroProcesso>
+                        <tip:movimentos>false</tip:movimentos>
+                        <tip:incluirDocumentos>false</tip:incluirDocumentos>
+                    </ser:consultarProcesso>
+                </soapenv:Body>
+            </soapenv:Envelope>
+            """.strip()
+            
+            r = requests.post(TJ_WSDL_URL, data=envelope, timeout=30, headers={
+                "Content-Type": "text/xml; charset=utf-8"
+            })
+            result["soap_status"] = r.status_code
+            result["soap_response_preview"] = r.text[:500] if r.text else "empty"
+            
+            # Verifica se há erro de autenticação
+            if "Falha" in r.text or "invalido" in r.text.lower() or "senha" in r.text.lower():
+                result["auth_error"] = True
+            else:
+                result["auth_error"] = False
+                
+        except requests.exceptions.Timeout:
+            result["soap_status"] = "timeout"
+        except requests.exceptions.RequestException as e:
+            result["soap_status"] = str(e)
+    
+    return result
 
 
 @router.post("/consultar")
