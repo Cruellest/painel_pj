@@ -183,13 +183,39 @@ async def get_file_content(
     raise HTTPException(status_code=404, detail="Arquivo não encontrado no disco")
 
 
+@router.get("/files/check-duplicate/{filename}")
+async def check_duplicate_file(
+    filename: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Verifica se já existe um arquivo com o mesmo nome para o usuário"""
+    original_name = secure_filename(filename)
+    
+    # Busca arquivo com mesmo nome do usuário
+    arquivo_existente = db.query(ArquivoUpload).filter(
+        ArquivoUpload.file_name == original_name,
+        ArquivoUpload.usuario_id == current_user.id
+    ).first()
+    
+    if arquivo_existente:
+        return {
+            "exists": True,
+            "file_id": arquivo_existente.file_id,
+            "file_name": arquivo_existente.file_name
+        }
+    
+    return {"exists": False}
+
+
 @router.post("/files/upload", response_model=FileUploadResponse)
 async def upload_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    replace: bool = False
 ):
-    """Upload de arquivo"""
+    """Upload de arquivo. Se replace=True, substitui arquivo existente com mesmo nome."""
     import uuid
     
     if not file.filename:
@@ -198,15 +224,45 @@ async def upload_file(
     if not allowed_file(file.filename):
         raise HTTPException(status_code=400, detail="Tipo de arquivo não permitido")
     
-    # Gera ID único para evitar conflitos de nome
     original_name = secure_filename(file.filename)
-    ext = Path(original_name).suffix
+    
+    # Verifica se já existe arquivo com mesmo nome
+    arquivo_existente = db.query(ArquivoUpload).filter(
+        ArquivoUpload.file_name == original_name,
+        ArquivoUpload.usuario_id == current_user.id
+    ).first()
+    
+    if arquivo_existente:
+        if not replace:
+            # Retorna indicando que precisa confirmação
+            return FileUploadResponse(
+                success=False,
+                error="duplicate",
+                message=f"Já existe um arquivo '{original_name}'. Deseja substituir?"
+            )
+        else:
+            # Remove arquivo antigo
+            old_filepath = UPLOAD_FOLDER / arquivo_existente.file_id
+            if old_filepath.exists():
+                os.remove(old_filepath)
+            
+            # Remove análise e feedback associados
+            analise = db.query(Analise).filter(Analise.file_id == arquivo_existente.file_id).first()
+            if analise:
+                db.query(FeedbackMatricula).filter(FeedbackMatricula.analise_id == analise.id).delete()
+                db.delete(analise)
+            
+            # Remove registro do arquivo antigo
+            db.delete(arquivo_existente)
+            db.commit()
+    
+    # Gera ID único
     unique_id = f"{uuid.uuid4().hex[:8]}_{original_name}"
     filepath = UPLOAD_FOLDER / unique_id
     
     # Salva o arquivo
+    content = await file.read()
     with open(filepath, "wb") as f:
-        content = await file.read()
         f.write(content)
     
     # Registra o arquivo no banco associado ao usuário
@@ -224,7 +280,7 @@ async def upload_file(
         success=True,
         file=FileInfo(
             id=unique_id,
-            name=original_name,  # Mantém nome original para exibição
+            name=original_name,
             path=str(filepath),
             type=get_file_type(original_name),
             size=get_file_size(filepath),

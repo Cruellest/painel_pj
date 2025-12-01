@@ -220,7 +220,7 @@ function updateConfigUI() {
     updateAnalysisStatus();
 }
 
-async function uploadFile(file) {
+async function uploadFile(file, replace = false) {
     if (!checkAuth()) return;
     
     const token = getAuthToken();
@@ -228,7 +228,11 @@ async function uploadFile(file) {
     formData.append('file', file);
 
     try {
-        const response = await fetch(`${API_BASE}/files/upload`, {
+        const url = replace 
+            ? `${API_BASE}/files/upload?replace=true` 
+            : `${API_BASE}/files/upload`;
+            
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -246,14 +250,71 @@ async function uploadFile(file) {
 
         if (result.success) {
             await loadFiles();
-            await loadLogs();
             showToast(`Arquivo ${file.name} importado com sucesso!`, 'success');
+        } else if (result.error === 'duplicate') {
+            // Arquivo duplicado - perguntar se deseja substituir
+            showDuplicateConfirmModal(file, result.message);
         } else {
             showToast(result.error || 'Erro ao importar arquivo', 'error');
         }
     } catch (error) {
         showToast('Erro de conexão ao importar arquivo', 'error');
     }
+}
+
+function showDuplicateConfirmModal(file, message) {
+    const modal = document.createElement('div');
+    modal.id = 'duplicate-confirm-modal';
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50';
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+            <div class="bg-gradient-to-r from-yellow-500 to-orange-500 px-6 py-4">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-exclamation-triangle text-white text-2xl"></i>
+                    <h3 class="text-lg font-semibold text-white">Arquivo Duplicado</h3>
+                </div>
+            </div>
+            <div class="p-6">
+                <p class="text-gray-700 mb-4">${message || 'Já existe um arquivo com este nome.'}</p>
+                <p class="text-sm text-gray-500 mb-6">
+                    Se substituir, a análise anterior será perdida.
+                </p>
+                <div class="flex gap-3">
+                    <button onclick="confirmReplaceFile()" 
+                        class="flex-1 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium">
+                        <i class="fas fa-sync-alt mr-2"></i>Substituir
+                    </button>
+                    <button onclick="cancelReplaceFile()" 
+                        class="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium">
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Guarda o arquivo para reenviar se confirmar
+    window.pendingReplaceFile = file;
+    
+    document.body.appendChild(modal);
+}
+
+async function confirmReplaceFile() {
+    const modal = document.getElementById('duplicate-confirm-modal');
+    if (modal) modal.remove();
+    
+    if (window.pendingReplaceFile) {
+        await uploadFile(window.pendingReplaceFile, true);
+        window.pendingReplaceFile = null;
+    }
+}
+
+function cancelReplaceFile() {
+    const modal = document.getElementById('duplicate-confirm-modal');
+    if (modal) modal.remove();
+    window.pendingReplaceFile = null;
+    showToast('Upload cancelado', 'info');
 }
 
 async function apiDeleteFile(fileId) {

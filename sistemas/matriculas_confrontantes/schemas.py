@@ -28,6 +28,7 @@ class FileUploadResponse(BaseModel):
     success: bool
     file: Optional[FileInfo] = None
     error: Optional[str] = None
+    message: Optional[str] = None
 
 
 # ==========================================
