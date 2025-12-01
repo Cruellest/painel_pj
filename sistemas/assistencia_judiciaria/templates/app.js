@@ -407,75 +407,17 @@ async function downloadDocumento(formato) {
 }
 
 // ============================================
-// Configurações
+// Configurações - Gerenciadas pelo Admin
 // ============================================
-
-function abrirSettings() {
-    document.getElementById('modal-settings').classList.remove('hidden');
-    carregarSettings();
-}
-
-function fecharSettings() {
-    document.getElementById('modal-settings').classList.add('hidden');
-}
 
 async function carregarSettings() {
     try {
         const config = await api('/settings');
         if (config) {
-            document.getElementById('input-apikey').value = config.openrouter_api_key || '';
-            document.getElementById('select-model').value = config.default_model || 'google/gemini-2.5-flash';
             appState.config.model = config.default_model || 'google/gemini-2.5-flash';
         }
     } catch (error) {
         console.error('Erro ao carregar settings:', error);
-    }
-}
-
-async function salvarSettings() {
-    const apiKey = document.getElementById('input-apikey').value.trim();
-    const model = document.getElementById('select-model').value;
-    
-    try {
-        await api('/settings', {
-            method: 'POST',
-            body: JSON.stringify({
-                openrouter_api_key: apiKey,
-                default_model: model
-            })
-        });
-        
-        appState.config.model = model;
-        fecharSettings();
-        showToast('Configurações salvas!', 'success');
-        atualizarStatusAPI();
-        
-    } catch (error) {
-        showToast('Erro ao salvar configurações', 'error');
-    }
-}
-
-async function atualizarStatusAPI() {
-    try {
-        const config = await api('/settings');
-        const statusEl = document.getElementById('api-status');
-        
-        if (config && config.openrouter_api_key && config.openrouter_api_key.length > 10) {
-            statusEl.innerHTML = `
-                <span class="w-2 h-2 rounded-full bg-green-500"></span>
-                <span class="text-green-600">API Configurada</span>
-            `;
-        } else {
-            statusEl.innerHTML = `
-                <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
-                <span class="text-yellow-600">API não configurada</span>
-            `;
-        }
-    } catch (error) {
-        document.getElementById('api-status').innerHTML = `
-            <span class="w-2 h-2 rounded-full bg-red-500"></span>
-            <span class="text-red-600">Erro de conexão</span>
-        `;
     }
 }
 
@@ -495,19 +437,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter') consultarProcesso();
     });
     
-    // Botão configurações
-    document.getElementById('btn-settings').addEventListener('click', abrirSettings);
-    
     // Downloads
     document.getElementById('btn-download-docx').addEventListener('click', () => downloadDocumento('docx'));
     document.getElementById('btn-download-pdf').addEventListener('click', () => downloadDocumento('pdf'));
     
-    // Fechar modal clicando fora
-    document.getElementById('modal-settings').addEventListener('click', (e) => {
-        if (e.target.id === 'modal-settings') fecharSettings();
-    });
-    
-    // Carrega estado inicial do banco de dados
+    // Carrega estado inicial
     carregarHistorico();
-    atualizarStatusAPI();
+    carregarSettings();
 });
