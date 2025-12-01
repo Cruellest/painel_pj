@@ -360,49 +360,139 @@ async function verificarFeedbackExistente(consultaId) {
 // Download de Documentos
 // ============================================
 
-async function downloadDocumento(formato) {
+function renderMarkdownToHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+        .replace(/^- (.*$)/gim, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+        .replace(/^> (.*$)/gim, '<blockquote>$1</blockquote>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>');
+}
+
+function downloadDocumento(formato) {
     if (!appState.ultimoResultado) {
         showToast('Nenhum resultado para exportar', 'warning');
         return;
     }
     
-    const cnj = document.getElementById('resultado-cnj').textContent;
+    const cnj = document.getElementById('resultado-cnj').textContent || 'processo';
     const relatorio = appState.ultimoResultado.relatorio || '';
+    const htmlContent = renderMarkdownToHtml(relatorio);
     
-    showToast(`Gerando ${formato.toUpperCase()}...`, 'info');
-    
-    try {
-        const response = await fetch(`${API_BASE}/generate-doc`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${getAuthToken()}`
-            },
-            body: JSON.stringify({
-                markdown_text: relatorio,
-                cnj: cnj,
-                format: formato
-            })
-        });
+    if (formato === 'docx') {
+        // Gera DOCX via HTML
+        const docContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Relatório - Assistência Judiciária</title>
+                <style>
+                    body { font-family: 'Calibri', sans-serif; font-size: 12pt; line-height: 1.5; margin: 2cm; }
+                    h1 { font-size: 18pt; color: #1e3a5f; border-bottom: 2px solid #1e3a5f; padding-bottom: 10px; text-align: center; }
+                    h2 { font-size: 14pt; color: #2563eb; margin-top: 20px; }
+                    h3 { font-size: 12pt; color: #374151; }
+                    p { margin: 10px 0; text-align: justify; }
+                    ul, ol { margin: 10px 0; padding-left: 30px; }
+                    li { margin: 5px 0; }
+                    strong { color: #1f2937; }
+                    blockquote { margin: 10px 20px; padding: 10px; background: #f5f5f5; border-left: 3px solid #2563eb; font-style: italic; }
+                </style>
+            </head>
+            <body>
+                <h1>Análise de Processo</h1>
+                <p style="text-align: center; color: #666;">Processo: ${cnj}</p>
+                <hr>
+                <p>${htmlContent}</p>
+            </body>
+            </html>
+        `;
         
-        if (!response.ok) {
-            throw new Error('Erro ao gerar documento');
-        }
+        const blob = new Blob([docContent], { type: 'application/vnd.ms-word;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `relatorio_${cnj.replace(/\D/g, '')}.doc`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
         
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `relatorio_${cnj.replace(/\D/g, '')}.${formato}`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        a.remove();
+        showToast('Download do Word iniciado!', 'success');
         
-        showToast(`${formato.toUpperCase()} baixado com sucesso!`, 'success');
+    } else if (formato === 'pdf') {
+        // Abre janela de impressão para PDF
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <title>Relatório - Assistência Judiciária</title>
+                <style>
+                    @media print {
+                        @page { margin: 2cm; }
+                    }
+                    body { 
+                        font-family: 'Times New Roman', serif; 
+                        font-size: 12pt; 
+                        line-height: 1.6; 
+                        max-width: 21cm;
+                        margin: 0 auto;
+                        padding: 20px;
+                    }
+                    h1 { 
+                        font-size: 18pt; 
+                        color: #1e3a5f; 
+                        border-bottom: 2px solid #1e3a5f; 
+                        padding-bottom: 10px;
+                        text-align: center;
+                    }
+                    h2 { font-size: 14pt; color: #2563eb; margin-top: 20px; }
+                    h3 { font-size: 12pt; color: #374151; }
+                    p { margin: 10px 0; text-align: justify; }
+                    ul, ol { margin: 10px 0; padding-left: 30px; }
+                    li { margin: 5px 0; }
+                    strong { color: #1f2937; }
+                    blockquote { margin: 10px 20px; padding: 10px; background: #f5f5f5; border-left: 3px solid #2563eb; font-style: italic; }
+                    .header { text-align: center; margin-bottom: 30px; }
+                    .footer { 
+                        margin-top: 40px; 
+                        padding-top: 20px; 
+                        border-top: 1px solid #ccc; 
+                        font-size: 10pt; 
+                        color: #666;
+                        text-align: center;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>Análise de Processo</h1>
+                    <p>Sistema de Assistência Judiciária - PGE-MS</p>
+                    <p>Processo: ${cnj}</p>
+                </div>
+                <hr>
+                <p>${htmlContent}</p>
+                <div class="footer">
+                    <p>Documento gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')}</p>
+                    <p>Procuradoria-Geral do Estado de Mato Grosso do Sul</p>
+                </div>
+            </body>
+            </html>
+        `);
+        printWindow.document.close();
         
-    } catch (error) {
-        showToast(`Erro ao gerar ${formato.toUpperCase()}`, 'error');
+        setTimeout(() => {
+            printWindow.print();
+        }, 500);
+        
+        showToast('Janela de impressão aberta!', 'success');
     }
 }
 

@@ -288,6 +288,8 @@ async def list_analyses(
         # Verifica se o arquivo ainda existe
         filepath = UPLOAD_FOLDER / analise.file_id
         if not filepath.exists():
+            # Deleta feedback associado antes de deletar análise
+            db.query(FeedbackMatricula).filter(FeedbackMatricula.analise_id == analise.id).delete()
             db.delete(analise)
             continue
         
