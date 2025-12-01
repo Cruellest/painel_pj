@@ -163,29 +163,34 @@ async def upload_file(
     db: Session = Depends(get_db)
 ):
     """Upload de arquivo"""
+    import uuid
+    
     if not file.filename:
         raise HTTPException(status_code=400, detail="Nome de arquivo vazio")
     
     if not allowed_file(file.filename):
         raise HTTPException(status_code=400, detail="Tipo de arquivo não permitido")
     
-    filename = secure_filename(file.filename)
-    filepath = UPLOAD_FOLDER / filename
+    # Gera ID único para evitar conflitos de nome
+    original_name = secure_filename(file.filename)
+    ext = Path(original_name).suffix
+    unique_id = f"{uuid.uuid4().hex[:8]}_{original_name}"
+    filepath = UPLOAD_FOLDER / unique_id
     
     # Salva o arquivo
     with open(filepath, "wb") as f:
         content = await file.read()
         f.write(content)
     
-    add_log(db, f"Arquivo importado: {filename}", "success")
+    add_log(db, f"Arquivo importado: {original_name}", "success")
     
     return FileUploadResponse(
         success=True,
         file=FileInfo(
-            id=filename,
-            name=filename,
+            id=unique_id,
+            name=original_name,  # Mantém nome original para exibição
             path=str(filepath),
-            type=get_file_type(filename),
+            type=get_file_type(original_name),
             size=get_file_size(filepath),
             date=datetime.now().strftime("%Y-%m-%d"),
             analyzed=False
@@ -664,16 +669,6 @@ async def gerar_relatorio(
         if not api_key:
             return RelatorioResponse(success=False, error="API Key não configurada")
         state.api_key = api_key
-    
-    # Verifica cache
-    if state.cached_report and state.cached_report_file_id == analise.file_id:
-        add_log(db, "Retornando relatório em cache", "info")
-        return RelatorioResponse(
-            success=True,
-            report=state.cached_report,
-            payload=state.cached_report_payload,
-            cached=True
-        )
     
     try:
         from sistemas.matriculas_confrontantes.services_ia import (
