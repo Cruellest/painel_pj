@@ -150,11 +150,13 @@ async function loadDocumentDetails(fileId) {
     try {
         const result = await api(`/resultado/${fileId}`);
         appState.documentDetails = result;
+        renderExtractedDataPanel();
         // Se tem análise, mostra o relatório
         await generateAndShowReport();
     } catch (error) {
         // Não tem análise ainda
         appState.documentDetails = null;
+        renderExtractedDataPanel();
     }
 }
 
@@ -498,6 +500,9 @@ function startAnalysisPolling(fileId) {
                     // Atualiza detalhes do documento
                     appState.documentDetails = resultado;
                     appState.currentAnaliseId = resultado.analise_id || null;
+                    
+                    // Atualiza painel de dados extraídos
+                    renderExtractedDataPanel();
 
                     // Atualiza lista de arquivos (marca como analisado)
                     await loadFiles();
@@ -1146,106 +1151,128 @@ function renderFolderTree() {
 }
 
 /**
- * Render records table
+ * Render extracted data panel (replaces old records table)
  */
-function renderRecordsTable() {
-    const tbody = document.getElementById('records-table');
-    const records = appState.registros || [];
-
-    function getConfiancaColor(value) {
-        if (value >= 80) return 'text-green-600';
-        if (value >= 60) return 'text-yellow-600';
-        return 'text-red-600';
-    }
-
-    function getConfiancaBar(value) {
-        let color = 'bg-green-500';
-        if (value < 80) color = 'bg-yellow-500';
-        if (value < 60) color = 'bg-red-500';
-        return `
-            <div class="flex items-center gap-2">
-                <div class="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div class="h-full ${color} rounded-full" style="width: ${value}%"></div>
-                </div>
-                <span class="${getConfiancaColor(value)} font-medium">${value}%</span>
+function renderExtractedDataPanel() {
+    const container = document.getElementById('extracted-data-panel');
+    if (!container) return;
+    
+    const data = appState.documentDetails;
+    
+    if (!data || !data.matriculas_encontradas) {
+        container.innerHTML = `
+            <div class="text-center text-gray-400 py-8">
+                <i class="fas fa-file-alt text-3xl mb-2"></i>
+                <p class="text-sm">Selecione e analise um documento para ver os dados extraídos</p>
             </div>
-        `;
-    }
-
-    if (!records || records.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" class="px-4 py-8 text-center text-gray-400">
-                    <i class="fas fa-inbox text-4xl mb-2 block"></i>
-                    <p>Nenhuma análise realizada</p>
-                    <p class="text-xs mt-1">Importe um documento e clique em "Analisar"</p>
-                </td>
-            </tr>
         `;
         return;
     }
+    
+    // Renderiza matrículas encontradas
+    const matriculasHtml = (data.matriculas_encontradas || []).map(mat => `
+        <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs">
+            <td class="px-2 py-1.5 font-medium text-primary-600">${mat.numero || 'N/A'}</td>
+            <td class="px-2 py-1.5">${mat.lote || '-'}</td>
+            <td class="px-2 py-1.5">${mat.quadra || '-'}</td>
+            <td class="px-2 py-1.5 truncate max-w-[150px]" title="${(mat.proprietarios || []).join(', ')}">${(mat.proprietarios || []).join(', ') || 'N/A'}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="4" class="px-2 py-3 text-center text-gray-400 text-xs">Nenhuma matrícula</td></tr>';
 
-    let html = '';
+    // Renderiza lotes confrontantes
+    const lotesHtml = (data.lotes_confrontantes || []).map(lote => `
+        <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs">
+            <td class="px-2 py-1.5">${lote.identificador || 'N/A'}</td>
+            <td class="px-2 py-1.5">${lote.direcao ? lote.direcao.toUpperCase() : '-'}</td>
+            <td class="px-2 py-1.5">${lote.tipo || '-'}</td>
+            <td class="px-2 py-1.5">${lote.matricula_anexada || '-'}</td>
+        </tr>
+    `).join('') || '<tr><td colspan="4" class="px-2 py-3 text-center text-gray-400 text-xs">Nenhum confrontante</td></tr>';
 
-    records.forEach(record => {
-        // Linha principal da matrícula
-        html += `
-            <tr class="hover:bg-gray-50 transition-colors cursor-pointer border-b border-gray-200" onclick="viewAnalysis('${record.id}')">
-                <td class="px-2 py-2">
-                    <i class="fas fa-check-circle text-green-500 text-xs"></i>
-                </td>
-                <td class="px-2 py-2 font-semibold text-primary-700 text-xs">
-                    ${record.matricula || 'N/A'}
-                </td>
-                <td class="px-2 py-2 text-gray-600 text-xs">${record.lote || '-'}</td>
+    const confidence = data.confidence ? Math.round(data.confidence <= 1 ? data.confidence * 100 : data.confidence) : 0;
+    const confColor = confidence >= 80 ? 'text-green-600' : confidence >= 60 ? 'text-yellow-600' : 'text-red-600';
+    const confBg = confidence >= 80 ? 'bg-green-500' : confidence >= 60 ? 'bg-yellow-500' : 'bg-red-500';
 
-                <td class="px-2 py-2 text-gray-800 text-xs">${record.proprietario || 'N/A'}</td>
-                <td class="px-2 py-2">${getConfiancaBarSmall(record.confianca || 0)}</td>
-            </tr>
-        `;
-
-        // Linhas de confrontantes (indentadas)
-        if (record.confrontantes && Array.isArray(record.confrontantes) && record.confrontantes.length > 0) {
-            record.confrontantes.forEach((conf, index) => {
-                const isLast = index === record.confrontantes.length - 1;
-                const proprietarios = conf.proprietarios && conf.proprietarios.length > 0
-                    ? `<span class="text-gray-500 ml-2">• ${conf.proprietarios.join(', ')}</span>`
-                    : '<span class="text-gray-400 ml-2">• N/A</span>';
-
-                html += `
-                    <tr class="bg-gray-50 hover:bg-gray-100 transition-colors ${isLast ? 'border-b-2 border-gray-300' : ''}">
-                        <td class="px-2 py-1.5"></td>
-                        <td colspan="4" class="px-2 py-1.5 text-xs">
-                            <div class="flex items-start pl-4">
-                                <i class="fas fa-level-up-alt fa-rotate-90 text-gray-400 text-xs mr-2 mt-0.5"></i>
-                                <div class="flex-1">
-                                    <span class="text-gray-700 font-medium whitespace-normal">
-                                        ${conf.direcao ? `[${conf.direcao.toUpperCase()}] ` : ''}${conf.descricao}
-                                    </span>
-                                    ${proprietarios}
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            });
-        } else {
-            // Se não tem confrontantes, mostra linha indicando isso
-            html += `
-                <tr class="bg-gray-50 border-b-2 border-gray-300">
-                    <td class="px-2 py-1.5"></td>
-                    <td colspan="4" class="px-2 py-1.5 text-xs">
-                        <div class="flex items-center pl-4 text-gray-400 italic">
-                            <i class="fas fa-info-circle mr-2"></i>
-                            <span>Nenhum confrontante identificado</span>
+    container.innerHTML = `
+        <div class="space-y-3">
+            <!-- Resumo compacto -->
+            <div class="flex items-center gap-4 text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="text-gray-500">Matrícula:</span>
+                    <span class="font-semibold text-primary-700">${data.matricula_principal || 'N/A'}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-gray-500">Confiança:</span>
+                    <div class="flex items-center gap-1">
+                        <div class="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div class="h-full ${confBg} rounded-full" style="width: ${confidence}%"></div>
                         </div>
-                    </td>
-                </tr>
-            `;
-        }
-    });
+                        <span class="${confColor} font-medium">${confidence}%</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-gray-500">Confrontação:</span>
+                    <span class="font-medium ${data.confrontacao_completa ? 'text-green-600' : data.confrontacao_completa === false ? 'text-red-600' : 'text-gray-400'}">
+                        ${data.confrontacao_completa === true ? '✓ Completa' : data.confrontacao_completa === false ? '✗ Incompleta' : 'N/A'}
+                    </span>
+                </div>
+            </div>
+            
+            <!-- Tabelas lado a lado -->
+            <div class="grid grid-cols-2 gap-3">
+                <!-- Matrículas -->
+                <div class="bg-gray-50 rounded-lg overflow-hidden">
+                    <div class="px-2 py-1.5 bg-gray-100 border-b border-gray-200">
+                        <h4 class="font-medium text-gray-700 text-xs flex items-center gap-1">
+                            <i class="fas fa-file-alt text-primary-500"></i>
+                            Matrículas (${(data.matriculas_encontradas || []).length})
+                        </h4>
+                    </div>
+                    <div class="max-h-32 overflow-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-100 text-gray-600 text-xs sticky top-0">
+                                <tr>
+                                    <th class="px-2 py-1 text-left font-medium">Nº</th>
+                                    <th class="px-2 py-1 text-left font-medium">Lote</th>
+                                    <th class="px-2 py-1 text-left font-medium">Quadra</th>
+                                    <th class="px-2 py-1 text-left font-medium">Proprietários</th>
+                                </tr>
+                            </thead>
+                            <tbody>${matriculasHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Confrontantes -->
+                <div class="bg-gray-50 rounded-lg overflow-hidden">
+                    <div class="px-2 py-1.5 bg-gray-100 border-b border-gray-200">
+                        <h4 class="font-medium text-gray-700 text-xs flex items-center gap-1">
+                            <i class="fas fa-map-marked-alt text-green-500"></i>
+                            Confrontantes (${(data.lotes_confrontantes || []).length})
+                        </h4>
+                    </div>
+                    <div class="max-h-32 overflow-auto">
+                        <table class="w-full">
+                            <thead class="bg-gray-100 text-gray-600 text-xs sticky top-0">
+                                <tr>
+                                    <th class="px-2 py-1 text-left font-medium">Identificador</th>
+                                    <th class="px-2 py-1 text-left font-medium">Direção</th>
+                                    <th class="px-2 py-1 text-left font-medium">Tipo</th>
+                                    <th class="px-2 py-1 text-left font-medium">Matrícula</th>
+                                </tr>
+                            </thead>
+                            <tbody>${lotesHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
 
-    tbody.innerHTML = html;
+// Mantém função antiga como alias para compatibilidade
+function renderRecordsTable() {
+    renderExtractedDataPanel();
 }
 
 function getConfiancaBarSmall(value) {
@@ -1453,6 +1480,9 @@ function startBatchPolling(grupoId) {
                 const resultado = await api(`/grupo/${grupoId}/resultado`);
                 appState.documentDetails = resultado;
                 appState.currentAnaliseId = resultado.analise_id || null;
+                
+                // Atualiza painel de dados extraídos
+                renderExtractedDataPanel();
                 
                 // Gera relatório
                 await generateAndShowReport();

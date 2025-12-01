@@ -195,11 +195,6 @@
                         </h2>
                     </div>
                     <div class="flex items-center gap-2" id="report-actions" style="display: none;">
-                        <button onclick="showRawDataModal()"
-                            class="px-3 py-1.5 text-xs text-purple-600 bg-purple-50 rounded hover:bg-purple-100 transition-colors flex items-center gap-1">
-                            <i class="fas fa-table"></i>
-                            Dados Extraídos
-                        </button>
                         <button onclick="downloadReportDocx()"
                             class="px-3 py-1.5 text-xs text-blue-600 bg-blue-50 rounded hover:bg-blue-100 transition-colors flex items-center gap-1">
                             <i class="fas fa-file-word"></i>
@@ -221,30 +216,19 @@
                 </div>
             </section>
 
-            <!-- Lower - Records Table (35%) -->
+            <!-- Lower - Dados Extraídos (35%) -->
             <section class="flex flex-col bg-white" style="height: 35%;">
                 <div class="p-2 border-b border-gray-100 flex items-center justify-between">
                     <h2 class="font-semibold text-gray-800 text-xs flex items-center gap-2">
-                        <i class="fas fa-table text-primary-500"></i>
-                        Análises Realizadas
+                        <i class="fas fa-table text-purple-500"></i>
+                        Dados Extraídos
                     </h2>
                 </div>
-                <div class="flex-1 overflow-auto">
-                    <table class="w-full text-xs">
-                        <thead class="bg-gray-50 sticky top-0">
-                            <tr class="text-left text-gray-600">
-                                <th class="px-2 py-1.5 font-medium w-6"></th>
-                                <th class="px-2 py-1.5 font-medium w-32">Matrícula</th>
-                                <th class="px-2 py-1.5 font-medium">Lote</th>
-
-                                <th class="px-2 py-1.5 font-medium">Proprietário</th>
-                                <th class="px-2 py-1.5 font-medium">Confiança</th>
-                            </tr>
-                        </thead>
-                        <tbody id="records-table" class="divide-y divide-gray-100">
-                            <!-- Records will be rendered here -->
-                        </tbody>
-                    </table>
+                <div class="flex-1 overflow-auto p-3" id="extracted-data-panel">
+                    <div class="text-center text-gray-400 py-8">
+                        <i class="fas fa-file-alt text-3xl mb-2"></i>
+                        <p class="text-sm">Selecione e analise um documento para ver os dados extraídos</p>
+                    </div>
                 </div>
             </section>
         </main>
