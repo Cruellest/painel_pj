@@ -1291,6 +1291,8 @@ function renderDocumentDetails(result = null) {
  */
 function renderSystemLogs() {
     const container = document.getElementById('system-logs');
+    if (!container) return; // Painel de logs foi removido da UI
+    
     const logs = appState.logs || [];
 
     if (logs.length === 0) {
@@ -1795,6 +1797,10 @@ function addLog(status, message) {
 function setupLogToggle() {
     const toggleBtn = document.getElementById('toggle-logs');
     const logsContainer = document.getElementById('system-logs');
+    
+    // Painel de logs foi removido da UI
+    if (!toggleBtn || !logsContainer) return;
+    
     let collapsed = false;
 
     toggleBtn.addEventListener('click', () => {
