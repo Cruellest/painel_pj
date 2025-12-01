@@ -205,8 +205,6 @@ function loadPdfViewer(fileId, fileType) {
 async function loadConfig() {
     try {
         appState.config = await api('/config');
-        updateConfigUI();
-        updateApiStatus();
         updateAnalysisStatus();
     } catch (error) {
         console.error('Erro ao carregar configurações:', error);
@@ -214,8 +212,7 @@ async function loadConfig() {
 }
 
 function updateConfigUI() {
-    // Atualiza indicadores de status
-    updateApiStatus();
+    // Configuração de API movida para o painel admin
     updateAnalysisStatus();
 }
 
@@ -1741,7 +1738,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupAIActions();
 
     // Atualiza status
-    updateApiStatus();
     updateAnalysisStatus();
 
     // Welcome log

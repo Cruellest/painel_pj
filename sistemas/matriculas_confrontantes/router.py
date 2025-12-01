@@ -291,13 +291,18 @@ async def analisar_documento(
             add_log(db, f"Análise já existente recuperada: {file_id}", "info")
             return {"success": True, "message": "Análise já realizada", "cached": True}
     
-    # Busca API key do banco (configurada pelo admin)
-    config_api = db.query(ConfiguracaoIA).filter(
-        ConfiguracaoIA.sistema == "matriculas",
-        ConfiguracaoIA.chave == "api_key"
-    ).first()
+    # Busca API key da configuração global ou do ambiente
+    import os
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
     
-    api_key = config_api.valor if config_api else None
+    if not api_key:
+        # Busca do banco (configuração global)
+        config_api = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "global",
+            ConfiguracaoIA.chave == "openrouter_api_key"
+        ).first()
+        api_key = config_api.valor if config_api and config_api.valor else None
+    
     if not api_key:
         raise HTTPException(status_code=400, detail="API Key não configurada. Solicite ao administrador.")
     
@@ -561,17 +566,20 @@ async def get_config(
 ):
     """Retorna configurações do sistema (API Key é gerenciada pelo admin)"""
     from admin.models import ConfiguracaoIA
+    import os
     
-    # Verifica se há API key configurada no banco pelo admin
-    has_api_key = False
-    try:
-        config_api = db.query(ConfiguracaoIA).filter(
-            ConfiguracaoIA.sistema == "matriculas",
-            ConfiguracaoIA.chave == "api_key"
-        ).first()
-        has_api_key = bool(config_api and config_api.valor)
-    except:
-        pass
+    # Verifica se há API key configurada (ambiente ou banco)
+    has_api_key = bool(os.getenv("OPENROUTER_API_KEY", ""))
+    
+    if not has_api_key:
+        try:
+            config_api = db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "global",
+                ConfiguracaoIA.chave == "openrouter_api_key"
+            ).first()
+            has_api_key = bool(config_api and config_api.valor)
+        except:
+            pass
     
     return ConfigResponse(
         version=APP_VERSION,

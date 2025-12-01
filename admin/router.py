@@ -291,6 +291,67 @@ async def atualizar_modelo_ia(
 
 
 # ============================================
+# Configuração de API Key Global
+# ============================================
+
+@router.get("/api-key-status")
+async def get_api_key_status(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Verifica se a API key está configurada (apenas admin)"""
+    import os
+    
+    # Verifica ambiente
+    env_key = os.getenv("OPENROUTER_API_KEY", "")
+    if env_key:
+        return {"configured": True, "source": "environment"}
+    
+    # Verifica banco
+    config = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "global",
+        ConfiguracaoIA.chave == "openrouter_api_key"
+    ).first()
+    
+    if config and config.valor:
+        return {"configured": True, "source": "database"}
+    
+    return {"configured": False, "source": None}
+
+
+@router.put("/api-key")
+async def update_api_key(
+    api_key: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Atualiza a API key global do OpenRouter (apenas admin)"""
+    if not api_key or not api_key.strip():
+        raise HTTPException(status_code=400, detail="API Key não pode estar vazia")
+    
+    config = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "global",
+        ConfiguracaoIA.chave == "openrouter_api_key"
+    ).first()
+    
+    if config:
+        config.valor = api_key.strip()
+    else:
+        config = ConfiguracaoIA(
+            sistema="global",
+            chave="openrouter_api_key",
+            valor=api_key.strip(),
+            tipo_valor="string",
+            descricao="API Key do OpenRouter (compartilhada por todos os sistemas)"
+        )
+        db.add(config)
+    
+    db.commit()
+    
+    return {"success": True, "message": "API Key atualizada com sucesso"}
+
+
+# ============================================
 # API pública para obter prompts (usada pelos sistemas)
 # ============================================
 

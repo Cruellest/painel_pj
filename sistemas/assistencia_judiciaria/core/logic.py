@@ -28,11 +28,12 @@ def get_openrouter_api_key():
     if api_key:
         return api_key
     
-    # Tenta buscar do banco de dados
+    # Tenta buscar do banco de dados (configuração global)
     try:
         db = SessionLocal()
-        config = db.query(ConfiguracaoIA).filter_by(sistema="geral", chave="openrouter_api_key").first()
-        if config:
+        config = db.query(ConfiguracaoIA).filter_by(sistema="global", chave="openrouter_api_key").first()
+        if config and config.valor:
+            db.close()
             return config.valor
         db.close()
     except:

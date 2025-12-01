@@ -333,6 +333,14 @@ DEFAULT_PROMPTS = [
 # ============================================
 
 DEFAULT_CONFIG_IA = [
+    # Configuração global de API Key
+    {
+        "sistema": "global",
+        "chave": "openrouter_api_key",
+        "valor": "",
+        "tipo_valor": "string",
+        "descricao": "API Key do OpenRouter (compartilhada por todos os sistemas)"
+    },
     {
         "sistema": "matriculas",
         "chave": "modelo_analise",
