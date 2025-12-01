@@ -162,6 +162,22 @@ function loadPdfViewer(fileId, fileType) {
 
     const token = getAuthToken();
     
+    // Verifica se o arquivo ainda existe (pode ter sido removido após análise)
+    const file = appState.files.find(f => String(f.id) === String(fileId));
+    
+    if (!file) {
+        // Arquivo já foi analisado e removido - mostra mensagem
+        viewer.innerHTML = `
+            <div class="text-center text-gray-400 py-20">
+                <i class="fas fa-file-pdf text-6xl mb-4 text-gray-300"></i>
+                <p class="text-lg">Documento já analisado</p>
+                <p class="text-sm mt-2">O PDF foi removido após a análise.</p>
+                <p class="text-xs mt-1 text-gray-500">Os dados extraídos estão disponíveis no relatório.</p>
+            </div>
+        `;
+        return;
+    }
+    
     if (fileType === 'pdf') {
         // Usa iframe para PDFs - ocupa todo o espaço disponível
         viewer.innerHTML = `
@@ -946,24 +962,8 @@ function renderMarkdown(text) {
 }
 
 async function setApiKey() {
-    const apiKey = prompt('Digite sua API Key da OpenRouter:');
-    if (apiKey && apiKey.trim()) {
-        try {
-            const result = await api('/config/apikey', {
-                method: 'POST',
-                body: JSON.stringify({ api_key: apiKey.trim() })
-            });
-
-            if (result.success) {
-                showToast('API Key configurada!', 'success');
-                await loadConfig();
-            } else {
-                showToast(result.error || 'Erro ao configurar API Key', 'error');
-            }
-        } catch (error) {
-            showToast('Erro ao configurar API Key', 'error');
-        }
-    }
+    // Configurações de API movidas para o painel admin
+    showToast('Configurações de API devem ser feitas pelo administrador', 'info');
 }
 
 // ============================================
@@ -1615,16 +1615,10 @@ async function handleFileSelect(event) {
 }
 
 /**
- * Setup settings button
+ * Setup settings button - não usado mais (config pelo admin)
  */
 function setupSettings() {
-    const settingsBtn = document.getElementById('btn-settings');
-    if (settingsBtn) {
-        settingsBtn.addEventListener('click', showSettingsModal);
-        console.log('[Setup] Botão configurações configurado');
-    } else {
-        console.warn('[Setup] Botão configurações não encontrado');
-    }
+    // Configurações movidas para o painel admin
 }
 
 /**
@@ -1682,10 +1676,7 @@ function updateAnalysisStatus() {
     const statusEl = document.getElementById('analysis-status');
     if (!statusEl) return;
 
-    if (!appState.config.hasApiKey) {
-        statusEl.innerHTML = '<i class="fas fa-exclamation-triangle text-yellow-500"></i> Configure a API Key primeiro';
-        statusEl.className = 'text-xs text-yellow-600 text-center mt-2';
-    } else if (!appState.selectedFileId) {
+    if (!appState.selectedFileId) {
         statusEl.innerHTML = 'Selecione um documento para analisar';
         statusEl.className = 'text-xs text-gray-500 text-center mt-2';
     } else {
@@ -1701,116 +1692,20 @@ function updateAnalysisStatus() {
 }
 
 /**
- * Update API status in header
+ * Update API status in header - não usado mais
  */
 function updateApiStatus() {
-    const statusEl = document.getElementById('api-status');
-    if (!statusEl) return;
-
-    if (appState.config.hasApiKey) {
-        statusEl.innerHTML = `
-            <span class="w-2 h-2 rounded-full bg-green-500"></span>
-            <span>API configurada</span>
-        `;
-        statusEl.className = 'text-sm text-green-600 flex items-center gap-2';
-    } else {
-        statusEl.innerHTML = `
-            <span class="w-2 h-2 rounded-full bg-yellow-500"></span>
-            <span>API não configurada</span>
-        `;
-        statusEl.className = 'text-sm text-yellow-600 flex items-center gap-2';
-    }
+    // Configuração de API movida para o painel admin
 }
 
 function showSettingsModal() {
-    const modal = document.createElement('div');
-    modal.id = 'settings-modal';
-    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50';
-    modal.innerHTML = `
-        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden m-4">
-            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                <h2 class="text-lg font-semibold text-gray-800">Configurações</h2>
-                <button onclick="document.getElementById('settings-modal').remove()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="p-6 space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">API Key (OpenRouter)</label>
-                    <div class="flex gap-2">
-                        <input type="password" id="api-key-input" placeholder="sk-or-..." class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500">
-                        <button onclick="saveApiKeyFromModal()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                            Salvar
-                        </button>
-                    </div>
-                    <p class="mt-1 text-xs text-gray-500">
-                        ${appState.config.hasApiKey ? '✅ API Key configurada' : '❌ API Key não configurada'}
-                    </p>
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Modelo de IA</label>
-                    <select id="model-select" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500">
-                        <option value="google/gemini-3-pro-preview" ${appState.config.model === 'google/gemini-3-pro-preview' ? 'selected' : ''}>Gemini 3 Pro (Preview)</option>
-                        <option value="google/gemini-2.5-pro" ${appState.config.model === 'google/gemini-2.5-pro' ? 'selected' : ''}>Gemini 2.5 Pro</option>
-                        <option value="google/gemini-2.5-flash" ${appState.config.model === 'google/gemini-2.5-flash' ? 'selected' : ''}>Gemini 2.5 Flash</option>
-                        <option value="anthropic/claude-3.5-sonnet" ${appState.config.model === 'anthropic/claude-3.5-sonnet' ? 'selected' : ''}>Claude 3.5 Sonnet</option>
-                        <option value="openai/gpt-4o" ${appState.config.model === 'openai/gpt-4o' ? 'selected' : ''}>GPT-4o</option>
-                    </select>
-                </div>
-                
-                <div class="pt-4 border-t border-gray-200">
-                    <p class="text-sm text-gray-600">
-                        <strong>Versão:</strong> ${appState.config.version || '1.0.0'}
-                    </p>
-                </div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-
-    // Handler para mudança de modelo
-    document.getElementById('model-select').addEventListener('change', async (e) => {
-        try {
-            await api('/config/model', {
-                method: 'POST',
-                body: JSON.stringify({ model: e.target.value })
-            });
-            appState.config.model = e.target.value;
-            showToast('Modelo alterado!', 'success');
-        } catch (error) {
-            showToast('Erro ao alterar modelo', 'error');
-        }
-    });
+    // Configurações movidas para o painel admin
+    showToast('Configurações de API devem ser feitas pelo administrador', 'info');
 }
 
 async function saveApiKeyFromModal() {
-    const input = document.getElementById('api-key-input');
-    const apiKey = input?.value?.trim();
-
-    if (!apiKey) {
-        showToast('Digite a API Key', 'warning');
-        return;
-    }
-
-    try {
-        const result = await api('/config/apikey', {
-            method: 'POST',
-            body: JSON.stringify({ api_key: apiKey })
-        });
-
-        if (result.success) {
-            appState.config.hasApiKey = true;
-            document.getElementById('settings-modal')?.remove();
-            showToast('API Key configurada!', 'success');
-            updateApiStatus();
-            updateAnalysisStatus();
-        } else {
-            showToast(result.error || 'Erro', 'error');
-        }
-    } catch (error) {
-        showToast('Erro ao salvar API Key', 'error');
-    }
+    // Não é mais usado - API key é configurada pelo admin
+    showToast('Configurações de API devem ser feitas pelo administrador', 'info');
 }
 
 // ============================================

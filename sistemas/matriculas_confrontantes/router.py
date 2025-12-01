@@ -87,9 +87,10 @@ async def list_files(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Lista todos os arquivos importados"""
+    """Lista arquivos pendentes de análise (PDFs não são armazenados após análise)"""
     files = []
     
+    # Lista apenas arquivos pendentes de análise (ainda no disco)
     if UPLOAD_FOLDER.exists():
         for filepath in UPLOAD_FOLDER.iterdir():
             if filepath.is_file() and allowed_file(filepath.name):
@@ -116,14 +117,18 @@ async def view_file(
     file_id: str,
     current_user: User = Depends(get_current_user_from_token_or_query)
 ):
-    """Serve arquivo para visualização (aceita token via header ou query string)"""
+    """Serve arquivo para visualização (apenas arquivos pendentes de análise)"""
     filepath = UPLOAD_FOLDER / file_id
     
     if filepath.exists():
         media_type = 'application/pdf' if filepath.suffix.lower() == '.pdf' else None
         return FileResponse(filepath, media_type=media_type)
     
-    raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    # Arquivo não existe mais (já foi analisado e removido)
+    raise HTTPException(
+        status_code=404, 
+        detail="Arquivo não disponível. PDFs são removidos após a análise."
+    )
 
 
 @router.get("/files/{file_id}/content")
@@ -131,7 +136,7 @@ async def get_file_content(
     file_id: str,
     current_user: User = Depends(get_current_active_user)
 ):
-    """Retorna o conteúdo do arquivo em base64"""
+    """Retorna o conteúdo do arquivo em base64 (apenas arquivos pendentes)"""
     filepath = UPLOAD_FOLDER / file_id
     
     if filepath.exists():
@@ -145,7 +150,10 @@ async def get_file_content(
             "content": content
         }
     
-    raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    raise HTTPException(
+        status_code=404, 
+        detail="Arquivo não disponível. PDFs são removidos após a análise."
+    )
 
 
 @router.post("/files/upload", response_model=FileUploadResponse)
@@ -269,6 +277,8 @@ async def analisar_documento(
     force: bool = False
 ):
     """Inicia análise de documento com IA"""
+    from admin.models import ConfiguracaoIA
+    
     filepath = UPLOAD_FOLDER / file_id
     
     if not filepath.exists():
@@ -281,8 +291,15 @@ async def analisar_documento(
             add_log(db, f"Análise já existente recuperada: {file_id}", "info")
             return {"success": True, "message": "Análise já realizada", "cached": True}
     
-    if not state.api_key:
-        raise HTTPException(status_code=400, detail="API Key não configurada")
+    # Busca API key do banco (configurada pelo admin)
+    config_api = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "matriculas",
+        ConfiguracaoIA.chave == "api_key"
+    ).first()
+    
+    api_key = config_api.valor if config_api else None
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API Key não configurada. Solicite ao administrador.")
     
     if state.processing.get(file_id):
         raise HTTPException(status_code=400, detail="Análise já em andamento")
@@ -296,7 +313,7 @@ async def analisar_documento(
         file_id,
         str(filepath),
         state.model,
-        state.api_key,
+        api_key,
         current_user.id
     )
     
@@ -304,7 +321,7 @@ async def analisar_documento(
 
 
 def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, user_id: int):
-    """Task de análise executada em background"""
+    """Task de análise executada em background - não armazena o PDF, apenas o JSON"""
     from database.connection import SessionLocal
     from admin.models import ConfiguracaoIA
     
@@ -351,13 +368,13 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
             if props:
                 proprietario_str = ", ".join(props[:2])
         
-        # Salva ou atualiza análise
+        # Salva ou atualiza análise (não armazena o caminho do arquivo)
         analise = db.query(Analise).filter(Analise.file_id == file_id).first()
         if not analise:
             analise = Analise(
                 file_id=file_id,
                 file_name=os.path.basename(file_path),
-                file_path=file_path,
+                file_path=None,  # Não armazena o caminho do arquivo
                 usuario_id=user_id
             )
             db.add(analise)
@@ -369,6 +386,7 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
         analise.proprietario = proprietario_str
         analise.num_confrontantes = len(lotes)
         analise.analisado_em = datetime.utcnow()
+        analise.file_path = None  # Limpa o caminho do arquivo se existia
         
         db.commit()
         
@@ -378,6 +396,14 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
         state.cached_report_file_id = None
         
         add_log(db, f"Análise concluída: {file_id}", "success")
+        
+        # Deleta o arquivo PDF após análise bem-sucedida (não armazena PDFs)
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                add_log(db, f"Arquivo temporário removido: {file_id}", "info")
+        except Exception as e:
+            print(f"Erro ao remover arquivo: {e}")
         
     except Exception as e:
         add_log(db, f"Erro na análise: {str(e)[:100]}", "error")
@@ -529,47 +555,34 @@ async def delete_registro(
 # ============================================
 
 @router.get("/config", response_model=ConfigResponse)
-async def get_config(current_user: User = Depends(get_current_active_user)):
-    """Retorna configurações do sistema"""
+async def get_config(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Retorna configurações do sistema (API Key é gerenciada pelo admin)"""
+    from admin.models import ConfiguracaoIA
+    
+    # Verifica se há API key configurada no banco pelo admin
+    has_api_key = False
+    try:
+        config_api = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "matriculas",
+            ConfiguracaoIA.chave == "api_key"
+        ).first()
+        has_api_key = bool(config_api and config_api.valor)
+    except:
+        pass
+    
     return ConfigResponse(
         version=APP_VERSION,
         model=state.model,
-        hasApiKey=bool(state.api_key),
-        has_api_key=bool(state.api_key),
-        analysis_available=True
+        hasApiKey=has_api_key,
+        has_api_key=has_api_key,
+        analysis_available=has_api_key
     )
 
 
-@router.post("/config/apikey")
-async def set_api_key(
-    request: ApiKeyRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """Define a API Key"""
-    api_key = request.api_key.strip()
-    
-    if not api_key:
-        raise HTTPException(status_code=400, detail="API Key vazia")
-    
-    state.api_key = api_key
-    save_api_key(api_key)
-    add_log(db, "API Key configurada", "success")
-    
-    return {"success": True}
-
-
-@router.post("/config/model")
-async def set_model(
-    request: ModelRequest,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """Define o modelo de IA"""
-    state.model = request.model
-    add_log(db, f"Modelo alterado: {request.model}", "info")
-    
-    return {"success": True, "model": request.model}
+# Endpoints de configuração de API removidos - agora são gerenciados pelo admin
 
 
 # ============================================
