@@ -610,6 +610,7 @@ async def dashboard_feedbacks(
         pendentes_feedback = []
         for id, cnj_fmt, cnj, consultado_em, username, full_name in consultas_sem_feedback_aj:
             pendentes_feedback.append({
+                "id": id,
                 "sistema": "assistencia_judiciaria",
                 "identificador": cnj_fmt or cnj,
                 "usuario": full_name or username,
@@ -617,6 +618,7 @@ async def dashboard_feedbacks(
             })
         for id, file_name, matricula, analisado_em, username, full_name in analises_sem_feedback_mat:
             pendentes_feedback.append({
+                "id": id,
                 "sistema": "matriculas",
                 "identificador": matricula or file_name,
                 "usuario": full_name or username,
@@ -700,6 +702,7 @@ async def listar_feedbacks(
             for fb, cnj_fmt, cnj, modelo, username, full_name in query_aj.all():
                 feedbacks_combinados.append({
                     "id": fb.id,
+                    "consulta_id": fb.consulta_id,
                     "sistema": "assistencia_judiciaria",
                     "identificador": cnj_fmt or cnj,
                     "cnj": cnj_fmt or cnj,
@@ -744,6 +747,7 @@ async def listar_feedbacks(
             for fb, file_name, matricula, username, full_name in query_mat.all():
                 feedbacks_combinados.append({
                     "id": fb.id,
+                    "consulta_id": fb.analise_id,
                     "sistema": "matriculas",
                     "identificador": matricula or file_name,
                     "cnj": None,
@@ -777,6 +781,106 @@ async def listar_feedbacks(
             "total_pages": total_pages,
             "feedbacks": feedbacks_paginados
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/feedbacks/consulta/{consulta_id}")
+async def obter_consulta_detalhes(
+    consulta_id: int,
+    sistema: str = "assistencia_judiciaria",
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtém detalhes de uma consulta/análise incluindo o relatório gerado.
+    Apenas para administradores.
+    """
+    try:
+        if sistema == "assistencia_judiciaria":
+            consulta = db.query(
+                ConsultaProcesso,
+                User.username,
+                User.full_name
+            ).join(
+                User, ConsultaProcesso.usuario_id == User.id
+            ).filter(
+                ConsultaProcesso.id == consulta_id
+            ).first()
+            
+            if not consulta:
+                raise HTTPException(status_code=404, detail="Consulta não encontrada")
+            
+            c, username, full_name = consulta
+            
+            # Busca feedback se existir
+            feedback = db.query(FeedbackAnalise).filter(
+                FeedbackAnalise.consulta_id == consulta_id
+            ).first()
+            
+            return {
+                "id": c.id,
+                "sistema": "assistencia_judiciaria",
+                "identificador": c.cnj_formatado or c.cnj,
+                "cnj": c.cnj_formatado or c.cnj,
+                "dados": c.dados_json,
+                "relatorio": c.relatorio,
+                "modelo": c.modelo_usado,
+                "usuario": full_name or username,
+                "consultado_em": c.consultado_em.isoformat() if c.consultado_em else None,
+                "feedback": {
+                    "avaliacao": feedback.avaliacao if feedback else None,
+                    "comentario": feedback.comentario if feedback else None,
+                    "campos_incorretos": feedback.campos_incorretos if feedback else None,
+                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                } if feedback else None
+            }
+        
+        elif sistema == "matriculas":
+            analise = db.query(
+                Analise,
+                User.username,
+                User.full_name
+            ).join(
+                User, Analise.usuario_id == User.id
+            ).filter(
+                Analise.id == consulta_id
+            ).first()
+            
+            if not analise:
+                raise HTTPException(status_code=404, detail="Análise não encontrada")
+            
+            a, username, full_name = analise
+            
+            # Busca feedback se existir
+            feedback = db.query(FeedbackMatricula).filter(
+                FeedbackMatricula.analise_id == consulta_id
+            ).first()
+            
+            return {
+                "id": a.id,
+                "sistema": "matriculas",
+                "identificador": a.matricula_principal or a.file_name,
+                "arquivo": a.file_name,
+                "matricula_principal": a.matricula_principal,
+                "dados": a.resultado_json,
+                "relatorio": a.relatorio_texto,
+                "modelo": None,  # TODO: salvar modelo usado nas análises de matrícula
+                "usuario": full_name or username,
+                "analisado_em": a.analisado_em.isoformat() if a.analisado_em else None,
+                "feedback": {
+                    "avaliacao": feedback.avaliacao if feedback else None,
+                    "comentario": feedback.comentario if feedback else None,
+                    "campos_incorretos": feedback.campos_incorretos if feedback else None,
+                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                } if feedback else None
+            }
+        
+        else:
+            raise HTTPException(status_code=400, detail="Sistema inválido")
+    
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

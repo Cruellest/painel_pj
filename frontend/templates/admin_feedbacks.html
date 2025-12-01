@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -20,6 +21,20 @@
             }
         }
     </script>
+    <style>
+        /* Estilos para o conteúdo Markdown renderizado */
+        .prose h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; color: #1e3a5f; }
+        .prose h2 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #1e3a8a; }
+        .prose h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #374151; }
+        .prose p { margin-bottom: 0.75rem; line-height: 1.6; }
+        .prose ul, .prose ol { margin-left: 1.5rem; margin-bottom: 0.75rem; }
+        .prose li { margin-bottom: 0.25rem; }
+        .prose strong { font-weight: 600; color: #1f2937; }
+        .prose hr { margin: 1.5rem 0; border-color: #e5e7eb; }
+        .prose table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        .prose th, .prose td { border: 1px solid #e5e7eb; padding: 0.5rem; text-align: left; }
+        .prose th { background-color: #f9fafb; font-weight: 600; }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <!-- Header -->
@@ -174,6 +189,7 @@
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Processo/Arquivo</th>
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Usuário</th>
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Data</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Relatório</th>
                         </tr>
                     </thead>
                     <tbody id="tabela-pendentes" class="divide-y divide-gray-100">
@@ -208,6 +224,7 @@
                             <th class="px-4 py-3 text-center font-medium text-gray-600">Avaliação</th>
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Comentário</th>
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Data</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Relatório</th>
                         </tr>
                     </thead>
                     <tbody id="tabela-feedbacks" class="divide-y divide-gray-100">
@@ -230,6 +247,61 @@
             </div>
         </div>
     </main>
+
+    <!-- Modal de Visualização do Relatório -->
+    <div id="modal-relatorio" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" onclick="fecharModal(event)">
+        <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 rounded-t-xl">
+                <div class="text-white">
+                    <h3 id="modal-titulo" class="text-lg font-bold">Relatório da Consulta</h3>
+                    <p id="modal-subtitulo" class="text-sm text-blue-100"></p>
+                </div>
+                <button onclick="fecharModal()" class="text-white hover:text-gray-200">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            
+            <div class="p-4 border-b border-gray-100 bg-gray-50">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <span class="text-gray-500">Usuário:</span>
+                        <p id="modal-usuario" class="font-medium text-gray-800">-</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Data:</span>
+                        <p id="modal-data" class="font-medium text-gray-800">-</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Modelo IA:</span>
+                        <p id="modal-modelo" class="font-medium text-purple-600">-</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Avaliação:</span>
+                        <p id="modal-avaliacao" class="font-medium">-</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-6">
+                <div id="modal-loading" class="flex items-center justify-center py-12">
+                    <i class="fas fa-spinner fa-spin text-3xl text-blue-500"></i>
+                </div>
+                <div id="modal-conteudo" class="prose prose-sm max-w-none hidden">
+                    <!-- Relatório renderizado aqui -->
+                </div>
+                <div id="modal-erro" class="hidden text-center py-12">
+                    <i class="fas fa-exclamation-triangle text-4xl text-red-400 mb-4"></i>
+                    <p class="text-gray-600">Erro ao carregar o relatório</p>
+                </div>
+            </div>
+            
+            <div class="p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end gap-2">
+                <button onclick="fecharModal()" class="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
 
     <script>
         const API_BASE = '/sistema/assistencia-judiciaria';
@@ -368,9 +440,14 @@
                             <td class="px-4 py-3 font-mono text-xs">${p.identificador || '-'}</td>
                             <td class="px-4 py-3">${p.usuario}</td>
                             <td class="px-4 py-3 text-gray-500">${dataFormatada}</td>
+                            <td class="px-4 py-3 text-center">
+                                <button onclick="verRelatorio(${p.id}, '${p.sistema}')" class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors" title="Ver relatório">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
                         </tr>
                     `;
-                }).join('') || '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-400">Todos os relatórios foram avaliados!</td></tr>';
+                }).join('') || '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">Todos os relatórios foram avaliados!</td></tr>';
 
             } catch (error) {
                 console.error('Erro ao carregar dashboard:', error);
@@ -430,9 +507,14 @@
                             </td>
                             <td class="px-4 py-3 text-gray-600 max-w-xs truncate" title="${fb.comentario || ''}">${fb.comentario || '-'}</td>
                             <td class="px-4 py-3 text-gray-500">${dataFormatada}</td>
+                            <td class="px-4 py-3 text-center">
+                                <button onclick="verRelatorio(${fb.consulta_id}, '${fb.sistema}')" class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors" title="Ver relatório">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
                         </tr>
                     `;
-                }).join('') || '<tr><td colspan="7" class="px-4 py-8 text-center text-gray-400">Nenhum feedback encontrado</td></tr>';
+                }).join('') || '<tr><td colspan="8" class="px-4 py-8 text-center text-gray-400">Nenhum feedback encontrado</td></tr>';
 
             } catch (error) {
                 console.error('Erro ao carregar feedbacks:', error);
@@ -481,6 +563,88 @@
                 console.error('Erro ao exportar:', error);
             }
         }
+
+        // Funções do Modal de Relatório
+        async function verRelatorio(consultaId, sistema) {
+            const modal = document.getElementById('modal-relatorio');
+            const loading = document.getElementById('modal-loading');
+            const conteudo = document.getElementById('modal-conteudo');
+            const erro = document.getElementById('modal-erro');
+            
+            // Mostra modal com loading
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            loading.classList.remove('hidden');
+            conteudo.classList.add('hidden');
+            erro.classList.add('hidden');
+            
+            try {
+                const data = await api(`/admin/feedbacks/consulta/${consultaId}?sistema=${sistema}`);
+                
+                if (!data) {
+                    throw new Error('Dados não retornados');
+                }
+                
+                // Preenche informações do cabeçalho
+                const sistemaLabel = sistema === 'assistencia_judiciaria' ? 'Assistência Judiciária' : 'Matrículas Confrontantes';
+                document.getElementById('modal-titulo').textContent = `Relatório - ${sistemaLabel}`;
+                document.getElementById('modal-subtitulo').textContent = data.identificador || data.cnj || '-';
+                document.getElementById('modal-usuario').textContent = data.usuario || '-';
+                
+                const dataConsulta = data.consultado_em || data.analisado_em;
+                document.getElementById('modal-data').textContent = dataConsulta ? new Date(dataConsulta).toLocaleDateString('pt-BR') : '-';
+                document.getElementById('modal-modelo').textContent = data.modelo || 'N/A';
+                
+                // Avaliação do feedback
+                const avaliacaoEl = document.getElementById('modal-avaliacao');
+                if (data.feedback && data.feedback.avaliacao) {
+                    const badges = {
+                        'correto': 'bg-green-100 text-green-700',
+                        'parcial': 'bg-yellow-100 text-yellow-700',
+                        'incorreto': 'bg-red-100 text-red-700',
+                        'erro_ia': 'bg-gray-100 text-gray-700'
+                    };
+                    const labels = {
+                        'correto': 'Correta',
+                        'parcial': 'Parcial',
+                        'incorreto': 'Incorreta',
+                        'erro_ia': 'Erro IA'
+                    };
+                    avaliacaoEl.innerHTML = `<span class="px-2 py-1 rounded text-xs ${badges[data.feedback.avaliacao]}">${labels[data.feedback.avaliacao]}</span>`;
+                } else {
+                    avaliacaoEl.innerHTML = '<span class="text-orange-500"><i class="fas fa-clock mr-1"></i>Pendente</span>';
+                }
+                
+                // Renderiza o relatório em Markdown
+                if (data.relatorio) {
+                    conteudo.innerHTML = marked.parse(data.relatorio);
+                } else {
+                    conteudo.innerHTML = '<p class="text-gray-400 italic text-center py-8">Relatório não disponível para esta consulta.</p>';
+                }
+                
+                loading.classList.add('hidden');
+                conteudo.classList.remove('hidden');
+                
+            } catch (error) {
+                console.error('Erro ao carregar relatório:', error);
+                loading.classList.add('hidden');
+                erro.classList.remove('hidden');
+            }
+        }
+        
+        function fecharModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            const modal = document.getElementById('modal-relatorio');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+        
+        // Fecha modal com ESC
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                fecharModal();
+            }
+        });
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {
