@@ -437,7 +437,10 @@ async def dashboard_feedbacks(
         ids_excluir = [u.id for u in usuarios_excluir]
         
         # === Sistema Assistência Judiciária ===
-        total_consultas_aj = db.query(ConsultaProcesso).count()
+        query_total_aj = db.query(ConsultaProcesso)
+        if ids_excluir:
+            query_total_aj = query_total_aj.filter(~ConsultaProcesso.usuario_id.in_(ids_excluir))
+        total_consultas_aj = query_total_aj.count()
         
         query_feedbacks_aj = db.query(FeedbackAnalise)
         if ids_excluir:
@@ -453,7 +456,10 @@ async def dashboard_feedbacks(
         feedbacks_por_avaliacao_aj = query_avaliacoes_aj.group_by(FeedbackAnalise.avaliacao).all()
         
         # === Sistema Matrículas ===
-        total_analises_mat = db.query(Analise).count()
+        query_total_mat = db.query(Analise)
+        if ids_excluir:
+            query_total_mat = query_total_mat.filter(~Analise.usuario_id.in_(ids_excluir))
+        total_analises_mat = query_total_mat.count()
         
         query_feedbacks_mat = db.query(FeedbackMatricula)
         if ids_excluir:
