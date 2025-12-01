@@ -87,7 +87,7 @@ def validate_cnj(num: str) -> Tuple[bool, str, str]:
         return False, d, "Dígito/verificação do CNJ inválido."
     return True, d, "OK"
 
-def soap_consultar_processo(session: requests.Session, numero_processo: str, timeout=30,
+def soap_consultar_processo(session: requests.Session, numero_processo: str, timeout=60,
                             movimentos=True, incluir_docs=False, debug=False) -> str:
     envelope = f"""
     <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"

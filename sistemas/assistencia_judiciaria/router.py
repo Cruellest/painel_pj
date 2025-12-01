@@ -125,7 +125,7 @@ async def test_tjms_connection():
     from config import TJ_WSDL_URL
     
     try:
-        r = requests.get(TJ_WSDL_URL, timeout=10)
+        r = requests.get(TJ_WSDL_URL, timeout=30)
         return {
             "status": "ok",
             "status_code": r.status_code,
