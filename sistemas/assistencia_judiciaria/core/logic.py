@@ -87,7 +87,7 @@ def validate_cnj(num: str) -> Tuple[bool, str, str]:
         return False, d, "Dígito/verificação do CNJ inválido."
     return True, d, "OK"
 
-def soap_consultar_processo(session: requests.Session, numero_processo: str, timeout=90,
+def soap_consultar_processo(session: requests.Session, numero_processo: str, timeout=30,
                             movimentos=True, incluir_docs=False, debug=False) -> str:
     envelope = f"""
     <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -106,12 +106,18 @@ def soap_consultar_processo(session: requests.Session, numero_processo: str, tim
     </soapenv:Envelope>
     """.strip()
     
-    if debug:
-        logger.debug("Enviando SOAP request...")
-        
-    r = session.post(TJ_WSDL_URL, data=envelope, timeout=timeout)
-    r.raise_for_status()
-    return r.text
+    logger.info(f"Consultando processo {numero_processo} no TJ-MS...")
+    try:
+        r = session.post(TJ_WSDL_URL, data=envelope, timeout=timeout)
+        r.raise_for_status()
+        logger.info("Resposta recebida do TJ-MS")
+        return r.text
+    except requests.exceptions.Timeout:
+        logger.error("Timeout na consulta ao TJ-MS")
+        raise RuntimeError("Timeout na consulta ao TJ-MS. O servidor pode estar indisponível.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erro na requisição ao TJ-MS: {e}")
+        raise RuntimeError(f"Erro ao consultar TJ-MS: {str(e)}")
 
 def _text_of(elem: ET.Element) -> str:
     return (elem.text or "").strip() if elem is not None and elem.text else ""
@@ -321,7 +327,7 @@ A resposta deve ser redigida em **Markdown**, no formato de relatório jurídico
         {"role": "user", "content": user},
     ]
 
-def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, timeout=120) -> str:
+def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, timeout=60) -> str:
     api_key = get_openrouter_api_key()
     if not api_key:
         return "Erro: OPENROUTER_API_KEY não configurada."
@@ -339,9 +345,18 @@ def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2,
         "max_tokens": 20000,
     }
     
-    logger.debug(f"Chamando OpenRouter com modelo {model}...")
-    r = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=timeout)
-    r.raise_for_status()
+    logger.info(f"Chamando OpenRouter com modelo {model}...")
+    try:
+        r = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=timeout)
+        r.raise_for_status()
+        logger.info("Resposta recebida do OpenRouter")
+    except requests.exceptions.Timeout:
+        logger.error("Timeout na chamada ao OpenRouter")
+        return "Erro: Timeout na chamada à API de IA. Tente novamente."
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Erro na requisição ao OpenRouter: {e}")
+        return f"Erro na requisição à API: {str(e)}"
+    
     j = r.json()
 
     try:
