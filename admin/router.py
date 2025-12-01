@@ -263,31 +263,36 @@ async def listar_modelos_ia(
     db: Session = Depends(get_db)
 ):
     """Lista os modelos de IA configurados por sistema"""
-    configs = db.query(ConfiguracaoIA).filter(
-        ConfiguracaoIA.chave == "modelo"
-    ).all()
+    # Busca modelos configurados para cada sistema (chave modelo_relatorio ou modelo_analise)
+    configs_aj = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "assistencia_judiciaria",
+        ConfiguracaoIA.chave == "modelo_relatorio"
+    ).first()
     
-    resultado = {}
-    for config in configs:
-        resultado[config.sistema] = {
-            "id": config.id,
-            "modelo": config.valor,
-            "descricao": config.descricao
-        }
+    configs_mat_analise = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "matriculas",
+        ConfiguracaoIA.chave == "modelo_analise"
+    ).first()
     
-    # Adiciona valores padrão se não existirem
-    if "assistencia_judiciaria" not in resultado:
-        resultado["assistencia_judiciaria"] = {
-            "id": None,
-            "modelo": "google/gemini-2.5-flash",
+    configs_mat_relatorio = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "matriculas",
+        ConfiguracaoIA.chave == "modelo_relatorio"
+    ).first()
+    
+    resultado = {
+        "assistencia_judiciaria": {
+            "id": configs_aj.id if configs_aj else None,
+            "modelo": configs_aj.valor if configs_aj else "google/gemini-2.5-flash",
             "descricao": "Modelo para análise de processos judiciais"
-        }
-    if "matriculas" not in resultado:
-        resultado["matriculas"] = {
-            "id": None,
-            "modelo": "google/gemini-2.5-flash",
+        },
+        "matriculas": {
+            "id": configs_mat_analise.id if configs_mat_analise else None,
+            "modelo": configs_mat_analise.valor if configs_mat_analise else "google/gemini-2.5-flash",
+            "modelo_analise": configs_mat_analise.valor if configs_mat_analise else "google/gemini-2.5-flash",
+            "modelo_relatorio": configs_mat_relatorio.valor if configs_mat_relatorio else "google/gemini-2.5-flash",
             "descricao": "Modelo para análise de matrículas imobiliárias"
         }
+    }
     
     return resultado
 
@@ -433,29 +438,35 @@ async def dashboard_feedbacks(
         
         # === Sistema Assistência Judiciária ===
         total_consultas_aj = db.query(ConsultaProcesso).count()
-        total_feedbacks_aj = db.query(FeedbackAnalise).filter(
-            ~FeedbackAnalise.usuario_id.in_(ids_excluir) if ids_excluir else True
-        ).count()
         
-        feedbacks_por_avaliacao_aj = db.query(
+        query_feedbacks_aj = db.query(FeedbackAnalise)
+        if ids_excluir:
+            query_feedbacks_aj = query_feedbacks_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
+        total_feedbacks_aj = query_feedbacks_aj.count()
+        
+        query_avaliacoes_aj = db.query(
             FeedbackAnalise.avaliacao,
             func.count(FeedbackAnalise.id).label('count')
-        ).filter(
-            ~FeedbackAnalise.usuario_id.in_(ids_excluir) if ids_excluir else True
-        ).group_by(FeedbackAnalise.avaliacao).all()
+        )
+        if ids_excluir:
+            query_avaliacoes_aj = query_avaliacoes_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
+        feedbacks_por_avaliacao_aj = query_avaliacoes_aj.group_by(FeedbackAnalise.avaliacao).all()
         
         # === Sistema Matrículas ===
         total_analises_mat = db.query(Analise).count()
-        total_feedbacks_mat = db.query(FeedbackMatricula).filter(
-            ~FeedbackMatricula.usuario_id.in_(ids_excluir) if ids_excluir else True
-        ).count()
         
-        feedbacks_por_avaliacao_mat = db.query(
+        query_feedbacks_mat = db.query(FeedbackMatricula)
+        if ids_excluir:
+            query_feedbacks_mat = query_feedbacks_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
+        total_feedbacks_mat = query_feedbacks_mat.count()
+        
+        query_avaliacoes_mat = db.query(
             FeedbackMatricula.avaliacao,
             func.count(FeedbackMatricula.id).label('count')
-        ).filter(
-            ~FeedbackMatricula.usuario_id.in_(ids_excluir) if ids_excluir else True
-        ).group_by(FeedbackMatricula.avaliacao).all()
+        )
+        if ids_excluir:
+            query_avaliacoes_mat = query_avaliacoes_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
+        feedbacks_por_avaliacao_mat = query_avaliacoes_mat.group_by(FeedbackMatricula.avaliacao).all()
         
         # === Totais combinados ===
         total_consultas = total_consultas_aj + total_analises_mat
@@ -482,25 +493,22 @@ async def dashboard_feedbacks(
         
         # Feedbacks dos últimos 7 dias (combinados) - excluindo admin/teste
         data_limite = datetime.utcnow() - timedelta(days=7)
-        feedbacks_recentes_aj = db.query(
+        
+        query_recentes_aj = db.query(
             func.date(FeedbackAnalise.criado_em).label('data'),
             func.count(FeedbackAnalise.id).label('count')
-        ).filter(
-            FeedbackAnalise.criado_em >= data_limite,
-            ~FeedbackAnalise.usuario_id.in_(ids_excluir) if ids_excluir else True
-        ).group_by(
-            func.date(FeedbackAnalise.criado_em)
-        ).all()
+        ).filter(FeedbackAnalise.criado_em >= data_limite)
+        if ids_excluir:
+            query_recentes_aj = query_recentes_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
+        feedbacks_recentes_aj = query_recentes_aj.group_by(func.date(FeedbackAnalise.criado_em)).all()
         
-        feedbacks_recentes_mat = db.query(
+        query_recentes_mat = db.query(
             func.date(FeedbackMatricula.criado_em).label('data'),
             func.count(FeedbackMatricula.id).label('count')
-        ).filter(
-            FeedbackMatricula.criado_em >= data_limite,
-            ~FeedbackMatricula.usuario_id.in_(ids_excluir) if ids_excluir else True
-        ).group_by(
-            func.date(FeedbackMatricula.criado_em)
-        ).all()
+        ).filter(FeedbackMatricula.criado_em >= data_limite)
+        if ids_excluir:
+            query_recentes_mat = query_recentes_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
+        feedbacks_recentes_mat = query_recentes_mat.group_by(func.date(FeedbackMatricula.criado_em)).all()
         
         # Combina feedbacks recentes por data
         feedbacks_por_data = {}
@@ -512,31 +520,25 @@ async def dashboard_feedbacks(
         feedbacks_recentes = [{"data": data, "count": count} for data, count in sorted(feedbacks_por_data.items())]
         
         # Feedbacks por usuário (top 10) - combinando ambos os sistemas, excluindo admin/teste
-        feedbacks_por_usuario_aj = db.query(
+        query_usuarios_aj = db.query(
             User.username,
             User.full_name,
             func.count(FeedbackAnalise.id).label('total'),
             func.sum(case((FeedbackAnalise.avaliacao == 'correto', 1), else_=0)).label('corretos')
-        ).join(
-            FeedbackAnalise, FeedbackAnalise.usuario_id == User.id
-        ).filter(
-            ~User.id.in_(ids_excluir) if ids_excluir else True
-        ).group_by(
-            User.id, User.username, User.full_name
-        ).all()
+        ).join(FeedbackAnalise, FeedbackAnalise.usuario_id == User.id)
+        if ids_excluir:
+            query_usuarios_aj = query_usuarios_aj.filter(~User.id.in_(ids_excluir))
+        feedbacks_por_usuario_aj = query_usuarios_aj.group_by(User.id, User.username, User.full_name).all()
         
-        feedbacks_por_usuario_mat = db.query(
+        query_usuarios_mat = db.query(
             User.username,
             User.full_name,
             func.count(FeedbackMatricula.id).label('total'),
             func.sum(case((FeedbackMatricula.avaliacao == 'correto', 1), else_=0)).label('corretos')
-        ).join(
-            FeedbackMatricula, FeedbackMatricula.usuario_id == User.id
-        ).filter(
-            ~User.id.in_(ids_excluir) if ids_excluir else True
-        ).group_by(
-            User.id, User.username, User.full_name
-        ).all()
+        ).join(FeedbackMatricula, FeedbackMatricula.usuario_id == User.id)
+        if ids_excluir:
+            query_usuarios_mat = query_usuarios_mat.filter(~User.id.in_(ids_excluir))
+        feedbacks_por_usuario_mat = query_usuarios_mat.group_by(User.id, User.username, User.full_name).all()
         
         # Combina por usuário
         usuarios_stats = {}
@@ -559,11 +561,11 @@ async def dashboard_feedbacks(
         
         # Usuários que geraram relatório mas não deram feedback
         # Assistência Judiciária
-        consultas_sem_feedback_aj = db.query(
+        query_pendentes_aj = db.query(
             ConsultaProcesso.id,
             ConsultaProcesso.cnj_formatado,
             ConsultaProcesso.cnj,
-            ConsultaProcesso.criado_em,
+            ConsultaProcesso.consultado_em,
             User.username,
             User.full_name
         ).outerjoin(
@@ -572,18 +574,18 @@ async def dashboard_feedbacks(
             User, ConsultaProcesso.usuario_id == User.id
         ).filter(
             FeedbackAnalise.id == None,
-            ConsultaProcesso.analise_ia.isnot(None),
-            ~ConsultaProcesso.usuario_id.in_(ids_excluir) if ids_excluir else True
-        ).order_by(
-            ConsultaProcesso.criado_em.desc()
-        ).limit(20).all()
+            ConsultaProcesso.relatorio.isnot(None)
+        )
+        if ids_excluir:
+            query_pendentes_aj = query_pendentes_aj.filter(~ConsultaProcesso.usuario_id.in_(ids_excluir))
+        consultas_sem_feedback_aj = query_pendentes_aj.order_by(ConsultaProcesso.consultado_em.desc()).limit(20).all()
         
         # Matrículas
-        analises_sem_feedback_mat = db.query(
+        query_pendentes_mat = db.query(
             Analise.id,
             Analise.file_name,
             Analise.matricula_principal,
-            Analise.criado_em,
+            Analise.analisado_em,
             User.username,
             User.full_name
         ).outerjoin(
@@ -592,27 +594,27 @@ async def dashboard_feedbacks(
             User, Analise.usuario_id == User.id
         ).filter(
             FeedbackMatricula.id == None,
-            Analise.resultado_analise.isnot(None),
-            ~Analise.usuario_id.in_(ids_excluir) if ids_excluir else True
-        ).order_by(
-            Analise.criado_em.desc()
-        ).limit(20).all()
+            Analise.resultado_json.isnot(None)
+        )
+        if ids_excluir:
+            query_pendentes_mat = query_pendentes_mat.filter(~Analise.usuario_id.in_(ids_excluir))
+        analises_sem_feedback_mat = query_pendentes_mat.order_by(Analise.analisado_em.desc()).limit(20).all()
         
         # Combina e formata
         pendentes_feedback = []
-        for id, cnj_fmt, cnj, criado_em, username, full_name in consultas_sem_feedback_aj:
+        for id, cnj_fmt, cnj, consultado_em, username, full_name in consultas_sem_feedback_aj:
             pendentes_feedback.append({
                 "sistema": "assistencia_judiciaria",
                 "identificador": cnj_fmt or cnj,
                 "usuario": full_name or username,
-                "data": criado_em.isoformat() if criado_em else None
+                "data": consultado_em.isoformat() if consultado_em else None
             })
-        for id, file_name, matricula, criado_em, username, full_name in analises_sem_feedback_mat:
+        for id, file_name, matricula, analisado_em, username, full_name in analises_sem_feedback_mat:
             pendentes_feedback.append({
                 "sistema": "matriculas",
                 "identificador": matricula or file_name,
                 "usuario": full_name or username,
-                "data": criado_em.isoformat() if criado_em else None
+                "data": analisado_em.isoformat() if analisado_em else None
             })
         
         # Ordena por data (mais recentes primeiro)
@@ -680,10 +682,10 @@ async def listar_feedbacks(
                 ConsultaProcesso, FeedbackAnalise.consulta_id == ConsultaProcesso.id
             ).join(
                 User, FeedbackAnalise.usuario_id == User.id
-            ).filter(
-                ~FeedbackAnalise.usuario_id.in_(ids_excluir) if ids_excluir else True
             )
             
+            if ids_excluir:
+                query_aj = query_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
             if avaliacao:
                 query_aj = query_aj.filter(FeedbackAnalise.avaliacao == avaliacao)
             if usuario_id:
@@ -717,10 +719,10 @@ async def listar_feedbacks(
                 Analise, FeedbackMatricula.analise_id == Analise.id
             ).join(
                 User, FeedbackMatricula.usuario_id == User.id
-            ).filter(
-                ~FeedbackMatricula.usuario_id.in_(ids_excluir) if ids_excluir else True
             )
             
+            if ids_excluir:
+                query_mat = query_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
             if avaliacao:
                 query_mat = query_mat.filter(FeedbackMatricula.avaliacao == avaliacao)
             if usuario_id:
@@ -729,7 +731,7 @@ async def listar_feedbacks(
             # Buscar modelo configurado para matrículas
             modelo_mat = db.query(ConfiguracaoIA).filter(
                 ConfiguracaoIA.sistema == "matriculas",
-                ConfiguracaoIA.chave == "modelo"
+                ConfiguracaoIA.chave == "modelo_analise"
             ).first()
             modelo_matriculas = modelo_mat.valor if modelo_mat else "google/gemini-2.5-flash"
             
