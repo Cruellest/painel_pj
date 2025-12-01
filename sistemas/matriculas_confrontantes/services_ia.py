@@ -691,14 +691,19 @@ def analyze_with_vision_llm(model: str, file_path: str, api_key: str = None) -> 
         # Obtém prompts do banco de dados (com fallback)
         system_prompt = get_system_prompt()
         vision_prompt = get_analysis_prompt()
+        
+        # Obtém configurações do banco (com fallback)
+        temperatura = float(get_config_from_db("matriculas", "temperatura_analise") or "0.1")
+        max_tokens = int(get_config_from_db("matriculas", "max_tokens_analise") or "100000")
+        modelo_analise = get_config_from_db("matriculas", "modelo_analise") or model
 
         data = call_openrouter_vision(
-            model=model,
+            model=modelo_analise,
             system_prompt=system_prompt,
             user_prompt=vision_prompt,
             images_base64=images_b64,
-            temperature=0.0,
-            max_tokens=100000,
+            temperature=temperatura,
+            max_tokens=max_tokens,
             api_key=api_key
         )
         

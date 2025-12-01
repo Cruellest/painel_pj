@@ -661,7 +661,15 @@ async def gerar_relatorio(
         # Monta payload
         payload = analise.resultado_json or {}
         payload["gerado_em"] = datetime.now().isoformat()
-        payload["modelo_utilizado"] = FULL_REPORT_MODEL
+        
+        # Obtém configurações do banco
+        from sistemas.matriculas_confrontantes.services_ia import get_config_from_db
+        
+        modelo_relatorio = get_config_from_db("matriculas", "modelo_relatorio") or FULL_REPORT_MODEL
+        temperatura = float(get_config_from_db("matriculas", "temperatura_relatorio") or "0.2")
+        max_tokens = int(get_config_from_db("matriculas", "max_tokens_relatorio") or "3200")
+        
+        payload["modelo_utilizado"] = modelo_relatorio
         
         payload_json = json.dumps(payload, ensure_ascii=False, indent=2)
         
@@ -670,11 +678,11 @@ async def gerar_relatorio(
         system_prompt = get_system_prompt()
         
         report_text = call_openrouter_text(
-            model=FULL_REPORT_MODEL,
+            model=modelo_relatorio,
             system_prompt=system_prompt,
             user_prompt=prompt,
-            temperature=0.2,
-            max_tokens=3200,
+            temperature=temperatura,
+            max_tokens=max_tokens,
             api_key=state.api_key
         )
         

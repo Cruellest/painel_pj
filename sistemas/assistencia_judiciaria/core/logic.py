@@ -327,7 +327,7 @@ A resposta deve ser redigida em **Markdown**, no formato de relatório jurídico
         {"role": "user", "content": user},
     ]
 
-def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, timeout=60) -> str:
+def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60) -> str:
     api_key = get_openrouter_api_key()
     if not api_key:
         return "Erro: OPENROUTER_API_KEY não configurada."
@@ -342,7 +342,7 @@ def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2,
         "model": model,
         "messages": messages,
         "temperature": temperature,
-        "max_tokens": 20000,
+        "max_tokens": max_tokens,
     }
     
     logger.info(f"Chamando OpenRouter com modelo {model}...")
@@ -393,11 +393,20 @@ def full_flow(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[
     try:
         # Check for model override in DB
         try:
-            config_model = db.query(ConfiguracaoIA).filter_by(sistema="assistencia_judiciaria", chave="modelo").first()
+            config_model = db.query(ConfiguracaoIA).filter_by(sistema="assistencia_judiciaria", chave="modelo_relatorio").first()
             if config_model:
                 model = config_model.valor
+            
+            # Busca temperatura e max_tokens
+            config_temp = db.query(ConfiguracaoIA).filter_by(sistema="assistencia_judiciaria", chave="temperatura_relatorio").first()
+            temperature = float(config_temp.valor) if config_temp else 0.2
+            
+            config_tokens = db.query(ConfiguracaoIA).filter_by(sistema="assistencia_judiciaria", chave="max_tokens_relatorio").first()
+            max_tokens = int(config_tokens.valor) if config_tokens else 20000
         except Exception as e:
             logger.error(f"Erro ao buscar config no banco: {e}")
+            temperature = 0.2
+            max_tokens = 20000
 
         if diagnostic_mode:
             messages = [
@@ -409,7 +418,7 @@ def full_flow(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[
     finally:
         db.close()
 
-    rel = call_openrouter(messages, model=model)
+    rel = call_openrouter(messages, model=model, temperature=temperature, max_tokens=max_tokens)
     
     if dados.get("cumprimento") and dados.get("possivel_apenso"):
         rel += "\n\nAviso: Processo de cumprimento possivelmente apensado. Talvez seja necessário consultar o processo originário para confirmar a AJG."
