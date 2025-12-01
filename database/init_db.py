@@ -13,7 +13,7 @@ from auth.security import get_password_hash
 from config import ADMIN_USERNAME, ADMIN_PASSWORD
 
 # Importa modelos para criar tabelas
-from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula
+from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
 from admin.models import PromptConfig, ConfiguracaoIA
 
@@ -57,8 +57,42 @@ def run_migrations():
         # Ignora se já foi aplicada ou tabela não existe
         if "does not exist" not in str(e) and "already" not in str(e).lower():
             print(f"⚠️ Migração file_path: {e}")
-    finally:
-        db.close()
+    
+    # Migração: Criar tabela grupos_analise se não existir
+    try:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS grupos_analise (
+                id SERIAL PRIMARY KEY,
+                nome VARCHAR(255),
+                descricao TEXT,
+                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                usuario_id INTEGER REFERENCES users(id),
+                status VARCHAR(20) DEFAULT 'pendente',
+                resultado_json JSON,
+                confianca FLOAT DEFAULT 0.0
+            )
+        """))
+        db.commit()
+        print("✅ Migração: tabela grupos_analise criada")
+    except Exception as e:
+        db.rollback()
+        if "already exists" not in str(e).lower():
+            print(f"⚠️ Migração grupos_analise: {e}")
+    
+    # Migração: Adicionar coluna grupo_id na tabela analises
+    try:
+        db.execute(text("""
+            ALTER TABLE analises 
+            ADD COLUMN IF NOT EXISTS grupo_id INTEGER REFERENCES grupos_analise(id)
+        """))
+        db.commit()
+        print("✅ Migração: coluna grupo_id adicionada em analises")
+    except Exception as e:
+        db.rollback()
+        if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
+            print(f"⚠️ Migração grupo_id: {e}")
+    
+    db.close()
 
 
 def seed_admin():
