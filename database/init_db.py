@@ -3,7 +3,10 @@
 Inicialização do banco de dados e seed do usuário admin
 """
 
+import time
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError
+from sqlalchemy import text
 from database.connection import engine, Base, SessionLocal
 from auth.models import User
 from auth.security import get_password_hash
@@ -13,6 +16,25 @@ from config import ADMIN_USERNAME, ADMIN_PASSWORD
 from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
 from admin.models import PromptConfig, ConfiguracaoIA
+
+
+def wait_for_db(max_retries=10, delay=3):
+    """Aguarda o banco de dados ficar disponível"""
+    for attempt in range(max_retries):
+        try:
+            # Tenta conectar
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            print("✅ Conexão com banco de dados estabelecida!")
+            return True
+        except OperationalError as e:
+            if attempt < max_retries - 1:
+                print(f"⏳ Aguardando banco de dados... tentativa {attempt + 1}/{max_retries}")
+                time.sleep(delay)
+            else:
+                print(f"❌ Não foi possível conectar ao banco após {max_retries} tentativas")
+                raise e
+    return False
 
 
 def create_tables():
@@ -70,6 +92,7 @@ def seed_prompts():
 def init_database():
     """Inicializa o banco de dados completo"""
     print("🔧 Inicializando banco de dados...")
+    wait_for_db()  # Aguarda o banco ficar disponível
     create_tables()
     seed_admin()
     seed_prompts()
