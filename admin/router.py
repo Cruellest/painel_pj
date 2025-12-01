@@ -722,6 +722,7 @@ async def listar_feedbacks(
                 FeedbackMatricula,
                 Analise.file_name,
                 Analise.matricula_principal,
+                Analise.modelo_usado,
                 User.username,
                 User.full_name
             ).join(
@@ -737,21 +738,21 @@ async def listar_feedbacks(
             if usuario_id:
                 query_mat = query_mat.filter(FeedbackMatricula.usuario_id == usuario_id)
             
-            # Buscar modelo configurado para matrículas
-            modelo_mat = db.query(ConfiguracaoIA).filter(
+            # Modelo padrão caso não esteja salvo na análise
+            modelo_mat_config = db.query(ConfiguracaoIA).filter(
                 ConfiguracaoIA.sistema == "matriculas",
-                ConfiguracaoIA.chave == "modelo_analise"
+                ConfiguracaoIA.chave == "modelo_relatorio"
             ).first()
-            modelo_matriculas = modelo_mat.valor if modelo_mat else "google/gemini-2.5-flash"
+            modelo_matriculas_default = modelo_mat_config.valor if modelo_mat_config else "google/gemini-2.5-flash"
             
-            for fb, file_name, matricula, username, full_name in query_mat.all():
+            for fb, file_name, matricula, modelo_usado, username, full_name in query_mat.all():
                 feedbacks_combinados.append({
                     "id": fb.id,
                     "consulta_id": fb.analise_id,
                     "sistema": "matriculas",
                     "identificador": matricula or file_name,
                     "cnj": None,
-                    "modelo": modelo_matriculas,
+                    "modelo": modelo_usado or modelo_matriculas_default,
                     "usuario": full_name or username,
                     "username": username,
                     "avaliacao": fb.avaliacao,
@@ -865,7 +866,7 @@ async def obter_consulta_detalhes(
                 "matricula_principal": a.matricula_principal,
                 "dados": a.resultado_json,
                 "relatorio": a.relatorio_texto,
-                "modelo": None,  # TODO: salvar modelo usado nas análises de matrícula
+                "modelo": a.modelo_usado,
                 "usuario": full_name or username,
                 "analisado_em": a.analisado_em.isoformat() if a.analisado_em else None,
                 "feedback": {

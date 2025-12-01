@@ -1124,8 +1124,9 @@ async def gerar_relatorio(
         
         report_text = report_text.strip()
         
-        # Salva relatório no banco para não precisar regenerar
+        # Salva relatório e modelo usado no banco para não precisar regenerar
         analise.relatorio_texto = report_text
+        analise.modelo_usado = modelo_relatorio
         db.commit()
         logger.info(f"Relatório salvo no banco para {analise.file_id}")
         

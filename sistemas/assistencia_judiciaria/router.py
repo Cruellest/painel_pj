@@ -21,6 +21,7 @@ from database.connection import get_db
 from sistemas.assistencia_judiciaria.core.logic import full_flow, DEFAULT_MODEL
 from sistemas.assistencia_judiciaria.core.document import markdown_to_docx, docx_to_pdf
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
+from admin.models import ConfiguracaoIA
 
 router = APIRouter(tags=["Assistência Judiciária"])
 
@@ -247,6 +248,13 @@ async def consultar_processo(
         
         logger.info("full_flow concluído com sucesso")
         
+        # Busca o modelo real usado (configurado no banco)
+        config_modelo = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "assistencia_judiciaria",
+            ConfiguracaoIA.chave == "modelo_relatorio"
+        ).first()
+        modelo_real = config_modelo.valor if config_modelo else req.model
+        
         # Salva ou atualiza no banco
         consulta = db.query(ConsultaProcesso).filter(
             ConsultaProcesso.cnj == cnj_limpo
@@ -262,7 +270,7 @@ async def consultar_processo(
         
         consulta.dados_json = dados
         consulta.relatorio = relatorio
-        consulta.modelo_usado = req.model
+        consulta.modelo_usado = modelo_real
         consulta.atualizado_em = datetime.utcnow()
         
         db.commit()

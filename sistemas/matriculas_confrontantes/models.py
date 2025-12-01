@@ -76,6 +76,9 @@ class Analise(Base):
     # Relatório gerado pela IA (persistido para não precisar regenerar)
     relatorio_texto = Column(Text, nullable=True)
     
+    # Modelo de IA usado na análise/relatório
+    modelo_usado = Column(String(100), nullable=True)
+    
     # Relacionamento com feedback
     feedback = relationship("FeedbackMatricula", back_populates="analise", uselist=False)
 

@@ -105,6 +105,19 @@ def run_migrations():
         if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
             print(f"⚠️ Migração relatorio_texto: {e}")
     
+    # Migração: Adicionar coluna modelo_usado na tabela analises
+    try:
+        db.execute(text("""
+            ALTER TABLE analises 
+            ADD COLUMN IF NOT EXISTS modelo_usado VARCHAR(100)
+        """))
+        db.commit()
+        print("✅ Migração: coluna modelo_usado adicionada em analises")
+    except Exception as e:
+        db.rollback()
+        if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
+            print(f"⚠️ Migração modelo_usado: {e}")
+    
     # Migração: Criar tabela arquivos_upload
     try:
         db.execute(text("""
