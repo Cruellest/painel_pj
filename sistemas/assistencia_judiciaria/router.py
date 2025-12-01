@@ -124,60 +124,74 @@ async def test_tjms_connection():
     import requests
     from config import TJ_WSDL_URL, TJ_WS_USER, TJ_WS_PASS
     
+    # URL direta do TJ-MS para teste
+    TJ_DIRECT_URL = "https://esaj.tjms.jus.br/mniws/servico-intercomunicacao-2.2.2/intercomunicacao"
+    
     result = {
-        "url": TJ_WSDL_URL,
+        "proxy_url": TJ_WSDL_URL,
+        "direct_url": TJ_DIRECT_URL,
         "user": TJ_WS_USER,
         "pass_configured": bool(TJ_WS_PASS),
     }
     
-    # Teste 1: GET simples no WSDL
+    # Teste via proxy (GET)
     try:
-        r = requests.get(TJ_WSDL_URL, timeout=30)
-        result["wsdl_status"] = r.status_code
-        result["wsdl_ok"] = r.status_code == 200
+        r = requests.get(TJ_WSDL_URL, timeout=15)
+        result["proxy_status"] = r.status_code
+        result["proxy_ok"] = r.status_code == 200
     except requests.exceptions.Timeout:
-        result["wsdl_status"] = "timeout"
-        result["wsdl_ok"] = False
+        result["proxy_status"] = "timeout"
+        result["proxy_ok"] = False
     except requests.exceptions.RequestException as e:
-        result["wsdl_status"] = str(e)
-        result["wsdl_ok"] = False
+        result["proxy_status"] = str(e)[:100]
+        result["proxy_ok"] = False
     
-    # Teste 2: POST SOAP com credenciais (processo fictício para testar auth)
-    if result.get("wsdl_ok"):
+    # Teste direto ao TJ-MS
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/xml, application/soap+xml",
+        }
+        r = requests.get(TJ_DIRECT_URL + "?wsdl", headers=headers, timeout=15)
+        result["direct_status"] = r.status_code
+        result["direct_ok"] = r.status_code == 200
+    except requests.exceptions.Timeout:
+        result["direct_status"] = "timeout"
+        result["direct_ok"] = False
+    except requests.exceptions.RequestException as e:
+        result["direct_status"] = str(e)[:100]
+        result["direct_ok"] = False
+    
+    # Teste SOAP via proxy
+    if result.get("proxy_ok"):
         try:
-            envelope = f"""
-            <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                              xmlns:ser="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/"
-                              xmlns:tip="http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2">
-                <soapenv:Header/>
-                <soapenv:Body>
-                    <ser:consultarProcesso>
-                        <tip:idConsultante>{TJ_WS_USER}</tip:idConsultante>
-                        <tip:senhaConsultante>{TJ_WS_PASS}</tip:senhaConsultante>
-                        <tip:numeroProcesso>00000000000000000000</tip:numeroProcesso>
-                        <tip:movimentos>false</tip:movimentos>
-                        <tip:incluirDocumentos>false</tip:incluirDocumentos>
-                    </ser:consultarProcesso>
-                </soapenv:Body>
-            </soapenv:Envelope>
-            """.strip()
+            envelope = f"""<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:ser="http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/"
+                  xmlns:tip="http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2">
+    <soapenv:Header/>
+    <soapenv:Body>
+        <ser:consultarProcesso>
+            <tip:idConsultante>{TJ_WS_USER}</tip:idConsultante>
+            <tip:senhaConsultante>{TJ_WS_PASS}</tip:senhaConsultante>
+            <tip:numeroProcesso>00000000000000000000</tip:numeroProcesso>
+            <tip:movimentos>false</tip:movimentos>
+            <tip:incluirDocumentos>false</tip:incluirDocumentos>
+        </ser:consultarProcesso>
+    </soapenv:Body>
+</soapenv:Envelope>"""
             
-            r = requests.post(TJ_WSDL_URL, data=envelope, timeout=30, headers={
-                "Content-Type": "text/xml; charset=utf-8"
+            r = requests.post(TJ_WSDL_URL, data=envelope.encode('utf-8'), timeout=30, headers={
+                "Content-Type": "text/xml; charset=utf-8",
+                "SOAPAction": ""
             })
             result["soap_status"] = r.status_code
-            result["soap_response_preview"] = r.text[:500] if r.text else "empty"
+            result["soap_preview"] = r.text[:300] if r.text else "empty"
             
-            # Verifica se há erro de autenticação
-            if "Falha" in r.text or "invalido" in r.text.lower() or "senha" in r.text.lower():
-                result["auth_error"] = True
-            else:
-                result["auth_error"] = False
-                
         except requests.exceptions.Timeout:
             result["soap_status"] = "timeout"
         except requests.exceptions.RequestException as e:
-            result["soap_status"] = str(e)
+            result["soap_status"] = str(e)[:100]
     
     return result
 
