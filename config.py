@@ -35,7 +35,7 @@ DEFAULT_USER_PASSWORD = "senha"  # Senha padrão para novos usuários
 # ==================================================
 # CONFIGURAÇÕES DO TJ-MS (Assistência Judiciária)
 # ==================================================
-TJ_WSDL_URL = os.getenv("TJ_WSDL_URL", "https://esaj.tjms.jus.br/mniws/servico-intercomunicacao-2.2.2/intercomunicacao?wsdl")
+TJ_WSDL_URL = os.getenv("TJ_WSDL_URL", "https://tjms-proxy.kaoyeguazina.workers.dev")
 TJ_WS_USER = os.getenv("TJ_WS_USER", "PGEMS")
 TJ_WS_PASS = os.getenv("TJ_WS_PASS", "SAJ03PGEMS")
 
