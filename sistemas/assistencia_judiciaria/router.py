@@ -234,7 +234,17 @@ async def consultar_processo(
         
         # Faz nova consulta
         logger.info("Iniciando full_flow...")
-        dados, relatorio = full_flow(req.cnj, req.model)
+        try:
+            dados, relatorio = full_flow(req.cnj, req.model)
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "Timeout" in error_msg or "timeout" in error_msg:
+                raise HTTPException(
+                    status_code=503, 
+                    detail="O servidor do TJ-MS não está respondendo. Tente novamente em alguns minutos."
+                )
+            raise HTTPException(status_code=500, detail=error_msg)
+        
         logger.info("full_flow concluído com sucesso")
         
         # Salva ou atualiza no banco
