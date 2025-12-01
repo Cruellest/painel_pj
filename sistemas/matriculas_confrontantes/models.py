@@ -9,6 +9,21 @@ from sqlalchemy.orm import relationship
 from database.connection import Base
 
 
+class ArquivoUpload(Base):
+    """Registro de arquivos uploadados por usuário"""
+    
+    __tablename__ = "arquivos_upload"
+
+    id = Column(Integer, primary_key=True, index=True)
+    file_id = Column(String(255), unique=True, index=True, nullable=False)
+    file_name = Column(String(255), nullable=False)
+    usuario_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<ArquivoUpload(file_id='{self.file_id}', usuario_id={self.usuario_id})>"
+
+
 class GrupoAnalise(Base):
     """Modelo para agrupar múltiplos arquivos em uma única análise"""
     

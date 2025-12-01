@@ -13,7 +13,7 @@ from auth.security import get_password_hash
 from config import ADMIN_USERNAME, ADMIN_PASSWORD
 
 # Importa modelos para criar tabelas
-from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise
+from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise, ArquivoUpload
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
 from admin.models import PromptConfig, ConfiguracaoIA
 
@@ -104,6 +104,24 @@ def run_migrations():
         db.rollback()
         if "already exists" not in str(e).lower() and "duplicate column" not in str(e).lower():
             print(f"⚠️ Migração relatorio_texto: {e}")
+    
+    # Migração: Criar tabela arquivos_upload
+    try:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS arquivos_upload (
+                id SERIAL PRIMARY KEY,
+                file_id VARCHAR(255) UNIQUE NOT NULL,
+                file_name VARCHAR(255) NOT NULL,
+                usuario_id INTEGER NOT NULL REFERENCES users(id),
+                criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        db.commit()
+        print("✅ Migração: tabela arquivos_upload criada")
+    except Exception as e:
+        db.rollback()
+        if "already exists" not in str(e).lower():
+            print(f"⚠️ Migração arquivos_upload: {e}")
     
     db.close()
 

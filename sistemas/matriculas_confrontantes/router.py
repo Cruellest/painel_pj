@@ -22,7 +22,7 @@ from auth.dependencies import get_current_active_user, get_current_user_from_tok
 from auth.models import User
 from config import UPLOAD_FOLDER, ALLOWED_EXTENSIONS, DEFAULT_MODEL, FULL_REPORT_MODEL
 
-from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise
+from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise, ArquivoUpload
 from sistemas.matriculas_confrontantes.schemas import (
     FileInfo, FileUploadResponse, AnaliseResponse, AnaliseStatusResponse,
     ResultadoAnalise, RegistroCreate, RegistroUpdate, RegistroResponse,
@@ -93,56 +93,80 @@ async def list_files(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Lista arquivos pendentes de análise (PDFs não são armazenados após análise)"""
+    """Lista arquivos do usuário atual"""
     files = []
     
-    # Lista apenas arquivos pendentes de análise (ainda no disco)
-    if UPLOAD_FOLDER.exists():
-        for filepath in UPLOAD_FOLDER.iterdir():
-            if filepath.is_file() and allowed_file(filepath.name):
-                file_id = filepath.name
-                
-                # Verifica se foi analisado
-                analise = db.query(Analise).filter(Analise.file_id == file_id).first()
-                
-                files.append(FileInfo(
-                    id=file_id,
-                    name=filepath.name,
-                    path=str(filepath),
-                    type=get_file_type(filepath.name),
-                    size=get_file_size(filepath),
-                    date=datetime.fromtimestamp(filepath.stat().st_mtime).strftime("%Y-%m-%d"),
-                    analyzed=analise is not None
-                ))
+    # Busca arquivos do usuário no banco
+    arquivos_usuario = db.query(ArquivoUpload).filter(
+        ArquivoUpload.usuario_id == current_user.id
+    ).all()
     
+    for arquivo in arquivos_usuario:
+        filepath = UPLOAD_FOLDER / arquivo.file_id
+        
+        # Verifica se o arquivo ainda existe no disco
+        if filepath.exists():
+            # Verifica se foi analisado
+            analise = db.query(Analise).filter(Analise.file_id == arquivo.file_id).first()
+            
+            files.append(FileInfo(
+                id=arquivo.file_id,
+                name=arquivo.file_name,
+                path=str(filepath),
+                type=get_file_type(arquivo.file_name),
+                size=get_file_size(filepath),
+                date=arquivo.criado_em.strftime("%Y-%m-%d") if arquivo.criado_em else datetime.now().strftime("%Y-%m-%d"),
+                analyzed=analise is not None
+            ))
+        else:
+            # Arquivo não existe mais, remove do banco
+            db.delete(arquivo)
+    
+    db.commit()
     return files
 
 
 @router.get("/files/{file_id}/view")
 async def view_file(
     file_id: str,
-    current_user: User = Depends(get_current_user_from_token_or_query)
+    current_user: User = Depends(get_current_user_from_token_or_query),
+    db: Session = Depends(get_db)
 ):
-    """Serve arquivo para visualização (apenas arquivos pendentes de análise)"""
+    """Serve arquivo para visualização"""
+    # Verifica se o arquivo pertence ao usuário
+    arquivo = db.query(ArquivoUpload).filter(
+        ArquivoUpload.file_id == file_id,
+        ArquivoUpload.usuario_id == current_user.id
+    ).first()
+    
+    if not arquivo:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    
     filepath = UPLOAD_FOLDER / file_id
     
     if filepath.exists():
         media_type = 'application/pdf' if filepath.suffix.lower() == '.pdf' else None
         return FileResponse(filepath, media_type=media_type)
     
-    # Arquivo não existe mais (já foi analisado e removido)
-    raise HTTPException(
-        status_code=404, 
-        detail="Arquivo não disponível. PDFs são removidos após a análise."
-    )
+    raise HTTPException(status_code=404, detail="Arquivo não encontrado no disco")
 
 
 @router.get("/files/{file_id}/content")
 async def get_file_content(
     file_id: str,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ):
-    """Retorna o conteúdo do arquivo em base64 (apenas arquivos pendentes)"""
+    """Retorna o conteúdo do arquivo em base64"""
+    # Verifica se o arquivo pertence ao usuário
+    arquivo = db.query(ArquivoUpload).filter(
+        ArquivoUpload.file_id == file_id,
+        ArquivoUpload.usuario_id == current_user.id
+    ).first()
+    
+    if not arquivo:
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    
     filepath = UPLOAD_FOLDER / file_id
     
     if filepath.exists():
@@ -151,15 +175,12 @@ async def get_file_content(
             content = base64.b64encode(f.read()).decode("utf-8")
         
         return {
-            "name": filepath.name,
-            "type": get_file_type(filepath.name),
+            "name": arquivo.file_name,
+            "type": get_file_type(arquivo.file_name),
             "content": content
         }
     
-    raise HTTPException(
-        status_code=404, 
-        detail="Arquivo não disponível. PDFs são removidos após a análise."
-    )
+    raise HTTPException(status_code=404, detail="Arquivo não encontrado no disco")
 
 
 @router.post("/files/upload", response_model=FileUploadResponse)
@@ -188,6 +209,15 @@ async def upload_file(
         content = await file.read()
         f.write(content)
     
+    # Registra o arquivo no banco associado ao usuário
+    arquivo_registro = ArquivoUpload(
+        file_id=unique_id,
+        file_name=original_name,
+        usuario_id=current_user.id
+    )
+    db.add(arquivo_registro)
+    db.commit()
+    
     add_log(db, f"Arquivo importado: {original_name}", "success")
     
     return FileUploadResponse(
@@ -211,13 +241,24 @@ async def delete_file(
     db: Session = Depends(get_db)
 ):
     """Exclui um arquivo"""
-    filepath = UPLOAD_FOLDER / file_id
+    # Verifica se o arquivo pertence ao usuário
+    arquivo = db.query(ArquivoUpload).filter(
+        ArquivoUpload.file_id == file_id,
+        ArquivoUpload.usuario_id == current_user.id
+    ).first()
     
-    if not filepath.exists():
+    if not arquivo:
         raise HTTPException(status_code=404, detail="Arquivo não encontrado")
     
+    filepath = UPLOAD_FOLDER / file_id
+    
     try:
-        os.remove(filepath)
+        # Remove arquivo do disco se existir
+        if filepath.exists():
+            os.remove(filepath)
+        
+        # Remove registro do arquivo
+        db.delete(arquivo)
         
         # Remove análise associada
         db.query(Analise).filter(Analise.file_id == file_id).delete()
