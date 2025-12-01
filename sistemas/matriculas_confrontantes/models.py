@@ -17,7 +17,7 @@ class Analise(Base):
     id = Column(Integer, primary_key=True, index=True)
     file_id = Column(String(255), unique=True, index=True, nullable=False)
     file_name = Column(String(255), nullable=False)
-    file_path = Column(String(500), nullable=False)
+    file_path = Column(String(500), nullable=True)  # Nullable - PDFs não são mais armazenados
     matricula_principal = Column(String(50), nullable=True)
     resultado_json = Column(JSON, nullable=True)
     confianca = Column(Float, default=0.0)

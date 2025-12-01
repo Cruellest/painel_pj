@@ -43,6 +43,24 @@ def create_tables():
     print("✅ Tabelas criadas com sucesso!")
 
 
+def run_migrations():
+    """Executa migrações manuais para ajustar colunas existentes"""
+    from sqlalchemy import text
+    db = SessionLocal()
+    try:
+        # Torna file_path nullable na tabela analises
+        db.execute(text("ALTER TABLE analises ALTER COLUMN file_path DROP NOT NULL"))
+        db.commit()
+        print("✅ Migração: file_path agora é nullable")
+    except Exception as e:
+        db.rollback()
+        # Ignora se já foi aplicada ou tabela não existe
+        if "does not exist" not in str(e) and "already" not in str(e).lower():
+            print(f"⚠️ Migração file_path: {e}")
+    finally:
+        db.close()
+
+
 def seed_admin():
     """Cria o usuário administrador inicial se não existir"""
     db = SessionLocal()
@@ -94,6 +112,7 @@ def init_database():
     print("🔧 Inicializando banco de dados...")
     wait_for_db()  # Aguarda o banco ficar disponível
     create_tables()
+    run_migrations()  # Aplica migrações
     seed_admin()
     seed_prompts()
     print("✅ Banco de dados inicializado!")
