@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Peças Jurídicas - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                        },
+                        pge: {
+                            blue: '#1e3a5f',
+                            orange: '#e67e22'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .prose-preview {
+            font-family: 'Times New Roman', serif;
+        }
+        .prose-preview h2 {
+            text-align: center;
+            font-weight: bold;
+            margin: 1em 0;
+        }
+        .prose-preview blockquote {
+            margin-left: 3cm;
+            margin-right: 3cm;
+            font-size: 11pt;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+    
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-4">
+                    <a href="/dashboard" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-arrow-left"></i>
+                    </a>
+                    <a href="/dashboard" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                        <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+                    </a>
+                    <div class="border-l border-gray-300 pl-4">
+                        <h1 class="font-semibold text-gray-800">Gerador de Peças Jurídicas</h1>
+                        <p class="text-xs text-gray-500">Contestações, pareceres e recursos automatizados</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <button 
+                        onclick="toggleHistorico()"
+                        class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Histórico"
+                    >
+                        <i class="fas fa-history"></i>
+                    </button>
+                    <a href="/dashboard" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                        <i class="fas fa-th-large mr-1"></i> Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Formulário Principal -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">
+                <i class="fas fa-file-alt text-primary-600 mr-2"></i>
+                Gerar Nova Peça Jurídica
+            </h2>
+            
+            <form id="form-processo" class="space-y-4">
+                <div>
+                    <label for="numero-cnj" class="block text-sm font-medium text-gray-700 mb-2">
+                        Número do Processo (CNJ)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="numero-cnj" 
+                        name="numero_cnj"
+                        placeholder="0000000-00.2024.8.12.0001"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                        required
+                    />
+                    <p class="text-xs text-gray-500 mt-1">Digite o número completo do processo no formato CNJ</p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Tipo de Peça (opcional)
+                    </label>
+                    <select 
+                        id="tipo-peca" 
+                        name="tipo_peca"
+                        class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 transition-all"
+                    >
+                        <option value="">Detectar automaticamente</option>
+                        <option value="contestacao">Contestação</option>
+                        <option value="recurso_apelacao">Recurso de Apelação</option>
+                        <option value="contrarrazoes">Contrarrazões</option>
+                        <option value="parecer">Parecer Jurídico</option>
+                    </select>
+                </div>
+
+                <button 
+                    type="submit" 
+                    id="btn-gerar"
+                    class="w-full bg-primary-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-primary-700 transition-colors flex items-center justify-center gap-2"
+                >
+                    <i class="fas fa-magic"></i>
+                    Gerar Peça Jurídica
+                </button>
+            </form>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-6 mb-6">
+            <div class="flex items-center">
+                <svg class="animate-spin h-6 w-6 mr-4 text-blue-600" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <div>
+                    <p class="font-semibold text-blue-800">Processando...</p>
+                    <p id="loading-message" class="text-sm text-blue-600">Consultando processo no TJ-MS</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resultado de Erro -->
+        <div id="resultado-erro" class="hidden bg-red-50 border border-red-200 rounded-xl p-6 mb-6">
+            <div class="flex items-start">
+                <i class="fas fa-exclamation-circle text-red-500 text-xl mr-4 mt-1"></i>
+                <div>
+                    <p class="font-semibold text-red-800">Erro ao processar</p>
+                    <p id="erro-mensagem" class="text-sm text-red-600 mt-1"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Painel Lateral de Histórico -->
+        <div id="painel-historico" class="hidden fixed inset-y-0 right-0 w-80 bg-white shadow-xl z-50 transform translate-x-full transition-transform">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 class="font-semibold text-gray-800">Histórico</h3>
+                <button onclick="toggleHistorico()" class="p-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="lista-historico" class="p-4 overflow-y-auto" style="height: calc(100vh - 60px);">
+                <p class="text-gray-500 text-sm text-center py-8">Carregando...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal de Pergunta -->
+    <div id="modal-pergunta" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-8 max-w-2xl w-full mx-4 shadow-2xl">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-question-circle text-primary-600 mr-2"></i>
+                Informação Necessária
+            </h2>
+            <p id="pergunta-texto" class="text-gray-700 mb-6"></p>
+            
+            <div id="opcoes-container" class="space-y-2 mb-6"></div>
+            
+            <textarea 
+                id="resposta-usuario" 
+                placeholder="Ou digite sua resposta aqui..."
+                class="w-full px-4 py-3 border border-gray-300 rounded-xl mb-4 focus:ring-2 focus:ring-primary-500"
+                rows="3"
+            ></textarea>
+            
+            <div class="flex justify-end gap-3">
+                <button 
+                    id="btn-cancelar-pergunta"
+                    class="px-6 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                    Cancelar
+                </button>
+                <button 
+                    id="btn-enviar-resposta"
+                    class="px-6 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors"
+                >
+                    Continuar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Preview/Edição -->
+    <div id="modal-edicao" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-6 max-w-6xl w-full mx-4 max-h-[90vh] flex flex-col shadow-2xl">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold text-gray-800">
+                    <i class="fas fa-eye text-primary-600 mr-2"></i>
+                    Revisar Documento
+                </h2>
+                <button onclick="fecharModalEdicao()" class="p-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto mb-6 border border-gray-200 rounded-xl p-6 bg-gray-50">
+                <div id="preview-container" class="prose-preview max-w-none bg-white p-8 shadow-sm rounded-lg"></div>
+            </div>
+            
+            <div class="flex justify-between items-center border-t border-gray-200 pt-4">
+                <p class="text-sm text-gray-500">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Revise o documento antes de baixar
+                </p>
+                
+                <div class="flex gap-3">
+                    <button 
+                        id="btn-cancelar-edicao"
+                        class="px-6 py-2 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        id="btn-download"
+                        class="px-6 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-colors flex items-center gap-2"
+                    >
+                        <i class="fas fa-download"></i>
+                        Download DOCX
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Feedback -->
+    <div id="modal-feedback" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-8 max-w-md w-full mx-4 shadow-2xl">
+            <h2 class="text-xl font-bold text-gray-800 mb-2">
+                <i class="fas fa-star text-yellow-500 mr-2"></i>
+                Como foi a experiência?
+            </h2>
+            <p class="text-gray-500 mb-6">Seu feedback nos ajuda a melhorar o sistema</p>
+            
+            <!-- Estrelas -->
+            <div class="flex justify-center gap-2 mb-6">
+                <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors" data-nota="1">★</button>
+                <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors" data-nota="2">★</button>
+                <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors" data-nota="3">★</button>
+                <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors" data-nota="4">★</button>
+                <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors" data-nota="5">★</button>
+            </div>
+            
+            <textarea 
+                id="feedback-comentario" 
+                placeholder="Comentários adicionais (opcional)"
+                class="w-full px-4 py-3 border border-gray-300 rounded-xl mb-4 focus:ring-2 focus:ring-primary-500"
+                rows="3"
+            ></textarea>
+            
+            <div class="flex justify-end gap-3">
+                <button 
+                    id="btn-pular-feedback"
+                    class="px-6 py-2 text-gray-600 hover:text-gray-800"
+                >
+                    Pular
+                </button>
+                <button 
+                    id="btn-enviar-feedback"
+                    class="px-6 py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled
+                >
+                    Enviar Feedback
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="hidden fixed bottom-4 right-4 z-50">
+        <div class="bg-gray-800 text-white px-6 py-3 rounded-xl shadow-lg flex items-center gap-3">
+            <i id="toast-icon" class="fas fa-check-circle text-green-400"></i>
+            <span id="toast-message">Mensagem</span>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
