@@ -15,9 +15,18 @@ from config import ADMIN_USERNAME, ADMIN_PASSWORD
 # Importa modelos para criar tabelas
 from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise, ArquivoUpload
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
-from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from admin.models import PromptConfig, ConfiguracaoIA
-from admin.models_prompts import PromptModulo, PromptModuloHistorico
+
+# Importa modelos opcionais (podem não existir em todas as branches)
+try:
+    from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
+except ImportError:
+    pass
+
+try:
+    from admin.models_prompts import PromptModulo, PromptModuloHistorico
+except ImportError:
+    pass
 
 
 def wait_for_db(max_retries=10, delay=3):
