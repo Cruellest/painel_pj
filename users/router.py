@@ -74,6 +74,8 @@ async def create_user(
         full_name=user_data.full_name,
         hashed_password=get_password_hash(password),
         role=user_data.role,
+        sistemas_permitidos=user_data.sistemas_permitidos,
+        permissoes_especiais=user_data.permissoes_especiais,
         must_change_password=True,  # Força troca no primeiro acesso
         is_active=True
     )

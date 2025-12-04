@@ -4,7 +4,7 @@ Schemas Pydantic para autenticação
 """
 
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -56,6 +56,8 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Schema para criação de usuário"""
     password: Optional[str] = None  # Se None, usa senha padrão
+    sistemas_permitidos: Optional[List[str]] = None  # Lista de sistemas
+    permissoes_especiais: Optional[List[str]] = None  # Lista de permissões
 
 
 class UserUpdate(BaseModel):
@@ -64,6 +66,8 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=200)
     role: Optional[str] = Field(None, pattern="^(admin|user)$")
     is_active: Optional[bool] = None
+    sistemas_permitidos: Optional[List[str]] = None
+    permissoes_especiais: Optional[List[str]] = None
 
 
 class UserResponse(UserBase):
@@ -71,6 +75,8 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     must_change_password: bool
+    sistemas_permitidos: Optional[List[str]] = None
+    permissoes_especiais: Optional[List[str]] = None
     created_at: datetime
     updated_at: datetime
 
@@ -86,6 +92,8 @@ class UserMe(BaseModel):
     full_name: str
     role: str
     must_change_password: bool
+    sistemas_permitidos: Optional[List[str]] = None
+    permissoes_especiais: Optional[List[str]] = None
 
     class Config:
         from_attributes = True

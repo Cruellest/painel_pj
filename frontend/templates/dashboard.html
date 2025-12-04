@@ -106,11 +106,12 @@
         </div>
 
         <!-- Cards dos Sistemas -->
-        <div class="grid md:grid-cols-2 gap-6">
+        <div id="sistemas-container" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             
             <!-- Card Assistência Judiciária -->
             <a 
                 href="/assistencia/" 
+                id="card-assistencia"
                 class="group bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-primary-300 transition-all"
             >
                 <div class="flex items-start gap-4">
@@ -135,6 +136,7 @@
             <!-- Card Matrículas Confrontantes -->
             <a 
                 href="/matriculas/" 
+                id="card-matriculas"
                 class="group bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-accent-300 transition-all"
             >
                 <div class="flex items-start gap-4">
@@ -155,6 +157,32 @@
                     </div>
                 </div>
             </a>
+
+            <!-- Card Gerador de Peças Jurídicas - OCULTO EM PRODUÇÃO (descomentar quando pronto)
+            <a 
+                href="/gerador-pecas/" 
+                id="card-gerador"
+                class="group bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-purple-300 transition-all"
+            >
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center group-hover:bg-purple-200 transition-colors">
+                        <i class="fas fa-file-alt text-purple-600 text-xl"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-gray-800 group-hover:text-purple-600 transition-colors">
+                            Gerador de Peças
+                        </h3>
+                        <p class="text-gray-500 text-sm mt-1">
+                            Geração automatizada de contestações, pareceres e recursos.
+                        </p>
+                        <div class="flex items-center gap-2 mt-4 text-purple-600 text-sm font-medium">
+                            <span>Acessar sistema</span>
+                            <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+                </div>
+            </a>
+            -->
 
         </div>
 
@@ -185,6 +213,18 @@
                         <div>
                             <p class="font-medium text-gray-800">Prompts de IA</p>
                             <p class="text-xs text-gray-500">Configurar prompts</p>
+                        </div>
+                    </a>
+                    <a 
+                        href="/admin/prompts-modulos" 
+                        class="flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                        <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-puzzle-piece text-orange-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800">Prompts Modulares</p>
+                            <p class="text-xs text-gray-500">Editar e versionar prompts</p>
                         </div>
                     </a>
                     <a 
@@ -293,6 +333,23 @@
                 if (user.role === 'admin') {
                     document.getElementById('admin-panel').classList.remove('hidden');
                     document.getElementById('admin-menu-items').classList.remove('hidden');
+                }
+
+                // Verifica permissões de sistemas (admin tem acesso a tudo)
+                if (user.role !== 'admin' && user.sistemas_permitidos && user.sistemas_permitidos.length > 0) {
+                    // Oculta cards de sistemas não permitidos
+                    const sistemasMap = {
+                        'assistencia_judiciaria': 'card-assistencia',
+                        'matriculas': 'card-matriculas',
+                        'gerador_pecas': 'card-gerador'
+                    };
+                    
+                    Object.entries(sistemasMap).forEach(([sistema, cardId]) => {
+                        if (!user.sistemas_permitidos.includes(sistema)) {
+                            const card = document.getElementById(cardId);
+                            if (card) card.style.display = 'none';
+                        }
+                    });
                 }
 
                 // Verifica se precisa trocar senha

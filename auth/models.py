@@ -4,7 +4,7 @@ Modelo de usuário para autenticação
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
 from database.connection import Base
 
 
@@ -19,10 +19,39 @@ class User(Base):
     full_name = Column(String(200), nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default="user")  # 'admin' ou 'user'
+    
+    # Sistemas que o usuário pode acessar (lista de strings)
+    # Ex: ["matriculas", "assistencia_judiciaria", "gerador_pecas"]
+    # Se vazio ou None, usuário tem acesso a todos (compatibilidade)
+    sistemas_permitidos = Column(JSON, nullable=True, default=None)
+    
+    # Permissões especiais (lista de strings)
+    # Ex: ["editar_prompts", "criar_prompts", "ver_historico_prompts"]
+    permissoes_especiais = Column(JSON, nullable=True, default=None)
+    
     must_change_password = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def pode_acessar_sistema(self, sistema: str) -> bool:
+        """Verifica se o usuário pode acessar um sistema específico"""
+        # Admin tem acesso a tudo
+        if self.role == "admin":
+            return True
+        # Se não tem sistemas definidos, tem acesso a todos (compatibilidade)
+        if not self.sistemas_permitidos:
+            return True
+        return sistema in self.sistemas_permitidos
+    
+    def tem_permissao(self, permissao: str) -> bool:
+        """Verifica se o usuário tem uma permissão especial"""
+        # Admin tem todas as permissões
+        if self.role == "admin":
+            return True
+        if not self.permissoes_especiais:
+            return False
+        return permissao in self.permissoes_especiais
 
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"

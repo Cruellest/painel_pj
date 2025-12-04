@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciamento de Prompts - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd',
+                            300: '#7dd3fc', 400: '#38bdf8', 500: '#0ea5e9',
+                            600: '#0284c7', 700: '#0369a1', 800: '#075985', 900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .editor-container { font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; }
+        .tag-pill { @apply px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700; }
+        .keyword-pill { @apply px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-700; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
+        <div class="flex items-center justify-between max-w-7xl mx-auto">
+            <div class="flex items-center gap-4">
+                <a href="/admin/prompts-config" class="text-gray-500 hover:text-primary-600">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
+                <div>
+                    <h1 class="text-xl font-semibold text-gray-800">Gerenciamento de Prompts Modulares</h1>
+                    <p class="text-sm text-gray-500">Edite e versione prompts do sistema</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="criarModulo()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
+                    <i class="fas fa-plus"></i> Criar Módulo
+                </button>
+                <button onclick="exportarTodos()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2">
+                    <i class="fas fa-download"></i> Exportar
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6">
+        
+        <!-- Seção Explicativa - Prompts Modulares para Gerador de Peças -->
+        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-200 p-6 mb-6">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-puzzle-piece text-blue-600 text-xl"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-3">
+                        Como funcionam os Prompts Modulares
+                    </h3>
+                    
+                    <!-- Aviso sobre Prompt Base -->
+                    <div class="bg-indigo-100 border-l-4 border-indigo-500 p-3 rounded mb-4">
+                        <div class="flex items-start gap-2">
+                            <i class="fas fa-info-circle text-indigo-600 mt-0.5"></i>
+                            <div class="text-sm text-indigo-800">
+                                <strong>Onde fica o Prompt BASE (System Prompt)?</strong><br>
+                                O prompt base do Gerador de Peças é configurado no 
+                                <a href="/admin/prompts-config" class="underline font-semibold hover:text-indigo-900">
+                                    Gerenciamento de Prompts de IA
+                                </a>, junto com os prompts dos outros sistemas (Matrículas, Assistência).
+                                Lá você define a "personalidade" e comportamento geral da IA.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <p class="text-sm text-gray-600 mb-4">
+                        Aqui você gerencia os <strong>módulos de PEÇA e CONTEÚDO</strong> - blocos reutilizáveis que a IA combina 
+                        automaticamente para gerar peças jurídicas completas:
+                    </p>
+                    
+                    <div class="grid md:grid-cols-2 gap-4 text-sm">
+                        <!-- PEÇA -->
+                        <div class="bg-white rounded-lg p-4 border-2 border-green-200">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-bold">PEÇA</span>
+                                <span class="text-green-600 text-xs">📋 Estrutura/Template</span>
+                            </div>
+                            <p class="text-gray-600 text-xs mb-2">
+                                Define a <strong>estrutura específica</strong> de cada tipo de peça jurídica.
+                            </p>
+                            <ul class="text-xs text-gray-500 space-y-1 mb-2">
+                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Contestação</li>
+                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Recurso de Apelação</li>
+                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Contrarrazões</li>
+                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Parecer Jurídico</li>
+                            </ul>
+                            <div class="bg-green-50 rounded p-2 text-xs text-green-700">
+                                <i class="fas fa-hand-pointer mr-1"></i> Ativado quando o <strong>usuário escolhe</strong> o tipo de peça
+                            </div>
+                        </div>
+                        
+                        <!-- CONTEÚDO -->
+                        <div class="bg-white rounded-lg p-4 border-2 border-orange-200">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-bold">CONTEÚDO</span>
+                                <span class="text-orange-600 text-xs">🎯 Teses e Argumentos</span>
+                            </div>
+                            <p class="text-gray-600 text-xs mb-2">
+                                Módulos de <strong>argumentação jurídica</strong> ativados conforme a situação do caso.
+                            </p>
+                            <ul class="text-xs text-gray-500 space-y-1 mb-2">
+                                <li><i class="fas fa-clock mr-1 text-orange-500"></i> Prescrição</li>
+                                <li><i class="fas fa-user-times mr-1 text-orange-500"></i> Ilegitimidade Passiva</li>
+                                <li><i class="fas fa-pills mr-1 text-orange-500"></i> Medicamento não incorporado ao SUS</li>
+                                <li><i class="fas fa-flask mr-1 text-orange-500"></i> Tratamento experimental</li>
+                            </ul>
+                            <div class="bg-orange-50 rounded p-2 text-xs text-orange-700">
+                                <i class="fas fa-robot mr-1"></i> Ativado pelo <strong>agente de IA</strong> ao analisar os documentos
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Fluxo Visual -->
+                    <div class="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+                        <p class="text-xs text-gray-500 mb-3 font-medium">Fluxo de montagem do prompt final:</p>
+                        <div class="flex items-center justify-center gap-2 flex-wrap">
+                            <div class="flex flex-col items-center">
+                                <a href="/admin/prompts-config" class="px-3 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-200 transition-colors">
+                                    <i class="fas fa-cog mr-1"></i> BASE
+                                </a>
+                                <span class="text-xs text-gray-400 mt-1">Prompts de IA</span>
+                            </div>
+                            <i class="fas fa-plus text-gray-400 text-lg"></i>
+                            <div class="flex flex-col items-center">
+                                <div class="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">PEÇA</div>
+                                <span class="text-xs text-gray-400 mt-1">Ex: Contestação</span>
+                            </div>
+                            <i class="fas fa-plus text-gray-400 text-lg"></i>
+                            <div class="flex flex-col items-center">
+                                <div class="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium">CONTEÚDO</div>
+                                <span class="text-xs text-gray-400 mt-1">Ex: Prescrição + Ilegitimidade</span>
+                            </div>
+                            <i class="fas fa-arrow-right text-gray-400 text-lg mx-2"></i>
+                            <div class="flex flex-col items-center">
+                                <div class="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium border-2 border-purple-300">
+                                    <i class="fas fa-file-alt mr-1"></i> PROMPT FINAL
+                                </div>
+                                <span class="text-xs text-gray-400 mt-1">Enviado à IA</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Como a IA seleciona os módulos -->
+                    <div class="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+                        <p class="text-xs text-amber-800 font-medium mb-2">
+                            <i class="fas fa-robot text-amber-600 mr-1"></i>
+                            Como a IA seleciona os módulos de CONTEÚDO?
+                        </p>
+                        <p class="text-xs text-amber-700">
+                            Um <strong>agente de IA auxiliar</strong> (modelo rápido e econômico) analisa os documentos do processo e 
+                            identifica quais situações jurídicas estão presentes. Baseado nisso, ele ativa automaticamente os módulos 
+                            de conteúdo relevantes (ex: detectou "prazo prescricional" → ativa módulo de Prescrição).
+                        </p>
+                    </div>
+                    
+                    <!-- Toggle para esconder -->
+                    <button onclick="this.closest('.bg-gradient-to-r').classList.add('hidden')" 
+                        class="mt-3 text-xs text-blue-600 hover:underline">
+                        <i class="fas fa-eye-slash mr-1"></i> Esconder esta explicação
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
+            <div class="flex flex-wrap gap-4 items-center">
+                <div class="flex-1 min-w-[200px]">
+                    <input type="text" id="busca" placeholder="Buscar por título ou conteúdo..."
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
+                        oninput="filtrarModulos()">
+                </div>
+                <select id="filtro-tipo" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="filtrarModulos()">
+                    <option value="">Todos os tipos</option>
+                    <option value="peca">Peça</option>
+                    <option value="conteudo">Conteúdo</option>
+                </select>
+                <select id="filtro-categoria" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="filtrarModulos()">
+                    <option value="">Todas as categorias</option>
+                </select>
+                <label class="flex items-center gap-2 text-sm text-gray-600">
+                    <input type="checkbox" id="apenas-ativos" checked onchange="filtrarModulos()">
+                    Apenas ativos
+                </label>
+            </div>
+        </div>
+
+        <!-- Lista de Módulos -->
+        <div id="lista-modulos" class="space-y-4">
+            <div class="text-center py-12 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p>Carregando módulos...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal de Edição -->
+    <div id="modal-editor" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col m-4">
+            <!-- Header do Modal -->
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-primary-50 to-blue-50">
+                <div>
+                    <h2 id="modal-titulo" class="text-lg font-semibold text-gray-800">Editar Módulo</h2>
+                    <p id="modal-subtitulo" class="text-sm text-gray-500"></p>
+                </div>
+                <button onclick="fecharEditor()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <!-- Corpo do Modal -->
+            <div class="flex-1 overflow-y-auto p-6">
+                <form id="form-modulo" class="space-y-6">
+                    <input type="hidden" id="modulo-id">
+                    
+                    <!-- Informações Básicas -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                            <select id="modulo-tipo" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                                <option value="peca">Peça</option>
+                                <option value="conteudo">Conteúdo</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+                            <input type="text" id="modulo-categoria" class="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                placeholder="Ex: medicamento">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Subcategoria</label>
+                            <input type="text" id="modulo-subcategoria" class="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                placeholder="Ex: nao_incorporado_sus">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Nome (único)</label>
+                            <input type="text" id="modulo-nome" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required
+                                placeholder="identificador_unico">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Título</label>
+                        <input type="text" id="modulo-titulo" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required
+                            placeholder="Título legível do módulo">
+                    </div>
+                    
+                    <!-- Editor de Conteúdo -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            Conteúdo do Prompt (Markdown)
+                            <button type="button" onclick="toggleFullscreen()" class="ml-2 text-primary-600 hover:text-primary-700">
+                                <i class="fas fa-expand"></i> Tela cheia
+                            </button>
+                        </label>
+                        <textarea id="modulo-conteudo" rows="15" 
+                            class="editor-container w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm resize-y"
+                            placeholder="Digite o conteúdo do prompt aqui..."></textarea>
+                    </div>
+                    
+                    <!-- Palavras-chave -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            <i class="fas fa-tags text-purple-500 mr-1"></i>
+                            Palavras-chave (para detecção automática)
+                        </label>
+                        <div id="keywords-container" class="flex flex-wrap gap-2 p-3 border border-gray-300 rounded-lg min-h-[44px]">
+                            <!-- Keywords renderizadas aqui -->
+                        </div>
+                        <div class="mt-2 flex gap-2">
+                            <input type="text" id="nova-keyword" placeholder="Adicionar palavra-chave" 
+                                class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                onkeypress="if(event.key==='Enter'){event.preventDefault();adicionarKeyword()}">
+                            <button type="button" onclick="adicionarKeyword()" class="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Tags -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            <i class="fas fa-folder text-blue-500 mr-1"></i>
+                            Tags (organização)
+                        </label>
+                        <div id="tags-container" class="flex flex-wrap gap-2 p-3 border border-gray-300 rounded-lg min-h-[44px]">
+                            <!-- Tags renderizadas aqui -->
+                        </div>
+                        <div class="mt-2 flex gap-2">
+                            <input type="text" id="nova-tag" placeholder="Adicionar tag"
+                                class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                onkeypress="if(event.key==='Enter'){event.preventDefault();adicionarTag()}">
+                            <button type="button" onclick="adicionarTag()" class="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Status -->
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="modulo-ativo" checked class="w-4 h-4 text-primary-600 rounded">
+                            <span class="text-sm text-gray-700">Módulo ativo</span>
+                        </label>
+                        <div>
+                            <label class="text-sm text-gray-700 mr-2">Ordem:</label>
+                            <input type="number" id="modulo-ordem" value="0" min="0" 
+                                class="w-20 px-2 py-1 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                    </div>
+                    
+                    <!-- Motivo da alteração (apenas para edição) -->
+                    <div id="motivo-container" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            <i class="fas fa-comment text-orange-500 mr-1"></i>
+                            Motivo da alteração <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="modulo-motivo" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            placeholder="Ex: Atualização de jurisprudência - Tema 106 STJ">
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Footer do Modal -->
+            <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+                <div id="versao-info" class="text-sm text-gray-500"></div>
+                <div class="flex gap-3">
+                    <button type="button" onclick="fecharEditor()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                        Cancelar
+                    </button>
+                    <button type="button" onclick="verHistorico()" id="btn-historico" class="hidden px-4 py-2 text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg">
+                        <i class="fas fa-history mr-1"></i> Histórico
+                    </button>
+                    <button type="button" onclick="salvarModulo()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                        <i class="fas fa-save mr-1"></i> Salvar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Histórico -->
+    <div id="modal-historico" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col m-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-gray-800">Histórico de Versões</h2>
+                <button onclick="fecharHistorico()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6">
+                <div id="historico-lista" class="space-y-4">
+                    <div class="text-center py-8 text-gray-400">
+                        <i class="fas fa-spinner fa-spin"></i> Carregando...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/admin/api/prompts-modulos';
+        let modulosCache = [];
+        let keywordsAtuais = [];
+        let tagsAtuais = [];
+        let moduloAtualId = null;
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarModulos();
+            carregarCategorias();
+        });
+
+        async function carregarModulos() {
+            try {
+                const params = new URLSearchParams();
+                const tipo = document.getElementById('filtro-tipo').value;
+                const categoria = document.getElementById('filtro-categoria').value;
+                const busca = document.getElementById('busca').value;
+                const apenasAtivos = document.getElementById('apenas-ativos').checked;
+
+                if (tipo) params.append('tipo', tipo);
+                if (categoria) params.append('categoria', categoria);
+                if (busca) params.append('busca', busca);
+                params.append('apenas_ativos', apenasAtivos);
+
+                const response = await fetch(`${API_BASE}?${params}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao carregar módulos');
+
+                modulosCache = await response.json();
+                renderizarModulos();
+            } catch (error) {
+                console.error(error);
+                document.getElementById('lista-modulos').innerHTML = `
+                    <div class="text-center py-12 text-red-500">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p>Erro ao carregar módulos</p>
+                    </div>`;
+            }
+        }
+
+        async function carregarCategorias() {
+            try {
+                const response = await fetch(`${API_BASE}/categorias`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const categorias = await response.json();
+                const select = document.getElementById('filtro-categoria');
+                categorias.forEach(cat => {
+                    const option = document.createElement('option');
+                    option.value = cat;
+                    option.textContent = cat;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Erro ao carregar categorias:', error);
+            }
+        }
+
+        function renderizarModulos() {
+            const container = document.getElementById('lista-modulos');
+            
+            if (modulosCache.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-4"></i>
+                        <p>Nenhum módulo encontrado</p>
+                        <button onclick="criarModulo()" class="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg">
+                            Criar primeiro módulo
+                        </button>
+                    </div>`;
+                return;
+            }
+
+            // Agrupa por tipo
+            const grupos = { peca: [], conteudo: [] };
+            modulosCache.forEach(m => {
+                if (grupos[m.tipo]) grupos[m.tipo].push(m);
+            });
+
+            const tipoLabels = {
+                peca: { icon: 'fa-file-alt', label: 'Peças (Estrutura/Template)', color: 'green' },
+                conteudo: { icon: 'fa-lightbulb', label: 'Conteúdo (Teses e Argumentos)', color: 'orange' }
+            };
+
+            let html = '';
+            for (const [tipo, modulos] of Object.entries(grupos)) {
+                if (modulos.length === 0) continue;
+                
+                const info = tipoLabels[tipo];
+                html += `
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="px-4 py-3 bg-${info.color}-50 border-b border-${info.color}-100">
+                            <h3 class="font-semibold text-${info.color}-800 flex items-center gap-2">
+                                <i class="fas ${info.icon}"></i>
+                                ${info.label} (${modulos.length})
+                            </h3>
+                        </div>
+                        <div class="divide-y divide-gray-100">
+                `;
+
+                modulos.forEach(m => {
+                    const statusBadge = m.ativo 
+                        ? '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">Ativo</span>'
+                        : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">Inativo</span>';
+                    
+                    const keywords = (m.palavras_chave || []).slice(0, 3).map(k => 
+                        `<span class="keyword-pill">${k}</span>`
+                    ).join('');
+                    
+                    const categoriaBadge = m.categoria 
+                        ? `<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">${m.categoria}${m.subcategoria ? '/' + m.subcategoria : ''}</span>` 
+                        : '';
+
+                    html += `
+                        <div class="px-4 py-3 hover:bg-gray-50 flex items-center justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="font-medium text-gray-800">${m.titulo}</span>
+                                    ${statusBadge}
+                                    ${categoriaBadge}
+                                    <span class="text-xs text-gray-400">v${m.versao}</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-sm text-gray-500">
+                                    <span class="font-mono text-xs bg-gray-100 px-1 rounded">${m.nome}</span>
+                                    ${keywords ? `<span class="text-gray-300">|</span> ${keywords}` : ''}
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="editarModulo(${m.id})" class="px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50 rounded-lg">
+                                    <i class="fas fa-edit mr-1"></i> Editar
+                                </button>
+                                <button onclick="verModulo(${m.id})" class="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
+                                    <i class="fas fa-eye mr-1"></i> Ver
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                html += '</div></div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function filtrarModulos() {
+            carregarModulos();
+        }
+
+        function criarModulo() {
+            moduloAtualId = null;
+            keywordsAtuais = [];
+            tagsAtuais = [];
+            
+            document.getElementById('modulo-id').value = '';
+            document.getElementById('modulo-tipo').value = 'conteudo';
+            document.getElementById('modulo-categoria').value = '';
+            document.getElementById('modulo-subcategoria').value = '';
+            document.getElementById('modulo-nome').value = '';
+            document.getElementById('modulo-titulo').value = '';
+            document.getElementById('modulo-conteudo').value = '';
+            document.getElementById('modulo-ativo').checked = true;
+            document.getElementById('modulo-ordem').value = 0;
+            
+            document.getElementById('modal-titulo').textContent = 'Criar Novo Módulo';
+            document.getElementById('modal-subtitulo').textContent = '';
+            document.getElementById('motivo-container').classList.add('hidden');
+            document.getElementById('btn-historico').classList.add('hidden');
+            document.getElementById('versao-info').textContent = '';
+            
+            renderizarKeywords();
+            renderizarTags();
+            
+            document.getElementById('modal-editor').classList.remove('hidden');
+        }
+
+        async function editarModulo(id) {
+            try {
+                const response = await fetch(`${API_BASE}/${id}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                if (!response.ok) throw new Error('Módulo não encontrado');
+                
+                const modulo = await response.json();
+                moduloAtualId = modulo.id;
+                keywordsAtuais = modulo.palavras_chave || [];
+                tagsAtuais = modulo.tags || [];
+                
+                document.getElementById('modulo-id').value = modulo.id;
+                document.getElementById('modulo-tipo').value = modulo.tipo;
+                document.getElementById('modulo-categoria').value = modulo.categoria || '';
+                document.getElementById('modulo-subcategoria').value = modulo.subcategoria || '';
+                document.getElementById('modulo-nome').value = modulo.nome;
+                document.getElementById('modulo-titulo').value = modulo.titulo;
+                document.getElementById('modulo-conteudo').value = modulo.conteudo;
+                document.getElementById('modulo-ativo').checked = modulo.ativo;
+                document.getElementById('modulo-ordem').value = modulo.ordem || 0;
+                document.getElementById('modulo-motivo').value = '';
+                
+                document.getElementById('modal-titulo').textContent = 'Editar Módulo';
+                document.getElementById('modal-subtitulo').textContent = modulo.titulo;
+                document.getElementById('motivo-container').classList.remove('hidden');
+                document.getElementById('btn-historico').classList.remove('hidden');
+                document.getElementById('versao-info').textContent = `Versão ${modulo.versao} • Atualizado em ${new Date(modulo.atualizado_em).toLocaleString('pt-BR')}`;
+                
+                renderizarKeywords();
+                renderizarTags();
+                
+                document.getElementById('modal-editor').classList.remove('hidden');
+            } catch (error) {
+                alert('Erro ao carregar módulo: ' + error.message);
+            }
+        }
+
+        function verModulo(id) {
+            editarModulo(id); // Abre o editor (depois pode criar view somente leitura)
+        }
+
+        async function salvarModulo() {
+            const id = document.getElementById('modulo-id').value;
+            const isNovo = !id;
+            
+            const dados = {
+                tipo: document.getElementById('modulo-tipo').value,
+                categoria: document.getElementById('modulo-categoria').value || null,
+                subcategoria: document.getElementById('modulo-subcategoria').value || null,
+                nome: document.getElementById('modulo-nome').value,
+                titulo: document.getElementById('modulo-titulo').value,
+                conteudo: document.getElementById('modulo-conteudo').value,
+                palavras_chave: keywordsAtuais,
+                tags: tagsAtuais,
+                ativo: document.getElementById('modulo-ativo').checked,
+                ordem: parseInt(document.getElementById('modulo-ordem').value) || 0
+            };
+            
+            if (!isNovo) {
+                dados.motivo = document.getElementById('modulo-motivo').value;
+                if (!dados.motivo) {
+                    alert('Por favor, informe o motivo da alteração');
+                    document.getElementById('modulo-motivo').focus();
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(isNovo ? API_BASE : `${API_BASE}/${id}`, {
+                    method: isNovo ? 'POST' : 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(dados)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao salvar');
+                }
+                
+                fecharEditor();
+                carregarModulos();
+                alert(isNovo ? 'Módulo criado com sucesso!' : 'Módulo atualizado com sucesso!');
+            } catch (error) {
+                alert('Erro: ' + error.message);
+            }
+        }
+
+        function fecharEditor() {
+            document.getElementById('modal-editor').classList.add('hidden');
+        }
+
+        // Keywords
+        function renderizarKeywords() {
+            const container = document.getElementById('keywords-container');
+            container.innerHTML = keywordsAtuais.map((kw, i) => `
+                <span class="keyword-pill flex items-center gap-1">
+                    ${kw}
+                    <button type="button" onclick="removerKeyword(${i})" class="text-purple-500 hover:text-purple-700">
+                        <i class="fas fa-times text-xs"></i>
+                    </button>
+                </span>
+            `).join('');
+        }
+
+        function adicionarKeyword() {
+            const input = document.getElementById('nova-keyword');
+            const valor = input.value.trim().toLowerCase();
+            if (valor && !keywordsAtuais.includes(valor)) {
+                keywordsAtuais.push(valor);
+                renderizarKeywords();
+            }
+            input.value = '';
+        }
+
+        function removerKeyword(index) {
+            keywordsAtuais.splice(index, 1);
+            renderizarKeywords();
+        }
+
+        // Tags
+        function renderizarTags() {
+            const container = document.getElementById('tags-container');
+            container.innerHTML = tagsAtuais.map((tag, i) => `
+                <span class="tag-pill flex items-center gap-1">
+                    ${tag}
+                    <button type="button" onclick="removerTag(${i})" class="text-blue-500 hover:text-blue-700">
+                        <i class="fas fa-times text-xs"></i>
+                    </button>
+                </span>
+            `).join('');
+        }
+
+        function adicionarTag() {
+            const input = document.getElementById('nova-tag');
+            const valor = input.value.trim().toLowerCase();
+            if (valor && !tagsAtuais.includes(valor)) {
+                tagsAtuais.push(valor);
+                renderizarTags();
+            }
+            input.value = '';
+        }
+
+        function removerTag(index) {
+            tagsAtuais.splice(index, 1);
+            renderizarTags();
+        }
+
+        // Histórico
+        async function verHistorico() {
+            if (!moduloAtualId) return;
+            
+            document.getElementById('modal-historico').classList.remove('hidden');
+            document.getElementById('historico-lista').innerHTML = '<div class="text-center py-8 text-gray-400"><i class="fas fa-spinner fa-spin"></i> Carregando...</div>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/${moduloAtualId}/historico`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                const historico = await response.json();
+                
+                if (historico.length === 0) {
+                    document.getElementById('historico-lista').innerHTML = '<div class="text-center py-8 text-gray-400">Nenhuma versão anterior</div>';
+                    return;
+                }
+                
+                document.getElementById('historico-lista').innerHTML = historico.map(h => `
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="font-semibold text-gray-800">Versão ${h.versao}</span>
+                            <span class="text-sm text-gray-500">${new Date(h.alterado_em).toLocaleString('pt-BR')}</span>
+                        </div>
+                        <p class="text-sm text-gray-600 mb-2">${h.motivo || 'Sem descrição'}</p>
+                        <div class="text-xs text-gray-400">${h.diff_resumo || ''}</div>
+                        <div class="mt-3 flex gap-2">
+                            <button onclick="restaurarVersao(${h.versao})" class="px-3 py-1 text-sm text-orange-600 bg-orange-50 rounded hover:bg-orange-100">
+                                <i class="fas fa-undo mr-1"></i> Restaurar
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                document.getElementById('historico-lista').innerHTML = '<div class="text-center py-8 text-red-500">Erro ao carregar histórico</div>';
+            }
+        }
+
+        function fecharHistorico() {
+            document.getElementById('modal-historico').classList.add('hidden');
+        }
+
+        async function restaurarVersao(versao) {
+            const motivo = prompt('Motivo da restauração:');
+            if (!motivo) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/${moduloAtualId}/restaurar/${versao}?motivo=${encodeURIComponent(motivo)}`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                if (!response.ok) throw new Error('Erro ao restaurar');
+                
+                alert('Versão restaurada com sucesso!');
+                fecharHistorico();
+                fecharEditor();
+                carregarModulos();
+            } catch (error) {
+                alert('Erro: ' + error.message);
+            }
+        }
+
+        async function exportarTodos() {
+            try {
+                const response = await fetch(`${API_BASE}/exportar/todos`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                const data = await response.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `prompts_export_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+            } catch (error) {
+                alert('Erro ao exportar: ' + error.message);
+            }
+        }
+
+        function toggleFullscreen() {
+            const textarea = document.getElementById('modulo-conteudo');
+            if (textarea.style.position === 'fixed') {
+                textarea.style.position = '';
+                textarea.style.top = '';
+                textarea.style.left = '';
+                textarea.style.width = '';
+                textarea.style.height = '';
+                textarea.style.zIndex = '';
+                textarea.rows = 15;
+            } else {
+                textarea.style.position = 'fixed';
+                textarea.style.top = '0';
+                textarea.style.left = '0';
+                textarea.style.width = '100vw';
+                textarea.style.height = '100vh';
+                textarea.style.zIndex = '9999';
+                textarea.rows = 50;
+            }
+        }
+    </script>
+</body>
+</html>
