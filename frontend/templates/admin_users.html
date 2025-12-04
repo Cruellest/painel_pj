@@ -100,7 +100,7 @@
 
     <!-- Modal de Criar/Editar Usuário -->
     <div id="user-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden m-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden m-4 max-h-[90vh] flex flex-col">
             <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-primary-50 to-blue-50">
                 <h2 id="modal-title" class="text-lg font-semibold text-gray-800">Novo Usuário</h2>
                 <button onclick="closeModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
@@ -108,7 +108,7 @@
                 </button>
             </div>
             
-            <form id="user-form" class="p-6 space-y-4">
+            <form id="user-form" class="p-6 space-y-4 overflow-y-auto flex-1">
                 <input type="hidden" id="user-id">
                 
                 <div>
@@ -162,7 +162,56 @@
                     <p class="text-xs text-gray-400 mt-1">Senha padrão: <code>senha</code></p>
                 </div>
                 
-                <div class="flex items-center gap-2">
+                <!-- Sistemas Permitidos -->
+                <div class="border-t border-gray-200 pt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-cubes text-primary-500 mr-1"></i>
+                        Sistemas Permitidos
+                    </label>
+                    <p class="text-xs text-gray-400 mb-2">Se nenhum for selecionado, o usuário terá acesso a todos</p>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-matriculas" value="matriculas" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Matrículas Confrontantes</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-assistencia" value="assistencia_judiciaria" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Assistência Judiciária</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-gerador" value="gerador_pecas" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Gerador de Peças</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Permissões Especiais -->
+                <div class="border-t border-gray-200 pt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-key text-orange-500 mr-1"></i>
+                        Permissões Especiais
+                    </label>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="perm-editar-prompts" value="editar_prompts" class="rounded border-gray-300 text-orange-600">
+                            <span class="text-sm text-gray-700">Editar Prompts</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="perm-criar-prompts" value="criar_prompts" class="rounded border-gray-300 text-orange-600">
+                            <span class="text-sm text-gray-700">Criar Prompts</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="perm-excluir-prompts" value="excluir_prompts" class="rounded border-gray-300 text-orange-600">
+                            <span class="text-sm text-gray-700">Excluir Prompts</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="perm-ver-historico" value="ver_historico_prompts" class="rounded border-gray-300 text-orange-600">
+                            <span class="text-sm text-gray-700">Ver Histórico de Prompts</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2 pt-2">
                     <input type="checkbox" id="user-active" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" checked>
                     <label for="user-active" class="text-sm text-gray-700">Usuário ativo</label>
                 </div>
@@ -330,6 +379,16 @@
             document.getElementById('user-form').reset();
             document.getElementById('user-username').disabled = false;
             document.getElementById('password-section').style.display = 'block';
+            
+            // Limpa checkboxes de sistemas e permissões
+            document.getElementById('sistema-matriculas').checked = false;
+            document.getElementById('sistema-assistencia').checked = false;
+            document.getElementById('sistema-gerador').checked = false;
+            document.getElementById('perm-editar-prompts').checked = false;
+            document.getElementById('perm-criar-prompts').checked = false;
+            document.getElementById('perm-excluir-prompts').checked = false;
+            document.getElementById('perm-ver-historico').checked = false;
+            
             document.getElementById('user-modal').classList.remove('hidden');
         }
 
@@ -348,12 +407,45 @@
             document.getElementById('user-role').value = user.role;
             document.getElementById('user-active').checked = user.is_active;
             document.getElementById('password-section').style.display = 'none';
+            
+            // Sistemas permitidos
+            const sistemas = user.sistemas_permitidos || [];
+            document.getElementById('sistema-matriculas').checked = sistemas.includes('matriculas');
+            document.getElementById('sistema-assistencia').checked = sistemas.includes('assistencia_judiciaria');
+            document.getElementById('sistema-gerador').checked = sistemas.includes('gerador_pecas');
+            
+            // Permissões especiais
+            const permissoes = user.permissoes_especiais || [];
+            document.getElementById('perm-editar-prompts').checked = permissoes.includes('editar_prompts');
+            document.getElementById('perm-criar-prompts').checked = permissoes.includes('criar_prompts');
+            document.getElementById('perm-excluir-prompts').checked = permissoes.includes('excluir_prompts');
+            document.getElementById('perm-ver-historico').checked = permissoes.includes('ver_historico_prompts');
+            
             document.getElementById('user-modal').classList.remove('hidden');
         }
 
         // Fecha modal
         function closeModal() {
             document.getElementById('user-modal').classList.add('hidden');
+        }
+
+        // Coleta sistemas selecionados
+        function getSistemasPermitidos() {
+            const sistemas = [];
+            if (document.getElementById('sistema-matriculas').checked) sistemas.push('matriculas');
+            if (document.getElementById('sistema-assistencia').checked) sistemas.push('assistencia_judiciaria');
+            if (document.getElementById('sistema-gerador').checked) sistemas.push('gerador_pecas');
+            return sistemas.length > 0 ? sistemas : null;
+        }
+
+        // Coleta permissões selecionadas
+        function getPermissoesEspeciais() {
+            const permissoes = [];
+            if (document.getElementById('perm-editar-prompts').checked) permissoes.push('editar_prompts');
+            if (document.getElementById('perm-criar-prompts').checked) permissoes.push('criar_prompts');
+            if (document.getElementById('perm-excluir-prompts').checked) permissoes.push('excluir_prompts');
+            if (document.getElementById('perm-ver-historico').checked) permissoes.push('ver_historico_prompts');
+            return permissoes.length > 0 ? permissoes : null;
         }
 
         // Salva usuário
@@ -365,7 +457,9 @@
                 full_name: document.getElementById('user-fullname').value,
                 email: document.getElementById('user-email').value || null,
                 role: document.getElementById('user-role').value,
-                is_active: document.getElementById('user-active').checked
+                is_active: document.getElementById('user-active').checked,
+                sistemas_permitidos: getSistemasPermitidos(),
+                permissoes_especiais: getPermissoesEspeciais()
             };
 
             // Se criando, adiciona senha

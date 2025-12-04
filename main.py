@@ -5,7 +5,6 @@ Portal PGE-MS - Aplicação FastAPI Principal
 Unifica os sistemas:
 - Assistência Judiciária
 - Matrículas Confrontantes
-- Gerador de Peças Jurídicas
 
 Com autenticação centralizada via JWT.
 """
@@ -40,6 +39,9 @@ from users.router import router as users_router
 from sistemas.assistencia_judiciaria.router import router as assistencia_router
 from sistemas.matriculas_confrontantes.router import router as matriculas_router
 from sistemas.gerador_pecas.router import router as gerador_pecas_router
+
+# Import do admin de prompts modulares
+from admin.router_prompts import router as prompts_modulos_router
 
 # Diretórios base
 BASE_DIR = Path(__file__).resolve().parent
@@ -139,6 +141,9 @@ app.include_router(assistencia_router, prefix="/assistencia/api")
 app.include_router(matriculas_router, prefix="/matriculas/api")
 app.include_router(gerador_pecas_router, prefix="/gerador-pecas/api")
 
+# Router de Prompts Modulares (admin)
+app.include_router(prompts_modulos_router, prefix="/admin/api")
+
 
 # ==================================================
 # FRONTENDS DOS SISTEMAS
@@ -209,7 +214,7 @@ async def serve_matriculas_static(filename: str):
     return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
 
 
-# Gerador de Peças Jurídicas - Servir arquivos estáticos
+# Gerador de Peças Jurídicas
 @app.get("/gerador-pecas/{filename:path}")
 @app.get("/gerador-pecas/")
 @app.get("/gerador-pecas")
@@ -217,9 +222,9 @@ async def serve_gerador_pecas_static(filename: str = ""):
     """Serve arquivos do frontend Gerador de Peças Jurídicas"""
     if not filename or filename == "" or filename == "/":
         filename = "index.html"
-    
+
     file_path = GERADOR_PECAS_TEMPLATES / filename
-    
+
     if file_path.exists() and file_path.is_file():
         suffix = file_path.suffix.lower()
         content_types = {
@@ -233,12 +238,12 @@ async def serve_gerador_pecas_static(filename: str = ""):
         }
         media_type = content_types.get(suffix, "application/octet-stream")
         return FileResponse(file_path, media_type=media_type)
-    
+
     # Se não encontrou, retorna index.html (SPA fallback)
     index_path = GERADOR_PECAS_TEMPLATES / "index.html"
     if index_path.exists():
         return FileResponse(index_path, media_type="text/html")
-    
+
     return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
 
 
@@ -268,6 +273,12 @@ async def change_password_page(request: Request):
 async def admin_prompts_page(request: Request):
     """Página de administração de prompts (requer autenticação via JS)"""
     return templates.TemplateResponse("admin_prompts.html", {"request": request})
+
+
+@app.get("/admin/prompts-modulos")
+async def admin_prompts_modulos_page(request: Request):
+    """Página de gerenciamento de prompts modulares (requer autenticação via JS)"""
+    return templates.TemplateResponse("admin_prompts_modulos.html", {"request": request})
 
 
 @app.get("/admin/users")

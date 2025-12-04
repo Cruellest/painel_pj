@@ -17,6 +17,7 @@ from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSiste
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from admin.models import PromptConfig, ConfiguracaoIA
+from admin.models_prompts import PromptModulo, PromptModuloHistorico
 
 
 def wait_for_db(max_retries=10, delay=3):
@@ -231,6 +232,117 @@ def run_migrations():
         except Exception as e:
             db.rollback()
             print(f"⚠️ Migração feedbacks_pecas: {e}")
+    
+    # Migração: Adicionar colunas de permissões na tabela users
+    if table_exists('users') and not column_exists('users', 'sistemas_permitidos'):
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN sistemas_permitidos JSON"))
+            db.commit()
+            print("✅ Migração: coluna sistemas_permitidos adicionada em users")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração sistemas_permitidos: {e}")
+    
+    if table_exists('users') and not column_exists('users', 'permissoes_especiais'):
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN permissoes_especiais JSON"))
+            db.commit()
+            print("✅ Migração: coluna permissoes_especiais adicionada em users")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração permissoes_especiais: {e}")
+    
+    # Migração: Criar tabela prompt_modulos
+    if not table_exists('prompt_modulos'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE prompt_modulos (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        tipo VARCHAR(20) NOT NULL,
+                        categoria VARCHAR(50),
+                        subcategoria VARCHAR(50),
+                        nome VARCHAR(100) NOT NULL,
+                        titulo VARCHAR(200) NOT NULL,
+                        conteudo TEXT NOT NULL,
+                        palavras_chave JSON,
+                        tags JSON,
+                        ativo BOOLEAN DEFAULT 1,
+                        ordem INTEGER DEFAULT 0,
+                        versao INTEGER DEFAULT 1,
+                        criado_por INTEGER REFERENCES users(id),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_por INTEGER REFERENCES users(id),
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(tipo, categoria, subcategoria, nome)
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS prompt_modulos (
+                        id SERIAL PRIMARY KEY,
+                        tipo VARCHAR(20) NOT NULL,
+                        categoria VARCHAR(50),
+                        subcategoria VARCHAR(50),
+                        nome VARCHAR(100) NOT NULL,
+                        titulo VARCHAR(200) NOT NULL,
+                        conteudo TEXT NOT NULL,
+                        palavras_chave JSON,
+                        tags JSON,
+                        ativo BOOLEAN DEFAULT true,
+                        ordem INTEGER DEFAULT 0,
+                        versao INTEGER DEFAULT 1,
+                        criado_por INTEGER REFERENCES users(id),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_por INTEGER REFERENCES users(id),
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(tipo, categoria, subcategoria, nome)
+                    )
+                """))
+            db.commit()
+            print("✅ Migração: tabela prompt_modulos criada")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração prompt_modulos: {e}")
+    
+    # Migração: Criar tabela prompt_modulos_historico
+    if not table_exists('prompt_modulos_historico'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE prompt_modulos_historico (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        modulo_id INTEGER NOT NULL REFERENCES prompt_modulos(id),
+                        versao INTEGER NOT NULL,
+                        conteudo TEXT NOT NULL,
+                        palavras_chave JSON,
+                        tags JSON,
+                        alterado_por INTEGER REFERENCES users(id),
+                        alterado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        motivo TEXT,
+                        diff_resumo TEXT
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS prompt_modulos_historico (
+                        id SERIAL PRIMARY KEY,
+                        modulo_id INTEGER NOT NULL REFERENCES prompt_modulos(id),
+                        versao INTEGER NOT NULL,
+                        conteudo TEXT NOT NULL,
+                        palavras_chave JSON,
+                        tags JSON,
+                        alterado_por INTEGER REFERENCES users(id),
+                        alterado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        motivo TEXT,
+                        diff_resumo TEXT
+                    )
+                """))
+            db.commit()
+            print("✅ Migração: tabela prompt_modulos_historico criada")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração prompt_modulos_historico: {e}")
     
     db.close()
 
