@@ -176,8 +176,8 @@ async def listar_tipos(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Lista todos os tipos de módulos"""
-    return ["base", "peca", "conteudo"]
+    """Lista todos os tipos de módulos (sem 'base' - o base fica em Prompts de IA)"""
+    return ["peca", "conteudo"]
 
 
 # ==========================================

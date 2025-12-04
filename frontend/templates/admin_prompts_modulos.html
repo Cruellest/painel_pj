@@ -65,37 +65,45 @@
                     <h3 class="text-lg font-semibold text-gray-800 mb-3">
                         Como funcionam os Prompts Modulares
                     </h3>
-                    <p class="text-sm text-gray-600 mb-4">
-                        Os prompts modulares são blocos reutilizáveis que a IA combina automaticamente para gerar peças jurídicas. 
-                        Eles são organizados em <strong>3 categorias</strong> que se complementam:
-                    </p>
                     
-                    <div class="grid md:grid-cols-3 gap-4 text-sm">
-                        <!-- BASE -->
-                        <div class="bg-white rounded-lg p-4 border-2 border-indigo-200">
-                            <div class="flex items-center gap-2 mb-2">
-                                <span class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs font-bold">BASE</span>
-                                <span class="text-indigo-600 text-xs">🔒 Sempre ativo</span>
-                            </div>
-                            <p class="text-gray-600 text-xs mb-2">
-                                <strong>O "System Prompt"</strong> - define quem é a IA, como deve se comportar e quais regras gerais seguir.
-                            </p>
-                            <div class="bg-indigo-50 rounded p-2 text-xs text-indigo-700">
-                                <i class="fas fa-check mr-1"></i> Enviado em <strong>toda</strong> geração de peça
+                    <!-- Aviso sobre Prompt Base -->
+                    <div class="bg-indigo-100 border-l-4 border-indigo-500 p-3 rounded mb-4">
+                        <div class="flex items-start gap-2">
+                            <i class="fas fa-info-circle text-indigo-600 mt-0.5"></i>
+                            <div class="text-sm text-indigo-800">
+                                <strong>Onde fica o Prompt BASE (System Prompt)?</strong><br>
+                                O prompt base do Gerador de Peças é configurado no 
+                                <a href="/admin/prompts-config" class="underline font-semibold hover:text-indigo-900">
+                                    Gerenciamento de Prompts de IA
+                                </a>, junto com os prompts dos outros sistemas (Matrículas, Assistência).
+                                Lá você define a "personalidade" e comportamento geral da IA.
                             </div>
                         </div>
-                        
+                    </div>
+                    
+                    <p class="text-sm text-gray-600 mb-4">
+                        Aqui você gerencia os <strong>módulos de PEÇA e CONTEÚDO</strong> - blocos reutilizáveis que a IA combina 
+                        automaticamente para gerar peças jurídicas completas:
+                    </p>
+                    
+                    <div class="grid md:grid-cols-2 gap-4 text-sm">
                         <!-- PEÇA -->
                         <div class="bg-white rounded-lg p-4 border-2 border-green-200">
                             <div class="flex items-center gap-2 mb-2">
                                 <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-bold">PEÇA</span>
-                                <span class="text-green-600 text-xs">📋 Por tipo de peça</span>
+                                <span class="text-green-600 text-xs">📋 Estrutura/Template</span>
                             </div>
                             <p class="text-gray-600 text-xs mb-2">
-                                <strong>Estrutura da peça</strong> - define a estrutura específica (Contestação, Apelação, Parecer, etc).
+                                Define a <strong>estrutura específica</strong> de cada tipo de peça jurídica.
                             </p>
+                            <ul class="text-xs text-gray-500 space-y-1 mb-2">
+                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Contestação</li>
+                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Recurso de Apelação</li>
+                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Contrarrazões</li>
+                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Parecer Jurídico</li>
+                            </ul>
                             <div class="bg-green-50 rounded p-2 text-xs text-green-700">
-                                <i class="fas fa-hand-pointer mr-1"></i> Ativado quando o <strong>usuário escolhe</strong> ou a IA identifica o tipo
+                                <i class="fas fa-hand-pointer mr-1"></i> Ativado quando o <strong>usuário escolhe</strong> o tipo de peça
                             </div>
                         </div>
                         
@@ -103,13 +111,19 @@
                         <div class="bg-white rounded-lg p-4 border-2 border-orange-200">
                             <div class="flex items-center gap-2 mb-2">
                                 <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-bold">CONTEÚDO</span>
-                                <span class="text-orange-600 text-xs">🎯 Por situação</span>
+                                <span class="text-orange-600 text-xs">🎯 Teses e Argumentos</span>
                             </div>
                             <p class="text-gray-600 text-xs mb-2">
-                                <strong>Teses e argumentos</strong> - módulos de argumentação ativados quando a situação é detectada nos documentos.
+                                Módulos de <strong>argumentação jurídica</strong> ativados conforme a situação do caso.
                             </p>
+                            <ul class="text-xs text-gray-500 space-y-1 mb-2">
+                                <li><i class="fas fa-clock mr-1 text-orange-500"></i> Prescrição</li>
+                                <li><i class="fas fa-user-times mr-1 text-orange-500"></i> Ilegitimidade Passiva</li>
+                                <li><i class="fas fa-pills mr-1 text-orange-500"></i> Medicamento não incorporado ao SUS</li>
+                                <li><i class="fas fa-flask mr-1 text-orange-500"></i> Tratamento experimental</li>
+                            </ul>
                             <div class="bg-orange-50 rounded p-2 text-xs text-orange-700">
-                                <i class="fas fa-search mr-1"></i> Ativado pela <strong>análise automática</strong> do caso
+                                <i class="fas fa-robot mr-1"></i> Ativado pelo <strong>agente de IA</strong> ao analisar os documentos
                             </div>
                         </div>
                     </div>
@@ -119,18 +133,20 @@
                         <p class="text-xs text-gray-500 mb-3 font-medium">Fluxo de montagem do prompt final:</p>
                         <div class="flex items-center justify-center gap-2 flex-wrap">
                             <div class="flex flex-col items-center">
-                                <div class="px-3 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium">BASE</div>
-                                <span class="text-xs text-gray-400 mt-1">Sempre ativo</span>
+                                <a href="/admin/prompts-config" class="px-3 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-200 transition-colors">
+                                    <i class="fas fa-cog mr-1"></i> BASE
+                                </a>
+                                <span class="text-xs text-gray-400 mt-1">Prompts de IA</span>
                             </div>
                             <i class="fas fa-plus text-gray-400 text-lg"></i>
                             <div class="flex flex-col items-center">
                                 <div class="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">PEÇA</div>
-                                <span class="text-xs text-gray-400 mt-1">Contestação</span>
+                                <span class="text-xs text-gray-400 mt-1">Ex: Contestação</span>
                             </div>
                             <i class="fas fa-plus text-gray-400 text-lg"></i>
                             <div class="flex flex-col items-center">
                                 <div class="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium">CONTEÚDO</div>
-                                <span class="text-xs text-gray-400 mt-1">Prescrição + Ilegitimidade...</span>
+                                <span class="text-xs text-gray-400 mt-1">Ex: Prescrição + Ilegitimidade</span>
                             </div>
                             <i class="fas fa-arrow-right text-gray-400 text-lg mx-2"></i>
                             <div class="flex flex-col items-center">
@@ -142,32 +158,17 @@
                         </div>
                     </div>
 
-                    <!-- Exemplos de Conteúdo -->
-                    <div class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <p class="text-xs text-gray-600 font-medium mb-2">
-                            <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>
-                            Exemplos de módulos de CONTEÚDO (ativados por palavras-chave nos documentos):
+                    <!-- Como a IA seleciona os módulos -->
+                    <div class="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
+                        <p class="text-xs text-amber-800 font-medium mb-2">
+                            <i class="fas fa-robot text-amber-600 mr-1"></i>
+                            Como a IA seleciona os módulos de CONTEÚDO?
                         </p>
-                        <div class="flex flex-wrap gap-2">
-                            <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
-                                <i class="fas fa-clock mr-1"></i> Prescrição
-                            </span>
-                            <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
-                                <i class="fas fa-user-times mr-1"></i> Ilegitimidade Passiva
-                            </span>
-                            <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
-                                <i class="fas fa-pills mr-1"></i> Medicamento não incorporado ao SUS
-                            </span>
-                            <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
-                                <i class="fas fa-flask mr-1"></i> Tratamento experimental
-                            </span>
-                            <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
-                                <i class="fas fa-balance-scale mr-1"></i> Ausência de prova do dano
-                            </span>
-                            <span class="px-2 py-1 bg-gray-200 text-gray-600 rounded text-xs">
-                                + outros módulos...
-                            </span>
-                        </div>
+                        <p class="text-xs text-amber-700">
+                            Um <strong>agente de IA auxiliar</strong> (modelo rápido e econômico) analisa os documentos do processo e 
+                            identifica quais situações jurídicas estão presentes. Baseado nisso, ele ativa automaticamente os módulos 
+                            de conteúdo relevantes (ex: detectou "prazo prescricional" → ativa módulo de Prescrição).
+                        </p>
                     </div>
                     
                     <!-- Toggle para esconder -->
@@ -189,7 +190,6 @@
                 </div>
                 <select id="filtro-tipo" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="filtrarModulos()">
                     <option value="">Todos os tipos</option>
-                    <option value="base">Base</option>
                     <option value="peca">Peça</option>
                     <option value="conteudo">Conteúdo</option>
                 </select>
@@ -236,7 +236,6 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
                             <select id="modulo-tipo" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
-                                <option value="base">Base</option>
                                 <option value="peca">Peça</option>
                                 <option value="conteudo">Conteúdo</option>
                             </select>
@@ -456,15 +455,14 @@
             }
 
             // Agrupa por tipo
-            const grupos = { base: [], peca: [], conteudo: [] };
+            const grupos = { peca: [], conteudo: [] };
             modulosCache.forEach(m => {
                 if (grupos[m.tipo]) grupos[m.tipo].push(m);
             });
 
             const tipoLabels = {
-                base: { icon: 'fa-file-code', label: 'Prompt Base', color: 'blue' },
-                peca: { icon: 'fa-file-alt', label: 'Peças', color: 'green' },
-                conteudo: { icon: 'fa-lightbulb', label: 'Conteúdo', color: 'purple' }
+                peca: { icon: 'fa-file-alt', label: 'Peças (Estrutura/Template)', color: 'green' },
+                conteudo: { icon: 'fa-lightbulb', label: 'Conteúdo (Teses e Argumentos)', color: 'orange' }
             };
 
             let html = '';
