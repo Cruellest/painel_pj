@@ -1,6 +1,7 @@
 # sistemas/gerador_pecas/services.py
 """
 Serviços do sistema Gerador de Peças Jurídicas
+Utiliza prompts modulares: BASE + PEÇA + CONTEÚDO
 """
 
 import os
@@ -16,10 +17,115 @@ from docx.shared import Pt, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from sistemas.gerador_pecas.models import GeracaoPeca
+from admin.models_prompts import PromptModulo
 
 
-# Prompt padrão para geração de peças
-DEFAULT_PROMPT_SISTEMA = """Você é um assistente jurídico especializado da Procuradoria-Geral do Estado de Mato Grosso do Sul (PGE-MS).
+class GeradorPecasService:
+    """
+    Serviço principal para geração de peças jurídicas.
+    
+    Utiliza sistema de prompts modulares:
+    - BASE: System prompt (sempre ativo)
+    - PEÇA: Estrutura específica do tipo de peça (ativado por escolha)
+    - CONTEÚDO: Argumentos/teses (ativados por detecção de situação)
+    """
+    
+    def __init__(
+        self, 
+        modelo: str = "anthropic/claude-3.5-sonnet",
+        db: Session = None
+    ):
+        self.modelo = modelo
+        self.db = db
+        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
+        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
+        
+        # Diretório para arquivos temporários
+        self.temp_dir = os.path.join(os.path.dirname(__file__), 'temp_docs')
+        os.makedirs(self.temp_dir, exist_ok=True)
+    
+    def _carregar_modulos_base(self) -> List[PromptModulo]:
+        """Carrega todos os módulos BASE (sempre ativos)"""
+        if not self.db:
+            return []
+        return self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "base",
+            PromptModulo.ativo == True
+        ).order_by(PromptModulo.ordem).all()
+    
+    def _carregar_modulo_peca(self, tipo_peca: str) -> Optional[PromptModulo]:
+        """Carrega o módulo de PEÇA específico"""
+        if not self.db:
+            return None
+        return self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "peca",
+            PromptModulo.categoria == tipo_peca,
+            PromptModulo.ativo == True
+        ).first()
+    
+    def _carregar_modulos_conteudo(self, palavras_detectadas: List[str] = None) -> List[PromptModulo]:
+        """
+        Carrega módulos de CONTEÚDO com base nas palavras-chave detectadas.
+        Se nenhuma palavra for passada, retorna todos os módulos ativos.
+        """
+        if not self.db:
+            return []
+        
+        query = self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "conteudo",
+            PromptModulo.ativo == True
+        )
+        
+        modulos = query.order_by(PromptModulo.ordem).all()
+        
+        if not palavras_detectadas:
+            return modulos
+        
+        # Filtra módulos que têm palavras-chave correspondentes
+        modulos_relevantes = []
+        for modulo in modulos:
+            if modulo.palavras_chave:
+                for palavra in modulo.palavras_chave:
+                    if any(palavra.lower() in p.lower() for p in palavras_detectadas):
+                        modulos_relevantes.append(modulo)
+                        break
+        
+        return modulos_relevantes
+    
+    def _montar_prompt_sistema(self, tipo_peca: str = None, palavras_detectadas: List[str] = None) -> str:
+        """
+        Monta o prompt de sistema combinando módulos:
+        BASE + PEÇA + CONTEÚDO
+        """
+        partes = []
+        
+        # 1. Módulos BASE (sempre incluídos)
+        modulos_base = self._carregar_modulos_base()
+        for modulo in modulos_base:
+            partes.append(f"## {modulo.titulo}\n\n{modulo.conteudo}")
+        
+        # 2. Módulo de PEÇA (se tipo especificado)
+        if tipo_peca:
+            modulo_peca = self._carregar_modulo_peca(tipo_peca)
+            if modulo_peca:
+                partes.append(f"## ESTRUTURA DA PEÇA: {modulo_peca.titulo}\n\n{modulo_peca.conteudo}")
+        
+        # 3. Módulos de CONTEÚDO (baseado em detecção)
+        modulos_conteudo = self._carregar_modulos_conteudo(palavras_detectadas)
+        if modulos_conteudo:
+            partes.append("## ARGUMENTOS E TESES APLICÁVEIS\n")
+            for modulo in modulos_conteudo:
+                partes.append(f"### {modulo.titulo}\n{modulo.conteudo}\n")
+        
+        # Se não há módulos no banco, usa prompt padrão
+        if not partes:
+            return self._get_prompt_padrao()
+        
+        return "\n\n".join(partes)
+    
+    def _get_prompt_padrao(self) -> str:
+        """Retorna prompt padrão caso não haja módulos no banco"""
+        return """Você é um assistente jurídico especializado da Procuradoria-Geral do Estado de Mato Grosso do Sul (PGE-MS).
 
 Sua função é analisar processos judiciais e gerar peças jurídicas profissionais (contestações, pareceres, recursos).
 
@@ -60,51 +166,6 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
 }
 ```
 
-## FORMATO DE RESPOSTA
-
-Quando gerar a peça, retorne JSON estruturado:
-```json
-{
-  "tipo": "resposta",
-  "tipo_peca": "contestacao",
-  "documento": {
-    "cabecalho": {
-      "texto": "EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA ... VARA CÍVEL DA COMARCA DE ...",
-      "alinhamento": "direita"
-    },
-    "qualificacao": {
-      "texto": "O ESTADO DE MATO GROSSO DO SUL, pessoa jurídica de direito público interno...",
-      "recuo_primeira_linha": 1.25
-    },
-    "secoes": [
-      {
-        "titulo": "I - DOS FATOS",
-        "titulo_negrito": true,
-        "titulo_caixa_alta": true,
-        "paragrafos": [
-          {
-            "tipo": "normal",
-            "texto": "Trata-se de ação...",
-            "numerado": false,
-            "justificado": true,
-            "recuo_primeira_linha": 1.25
-          },
-          {
-            "tipo": "citacao",
-            "texto": "Texto literal da citação...",
-            "fonte": "AUTOR. Obra. Edição."
-          }
-        ]
-      }
-    ],
-    "fecho": {
-      "local_data": "Campo Grande/MS, [DATA_AUTOMATICA]",
-      "assinatura": "[NOME_PROCURADOR]\\n[CARGO]\\nOAB/MS nº [NUMERO]"
-    }
-  }
-}
-```
-
 ## IMPORTANTE
 
 - NUNCA invente fatos não presentes nos documentos
@@ -113,26 +174,6 @@ Quando gerar a peça, retorne JSON estruturado:
 - Cite jurisprudência quando houver (STF, STJ, TJMS)
 - Mantenha tom formal e respeitoso
 """
-
-
-class GeradorPecasService:
-    """Serviço principal para geração de peças jurídicas"""
-    
-    def __init__(
-        self, 
-        modelo: str = "anthropic/claude-3.5-sonnet",
-        prompt_sistema: str = None,
-        db: Session = None
-    ):
-        self.modelo = modelo
-        self.prompt_sistema = prompt_sistema or DEFAULT_PROMPT_SISTEMA
-        self.db = db
-        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
-        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
-        
-        # Diretório para arquivos temporários
-        self.temp_dir = os.path.join(os.path.dirname(__file__), 'temp_docs')
-        os.makedirs(self.temp_dir, exist_ok=True)
     
     async def processar_processo(
         self,
@@ -140,13 +181,19 @@ class GeradorPecasService:
         numero_cnj_formatado: str = None,
         tipo_peca: Optional[str] = None,
         resposta_usuario: Optional[str] = None,
-        usuario_id: int = None
+        usuario_id: int = None,
+        palavras_detectadas: List[str] = None
     ) -> Dict:
         """
         Processa um processo e gera a peça jurídica
         
-        Por enquanto, retorna um placeholder indicando que a integração
-        com o TJ-MS ainda precisa ser implementada.
+        Args:
+            numero_cnj: Número do processo sem formatação
+            numero_cnj_formatado: Número formatado para exibição
+            tipo_peca: Tipo de peça a gerar (contestacao, recurso_apelacao, etc)
+            resposta_usuario: Resposta a uma pergunta anterior
+            usuario_id: ID do usuário
+            palavras_detectadas: Palavras-chave detectadas nos documentos
         """
         try:
             # TODO: Implementar integração com TJ-MS
@@ -162,6 +209,12 @@ class GeradorPecasService:
             
             # Se tem tipo de peça, gera documento de exemplo
             tipo_final = tipo_peca or resposta_usuario
+            
+            # Monta o prompt usando módulos
+            prompt_sistema = self._montar_prompt_sistema(tipo_final, palavras_detectadas)
+            
+            # Log dos módulos usados (para debug)
+            print(f"🧩 Prompt montado com {len(prompt_sistema)} caracteres")
             
             # Gera documento de exemplo
             conteudo = self._gerar_documento_exemplo(numero_cnj_formatado or numero_cnj, tipo_final)
