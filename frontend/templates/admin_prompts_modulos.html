@@ -54,6 +54,106 @@
     </header>
 
     <main class="max-w-7xl mx-auto p-6">
+        
+        <!-- Seção Explicativa -->
+        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-200 p-6 mb-6">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-info-circle text-blue-600 text-xl"></i>
+                </div>
+                <div class="flex-1">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-3">
+                        <i class="fas fa-puzzle-piece text-blue-600 mr-2"></i>
+                        Como funciona o Sistema de Prompts
+                    </h3>
+                    
+                    <div class="grid md:grid-cols-2 gap-6 text-sm text-gray-700">
+                        <!-- Coluna 1: Tipos de Prompt -->
+                        <div>
+                            <h4 class="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                                <span class="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs">1</span>
+                                Tipos de Prompt
+                            </h4>
+                            <ul class="space-y-2 ml-8">
+                                <li class="flex items-start gap-2">
+                                    <span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">SISTEMA</span>
+                                    <span>Define a "personalidade" da IA - como ela deve se comportar e analisar documentos. <strong>É enviado primeiro</strong> em toda conversa.</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">ANÁLISE</span>
+                                    <span>Instruções específicas de <strong>como extrair dados</strong> (ex: formato JSON esperado). Usado junto com os documentos.</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <span class="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-medium">RELATÓRIO</span>
+                                    <span>Como <strong>gerar o relatório final</strong> a partir dos dados extraídos. Usa variáveis como <code class="bg-gray-100 px-1 rounded">{data_json}</code>.</span>
+                                </li>
+                            </ul>
+                        </div>
+                        
+                        <!-- Coluna 2: Fluxo de Execução -->
+                        <div>
+                            <h4 class="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                                <span class="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs">2</span>
+                                Fluxo de Execução
+                            </h4>
+                            <div class="bg-white rounded-lg p-3 border border-gray-200">
+                                <div class="flex items-center gap-2 text-xs">
+                                    <div class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded font-medium">SISTEMA</div>
+                                    <i class="fas fa-arrow-right text-gray-400"></i>
+                                    <div class="px-2 py-1 bg-green-100 text-green-700 rounded font-medium">ANÁLISE + Docs</div>
+                                    <i class="fas fa-arrow-right text-gray-400"></i>
+                                    <div class="px-2 py-1 bg-blue-100 text-blue-700 rounded font-medium">JSON</div>
+                                    <i class="fas fa-arrow-right text-gray-400"></i>
+                                    <div class="px-2 py-1 bg-orange-100 text-orange-700 rounded font-medium">RELATÓRIO</div>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-2">
+                                    O prompt de SISTEMA define o contexto → ANÁLISE extrai dados → Resultado em JSON → RELATÓRIO formata para o usuário
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Onde Editar -->
+                    <div class="mt-4 pt-4 border-t border-blue-200">
+                        <h4 class="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                            <span class="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs">3</span>
+                            Onde Editar os Prompts
+                        </h4>
+                        <div class="grid md:grid-cols-2 gap-4">
+                            <div class="bg-white rounded-lg p-3 border border-gray-200">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <i class="fas fa-cog text-primary-600"></i>
+                                    <span class="font-medium text-gray-800">Prompts de IA</span>
+                                    <a href="/admin/prompts-config" class="text-primary-600 text-xs hover:underline ml-auto">Acessar →</a>
+                                </div>
+                                <p class="text-xs text-gray-500">
+                                    Edite os <strong>prompts principais</strong> de cada sistema (Sistema, Análise, Relatório). 
+                                    Estes são os prompts que a IA <strong>usa diretamente</strong>.
+                                </p>
+                            </div>
+                            <div class="bg-white rounded-lg p-3 border border-gray-200 border-blue-300">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <i class="fas fa-puzzle-piece text-orange-600"></i>
+                                    <span class="font-medium text-gray-800">Prompts Modulares</span>
+                                    <span class="text-orange-600 text-xs ml-auto">← Você está aqui</span>
+                                </div>
+                                <p class="text-xs text-gray-500">
+                                    Crie e versione <strong>módulos reutilizáveis</strong> de prompts. 
+                                    Use para organizar, versionar e reaproveitar trechos entre sistemas.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Toggle para esconder -->
+                    <button onclick="this.closest('.bg-gradient-to-r').classList.add('hidden')" 
+                        class="mt-3 text-xs text-blue-600 hover:underline">
+                        <i class="fas fa-eye-slash mr-1"></i> Esconder esta explicação
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Filtros -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
             <div class="flex flex-wrap gap-4 items-center">
