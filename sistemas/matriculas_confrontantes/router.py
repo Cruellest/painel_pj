@@ -7,6 +7,7 @@ Convertido de Flask para FastAPI com integração ao portal unificado
 import os
 import json
 import threading
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -34,6 +35,21 @@ from sistemas.matriculas_confrontantes.services import (
     result_to_dict, APP_VERSION
 )
 
+# Configura logger específico para matrículas
+logger = logging.getLogger("matriculas")
+logger.setLevel(logging.INFO)
+
+# Handler para console com formato limpo
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        '\033[36m[MATRÍCULAS]\033[0m %(asctime)s - %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
 router = APIRouter(tags=["Matrículas Confrontantes"])
 
 
@@ -41,6 +57,7 @@ router = APIRouter(tags=["Matrículas Confrontantes"])
 class AnaliseLoteRequest(BaseModel):
     file_ids: List[str]
     nome_grupo: Optional[str] = None
+    matricula_principal: Optional[str] = None
 
 
 # Schema para feedback
@@ -384,7 +401,8 @@ async def analisar_documento(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
-    force: bool = False
+    force: bool = False,
+    matricula_principal: Optional[str] = None
 ):
     """Inicia análise de documento com IA"""
     from admin.models import ConfiguracaoIA
@@ -429,7 +447,8 @@ async def analisar_documento(
         str(filepath),
         state.model,
         api_key,
-        current_user.id
+        current_user.id,
+        matricula_principal
     )
     
     return {"success": True, "message": "Análise iniciada"}
@@ -494,7 +513,8 @@ async def analisar_lote(
         file_paths,
         state.model,
         api_key,
-        current_user.id
+        current_user.id,
+        request.matricula_principal
     )
     
     return {
@@ -556,7 +576,7 @@ async def resultado_grupo(
 
 
 def run_batch_analysis_task(grupo_id: int, file_ids: List[str], file_paths: List[str], 
-                            model: str, api_key: str, user_id: int):
+                            model: str, api_key: str, user_id: int, matricula_hint: Optional[str] = None):
     """Task de análise em lote - processa múltiplos PDFs em uma única chamada à IA"""
     from database.connection import SessionLocal
     from admin.models import ConfiguracaoIA
@@ -624,13 +644,18 @@ def run_batch_analysis_task(grupo_id: int, file_ids: List[str], file_paths: List
         system_prompt = get_system_prompt()
         base_prompt = get_analysis_prompt()
         
+        # Adiciona hint da matrícula principal se fornecido
+        hint_text = ""
+        if matricula_hint:
+            hint_text = f"\n\nATENÇÃO: A MATRÍCULA PRINCIPAL (OBJETO DA ANÁLISE) É: {matricula_hint}\nDê prioridade total a esta matrícula como sendo o imóvel central.\n"
+
         # Adiciona instruções específicas para análise em lote
         batch_instructions = f"""
 ATENÇÃO: Esta é uma ANÁLISE CONJUNTA de {len(file_ids)} documentos que devem ser analisados como um único processo de usucapião.
 
 Os documentos anexados são:
 {chr(10).join([f"- {info['file_name']} (páginas {info['start']+1} a {info['end']})" for file_id, info in file_page_map.items()])}
-
+{hint_text}
 INSTRUÇÕES ESPECIAIS PARA ANÁLISE EM LOTE:
 1. Identifique a MATRÍCULA PRINCIPAL (objeto do usucapião) entre todos os documentos
 2. As demais matrículas são provavelmente dos CONFRONTANTES
@@ -732,14 +757,15 @@ INSTRUÇÕES ESPECIAIS PARA ANÁLISE EM LOTE:
         db.close()
 
 
-def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, user_id: int):
+def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, user_id: int, matricula_hint: Optional[str] = None):
     """Task de análise executada em background - não armazena o PDF, apenas o JSON"""
     from database.connection import SessionLocal
     from admin.models import ConfiguracaoIA
-    import logging
-    logger = logging.getLogger("matriculas_task")
     
-    logger.info(f"Iniciando análise para {file_id}")
+    file_name = os.path.basename(file_path)
+    logger.info(f"📄 Iniciando análise: {file_name}")
+    if matricula_hint:
+        logger.info(f"   └─ Matrícula principal informada: {matricula_hint}")
     
     db = SessionLocal()
     try:
@@ -752,21 +778,27 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
             if config_model and config_model.valor:
                 model = config_model.valor
         except Exception as e:
-            print(f"Erro ao buscar modelo do banco: {e}")
+            logger.warning(f"   ⚠️ Erro ao buscar modelo do banco: {e}")
+        
+        logger.info(f"   └─ Modelo: {model}")
         
         # Importa função de análise
         from sistemas.matriculas_confrontantes.services_ia import analyze_with_vision_llm
         
-        logger.info(f"Chamando analyze_with_vision_llm para {file_id}")
-        result = analyze_with_vision_llm(model, file_path, api_key)
+        logger.info(f"🤖 Enviando para IA...")
+        result = analyze_with_vision_llm(model, file_path, api_key, matricula_hint)
         result_dict = result_to_dict(result)
-        logger.info(f"Análise concluída para {file_id}, salvando no banco...")
         
         # Extrai dados principais
         matricula_principal = result_dict.get("matricula_principal")
         proprietarios = result_dict.get("proprietarios_identificados", {})
         lotes = result_dict.get("lotes_confrontantes", [])
         confidence = result_dict.get("confidence", 0)
+        
+        logger.info(f"✅ Análise concluída!")
+        logger.info(f"   └─ Matrícula identificada: {matricula_principal or 'N/A'}")
+        logger.info(f"   └─ Confrontantes encontrados: {len(lotes)}")
+        logger.info(f"   └─ Confiança: {confidence}%")
         
         # Extrai lote e proprietário da matrícula principal
         lote_principal = None
@@ -807,20 +839,20 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
         analise.file_path = None  # Limpa o caminho do arquivo se existia
         
         db.commit()
-        logger.info(f"Análise salva no banco com sucesso: {file_id}, id={analise.id}")
+        logger.info(f"💾 Salvo no banco: ID={analise.id}")
         
         # Limpa cache de relatório
         state.cached_report = None
         state.cached_report_payload = None
         state.cached_report_file_id = None
         
-        add_log(db, f"Análise concluída: {file_id}", "success")
+        add_log(db, f"Análise concluída: {file_name}", "success")
         
         # PDF permanece no disco até o usuário excluir manualmente pelo frontend
         
     except Exception as e:
         import traceback
-        logger.error(f"Erro na análise {file_id}: {str(e)}")
+        logger.error(f"❌ Erro na análise: {str(e)}")
         logger.error(traceback.format_exc())
         db.rollback()
         add_log(db, f"Erro na análise: {str(e)[:100]}", "error")
@@ -1000,9 +1032,6 @@ async def get_config(
         has_api_key=has_api_key,
         analysis_available=has_api_key
     )
-
-
-# Endpoints de configuração de API removidos - agora são gerenciados pelo admin
 
 
 # ============================================

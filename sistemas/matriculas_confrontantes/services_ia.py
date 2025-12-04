@@ -11,25 +11,28 @@ import io
 import json
 import base64
 import requests
+import logging
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional, Tuple, Union
 
 from PIL import Image
 
+# Configura logger específico
+logger = logging.getLogger("matriculas")
+
 try:
     import fitz  # PyMuPDF
     PYMUPDF_AVAILABLE = True
 except ImportError:
     PYMUPDF_AVAILABLE = False
-    print("⚠️ PyMuPDF não disponível")
+    logger.warning("⚠️ PyMuPDF não disponível")
 
 try:
     from pdf2image import convert_from_path
     PDF2IMAGE_AVAILABLE = True
 except ImportError:
     PDF2IMAGE_AVAILABLE = False
-    print("⚠️ pdf2image não disponível")
 
 from config import OPENROUTER_ENDPOINT, DEFAULT_MODEL, FULL_REPORT_MODEL
 
@@ -560,6 +563,8 @@ def call_openrouter_vision(model: str, system_prompt: str, user_prompt: str,
     if not api_key:
         raise RuntimeError("API Key não configurada")
 
+    logger.info(f"   └─ Enviando {len(images_base64)} imagem(ns) para análise...")
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -590,11 +595,16 @@ def call_openrouter_vision(model: str, system_prompt: str, user_prompt: str,
         "response_format": {"type": "json_object"}
     }
 
-    resp = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=120)
+    import time
+    start_time = time.time()
+    resp = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=180)
+    elapsed = time.time() - start_time
     
     if resp.status_code != 200:
+        logger.error(f"   ❌ API retornou erro {resp.status_code}")
         raise RuntimeError(f"API retornou status {resp.status_code}: {resp.text[:200]}")
     
+    logger.info(f"   └─ Resposta recebida em {elapsed:.1f}s")
     return resp.json()
 
 
@@ -622,10 +632,15 @@ def call_openrouter_text(model: str, system_prompt: str, user_prompt: str,
         "max_tokens": max_tokens
     }
 
-    resp = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=120)
+    import time
+    start_time = time.time()
+    resp = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=180)
+    elapsed = time.time() - start_time
     
     if resp.status_code != 200:
         raise RuntimeError(f"API retornou status {resp.status_code}")
+    
+    logger.info(f"   └─ Relatório gerado em {elapsed:.1f}s")
     
     data = resp.json()
     return data["choices"][0]["message"].get("content", "")
@@ -660,7 +675,7 @@ def clean_json_response(content: str) -> str:
 # Análise Principal
 # =========================
 
-def analyze_with_vision_llm(model: str, file_path: str, api_key: str = None) -> AnalysisResult:
+def analyze_with_vision_llm(model: str, file_path: str, api_key: str = None, matricula_hint: str = None) -> AnalysisResult:
     """Analisa documento usando visão computacional da LLM"""
     fname = os.path.basename(file_path)
     
@@ -692,6 +707,11 @@ def analyze_with_vision_llm(model: str, file_path: str, api_key: str = None) -> 
         system_prompt = get_system_prompt()
         vision_prompt = get_analysis_prompt()
         
+        # Injeta hint da matrícula principal se fornecido
+        if matricula_hint:
+            hint_text = f"\n\nATENÇÃO: A MATRÍCULA PRINCIPAL (OBJETO DA ANÁLISE) É: {matricula_hint}\nDê prioridade total a esta matrícula como sendo o imóvel central.\n"
+            vision_prompt = hint_text + vision_prompt
+
         # Obtém configurações do banco (com fallback)
         temperatura = float(get_config_from_db("matriculas", "temperatura_analise") or "0.1")
         max_tokens = int(get_config_from_db("matriculas", "max_tokens_analise") or "100000")

@@ -25,6 +25,7 @@ python-dotenv>=1.0.1
 
 # HTTP Requests (para APIs externas)
 requests>=2.32.0
+httpx>=0.27.0
 
 # Parser XML (TJ-MS)
 lxml>=5.2.0

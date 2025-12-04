@@ -5,10 +5,12 @@ Portal PGE-MS - Aplicação FastAPI Principal
 Unifica os sistemas:
 - Assistência Judiciária
 - Matrículas Confrontantes
+- Gerador de Peças Jurídicas
 
 Com autenticação centralizada via JWT.
 """
 
+import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -18,6 +20,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import os
 
+# Configura logging para silenciar requests de polling repetitivos
+class StatusPollingFilter(logging.Filter):
+    """Filtra logs de polling de status que são muito frequentes"""
+    def filter(self, record):
+        # Silencia logs de polling de status (GET .../status)
+        if '/status HTTP' in record.getMessage():
+            return False
+        return True
+
+# Aplica filtro ao logger do uvicorn
+logging.getLogger("uvicorn.access").addFilter(StatusPollingFilter())
+
 from database.init_db import init_database
 from auth.router import router as auth_router
 from users.router import router as users_router
@@ -25,11 +39,13 @@ from users.router import router as users_router
 # Import dos sistemas
 from sistemas.assistencia_judiciaria.router import router as assistencia_router
 from sistemas.matriculas_confrontantes.router import router as matriculas_router
+from sistemas.gerador_pecas.router import router as gerador_pecas_router
 
 # Diretórios base
 BASE_DIR = Path(__file__).resolve().parent
 MATRICULAS_TEMPLATES = BASE_DIR / "sistemas" / "matriculas_confrontantes" / "templates"
 ASSISTENCIA_TEMPLATES = BASE_DIR / "sistemas" / "assistencia_judiciaria" / "templates"
+GERADOR_PECAS_TEMPLATES = BASE_DIR / "sistemas" / "gerador_pecas" / "templates"
 
 
 @asynccontextmanager
@@ -121,6 +137,7 @@ app.include_router(admin_router)
 
 app.include_router(assistencia_router, prefix="/assistencia/api")
 app.include_router(matriculas_router, prefix="/matriculas/api")
+app.include_router(gerador_pecas_router, prefix="/gerador-pecas/api")
 
 
 # ==================================================
@@ -186,6 +203,39 @@ async def serve_matriculas_static(filename: str):
     
     # Se não encontrou, retorna index.html (SPA fallback)
     index_path = MATRICULAS_TEMPLATES / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path, media_type="text/html")
+    
+    return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
+
+
+# Gerador de Peças Jurídicas - Servir arquivos estáticos
+@app.get("/gerador-pecas/{filename:path}")
+@app.get("/gerador-pecas/")
+@app.get("/gerador-pecas")
+async def serve_gerador_pecas_static(filename: str = ""):
+    """Serve arquivos do frontend Gerador de Peças Jurídicas"""
+    if not filename or filename == "" or filename == "/":
+        filename = "index.html"
+    
+    file_path = GERADOR_PECAS_TEMPLATES / filename
+    
+    if file_path.exists() and file_path.is_file():
+        suffix = file_path.suffix.lower()
+        content_types = {
+            ".html": "text/html",
+            ".js": "application/javascript",
+            ".css": "text/css",
+            ".json": "application/json",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".svg": "image/svg+xml",
+        }
+        media_type = content_types.get(suffix, "application/octet-stream")
+        return FileResponse(file_path, media_type=media_type)
+    
+    # Se não encontrou, retorna index.html (SPA fallback)
+    index_path = GERADOR_PECAS_TEMPLATES / "index.html"
     if index_path.exists():
         return FileResponse(index_path, media_type="text/html")
     

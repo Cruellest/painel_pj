@@ -55,9 +55,9 @@ let appState = {
 
 async function api(endpoint, options = {}) {
     if (!checkAuth()) return null;
-    
+
     const token = getAuthToken();
-    
+
     try {
         const response = await fetch(`${API_BASE}${endpoint}`, {
             headers: {
@@ -165,10 +165,10 @@ function loadPdfViewer(fileId, fileType) {
     if (!viewer) return;
 
     const token = getAuthToken();
-    
+
     // Verifica se o arquivo ainda existe (pode ter sido removido após análise)
     const file = appState.files.find(f => String(f.id) === String(fileId));
-    
+
     if (!file) {
         // Arquivo já foi analisado e removido - mostra mensagem
         viewer.innerHTML = `
@@ -181,7 +181,7 @@ function loadPdfViewer(fileId, fileType) {
         `;
         return;
     }
-    
+
     if (fileType === 'pdf') {
         // Usa iframe para PDFs - ocupa todo o espaço disponível
         viewer.innerHTML = `
@@ -222,16 +222,16 @@ function updateConfigUI() {
 
 async function uploadFile(file, replace = false) {
     if (!checkAuth()) return;
-    
+
     const token = getAuthToken();
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-        const url = replace 
-            ? `${API_BASE}/files/upload?replace=true` 
+        const url = replace
+            ? `${API_BASE}/files/upload?replace=true`
             : `${API_BASE}/files/upload`;
-            
+
         const response = await fetch(url, {
             method: 'POST',
             headers: {
@@ -266,7 +266,7 @@ function showDuplicateConfirmModal(file, message) {
     const modal = document.createElement('div');
     modal.id = 'duplicate-confirm-modal';
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50';
-    
+
     modal.innerHTML = `
         <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
             <div class="bg-gradient-to-r from-yellow-500 to-orange-500 px-6 py-4">
@@ -293,17 +293,17 @@ function showDuplicateConfirmModal(file, message) {
             </div>
         </div>
     `;
-    
+
     // Guarda o arquivo para reenviar se confirmar
     window.pendingReplaceFile = file;
-    
+
     document.body.appendChild(modal);
 }
 
 async function confirmReplaceFile() {
     const modal = document.getElementById('duplicate-confirm-modal');
     if (modal) modal.remove();
-    
+
     if (window.pendingReplaceFile) {
         await uploadFile(window.pendingReplaceFile, true);
         window.pendingReplaceFile = null;
@@ -399,9 +399,23 @@ async function apiClearLogs() {
 }
 
 async function analisarDocumento(fileId, forceReanalysis = false) {
+    // Validação da Matrícula Principal
+    const matriculaInput = document.getElementById('matricula-principal-input');
+    const matriculaPrincipal = matriculaInput ? matriculaInput.value.trim() : '';
+
+    if (!matriculaPrincipal) {
+        showToast('Por favor, informe a Matrícula Principal', 'warning');
+        if (matriculaInput) matriculaInput.focus();
+        return;
+    }
+
     try {
         showToast('Verificando análise...', 'info');
-        const url = forceReanalysis ? `/analisar/${fileId}?force=true` : `/analisar/${fileId}`;
+        let url = forceReanalysis ? `/analisar/${fileId}?force=true` : `/analisar/${fileId}`;
+
+        // Adiciona matrícula principal como query param
+        url += (url.includes('?') ? '&' : '?') + `matricula_principal=${encodeURIComponent(matriculaPrincipal)}`;
+
         const result = await api(url, { method: 'POST' });
 
         if (result.success) {
@@ -561,7 +575,7 @@ function startAnalysisPolling(fileId) {
                     // Atualiza detalhes do documento
                     appState.documentDetails = resultado;
                     appState.currentAnaliseId = resultado.analise_id || null;
-                    
+
                     // Atualiza painel de dados extraídos
                     renderExtractedDataPanel();
 
@@ -685,7 +699,7 @@ async function generateAndShowReport() {
             if (reportActions) {
                 reportActions.style.display = 'flex';
             }
-            
+
             // Verifica se já tem feedback
             if (appState.currentAnaliseId) {
                 verificarFeedbackInline(appState.currentAnaliseId);
@@ -813,7 +827,7 @@ function showReportModal(reportText, payloadJson) {
     // Armazena payload para uso posterior
     window.currentReportPayload = payloadJson;
     window.currentReportText = reportText;
-    
+
     // Verifica se já tem feedback
     if (appState.currentAnaliseId) {
         verificarFeedbackMatriculaExistente(appState.currentAnaliseId);
@@ -979,13 +993,13 @@ async function enviarFeedbackMatricula(avaliacao) {
         showToast('Nenhuma análise para avaliar', 'warning');
         return;
     }
-    
+
     // Pede comentário para feedback negativo
     let comentario = null;
     if (avaliacao === 'incorreto' || avaliacao === 'parcial') {
         comentario = prompt('Por favor, descreva brevemente o que estava incorreto (opcional):');
     }
-    
+
     try {
         const result = await api('/feedback', {
             method: 'POST',
@@ -995,7 +1009,7 @@ async function enviarFeedbackMatricula(avaliacao) {
                 comentario: comentario
             })
         });
-        
+
         if (result && result.success) {
             const tipoTexto = {
                 'correto': 'Análise marcada como correta',
@@ -1003,7 +1017,7 @@ async function enviarFeedbackMatricula(avaliacao) {
                 'incorreto': 'Análise marcada como incorreta',
                 'erro_ia': 'Reportado como erro da IA'
             };
-            
+
             // Atualiza feedback no modal (se existir)
             const buttonsModal = document.getElementById('feedback-buttons-matriculas');
             const enviadoModal = document.getElementById('feedback-enviado-matriculas');
@@ -1011,7 +1025,7 @@ async function enviarFeedbackMatricula(avaliacao) {
             if (enviadoModal) enviadoModal.classList.remove('hidden');
             const tipoElModal = document.getElementById('feedback-enviado-tipo-matriculas');
             if (tipoElModal) tipoElModal.textContent = tipoTexto[avaliacao] || '';
-            
+
             // Atualiza feedback inline (se existir)
             const buttonsInline = document.getElementById('feedback-buttons-inline');
             const enviadoInline = document.getElementById('feedback-enviado-inline');
@@ -1019,7 +1033,7 @@ async function enviarFeedbackMatricula(avaliacao) {
             if (enviadoInline) enviadoInline.classList.remove('hidden');
             const tipoElInline = document.getElementById('feedback-enviado-tipo-inline');
             if (tipoElInline) tipoElInline.textContent = tipoTexto[avaliacao] || '';
-            
+
             showToast('Feedback registrado!', 'success');
         } else {
             showToast('Erro ao enviar feedback', 'error');
@@ -1032,15 +1046,15 @@ async function enviarFeedbackMatricula(avaliacao) {
 async function verificarFeedbackMatriculaExistente(analiseId) {
     try {
         const result = await api(`/feedback/${analiseId}`);
-        
+
         const buttons = document.getElementById('feedback-buttons-matriculas');
         const enviado = document.getElementById('feedback-enviado-matriculas');
-        
+
         if (result && result.has_feedback) {
             // Já tem feedback, mostra o estado de enviado
             if (buttons) buttons.classList.add('hidden');
             if (enviado) enviado.classList.remove('hidden');
-            
+
             const tipoTexto = {
                 'correto': 'Análise marcada como correta',
                 'parcial': 'Análise marcada como parcialmente correta',
@@ -1066,15 +1080,15 @@ async function verificarFeedbackMatriculaExistente(analiseId) {
 async function verificarFeedbackInline(analiseId) {
     try {
         const result = await api(`/feedback/${analiseId}`);
-        
+
         const buttons = document.getElementById('feedback-buttons-inline');
         const enviado = document.getElementById('feedback-enviado-inline');
-        
+
         if (result && result.has_feedback) {
             // Já tem feedback, mostra o estado de enviado
             if (buttons) buttons.classList.add('hidden');
             if (enviado) enviado.classList.remove('hidden');
-            
+
             const tipoTexto = {
                 'correto': 'Análise marcada como correta',
                 'parcial': 'Análise marcada como parcialmente correta',
@@ -1217,9 +1231,9 @@ function renderFolderTree() {
 function renderExtractedDataPanel() {
     const container = document.getElementById('extracted-data-panel');
     if (!container) return;
-    
+
     const data = appState.documentDetails;
-    
+
     if (!data || !data.matriculas_encontradas) {
         container.innerHTML = `
             <div class="text-center text-gray-400 py-8">
@@ -1229,7 +1243,7 @@ function renderExtractedDataPanel() {
         `;
         return;
     }
-    
+
     // Renderiza matrículas encontradas
     const matriculasHtml = (data.matriculas_encontradas || []).map(mat => `
         <tr class="border-b border-gray-100 hover:bg-gray-50 text-xs">
@@ -1380,7 +1394,7 @@ function renderDocumentDetails(result = null) {
 function renderSystemLogs() {
     const container = document.getElementById('system-logs');
     if (!container) return; // Painel de logs foi removido da UI
-    
+
     const logs = appState.logs || [];
 
     if (logs.length === 0) {
@@ -1421,7 +1435,7 @@ function renderSystemLogs() {
 async function selectFile(id, event) {
     // Garante que id seja string para comparação consistente
     const fileId = String(id);
-    
+
     // Verifica se é seleção múltipla (Ctrl+Click)
     if (event && event.ctrlKey) {
         const index = appState.selectedFileIds.indexOf(fileId);
@@ -1443,22 +1457,22 @@ async function selectFile(id, event) {
         appState.selectedFileIds = [fileId];
         appState.selectedFileId = fileId;
     }
-    
+
     // Atualiza estado de seleção nos arquivos
     appState.files.forEach(file => {
         file.selected = appState.selectedFileIds.includes(String(file.id));
     });
-    
+
     renderFileList();
     updateBatchAnalyzeButton();
-    
+
     // Carrega detalhes apenas do último arquivo selecionado
     if (appState.selectedFileId) {
         await loadDocumentDetails(appState.selectedFileId);
     }
-    
+
     updateAnalysisStatus();
-    
+
     if (appState.selectedFileIds.length > 1) {
         addLog('info', `${appState.selectedFileIds.length} arquivos selecionados para análise em lote`);
     } else {
@@ -1490,23 +1504,34 @@ async function analisarEmLote(fileIds) {
         showToast('Selecione pelo menos 2 documentos', 'warning');
         return;
     }
-    
+
+    // Validação da Matrícula Principal
+    const matriculaInput = document.getElementById('matricula-principal-input');
+    const matriculaPrincipal = matriculaInput ? matriculaInput.value.trim() : '';
+
+    if (!matriculaPrincipal) {
+        showToast('Por favor, informe a Matrícula Principal', 'warning');
+        if (matriculaInput) matriculaInput.focus();
+        return;
+    }
+
     try {
         showToast(`Iniciando análise de ${fileIds.length} documentos...`, 'info');
         addLog('info', `Iniciando análise em lote de ${fileIds.length} documentos`);
-        
+
         const result = await api('/analisar-lote', {
             method: 'POST',
             body: JSON.stringify({
                 file_ids: fileIds,
-                nome_grupo: `Análise de ${fileIds.length} matrículas`
+                nome_grupo: `Análise de ${fileIds.length} matrículas`,
+                matricula_principal: matriculaPrincipal
             })
         });
-        
+
         if (result?.success) {
             appState.currentGrupoId = result.grupo_id;
             showToast('Análise em lote iniciada!', 'success');
-            
+
             // Inicia polling do status do grupo
             startBatchPolling(result.grupo_id);
         } else {
@@ -1523,44 +1548,44 @@ async function analisarEmLote(fileIds) {
  */
 function startBatchPolling(grupoId) {
     const statusEl = document.getElementById('analysis-status');
-    
+
     const pollInterval = setInterval(async () => {
         try {
             const status = await api(`/grupo/${grupoId}/status`);
-            
+
             if (status.status === 'concluido') {
                 clearInterval(pollInterval);
                 showToast('Análise em lote concluída!', 'success');
                 addLog('success', `Análise em lote concluída: ${status.total_arquivos} arquivos`);
-                
+
                 if (statusEl) {
                     statusEl.innerHTML = '<i class="fas fa-check-circle text-green-500"></i> Análise em lote concluída';
                 }
-                
+
                 // Carrega resultado do grupo
                 const resultado = await api(`/grupo/${grupoId}/resultado`);
                 appState.documentDetails = resultado;
                 appState.currentAnaliseId = resultado.analise_id || null;
-                
+
                 // Atualiza painel de dados extraídos
                 renderExtractedDataPanel();
-                
+
                 // Gera relatório
                 await generateAndShowReport();
-                
+
                 // Recarrega lista de arquivos
                 await loadFiles();
                 await loadAnalyses();
-                
+
             } else if (status.status === 'erro') {
                 clearInterval(pollInterval);
                 showToast('Erro na análise em lote', 'error');
                 addLog('error', 'Erro na análise em lote');
-                
+
                 if (statusEl) {
                     statusEl.innerHTML = '<i class="fas fa-exclamation-circle text-red-500"></i> Erro na análise';
                 }
-                
+
             } else {
                 // Ainda processando
                 if (statusEl) {
@@ -1571,7 +1596,7 @@ function startBatchPolling(grupoId) {
             console.error('Erro ao verificar status do lote:', error);
         }
     }, 3000); // Poll a cada 3 segundos
-    
+
     // Guarda referência para poder cancelar
     appState.pollingIntervals['batch_' + grupoId] = pollInterval;
 }
@@ -1666,7 +1691,7 @@ function showRawDataModal() {
     const modal = document.createElement('div');
     modal.id = 'raw-data-modal';
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50';
-    
+
     // Renderiza matrículas encontradas
     const matriculasHtml = (data.matriculas_encontradas || []).map(mat => `
         <tr class="border-b border-gray-100 hover:bg-gray-50">
@@ -1888,10 +1913,10 @@ function addLog(status, message) {
 function setupLogToggle() {
     const toggleBtn = document.getElementById('toggle-logs');
     const logsContainer = document.getElementById('system-logs');
-    
+
     // Painel de logs foi removido da UI
     if (!toggleBtn || !logsContainer) return;
-    
+
     let collapsed = false;
 
     toggleBtn.addEventListener('click', () => {
@@ -2098,7 +2123,7 @@ function showBatchHelpModal() {
     modal.id = 'batch-help-modal';
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50';
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-    
+
     modal.innerHTML = `
         <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
             <div class="bg-gradient-to-r from-purple-500 to-purple-600 px-6 py-4">
@@ -2170,6 +2195,6 @@ function showBatchHelpModal() {
             </div>
         </div>
     `;
-    
+
     document.body.appendChild(modal);
 }
