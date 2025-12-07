@@ -689,6 +689,18 @@ class GeradorPecasApp {
         }
     }
 
+    abrirAutos() {
+        if (!this.numeroCNJ) {
+            this.showToast('Número do processo não disponível', 'error');
+            return;
+        }
+
+        // Abre a página de autos em uma nova aba
+        const token = this.getToken();
+        const url = `/gerador-pecas/autos.html?cnj=${encodeURIComponent(this.numeroCNJ)}&token=${encodeURIComponent(token)}`;
+        window.open(url, '_blank');
+    }
+
     escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;

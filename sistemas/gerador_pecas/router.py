@@ -641,3 +641,124 @@ async def obter_feedback(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Endpoints de Autos do Processo (Visualização de PDFs)
+# ============================================
+
+@router.get("/autos/{numero_cnj}")
+async def listar_documentos_processo(
+    numero_cnj: str,
+    token: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user_from_token_or_query)
+):
+    """
+    Lista todos os documentos de um processo para visualização.
+    Retorna lista ordenada cronologicamente com descrição do XML.
+    """
+    import aiohttp
+    from sistemas.gerador_pecas.agente_tjms import (
+        consultar_processo_async,
+        extrair_documentos_xml,
+        documento_permitido
+    )
+    
+    try:
+        cnj_limpo = re.sub(r'\D', '', numero_cnj)
+        
+        async with aiohttp.ClientSession() as session:
+            xml_response = await consultar_processo_async(session, cnj_limpo)
+            docs = extrair_documentos_xml(xml_response)
+        
+        # Filtra documentos permitidos e ordena por data (cronológico)
+        docs_filtrados = [d for d in docs if documento_permitido(int(d.tipo_documento or 0))]
+        docs_filtrados.sort(key=lambda d: d.data_juntada or datetime.min)
+        
+        # Retorna lista com informações para exibição
+        resultado = []
+        for i, doc in enumerate(docs_filtrados, 1):
+            resultado.append({
+                "id": doc.id,
+                "ordem": i,
+                "descricao": doc.descricao or doc.categoria_nome,
+                "tipo_documento": doc.tipo_documento,
+                "data_juntada": doc.data_juntada.isoformat() if doc.data_juntada else None,
+                "data_formatada": doc.data_formatada
+            })
+        
+        return {
+            "numero_cnj": numero_cnj,
+            "total_documentos": len(resultado),
+            "documentos": resultado
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/autos/{numero_cnj}/documento/{doc_id}")
+async def baixar_documento_processo(
+    numero_cnj: str,
+    doc_id: str,
+    token: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user_from_token_or_query)
+):
+    """
+    Baixa um documento específico do processo do TJ-MS.
+    Retorna o PDF diretamente para visualização no navegador.
+    """
+    import aiohttp
+    import base64
+    from sistemas.gerador_pecas.agente_tjms import baixar_documentos_async
+    import xml.etree.ElementTree as ET
+    
+    try:
+        cnj_limpo = re.sub(r'\D', '', numero_cnj)
+        
+        async with aiohttp.ClientSession() as session:
+            xml_response = await baixar_documentos_async(session, cnj_limpo, [doc_id])
+        
+        # Extrai o conteúdo base64 do documento
+        root = ET.fromstring(xml_response)
+        conteudo_base64 = None
+        
+        for elem in root.iter():
+            tag_no_ns = elem.tag.split('}')[-1].lower() if '}' in elem.tag else elem.tag.lower()
+            if tag_no_ns == 'documento':
+                doc_id_found = elem.attrib.get("idDocumento") or elem.attrib.get("id")
+                if doc_id_found == doc_id:
+                    # Busca conteúdo base64
+                    conteudo_base64 = elem.attrib.get("conteudo")
+                    if not conteudo_base64:
+                        for child in elem:
+                            child_tag = child.tag.split('}')[-1].lower()
+                            if child_tag == 'conteudo' and child.text:
+                                conteudo_base64 = child.text.strip()
+                                break
+                    break
+        
+        if not conteudo_base64:
+            raise HTTPException(status_code=404, detail="Documento não encontrado")
+        
+        # Decodifica o PDF
+        pdf_bytes = base64.b64decode(conteudo_base64)
+        
+        # Retorna como PDF para visualização inline
+        return StreamingResponse(
+            iter([pdf_bytes]),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"inline; filename=doc_{doc_id}.pdf",
+                "Cache-Control": "private, max-age=3600"  # Cache de 1h
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
