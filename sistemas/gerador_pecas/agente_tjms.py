@@ -114,6 +114,7 @@ class DocumentoTJMS:
     data_juntada: Optional[datetime] = None
     data_texto: Optional[str] = None
     descricao: Optional[str] = None  # Descrição do documento (ex: "Petição", "Contestação")
+    descricao_ia: Optional[str] = None  # Descrição identificada pela IA (mais precisa)
     ordem: Optional[int] = None
     conteudo_base64: Optional[str] = None
     texto_extraido: Optional[str] = None
@@ -133,6 +134,13 @@ class DocumentoTJMS:
         if self.tipo_documento:
             return CATEGORIAS_MAP.get(self.tipo_documento, f"Tipo {self.tipo_documento}")
         return "Desconhecido"
+    
+    @property
+    def nome_exibicao(self) -> str:
+        """Retorna o nome para exibição - prioriza identificação da IA"""
+        if self.descricao_ia:
+            return self.descricao_ia
+        return self.categoria_nome
 
     @property
     def data_formatada(self) -> str:
@@ -166,6 +174,29 @@ def _verificar_irrelevante(resumo: str) -> tuple[bool, str]:
         return True, motivo if motivo else "Documento irrelevante"
 
     return False, resumo
+
+
+def _extrair_tipo_documento_ia(resumo: str) -> Optional[str]:
+    """
+    Extrai o tipo de documento identificado pela IA do resumo.
+    Procura por padrão: **[TIPO: Nome do Documento]**
+    """
+    if not resumo:
+        return None
+    
+    import re
+    
+    # Padrão: **[TIPO: ...]** ou [TIPO: ...]
+    padrao = r'\*?\*?\[TIPO:\s*([^\]]+)\]\*?\*?'
+    match = re.search(padrao, resumo, re.IGNORECASE)
+    
+    if match:
+        tipo = match.group(1).strip()
+        # Limpa asteriscos extras
+        tipo = tipo.replace('**', '').replace('*', '').strip()
+        return tipo
+    
+    return None
 
 
 def _extrair_processo_origem(resumo: str) -> Optional[str]:
@@ -220,6 +251,59 @@ def _extrair_processo_origem(resumo: str) -> Optional[str]:
 
 
 @dataclass
+class ParteProcesso:
+    """Representa uma parte do processo (autor ou réu)"""
+    nome: str
+    tipo_pessoa: str = "fisica"  # fisica ou juridica
+    polo: str = "AT"  # AT (polo ativo) ou PA (polo passivo)
+    representante: Optional[str] = None  # Nome do advogado/defensor/procurador
+    tipo_representante: Optional[str] = None  # 'advogado', 'defensoria', 'ministerio_publico', 'procuradoria'
+    assistencia_judiciaria: bool = False
+
+
+@dataclass
+class DadosProcesso:
+    """Dados extraídos do XML do processo (sem IA)"""
+    numero_processo: str
+    polo_ativo: List[ParteProcesso] = field(default_factory=list)
+    polo_passivo: List[ParteProcesso] = field(default_factory=list)
+    valor_causa: Optional[str] = None
+    classe_processual: Optional[str] = None
+    data_ajuizamento: Optional[datetime] = None
+    orgao_julgador: Optional[str] = None
+    
+    def to_json(self) -> dict:
+        """Converte para dicionário JSON-serializável"""
+        return {
+            "numero_processo": self.numero_processo,
+            "polo_ativo": [
+                {
+                    "nome": p.nome,
+                    "tipo_pessoa": p.tipo_pessoa,
+                    "representante": p.representante,
+                    "tipo_representante": p.tipo_representante,
+                    "assistencia_judiciaria": p.assistencia_judiciaria
+                }
+                for p in self.polo_ativo
+            ],
+            "polo_passivo": [
+                {
+                    "nome": p.nome,
+                    "tipo_pessoa": p.tipo_pessoa,
+                    "representante": p.representante,
+                    "tipo_representante": p.tipo_representante,
+                    "assistencia_judiciaria": p.assistencia_judiciaria
+                }
+                for p in self.polo_passivo
+            ],
+            "valor_causa": self.valor_causa,
+            "classe_processual": self.classe_processual,
+            "data_ajuizamento": self.data_ajuizamento.strftime("%d/%m/%Y") if self.data_ajuizamento else None,
+            "orgao_julgador": self.orgao_julgador
+        }
+
+
+@dataclass
 class ResultadoAnalise:
     """Resultado da análise completa do processo"""
     numero_processo: str
@@ -229,6 +313,7 @@ class ResultadoAnalise:
     erro_geral: Optional[str] = None
     processo_origem: Optional[str] = None  # Número do processo de origem (se for AI)
     is_agravo: bool = False  # True se é Agravo de Instrumento
+    dados_processo: Optional[DadosProcesso] = None  # Dados extraídos do XML (partes, valor, etc)
 
     def documentos_com_resumo(self) -> List[DocumentoTJMS]:
         """Retorna documentos com resumo (excluindo irrelevantes)"""
@@ -439,6 +524,151 @@ def extrair_documentos_xml(xml_text: str) -> List[DocumentoTJMS]:
     unique.sort(key=lambda d: d.data_juntada or datetime.min)
 
     return unique
+
+
+def extrair_dados_processo_xml(xml_text: str) -> Optional[DadosProcesso]:
+    """
+    Extrai dados do processo do XML (partes, valor da causa, etc) SEM usar IA.
+    
+    Retorna:
+        DadosProcesso com polo ativo, polo passivo e demais dados
+    """
+    try:
+        root = ET.fromstring(xml_text)
+        
+        # Busca o elemento dadosBasicos
+        dados_basicos = None
+        for elem in root.iter():
+            tag_no_ns = elem.tag.split('}')[-1].lower() if '}' in elem.tag else elem.tag.lower()
+            if tag_no_ns == 'dadosbasicos':
+                dados_basicos = elem
+                break
+        
+        if dados_basicos is None:
+            return None
+        
+        # Extrai número do processo
+        numero_processo = dados_basicos.attrib.get('numero', '')
+        
+        # Extrai valor da causa
+        valor_causa = None
+        for elem in dados_basicos.iter():
+            tag_no_ns = elem.tag.split('}')[-1].lower() if '}' in elem.tag else elem.tag.lower()
+            if tag_no_ns == 'valorcausa' and elem.text:
+                valor_causa = elem.text.strip()
+                break
+        
+        # Extrai classe processual
+        classe_processual = dados_basicos.attrib.get('classeProcessual')
+        
+        # Extrai data de ajuizamento
+        data_ajuizamento = None
+        data_str = dados_basicos.attrib.get('dataAjuizamento')
+        if data_str:
+            data_ajuizamento = _parse_datahora_tjms(data_str)
+        
+        # Extrai órgão julgador
+        orgao_julgador = None
+        for elem in dados_basicos.iter():
+            tag_no_ns = elem.tag.split('}')[-1].lower() if '}' in elem.tag else elem.tag.lower()
+            if tag_no_ns == 'orgaojulgador':
+                orgao_julgador = elem.attrib.get('nomeOrgao')
+                break
+        
+        # Extrai polos
+        polo_ativo = []
+        polo_passivo = []
+        
+        for polo_elem in dados_basicos.iter():
+            tag_no_ns = polo_elem.tag.split('}')[-1].lower() if '}' in polo_elem.tag else polo_elem.tag.lower()
+            if tag_no_ns != 'polo':
+                continue
+            
+            tipo_polo = polo_elem.attrib.get('polo', '')
+            partes_list = polo_ativo if tipo_polo == 'AT' else polo_passivo if tipo_polo == 'PA' else []
+            
+            # Processa cada parte do polo
+            for parte_elem in polo_elem.iter():
+                parte_tag = parte_elem.tag.split('}')[-1].lower() if '}' in parte_elem.tag else parte_elem.tag.lower()
+                if parte_tag != 'parte':
+                    continue
+                
+                assistencia = parte_elem.attrib.get('assistenciaJudiciaria', 'false').lower() == 'true'
+                
+                # Busca pessoa principal (a parte)
+                pessoa_principal = None
+                for pessoa_elem in parte_elem:
+                    pessoa_tag = pessoa_elem.tag.split('}')[-1].lower() if '}' in pessoa_elem.tag else pessoa_elem.tag.lower()
+                    if pessoa_tag == 'pessoa':
+                        pessoa_principal = pessoa_elem
+                        break
+                
+                if pessoa_principal is None:
+                    continue
+                
+                nome_parte = pessoa_principal.attrib.get('nome', '')
+                tipo_pessoa = pessoa_principal.attrib.get('tipoPessoa', 'fisica')
+                
+                # Busca representante (advogado, defensoria, MP)
+                representante_nome = None
+                tipo_representante = None
+                
+                # Primeiro procura advogado direto
+                for adv_elem in parte_elem.iter():
+                    adv_tag = adv_elem.tag.split('}')[-1].lower() if '}' in adv_elem.tag else adv_elem.tag.lower()
+                    if adv_tag == 'advogado':
+                        representante_nome = adv_elem.attrib.get('nome')
+                        tipo_representante = 'advogado'
+                        break
+                
+                # Se não tem advogado, procura pessoaProcessualRelacionada
+                if not representante_nome:
+                    for rel_elem in parte_elem.iter():
+                        rel_tag = rel_elem.tag.split('}')[-1].lower() if '}' in rel_elem.tag else rel_elem.tag.lower()
+                        if rel_tag == 'pessoaprocessualrelacionada':
+                            # Busca pessoa dentro de pessoaProcessualRelacionada
+                            for pessoa_rel in rel_elem:
+                                pessoa_rel_tag = pessoa_rel.tag.split('}')[-1].lower() if '}' in pessoa_rel.tag else pessoa_rel.tag.lower()
+                                if pessoa_rel_tag == 'pessoa':
+                                    nome_rel = pessoa_rel.attrib.get('nome', '').lower()
+                                    representante_nome = pessoa_rel.attrib.get('nome')
+                                    
+                                    # Identifica o tipo de representante
+                                    if 'defensoria' in nome_rel:
+                                        tipo_representante = 'defensoria'
+                                    elif 'ministério público' in nome_rel or 'ministerio publico' in nome_rel or 'promotor' in nome_rel:
+                                        tipo_representante = 'ministerio_publico'
+                                    elif 'procuradoria' in nome_rel:
+                                        tipo_representante = 'procuradoria'
+                                    else:
+                                        tipo_representante = 'outro'
+                                    break
+                            break
+                
+                # Cria a parte
+                parte = ParteProcesso(
+                    nome=nome_parte,
+                    tipo_pessoa=tipo_pessoa,
+                    polo=tipo_polo,
+                    representante=representante_nome,
+                    tipo_representante=tipo_representante,
+                    assistencia_judiciaria=assistencia
+                )
+                partes_list.append(parte)
+        
+        return DadosProcesso(
+            numero_processo=numero_processo,
+            polo_ativo=polo_ativo,
+            polo_passivo=polo_passivo,
+            valor_causa=valor_causa,
+            classe_processual=classe_processual,
+            data_ajuizamento=data_ajuizamento,
+            orgao_julgador=orgao_julgador
+        )
+        
+    except Exception as e:
+        print(f"Erro ao extrair dados do processo: {e}")
+        return None
 
 
 def agrupar_documentos_por_descricao(docs: List[DocumentoTJMS]) -> List[DocumentoTJMS]:
@@ -721,13 +951,44 @@ class AgenteTJMS:
         prompt_resumo: str = None,
         prompt_relatorio: str = None,
         modelo: str = MODELO_PADRAO,
-        max_workers: int = 10
+        max_workers: int = 10,
+        formato_saida: str = "json",  # 'json' ou 'md'
+        db_session = None  # Sessão do banco para buscar formatos JSON
     ):
         self.modelo = modelo
         self.max_workers = max_workers
+        self.formato_saida = formato_saida
+        self.db_session = db_session
+        
+        # Gerenciador de formatos JSON (carregado sob demanda)
+        self._gerenciador_json = None
 
-        # Prompt padrão para resumo individual
+        # Prompt padrão para resumo individual (usado apenas se formato_saida='md')
         self.prompt_resumo = prompt_resumo or """Analise o documento judicial e produza um resumo DESCRITIVO e OBJETIVO, sem juízos de valor.
+
+## PRIMEIRA LINHA OBRIGATÓRIA - IDENTIFICAÇÃO DO DOCUMENTO:
+Comece o resumo com uma linha no formato:
+**[TIPO: Nome Exato do Documento]**
+
+Exemplos de tipos:
+- **[TIPO: Petição Inicial]**
+- **[TIPO: Contestação]**
+- **[TIPO: Recurso de Apelação]**
+- **[TIPO: Contrarrazões de Apelação]**
+- **[TIPO: Agravo de Instrumento]**
+- **[TIPO: Contrarrazões de Agravo]**
+- **[TIPO: Sentença]**
+- **[TIPO: Decisão Interlocutória]**
+- **[TIPO: Despacho]**
+- **[TIPO: Acórdão]**
+- **[TIPO: Parecer do NAT/CATES]**
+- **[TIPO: Laudo Médico]**
+- **[TIPO: Relatório Médico]**
+- **[TIPO: Prescrição Médica]**
+- **[TIPO: Manifestação do Ministério Público]**
+- **[TIPO: Manifestação da Fazenda Pública]**
+- **[TIPO: Embargos de Declaração]**
+- **[TIPO: Petição Intermediária]**
 
 ## DOCUMENTOS IRRELEVANTES - Marcar como [IRRELEVANTE]:
 Se o documento for de natureza **meramente administrativa ou acessória**, sem conteúdo substantivo para análise do mérito, responda APENAS:
@@ -756,16 +1017,15 @@ Se o documento for de natureza **meramente administrativa ou acessória**, sem c
 
 ## EXTRAIR QUANDO APLICÁVEL:
 
-1. **Tipo de documento**
-2. **Partes**: Autor(es) e Réu(s)
-3. **Pedido/Objeto**: O que está sendo requerido
-4. **Diagnóstico/CID**: Se mencionado
-5. **Tratamento solicitado**:
+1. **Partes**: Autor(es) e Réu(s)
+2. **Pedido/Objeto**: O que está sendo requerido
+3. **Diagnóstico/CID**: Se mencionado
+4. **Tratamento solicitado**:
    - Se MEDICAMENTO: nome comercial, princípio ativo, posologia. **VERIFICAR: está incorporado ao SUS? Se sim, em qual componente (Básico/Estratégico/Especializado)?**
    - Se CIRURGIA: qual procedimento, **é urgente?**, de quem é a responsabilidade
-6. **Argumentos principais**: Fundamentos apresentados (sem avaliar mérito)
-7. **Decisão/Dispositivo**: Se houver, o que foi decidido, prazos e multas
-8. **Processo de Origem**: Se for AGRAVO DE INSTRUMENTO, informar o número do processo de origem (1º grau) no formato CNJ (NNNNNNN-NN.NNNN.N.NN.NNNN)
+5. **Argumentos principais**: Fundamentos apresentados (sem avaliar mérito)
+6. **Decisão/Dispositivo**: Se houver, o que foi decidido, prazos e multas
+7. **Processo de Origem**: Se for AGRAVO DE INSTRUMENTO, informar o número do processo de origem (1º grau) no formato CNJ (NNNNNNN-NN.NNNN.N.NN.NNNN)
 
 ## ATENÇÃO ESPECIAL:
 
@@ -935,6 +1195,20 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
 
 {resumos_documentos}"""
 
+    def _obter_gerenciador_json(self):
+        """Obtém o gerenciador de formatos JSON (cria se necessário)"""
+        if self._gerenciador_json is None and self.db_session is not None:
+            from sistemas.gerador_pecas.extrator_resumo_json import GerenciadorFormatosJSON
+            self._gerenciador_json = GerenciadorFormatosJSON(self.db_session)
+        return self._gerenciador_json
+
+    def _deve_usar_json(self) -> bool:
+        """Verifica se deve usar formato JSON para os resumos"""
+        if self.formato_saida != "json":
+            return False
+        gerenciador = self._obter_gerenciador_json()
+        return gerenciador is not None and gerenciador.tem_formatos_configurados()
+
     async def analisar_processo(
         self,
         numero_processo: str,
@@ -966,6 +1240,12 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     print(f"      {xml_consulta[:500]}")
                     resultado.erro_geral = "Processo não encontrado ou erro na consulta"
                     return resultado
+
+                # Extrair dados do processo (partes, valor da causa, etc) - SEM IA
+                dados_processo = extrair_dados_processo_xml(xml_consulta)
+                if dados_processo:
+                    resultado.dados_processo = dados_processo
+                    print(f"      Partes extraídas: {len(dados_processo.polo_ativo)} no polo ativo, {len(dados_processo.polo_passivo)} no polo passivo")
 
                 # Extrair informações do processo (classe, vinculado)
                 info_processo = extrair_info_processo_xml(xml_consulta)
@@ -1239,6 +1519,98 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
         except Exception as e:
             print(f"      ⚠ Erro ao buscar processo de origem: {str(e)}")
 
+    def _obter_prompt_json(self, doc: DocumentoTJMS) -> Optional[str]:
+        """
+        Obtém o prompt de extração JSON apropriado para o documento.
+        Retorna None se não houver formatos configurados.
+        """
+        if not self._deve_usar_json():
+            return None
+        
+        gerenciador = self._obter_gerenciador_json()
+        if not gerenciador:
+            return None
+        
+        # Obtém código do documento
+        codigo = int(doc.tipo_documento) if doc.tipo_documento else 0
+        formato = gerenciador.obter_formato(codigo)
+        
+        if not formato:
+            return None
+        
+        from sistemas.gerador_pecas.extrator_resumo_json import gerar_prompt_extracao_json
+        return gerar_prompt_extracao_json(formato, doc.descricao or "")
+
+    def _obter_prompt_json_imagem(self, doc: DocumentoTJMS) -> Optional[str]:
+        """
+        Obtém o prompt de extração JSON para imagens (PDFs digitalizados).
+        """
+        if not self._deve_usar_json():
+            return None
+        
+        gerenciador = self._obter_gerenciador_json()
+        if not gerenciador:
+            return None
+        
+        codigo = int(doc.tipo_documento) if doc.tipo_documento else 0
+        formato = gerenciador.obter_formato(codigo)
+        
+        if not formato:
+            return None
+        
+        from sistemas.gerador_pecas.extrator_resumo_json import gerar_prompt_extracao_json_imagem
+        return gerar_prompt_extracao_json_imagem(formato)
+
+    def _processar_resposta_resumo(self, doc: DocumentoTJMS, resposta: str):
+        """
+        Processa a resposta da IA e atualiza o documento.
+        Suporta tanto formato MD quanto JSON.
+        """
+        if self._deve_usar_json():
+            # Processa resposta JSON
+            from sistemas.gerador_pecas.extrator_resumo_json import (
+                parsear_resposta_json,
+                verificar_irrelevante_json,
+                extrair_tipo_documento_json,
+                extrair_processo_origem_json
+            )
+            
+            json_dict, erro = parsear_resposta_json(resposta)
+            
+            if erro:
+                # Fallback: usa resposta como texto se não conseguir parsear JSON
+                is_irrelevante, conteudo = _verificar_irrelevante(resposta)
+                if is_irrelevante:
+                    doc.irrelevante = True
+                    doc.resumo = conteudo
+                else:
+                    doc.resumo = resposta
+                    doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
+                return
+            
+            is_irrelevante, conteudo = verificar_irrelevante_json(json_dict)
+            if is_irrelevante:
+                doc.irrelevante = True
+                doc.resumo = conteudo
+            else:
+                # Armazena o JSON como string no resumo
+                doc.resumo = conteudo  # já é JSON string formatado
+                doc.descricao_ia = extrair_tipo_documento_json(json_dict)
+                
+                # Tenta extrair processo de origem (para Agravos)
+                processo_origem = extrair_processo_origem_json(json_dict)
+                if processo_origem and hasattr(doc, '_processo_origem_extraido'):
+                    doc._processo_origem_extraido = processo_origem
+        else:
+            # Processa resposta MD (comportamento original)
+            is_irrelevante, conteudo = _verificar_irrelevante(resposta)
+            if is_irrelevante:
+                doc.irrelevante = True
+                doc.resumo = conteudo
+            else:
+                doc.resumo = resposta
+                doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
+
     async def _processar_documento_async(
         self,
         session: aiohttp.ClientSession,
@@ -1246,6 +1618,9 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
     ):
         """Processa um documento: extrai texto/imagens e gera resumo"""
         try:
+            # Determina se usa formato JSON ou MD
+            usar_json = self._deve_usar_json()
+            
             # Verificar se é documento agrupado (lista de conteúdos) ou único
             if isinstance(doc.conteudo_base64, list):
                 # Documento agrupado - juntar textos de todas as partes
@@ -1278,20 +1653,20 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     # Truncar se muito grande
                     texto = texto_completo[:80000]  # Mais espaço para docs agrupados
 
-                    # Gerar resumo via LLM
-                    prompt = self.prompt_resumo.format(texto_documento=texto)
+                    # Gerar resumo via LLM - usa JSON ou MD conforme configurado
+                    prompt_json = self._obter_prompt_json(doc)
+                    if prompt_json:
+                        prompt = prompt_json.format(texto_documento=texto)
+                    else:
+                        prompt = self.prompt_resumo.format(texto_documento=texto)
+                    
                     resposta = await chamar_llm_async(
                         session,
                         prompt=prompt,
                         modelo=self.modelo
                     )
 
-                    is_irrelevante, conteudo = _verificar_irrelevante(resposta)
-                    if is_irrelevante:
-                        doc.irrelevante = True
-                        doc.resumo = conteudo
-                    else:
-                        doc.resumo = resposta
+                    self._processar_resposta_resumo(doc, resposta)
 
                 elif todas_imagens:
                     # PDFs digitalizados - enviar imagens
@@ -1300,7 +1675,10 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     # Limitar número de imagens
                     imagens = todas_imagens[:15]
 
-                    prompt_imagem = self._get_prompt_imagem()
+                    # Usa prompt JSON ou MD conforme configurado
+                    prompt_json = self._obter_prompt_json_imagem(doc)
+                    prompt_imagem = prompt_json if prompt_json else self._get_prompt_imagem()
+                    
                     resposta = await chamar_llm_com_imagens_async(
                         session,
                         prompt=prompt_imagem,
@@ -1308,12 +1686,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         modelo=self.modelo
                     )
 
-                    is_irrelevante, conteudo = _verificar_irrelevante(resposta)
-                    if is_irrelevante:
-                        doc.irrelevante = True
-                        doc.resumo = conteudo
-                    else:
-                        doc.resumo = resposta
+                    self._processar_resposta_resumo(doc, resposta)
                 else:
                     doc.erro = "Nenhum conteúdo extraível"
 
@@ -1331,19 +1704,20 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
 
                     texto = doc.texto_extraido[:50000]
 
-                    prompt = self.prompt_resumo.format(texto_documento=texto)
+                    # Gerar resumo via LLM - usa JSON ou MD conforme configurado
+                    prompt_json = self._obter_prompt_json(doc)
+                    if prompt_json:
+                        prompt = prompt_json.format(texto_documento=texto)
+                    else:
+                        prompt = self.prompt_resumo.format(texto_documento=texto)
+                    
                     resposta = await chamar_llm_async(
                         session,
                         prompt=prompt,
                         modelo=self.modelo
                     )
 
-                    is_irrelevante, conteudo = _verificar_irrelevante(resposta)
-                    if is_irrelevante:
-                        doc.irrelevante = True
-                        doc.resumo = conteudo
-                    else:
-                        doc.resumo = resposta
+                    self._processar_resposta_resumo(doc, resposta)
                 else:
                     # PDF digitalizado - enviar imagens para IA
                     imagens = conteudo_pdf.conteudo
@@ -1354,7 +1728,10 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
 
                     doc.texto_extraido = f"[PDF digitalizado com {conteudo_pdf.paginas} páginas - analisado via visão]"
 
-                    prompt_imagem = self._get_prompt_imagem()
+                    # Usa prompt JSON ou MD conforme configurado
+                    prompt_json = self._obter_prompt_json_imagem(doc)
+                    prompt_imagem = prompt_json if prompt_json else self._get_prompt_imagem()
+                    
                     resposta = await chamar_llm_com_imagens_async(
                         session,
                         prompt=prompt_imagem,
@@ -1362,19 +1739,14 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         modelo=self.modelo
                     )
 
-                    is_irrelevante, conteudo = _verificar_irrelevante(resposta)
-                    if is_irrelevante:
-                        doc.irrelevante = True
-                        doc.resumo = conteudo
-                    else:
-                        doc.resumo = resposta
+                    self._processar_resposta_resumo(doc, resposta)
 
         except Exception as e:
             import traceback
             doc.erro = f"Erro no processamento: {type(e).__name__}: {str(e) or 'sem detalhes'}"
 
     def _get_prompt_imagem(self) -> str:
-        """Retorna o prompt para análise de imagens"""
+        """Retorna o prompt para análise de imagens (formato MD)"""
         return """Analise as imagens deste documento judicial.
 
 ## DOCUMENTOS IRRELEVANTES - Marcar como [IRRELEVANTE]:

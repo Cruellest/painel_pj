@@ -329,6 +329,11 @@
                 const partesIndicator = doc.total_partes > 1 
                     ? `<span class="bg-blue-100 text-blue-600 text-[10px] px-1.5 py-0.5 rounded-full ml-1" title="${doc.total_partes} partes">${doc.total_partes}p</span>` 
                     : '';
+                
+                // Indicador se descrição veio da IA (diferente da original)
+                const iaIndicator = doc.descricao_original && doc.descricao !== doc.descricao_original
+                    ? `<i class="fas fa-robot text-[10px] text-purple-400 ml-1" title="Identificado pela IA (original: ${doc.descricao_original})"></i>`
+                    : '';
 
                 div.innerHTML = `
                     <div class="flex items-start gap-3">
@@ -336,8 +341,8 @@
                             ${doc.ordem}
                         </span>
                         <div class="min-w-0 flex-1">
-                            <p class="text-sm font-medium text-gray-800 truncate" title="${doc.descricao}">
-                                ${doc.descricao}${partesIndicator}
+                            <p class="text-sm font-medium text-gray-800 truncate" title="${doc.descricao}${doc.descricao_original ? ' (Original: ' + doc.descricao_original + ')' : ''}">
+                                ${doc.descricao}${iaIndicator}${partesIndicator}
                             </p>
                             <p class="doc-date text-xs text-gray-500 mt-0.5">
                                 ${doc.data_formatada}

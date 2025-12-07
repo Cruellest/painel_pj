@@ -16,6 +16,7 @@ from config import ADMIN_USERNAME, ADMIN_PASSWORD
 from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise, ArquivoUpload
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
+from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON, CategoriaResumoJSONHistorico
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico
 
@@ -344,6 +345,16 @@ def run_migrations():
             db.rollback()
             print(f"⚠️ Migração prompt_modulos_historico: {e}")
     
+    # Migração: Adicionar coluna documentos_processados na tabela geracoes_pecas
+    if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'documentos_processados'):
+        try:
+            db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN documentos_processados JSON"))
+            db.commit()
+            print("✅ Migração: coluna documentos_processados adicionada em geracoes_pecas")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração documentos_processados: {e}")
+    
     # Migração: Adicionar coluna historico_chat na tabela geracoes_pecas
     if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'historico_chat'):
         try:
@@ -403,7 +414,34 @@ def run_migrations():
         except Exception as e:
             db.rollback()
             print(f"⚠️ Migração condicao_ativacao prompt_modulos_historico: {e}")
-    
+
+    # Migração: Alterar tipo da coluna conteudo_gerado de JSON para TEXT
+    if table_exists('geracoes_pecas'):
+        try:
+            # Verifica o tipo atual da coluna conteudo_gerado
+            inspector = inspect(engine)
+            columns = {col['name']: col for col in inspector.get_columns('geracoes_pecas')}
+
+            if 'conteudo_gerado' in columns:
+                col_type = str(columns['conteudo_gerado']['type']).upper()
+
+                # Se a coluna for JSON, converte para TEXT
+                if 'JSON' in col_type:
+                    if is_sqlite:
+                        # SQLite não suporta ALTER COLUMN TYPE diretamente, precisa recriar a tabela
+                        # Por enquanto, apenas log - SQLite aceita qualquer tipo
+                        print("[INFO] SQLite: conteudo_gerado ja aceita TEXT mesmo sendo JSON")
+                    else:
+                        # PostgreSQL: converte JSON para TEXT
+                        db.execute(text("ALTER TABLE geracoes_pecas ALTER COLUMN conteudo_gerado TYPE TEXT USING conteudo_gerado::text"))
+                        db.commit()
+                        print("[OK] Migracao: coluna conteudo_gerado alterada de JSON para TEXT")
+                else:
+                    print("[INFO] Coluna conteudo_gerado ja e do tipo TEXT")
+        except Exception as e:
+            db.rollback()
+            print(f"[AVISO] Migracao tipo conteudo_gerado: {e}")
+
     db.close()
 
 
@@ -597,6 +635,234 @@ Seja objetivo e fundamente cada conclusão com base legal."""
         db.close()
 
 
+def seed_categorias_resumo_json():
+    """Cria as categorias de formato de resumo JSON padrão"""
+    
+    db = SessionLocal()
+    try:
+        # Verifica se já existem categorias
+        existing = db.query(CategoriaResumoJSON).count()
+        
+        if existing == 0:
+            # Formato JSON residual (padrão para todos os documentos)
+            formato_residual = '''{
+  "tipo_documento": "string - tipo identificado do documento",
+  "partes": {
+    "autor": "string ou null",
+    "reu": "string ou null"
+  },
+  "pedido_objeto": "string - o que está sendo requerido ou discutido",
+  "diagnostico_cid": "string ou null - diagnóstico/CID se mencionado",
+  "tratamento_solicitado": {
+    "tipo": "medicamento | cirurgia | procedimento | outro | null",
+    "descricao": "string - descrição do tratamento",
+    "medicamento": {
+      "nome_comercial": "string ou null",
+      "principio_ativo": "string ou null",
+      "posologia": "string ou null",
+      "incorporado_sus": "boolean ou null",
+      "componente_sus": "string ou null - Básico/Estratégico/Especializado"
+    },
+    "cirurgia": {
+      "procedimento": "string ou null",
+      "urgente": "boolean ou null",
+      "responsabilidade": "string ou null"
+    }
+  },
+  "argumentos_principais": ["string - lista de argumentos apresentados"],
+  "decisao_dispositivo": "string ou null - o que foi decidido, prazos, multas",
+  "processo_origem": "string ou null - número CNJ do processo de origem (se Agravo)",
+  "pontos_relevantes": ["string - outros pontos importantes"],
+  "irrelevante": false
+}'''
+            
+            instrucoes_residual = """Este é o formato padrão para todos os documentos.
+Preencha TODOS os campos aplicáveis. Use null para campos não encontrados no documento.
+Para campos de lista (argumentos_principais, pontos_relevantes), use array vazio [] se não houver conteúdo.
+O campo "irrelevante" deve ser true apenas se o documento for meramente administrativo (procuração, AR, etc)."""
+            
+            categoria_residual = CategoriaResumoJSON(
+                nome="residual",
+                titulo="Formato Padrão (Residual)",
+                descricao="Formato JSON padrão aplicado a todos os documentos que não pertencem a uma categoria específica.",
+                codigos_documento=[],
+                formato_json=formato_residual,
+                instrucoes_extracao=instrucoes_residual,
+                is_residual=True,
+                ativo=True,
+                ordem=999
+            )
+            db.add(categoria_residual)
+            
+            # Categoria para Petições
+            formato_peticoes = '''{
+  "tipo_documento": "string - Petição Inicial | Petição Intermediária | Contestação | etc",
+  "partes": {
+    "autor": "string",
+    "reu": "string",
+    "advogado_autor": "string ou null",
+    "procurador_reu": "string ou null"
+  },
+  "valor_causa": "string ou null",
+  "pedidos": [
+    {
+      "tipo": "principal | subsidiario | tutela_urgencia",
+      "descricao": "string - descrição do pedido"
+    }
+  ],
+  "fundamentos_juridicos": ["string - dispositivos legais citados"],
+  "narrativa_fatos": "string - resumo da narrativa fática",
+  "tutela_urgencia": {
+    "requerida": "boolean",
+    "tipo": "liminar | antecipacao_tutela | null",
+    "fundamento_urgencia": "string ou null - periculum in mora alegado"
+  },
+  "provas_indicadas": ["string - provas documentais mencionadas"],
+  "diagnostico_cid": "string ou null",
+  "tratamento_solicitado": {
+    "tipo": "medicamento | cirurgia | procedimento | outro | null",
+    "descricao": "string ou null",
+    "medicamento": {
+      "nome_comercial": "string ou null",
+      "principio_ativo": "string ou null",
+      "posologia": "string ou null"
+    }
+  },
+  "irrelevante": false
+}'''
+            
+            categoria_peticoes = CategoriaResumoJSON(
+                nome="peticoes",
+                titulo="Petições",
+                descricao="Formato para petições iniciais, intermediárias e contestações.",
+                codigos_documento=[500, 510, 9500, 8320],  # Petição Inicial, Petição Intermediária, Petição, Contestação
+                formato_json=formato_peticoes,
+                instrucoes_extracao="Extraia TODOS os pedidos formulados, separando por tipo (principal, subsidiário, tutela de urgência). Liste todos os fundamentos jurídicos citados.",
+                is_residual=False,
+                ativo=True,
+                ordem=1
+            )
+            db.add(categoria_peticoes)
+            
+            # Categoria para Decisões Judiciais
+            formato_decisoes = '''{
+  "tipo_documento": "string - Sentença | Decisão Interlocutória | Despacho | Acórdão",
+  "juiz_relator": "string ou null",
+  "data_decisao": "string ou null - data da decisão",
+  "dispositivo": {
+    "resultado": "procedente | improcedente | parcialmente_procedente | deferido | indeferido | outro",
+    "descricao": "string - descrição do que foi decidido"
+  },
+  "fundamentacao_resumo": "string - principais razões de decidir",
+  "obrigacoes_impostas": [
+    {
+      "obrigado": "string - quem deve cumprir",
+      "obrigacao": "string - o que deve fazer",
+      "prazo": "string ou null",
+      "multa": "string ou null - astreintes se houver"
+    }
+  ],
+  "honorarios": {
+    "fixados": "boolean",
+    "percentual_valor": "string ou null"
+  },
+  "recurso_cabivel": "string ou null",
+  "transitou_julgado": "boolean ou null",
+  "irrelevante": false
+}'''
+            
+            categoria_decisoes = CategoriaResumoJSON(
+                nome="decisoes",
+                titulo="Decisões Judiciais",
+                descricao="Formato para sentenças, decisões interlocutórias, despachos e acórdãos.",
+                codigos_documento=[8, 6, 15, 137, 34, 44],  # Sentença, Despacho, Decisões Interlocutórias, etc
+                formato_json=formato_decisoes,
+                instrucoes_extracao="Identifique claramente o DISPOSITIVO da decisão (procedente/improcedente/etc). Liste TODAS as obrigações impostas com prazos e multas.",
+                is_residual=False,
+                ativo=True,
+                ordem=2
+            )
+            db.add(categoria_decisoes)
+            
+            # Categoria para Recursos
+            formato_recursos = '''{
+  "tipo_documento": "string - Recurso de Apelação | Contrarrazões | Agravo de Instrumento | Embargos",
+  "recorrente": "string",
+  "recorrido": "string",
+  "decisao_recorrida": "string - qual decisão está sendo impugnada",
+  "teses_recursais": [
+    {
+      "tipo": "preliminar | merito",
+      "argumento": "string - descrição do argumento"
+    }
+  ],
+  "pedido_recursal": "string - o que pede (reforma, anulação, etc)",
+  "processo_origem": "string ou null - número CNJ do processo de origem (para Agravo)",
+  "efeito_suspensivo": {
+    "requerido": "boolean",
+    "fundamento": "string ou null"
+  },
+  "irrelevante": false
+}'''
+            
+            categoria_recursos = CategoriaResumoJSON(
+                nome="recursos",
+                titulo="Recursos",
+                descricao="Formato para recursos de apelação, contrarrazões, agravos e embargos.",
+                codigos_documento=[8335, 8305],  # Recurso de Apelação, Contrarrazões de Apelação
+                formato_json=formato_recursos,
+                instrucoes_extracao="Liste TODAS as teses recursais separando preliminares de mérito. Para Agravo de Instrumento, SEMPRE identifique o processo de origem.",
+                is_residual=False,
+                ativo=True,
+                ordem=3
+            )
+            db.add(categoria_recursos)
+            
+            # Categoria para Pareceres Técnicos (NAT/CATES)
+            formato_pareceres = '''{
+  "tipo_documento": "string - Parecer do NAT | Parecer do CATES | Laudo Pericial | Parecer do MP",
+  "orgao_emissor": "string",
+  "data_parecer": "string ou null",
+  "objeto_consulta": "string - qual foi a pergunta/demanda",
+  "medicamento_procedimento_analisado": {
+    "nome": "string",
+    "principio_ativo": "string ou null",
+    "indicacao_solicitada": "string ou null"
+  },
+  "analise_incorporacao_sus": {
+    "incorporado": "boolean ou null",
+    "componente": "string ou null - Básico/Estratégico/Especializado",
+    "para_quais_indicacoes": "string ou null",
+    "caso_enquadra": "boolean ou null - o caso do autor se enquadra?"
+  },
+  "alternativas_terapeuticas": ["string - alternativas disponíveis no SUS"],
+  "evidencia_cientifica": "string ou null - análise de eficácia/segurança",
+  "conclusao": "string - conclusão/recomendação do parecer",
+  "ressalvas": ["string - ressalvas ou condicionantes"],
+  "irrelevante": false
+}'''
+            
+            categoria_pareceres = CategoriaResumoJSON(
+                nome="pareceres",
+                titulo="Pareceres Técnicos",
+                descricao="Formato para pareceres do NAT, CATES, NATJus, laudos periciais e pareceres do MP.",
+                codigos_documento=[8369, 8333, 30],  # Laudo Pericial, Manifestação do MP, Peças do MP
+                formato_json=formato_pareceres,
+                instrucoes_extracao="TRANSCREVA a conclusão do parecer. Identifique claramente se o medicamento/procedimento está incorporado ao SUS e para quais indicações.",
+                is_residual=False,
+                ativo=True,
+                ordem=4
+            )
+            db.add(categoria_pareceres)
+            
+            db.commit()
+            print("✅ Categorias de formato de resumo JSON criadas!")
+        else:
+            print(f"ℹ️  {existing} categoria(s) de resumo JSON já existem no banco.")
+    finally:
+        db.close()
+
+
 def init_database():
     """Inicializa o banco de dados completo"""
     print("🔧 Inicializando banco de dados...")
@@ -606,6 +872,7 @@ def init_database():
     seed_admin()
     seed_prompts()
     seed_prompt_modulos()  # Cria módulos do gerador de peças
+    seed_categorias_resumo_json()  # Cria categorias de formato JSON
     print("✅ Banco de dados inicializado!")
 
 

@@ -21,6 +21,10 @@ class GeracaoPeca(Base):
     # Dados do processo (JSON do TJ-MS)
     dados_processo = Column(JSON, nullable=True)
     
+    # Lista de documentos com descrição identificada pela IA (JSON)
+    # Formato: [{"id": "...", "ids": [...], "descricao": "...", "descricao_ia": "...", "data_juntada": "...", ...}]
+    documentos_processados = Column(JSON, nullable=True)
+    
     # Conteúdo gerado pela IA em Markdown
     conteudo_gerado = Column(Text, nullable=True)
     

@@ -40,6 +40,7 @@ from sistemas.assistencia_judiciaria.router import router as assistencia_router
 from sistemas.matriculas_confrontantes.router import router as matriculas_router
 from sistemas.gerador_pecas.router import router as gerador_pecas_router
 from sistemas.gerador_pecas.router_admin import router as gerador_pecas_admin_router
+from sistemas.gerador_pecas.router_categorias_json import router as categorias_json_router
 
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
@@ -145,6 +146,9 @@ app.include_router(gerador_pecas_admin_router, prefix="/admin/api")
 
 # Router de Prompts Modulares (admin)
 app.include_router(prompts_modulos_router, prefix="/admin/api")
+
+# Router de Categorias de Formato JSON (admin)
+app.include_router(categorias_json_router, prefix="/admin/api")
 
 
 # ==================================================
@@ -317,6 +321,12 @@ async def admin_users_page(request: Request):
 async def admin_feedbacks_page(request: Request):
     """Página de dashboard de feedbacks (requer autenticação via JS)"""
     return templates.TemplateResponse("admin_feedbacks.html", {"request": request})
+
+
+@app.get("/admin/categorias-resumo-json")
+async def admin_categorias_json_page(request: Request):
+    """Página de gerenciamento de categorias de formato de resumo JSON"""
+    return templates.TemplateResponse("admin_categorias_json.html", {"request": request})
 
 
 # ==================================================
