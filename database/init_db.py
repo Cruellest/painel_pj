@@ -15,18 +15,9 @@ from config import ADMIN_USERNAME, ADMIN_PASSWORD
 # Importa modelos para criar tabelas
 from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise, ArquivoUpload
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
+from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from admin.models import PromptConfig, ConfiguracaoIA
-
-# Importa modelos opcionais (podem não existir em todas as branches)
-try:
-    from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
-except ImportError:
-    pass
-
-try:
-    from admin.models_prompts import PromptModulo, PromptModuloHistorico
-except ImportError:
-    pass
+from admin.models_prompts import PromptModulo, PromptModuloHistorico
 
 
 def wait_for_db(max_retries=10, delay=3):
@@ -353,6 +344,66 @@ def run_migrations():
             db.rollback()
             print(f"⚠️ Migração prompt_modulos_historico: {e}")
     
+    # Migração: Adicionar coluna historico_chat na tabela geracoes_pecas
+    if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'historico_chat'):
+        try:
+            db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN historico_chat JSON"))
+            db.commit()
+            print("✅ Migração: coluna historico_chat adicionada em geracoes_pecas")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração historico_chat: {e}")
+    
+    # Migração: Adicionar coluna prompt_enviado na tabela geracoes_pecas
+    if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'prompt_enviado'):
+        try:
+            db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN prompt_enviado TEXT"))
+            db.commit()
+            print("✅ Migração: coluna prompt_enviado adicionada em geracoes_pecas")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração prompt_enviado: {e}")
+    
+    # Migração: Adicionar coluna resumo_consolidado na tabela geracoes_pecas
+    if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'resumo_consolidado'):
+        try:
+            db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN resumo_consolidado TEXT"))
+            db.commit()
+            print("✅ Migração: coluna resumo_consolidado adicionada em geracoes_pecas")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração resumo_consolidado: {e}")
+    
+    # Migração: Adicionar coluna tempo_processamento na tabela geracoes_pecas
+    if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'tempo_processamento'):
+        try:
+            db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN tempo_processamento INTEGER"))
+            db.commit()
+            print("✅ Migração: coluna tempo_processamento adicionada em geracoes_pecas")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração tempo_processamento: {e}")
+    
+    # Migração: Adicionar coluna condicao_ativacao na tabela prompt_modulos
+    if table_exists('prompt_modulos') and not column_exists('prompt_modulos', 'condicao_ativacao'):
+        try:
+            db.execute(text("ALTER TABLE prompt_modulos ADD COLUMN condicao_ativacao TEXT"))
+            db.commit()
+            print("✅ Migração: coluna condicao_ativacao adicionada em prompt_modulos")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração condicao_ativacao prompt_modulos: {e}")
+    
+    # Migração: Adicionar coluna condicao_ativacao na tabela prompt_modulos_historico
+    if table_exists('prompt_modulos_historico') and not column_exists('prompt_modulos_historico', 'condicao_ativacao'):
+        try:
+            db.execute(text("ALTER TABLE prompt_modulos_historico ADD COLUMN condicao_ativacao TEXT"))
+            db.commit()
+            print("✅ Migração: coluna condicao_ativacao adicionada em prompt_modulos_historico")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração condicao_ativacao prompt_modulos_historico: {e}")
+    
     db.close()
 
 
@@ -402,6 +453,150 @@ def seed_prompts():
         db.close()
 
 
+def seed_prompt_modulos():
+    """Cria os módulos de prompt do gerador de peças se não existirem"""
+    from admin.seed_prompts import PROMPT_SYSTEM_GERADOR_PECAS
+    
+    db = SessionLocal()
+    try:
+        # Verifica se já existem módulos BASE
+        existing_base = db.query(PromptModulo).filter(
+            PromptModulo.tipo == "base"
+        ).count()
+        
+        if existing_base == 0:
+            # Cria o módulo BASE principal com o prompt do sistema
+            modulo_base = PromptModulo(
+                tipo="base",
+                categoria=None,
+                subcategoria=None,
+                nome="system_prompt",
+                titulo="Prompt de Sistema - Gerador de Peças",
+                conteudo=PROMPT_SYSTEM_GERADOR_PECAS,
+                palavras_chave=[],
+                tags=["base", "sistema", "gerador"],
+                ativo=True,
+                ordem=0,
+                versao=1
+            )
+            db.add(modulo_base)
+            
+            # Cria módulos de PEÇA para cada tipo
+            tipos_peca = [
+                {
+                    "categoria": "contestacao",
+                    "nome": "contestacao",
+                    "titulo": "Contestação",
+                    "conteudo": """## ESTRUTURA DA CONTESTAÇÃO
+
+1. **ENDEREÇAMENTO** - Juízo competente
+2. **QUALIFICAÇÃO** - Identificação do Estado como réu
+3. **PRELIMINARES** (se houver):
+   - Ilegitimidade passiva
+   - Incompetência
+   - Litispendência/Coisa julgada
+   - Prescrição/Decadência
+4. **MÉRITO**:
+   - Impugnação específica dos fatos
+   - Fundamentação jurídica
+   - Jurisprudência aplicável
+5. **PEDIDOS**:
+   - Acolhimento das preliminares (se houver)
+   - Improcedência dos pedidos
+   - Condenação em honorários
+
+Use linguagem formal, técnico-jurídica, com parágrafos justificados e citações em recuo."""
+                },
+                {
+                    "categoria": "recurso_apelacao",
+                    "nome": "recurso_apelacao",
+                    "titulo": "Recurso de Apelação",
+                    "conteudo": """## ESTRUTURA DO RECURSO DE APELAÇÃO
+
+1. **ENDEREÇAMENTO** - Tribunal de Justiça de MS
+2. **TEMPESTIVIDADE** - Demonstrar prazo
+3. **PREPARO** - Isenção do Estado
+4. **RAZÕES RECURSAIS**:
+   - Síntese da sentença
+   - Preliminares (nulidades, cerceamento)
+   - Mérito recursal
+   - Error in procedendo / Error in judicando
+5. **PEDIDOS**:
+   - Conhecimento e provimento
+   - Reforma da sentença
+   - Inversão dos ônus sucumbenciais
+
+Demonstre o error in judicando ou procedendo de forma clara e objetiva."""
+                },
+                {
+                    "categoria": "contrarrazoes",
+                    "nome": "contrarrazoes",
+                    "titulo": "Contrarrazões de Recurso",
+                    "conteudo": """## ESTRUTURA DAS CONTRARRAZÕES
+
+1. **ENDEREÇAMENTO** - Tribunal competente
+2. **SÍNTESE DO RECURSO** - Resumo das razões do apelante
+3. **PRELIMINARES DE INADMISSIBILIDADE** (se houver):
+   - Intempestividade
+   - Irregularidade formal
+   - Falta de interesse recursal
+4. **MÉRITO**:
+   - Refutação ponto a ponto
+   - Manutenção da sentença
+   - Jurisprudência favorável
+5. **PEDIDOS**:
+   - Não conhecimento (preliminares)
+   - Desprovimento
+   - Majoração de honorários
+
+Rebata cada argumento do recurso de forma sistemática."""
+                },
+                {
+                    "categoria": "parecer",
+                    "nome": "parecer",
+                    "titulo": "Parecer Jurídico",
+                    "conteudo": """## ESTRUTURA DO PARECER JURÍDICO
+
+1. **EMENTA** - Síntese da consulta e conclusão
+2. **RELATÓRIO** - Fatos e documentos analisados
+3. **FUNDAMENTAÇÃO**:
+   - Análise legal
+   - Doutrina aplicável
+   - Jurisprudência pertinente
+   - Aspectos técnicos (se houver NAT)
+4. **CONCLUSÃO**:
+   - Resposta objetiva à consulta
+   - Recomendações práticas
+   - Encaminhamentos sugeridos
+
+Seja objetivo e fundamente cada conclusão com base legal."""
+                }
+            ]
+            
+            for tipo_peca in tipos_peca:
+                modulo = PromptModulo(
+                    tipo="peca",
+                    categoria=tipo_peca["categoria"],
+                    subcategoria=None,
+                    nome=tipo_peca["nome"],
+                    titulo=tipo_peca["titulo"],
+                    conteudo=tipo_peca["conteudo"],
+                    palavras_chave=[tipo_peca["categoria"]],
+                    tags=["peca", tipo_peca["categoria"]],
+                    ativo=True,
+                    ordem=0,
+                    versao=1
+                )
+                db.add(modulo)
+            
+            db.commit()
+            print("✅ Módulos de prompt do gerador de peças criados!")
+        else:
+            print(f"ℹ️  {existing_base} módulo(s) BASE já existem no banco.")
+    finally:
+        db.close()
+
+
 def init_database():
     """Inicializa o banco de dados completo"""
     print("🔧 Inicializando banco de dados...")
@@ -410,6 +605,7 @@ def init_database():
     run_migrations()  # Aplica migrações
     seed_admin()
     seed_prompts()
+    seed_prompt_modulos()  # Cria módulos do gerador de peças
     print("✅ Banco de dados inicializado!")
 
 

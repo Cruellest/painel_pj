@@ -1,0 +1,658 @@
+# sistemas/gerador_pecas/services.py
+"""
+Serviços do sistema Gerador de Peças Jurídicas
+Utiliza prompts modulares: BASE + PEÇA + CONTEÚDO
+
+Fluxo com 3 agentes:
+1. Agente TJ-MS: Baixa documentos e gera resumo consolidado
+2. Agente Detector: Analisa resumo e ativa módulos relevantes
+3. Agente Gerador (Gemini 3 Pro): Gera a peça final
+"""
+
+import os
+import json
+import uuid
+import httpx
+import re
+from typing import Dict, List, Optional
+from datetime import datetime
+from sqlalchemy.orm import Session
+
+from docx import Document
+from docx.shared import Pt, Inches, Cm
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+from sistemas.gerador_pecas.models import GeracaoPeca
+from admin.models_prompts import PromptModulo
+from admin.models import ConfiguracaoIA
+from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
+
+# Flag para indicar se o orquestrador está disponível (será verificado na primeira chamada)
+ORQUESTRADOR_DISPONIVEL = None  # None = não verificado ainda
+_OrquestradorAgentes = None  # Cache da classe
+
+
+def _carregar_orquestrador():
+    """Carrega o orquestrador de forma lazy para evitar importação circular"""
+    global ORQUESTRADOR_DISPONIVEL, _OrquestradorAgentes
+    
+    if ORQUESTRADOR_DISPONIVEL is not None:
+        return ORQUESTRADOR_DISPONIVEL
+    
+    try:
+        from sistemas.gerador_pecas.orquestrador_agentes import OrquestradorAgentes
+        _OrquestradorAgentes = OrquestradorAgentes
+        ORQUESTRADOR_DISPONIVEL = True
+        print("✅ Orquestrador de agentes carregado com sucesso")
+    except Exception as e:
+        ORQUESTRADOR_DISPONIVEL = False
+        print(f"⚠️ Orquestrador de agentes não disponível - modo legado ativo. Erro: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return ORQUESTRADOR_DISPONIVEL
+
+
+class GeradorPecasService:
+    """
+    Serviço principal para geração de peças jurídicas.
+    
+    Utiliza sistema de 3 agentes:
+    - Agente 1 (TJ-MS): Coleta documentos e gera resumo consolidado
+    - Agente 2 (Detector): Analisa e ativa módulos de conteúdo relevantes
+    - Agente 3 (Gemini 3 Pro): Gera a peça jurídica final
+    
+    Prompts modulares:
+    - BASE: System prompt (sempre ativo)
+    - PEÇA: Estrutura específica do tipo de peça (ativado por escolha)
+    - CONTEÚDO: Argumentos/teses (ativados por detecção de situação)
+    """
+    
+    def __init__(
+        self,
+        modelo: str = "google/gemini-2.5-pro-preview-05-06",
+        db: Session = None
+    ):
+        self.modelo = modelo
+        self.db = db
+        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
+        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
+
+        # Diretório para arquivos temporários
+        self.temp_dir = os.path.join(os.path.dirname(__file__), 'temp_docs')
+        os.makedirs(self.temp_dir, exist_ok=True)
+
+        # Inicializar detector de módulos com configurações do banco
+        self.detector = None
+        self.orquestrador = None
+        
+        if self.db:
+            self.detector = self._inicializar_detector()
+            # Inicializa orquestrador se disponível (carregamento lazy)
+            if _carregar_orquestrador():
+                try:
+                    self.orquestrador = _OrquestradorAgentes(db=self.db, modelo_geracao=self.modelo)
+                    print(f"✅ Orquestrador de agentes inicializado com sucesso")
+                except Exception as e:
+                    print(f"❌ Erro ao inicializar orquestrador: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    self.orquestrador = None
+    
+    def _inicializar_detector(self) -> Optional[DetectorModulosIA]:
+        """Inicializa o detector de módulos com configurações do banco"""
+        try:
+            # Carregar configurações do banco
+            modelo_config = self.db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == "modelo_deteccao"
+            ).first()
+
+            cache_config = self.db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == "cache_ttl_minutos"
+            ).first()
+
+            modelo = modelo_config.valor if modelo_config else "google/gemini-2.0-flash-lite"
+            cache_ttl = int(cache_config.valor) if cache_config else 60
+
+            return DetectorModulosIA(
+                db=self.db,
+                modelo=modelo,
+                cache_ttl_minutes=cache_ttl
+            )
+        except Exception as e:
+            print(f"⚠️ Erro ao inicializar detector de módulos: {e}")
+            return None
+
+    def _carregar_modulos_base(self) -> List[PromptModulo]:
+        """Carrega todos os módulos BASE (sempre ativos)"""
+        if not self.db:
+            return []
+        return self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "base",
+            PromptModulo.ativo == True
+        ).order_by(PromptModulo.ordem).all()
+    
+    def _carregar_modulo_peca(self, tipo_peca: str) -> Optional[PromptModulo]:
+        """Carrega o módulo de PEÇA específico"""
+        if not self.db:
+            return None
+        return self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "peca",
+            PromptModulo.categoria == tipo_peca,
+            PromptModulo.ativo == True
+        ).first()
+    
+    def _carregar_modulos_conteudo(
+        self,
+        modulos_ids: List[int] = None,
+        palavras_detectadas: List[str] = None
+    ) -> List[PromptModulo]:
+        """
+        Carrega módulos de CONTEÚDO.
+
+        Prioridade:
+        1. Se modulos_ids fornecidos (detecção por IA) - usa esses IDs
+        2. Se palavras_detectadas fornecidas - filtra por palavras-chave
+        3. Caso contrário - retorna todos os módulos ativos
+
+        Args:
+            modulos_ids: IDs dos módulos detectados pela IA
+            palavras_detectadas: Palavras-chave para fallback
+        """
+        if not self.db:
+            return []
+
+        # Método 1: Carregar por IDs específicos (resultado da IA)
+        if modulos_ids is not None:
+            modulos = self.db.query(PromptModulo).filter(
+                PromptModulo.tipo == "conteudo",
+                PromptModulo.ativo == True,
+                PromptModulo.id.in_(modulos_ids)
+            ).order_by(PromptModulo.ordem).all()
+            return modulos
+
+        # Método 2: Filtrar por palavras-chave (fallback)
+        query = self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "conteudo",
+            PromptModulo.ativo == True
+        )
+
+        modulos = query.order_by(PromptModulo.ordem).all()
+
+        if not palavras_detectadas:
+            return modulos
+
+        # Filtra módulos que têm palavras-chave correspondentes
+        modulos_relevantes = []
+        for modulo in modulos:
+            if modulo.palavras_chave:
+                for palavra in modulo.palavras_chave:
+                    if any(palavra.lower() in p.lower() for p in palavras_detectadas):
+                        modulos_relevantes.append(modulo)
+                        break
+
+        return modulos_relevantes
+    
+    def _montar_prompt_sistema(
+        self,
+        tipo_peca: str = None,
+        modulos_ids: List[int] = None,
+        palavras_detectadas: List[str] = None
+    ) -> str:
+        """
+        Monta o prompt de sistema combinando módulos:
+        BASE + PEÇA + CONTEÚDO
+
+        Args:
+            tipo_peca: Tipo da peça (contestacao, recurso, etc)
+            modulos_ids: IDs dos módulos detectados pela IA (prioritário)
+            palavras_detectadas: Palavras-chave para fallback
+        """
+        partes = []
+
+        # 1. Módulos BASE (sempre incluídos)
+        modulos_base = self._carregar_modulos_base()
+        for modulo in modulos_base:
+            partes.append(f"## {modulo.titulo}\n\n{modulo.conteudo}")
+
+        # 2. Módulo de PEÇA (se tipo especificado)
+        if tipo_peca:
+            modulo_peca = self._carregar_modulo_peca(tipo_peca)
+            if modulo_peca:
+                partes.append(f"## ESTRUTURA DA PEÇA: {modulo_peca.titulo}\n\n{modulo_peca.conteudo}")
+
+        # 3. Módulos de CONTEÚDO (baseado em detecção por IA ou palavras-chave)
+        modulos_conteudo = self._carregar_modulos_conteudo(modulos_ids, palavras_detectadas)
+        if modulos_conteudo:
+            partes.append("## ARGUMENTOS E TESES APLICÁVEIS\n")
+            for modulo in modulos_conteudo:
+                partes.append(f"### {modulo.titulo}\n{modulo.conteudo}\n")
+
+        # Se não há módulos no banco, usa prompt padrão
+        if not partes:
+            return self._get_prompt_padrao()
+
+        return "\n\n".join(partes)
+    
+    def _get_prompt_padrao(self) -> str:
+        """Retorna prompt padrão caso não haja módulos no banco"""
+        return """Você é um assistente jurídico especializado da Procuradoria-Geral do Estado de Mato Grosso do Sul (PGE-MS).
+
+Sua função é analisar processos judiciais e gerar peças jurídicas profissionais (contestações, pareceres, recursos).
+
+## DIRETRIZES GERAIS
+
+1. **Análise Completa**: Leia TODOS os documentos fornecidos cronologicamente
+2. **Identificação Automática**: Determine qual tipo de peça é necessária baseado nos documentos
+3. **Fundamentação Técnica**: Use jurisprudência e doutrina quando necessário
+4. **Linguagem Forense**: Use linguagem técnico-jurídica adequada
+5. **Estrutura Formal**: Siga rigorosamente a estrutura padrão de cada tipo de peça
+
+## TIPOS DE PEÇAS
+
+### CONTESTAÇÃO
+- Usado quando: Processo em 1º grau, Estado é réu, prazo de contestação em aberto
+- Estrutura: Qualificação → Preliminares → Mérito → Pedidos
+
+### RECURSO DE APELAÇÃO
+- Usado quando: Sentença desfavorável ao Estado
+- Estrutura: Endereçamento → Razões Recursais → Preliminares → Mérito → Pedidos
+
+### CONTRARRAZÕES DE RECURSO
+- Usado quando: Parte contrária apresentou recurso
+- Estrutura: Endereçamento → Admissibilidade → Mérito → Pedidos
+
+### PARECER JURÍDICO
+- Usado quando: Análise técnica de questão jurídica específica
+- Estrutura: Relatório → Fundamentação → Conclusão
+
+## QUANDO TEM DÚVIDAS
+
+Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de informações adicionais, retorne:
+```json
+{
+  "tipo": "pergunta",
+  "pergunta": "Qual tipo de peça você deseja gerar? Identifiquei que...",
+  "opcoes": ["contestacao", "recurso_apelacao", "contrarrazoes", "parecer"]
+}
+```
+
+## IMPORTANTE
+
+- NUNCA invente fatos não presentes nos documentos
+- SEMPRE fundamente tecnicamente seus argumentos
+- Use dispositivos legais completos (Lei nº X, art. Y, § Z)
+- Cite jurisprudência quando houver (STF, STJ, TJMS)
+- Mantenha tom formal e respeitoso
+"""
+    
+    async def processar_processo(
+        self,
+        numero_cnj: str,
+        numero_cnj_formatado: str = None,
+        tipo_peca: Optional[str] = None,
+        resposta_usuario: Optional[str] = None,
+        usuario_id: int = None,
+        documentos_resumo: Optional[str] = None,
+        documentos_completos: Optional[str] = None,
+        palavras_detectadas: List[str] = None,
+        usar_agentes: bool = True
+    ) -> Dict:
+        """
+        Processa um processo e gera a peça jurídica usando os 3 agentes.
+
+        Fluxo com agentes (usar_agentes=True):
+        1. Agente 1 (TJ-MS): Baixa documentos e gera resumo consolidado
+        2. Agente 2 (Detector): Analisa resumo e ativa módulos relevantes
+        3. Agente 3 (Gemini 3 Pro): Gera a peça jurídica final
+
+        Args:
+            numero_cnj: Número do processo sem formatação
+            numero_cnj_formatado: Número formatado para exibição
+            tipo_peca: Tipo de peça a gerar (contestacao, recurso_apelacao, etc)
+            resposta_usuario: Resposta a uma pergunta anterior
+            usuario_id: ID do usuário
+            documentos_resumo: Resumo dos documentos (bypass do Agente 1)
+            documentos_completos: Texto completo dos documentos (opcional)
+            palavras_detectadas: Palavras-chave para fallback
+            usar_agentes: Se True, usa o fluxo completo com 3 agentes
+        """
+        try:
+            # Normaliza o CNJ
+            cnj_limpo = re.sub(r'\D', '', numero_cnj)
+            cnj_display = numero_cnj_formatado or numero_cnj
+            
+            # Debug
+            orq_disponivel = _carregar_orquestrador()
+            print(f"🔍 Debug: usar_agentes={usar_agentes}, orquestrador={self.orquestrador is not None}, ORQUESTRADOR_DISPONIVEL={orq_disponivel}")
+            
+            # Se tem orquestrador e usar_agentes está ativo, usa o novo fluxo
+            if usar_agentes and self.orquestrador and orq_disponivel:
+                return await self._processar_com_agentes(
+                    numero_cnj=cnj_limpo,
+                    numero_cnj_formatado=cnj_display,
+                    tipo_peca=tipo_peca or resposta_usuario,
+                    usuario_id=usuario_id
+                )
+            
+            # Fallback: modo legado (sem integração TJ-MS)
+            return await self._processar_modo_legado(
+                numero_cnj=cnj_limpo,
+                numero_cnj_formatado=cnj_display,
+                tipo_peca=tipo_peca,
+                resposta_usuario=resposta_usuario,
+                usuario_id=usuario_id,
+                documentos_resumo=documentos_resumo,
+                documentos_completos=documentos_completos,
+                palavras_detectadas=palavras_detectadas
+            )
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {
+                "status": "erro",
+                "mensagem": str(e)
+            }
+    
+    async def _processar_com_agentes(
+        self,
+        numero_cnj: str,
+        numero_cnj_formatado: str,
+        tipo_peca: Optional[str],
+        usuario_id: int
+    ) -> Dict:
+        """
+        Processa usando os 3 agentes integrados.
+        """
+        print(f"\n🚀 Iniciando processamento com 3 agentes...")
+        print(f"   Processo: {numero_cnj_formatado}")
+        
+        # Executa o orquestrador (passa número limpo, sem formatação)
+        resultado = await self.orquestrador.processar_processo(
+            numero_processo=numero_cnj,  # Número sem formatação (só dígitos)
+            tipo_peca=tipo_peca
+        )
+        
+        # Trata resultado de pergunta
+        if resultado.status == "pergunta":
+            return {
+                "status": "pergunta",
+                "pergunta": resultado.pergunta,
+                "opcoes": resultado.opcoes,
+                "mensagem": resultado.mensagem
+            }
+        
+        # Trata erro
+        if resultado.status == "erro":
+            return {
+                "status": "erro",
+                "mensagem": resultado.mensagem
+            }
+        
+        # Sucesso - salva no banco
+        # NOTA: Agora o conteúdo é diretamente em Markdown, não mais JSON
+        minuta_markdown = resultado.conteudo_markdown
+        
+        # Salva no banco (incluindo prompt e resumo para auditoria)
+        # conteudo_gerado agora armazena a string markdown diretamente
+        geracao = GeracaoPeca(
+            numero_cnj=numero_cnj,
+            numero_cnj_formatado=numero_cnj_formatado,
+            tipo_peca=resultado.tipo_peca,
+            conteudo_gerado=minuta_markdown,  # Agora é markdown string, não JSON dict
+            prompt_enviado=resultado.agente3.prompt_enviado if resultado.agente3 else None,
+            resumo_consolidado=resultado.agente1.resumo_consolidado if resultado.agente1 else None,
+            modelo_usado=self.modelo,
+            tempo_processamento=int(resultado.tempo_total) if resultado.tempo_total else None,
+            usuario_id=usuario_id
+        )
+        
+        if self.db:
+            self.db.add(geracao)
+            self.db.commit()
+            self.db.refresh(geracao)
+        
+        # NOTA: Geração de DOCX desabilitada temporariamente para novo fluxo markdown
+        # O DOCX será implementado com conversor MD->DOCX no futuro
+        # Por enquanto, o usuário pode copiar o markdown e colar no Word
+        
+        return {
+            "status": "sucesso",
+            "geracao_id": geracao.id if self.db else None,
+            "url_download": None,  # DOCX temporariamente desabilitado para novas gerações
+            "tipo_peca": resultado.tipo_peca,
+            "conteudo_json": None,  # Não há mais JSON
+            "minuta_markdown": minuta_markdown,
+            "tempo_total": resultado.tempo_total
+        }
+    
+    async def _processar_modo_legado(
+        self,
+        numero_cnj: str,
+        numero_cnj_formatado: str,
+        tipo_peca: Optional[str],
+        resposta_usuario: Optional[str],
+        usuario_id: int,
+        documentos_resumo: Optional[str],
+        documentos_completos: Optional[str],
+        palavras_detectadas: List[str]
+    ) -> Dict:
+        """
+        Modo legado: sem integração com TJ-MS (documento de exemplo em Markdown).
+        Se tipo_peca não for especificado e há documentos_resumo, tenta detectar automaticamente.
+        """
+        print("⚠️ Usando modo legado (sem integração TJ-MS)")
+
+        tipo_final = tipo_peca or resposta_usuario
+        
+        # Se não tem tipo de peça, tenta detectar automaticamente se há documentos
+        if not tipo_final and self.detector and documentos_resumo:
+            print("📋 Detectando tipo de peça automaticamente (modo legado)...")
+            try:
+                deteccao = await self.detector.detectar_tipo_peca(documentos_resumo)
+                tipo_final = deteccao.get("tipo_peca")
+                if tipo_final:
+                    print(f"✅ Tipo detectado: {tipo_final} (confiança: {deteccao.get('confianca', 'N/A')})")
+            except Exception as e:
+                print(f"⚠️ Erro na detecção automática: {e}")
+        
+        # Se ainda não tem tipo de peça, pergunta ao usuário
+        if not tipo_final:
+            return {
+                "status": "pergunta",
+                "pergunta": f"Qual tipo de peça jurídica você deseja gerar para o processo {numero_cnj_formatado or numero_cnj}?",
+                "opcoes": ["contestacao", "recurso_apelacao", "contrarrazoes", "parecer"],
+                "mensagem": "Não foi possível detectar automaticamente. Por favor, selecione o tipo de peça."
+            }
+
+        # Monta o prompt usando módulos (para auditoria)
+        prompt_sistema = self._montar_prompt_sistema(
+            tipo_final,
+            modulos_ids=None,
+            palavras_detectadas=palavras_detectadas
+        )
+        
+        # Gera documento de exemplo em Markdown
+        minuta_markdown = self._gerar_documento_exemplo_markdown(numero_cnj_formatado or numero_cnj, tipo_final)
+        
+        # Salva no banco
+        geracao = GeracaoPeca(
+            numero_cnj=numero_cnj,
+            numero_cnj_formatado=numero_cnj_formatado,
+            tipo_peca=tipo_final,
+            conteudo_gerado=minuta_markdown,  # Agora é Markdown string
+            modelo_usado=self.modelo,
+            usuario_id=usuario_id
+        )
+        
+        if self.db:
+            self.db.add(geracao)
+            self.db.commit()
+            self.db.refresh(geracao)
+        
+        return {
+            "status": "sucesso",
+            "geracao_id": geracao.id if self.db else None,
+            "tipo_peca": tipo_final,
+            "minuta_markdown": minuta_markdown
+        }
+    
+    def _gerar_documento_exemplo_markdown(self, numero_cnj: str, tipo_peca: str) -> str:
+        """Gera documento de exemplo em Markdown para demonstração"""
+        
+        tipo_labels = {
+            "contestacao": "CONTESTAÇÃO",
+            "recurso_apelacao": "RECURSO DE APELAÇÃO",
+            "contrarrazoes": "CONTRARRAZÕES DE RECURSO",
+            "parecer": "PARECER JURÍDICO"
+        }
+        
+        titulo = tipo_labels.get(tipo_peca, "PEÇA JURÍDICA")
+        
+        return f"""**EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO DA ___ VARA CÍVEL DA COMARCA DE CAMPO GRANDE - MS**
+
+Processo nº {numero_cnj}
+
+O **ESTADO DE MATO GROSSO DO SUL**, pessoa jurídica de direito público interno, inscrito no CNPJ sob o nº 15.412.257/0001-28, por meio de sua Procuradoria-Geral, vem, respeitosamente, à presença de Vossa Excelência, apresentar a presente **{titulo}**, pelos fundamentos de fato e de direito a seguir expostos.
+
+## I - DOS FATOS
+
+Trata-se de ação judicial em que o Estado de Mato Grosso do Sul figura no polo passivo. *[DESCRIÇÃO DOS FATOS SERÁ INSERIDA AQUI COM BASE NOS DOCUMENTOS DO PROCESSO]*
+
+## II - DO DIREITO
+
+*[FUNDAMENTAÇÃO JURÍDICA SERÁ INSERIDA AQUI COM BASE NA ANÁLISE DO PROCESSO]*
+
+> A jurisprudência do Superior Tribunal de Justiça é pacífica no sentido de que a responsabilidade civil do Estado, embora objetiva, exige a comprovação do nexo de causalidade entre a conduta estatal e o dano alegado.
+> — STJ, AgRg no AREsp 123.456/MS
+
+## III - DOS PEDIDOS
+
+Ante o exposto, requer seja julgado **improcedente** o pedido formulado na inicial, condenando-se a parte autora ao pagamento das custas processuais e honorários advocatícios.
+
+---
+
+*Campo Grande/MS, {datetime.now().strftime('%d de %B de %Y')}*
+
+**[NOME DO PROCURADOR]**
+Procurador do Estado
+OAB/MS nº [NÚMERO]
+"""
+
+    async def editar_minuta(
+        self,
+        minuta_atual: str,
+        mensagem_usuario: str,
+        historico: List[Dict] = None
+    ) -> Dict:
+        """
+        Processa pedido de edição da minuta via chat usando IA.
+        
+        Args:
+            minuta_atual: Markdown da minuta atual
+            mensagem_usuario: Pedido de alteração do usuário
+            historico: Histórico de mensagens anteriores do chat
+            
+        Returns:
+            Dict com status e minuta atualizada
+        """
+        try:
+            if not self.api_key:
+                raise ValueError("OPENROUTER_API_KEY não configurada")
+            
+            # Monta o prompt de sistema para edição
+            system_prompt = """Você é um assistente jurídico especializado em edição de peças jurídicas.
+
+Sua função é modificar a minuta fornecida de acordo com o pedido do usuário.
+
+REGRAS IMPORTANTES:
+1. Retorne APENAS a minuta editada em markdown, sem explicações adicionais
+2. Mantenha a formatação formal juridica
+3. Preserve as partes que não foram solicitadas para alteração
+4. Use markdown correto (## para títulos, **negrito**, *itálico*, > para citações)
+5. Se o pedido não for claro, faça a melhor interpretação possível
+6. Mantenha o tom formal e técnico-jurídico
+
+NÃO inclua:
+- Explicações sobre as alterações
+- Comentários sobre o documento
+- Texto como "Aqui está a minuta editada"
+
+Retorne SOMENTE a minuta editada em markdown."""
+
+            # Monta as mensagens
+            mensagens = [
+                {"role": "system", "content": system_prompt}
+            ]
+            
+            # Adiciona histórico se houver
+            if historico:
+                for msg in historico:
+                    mensagens.append({
+                        "role": msg.get("role", "user"),
+                        "content": msg.get("content", "")
+                    })
+            
+            # Adiciona a mensagem atual com a minuta
+            user_message = f"""Minuta atual:
+
+{minuta_atual}
+
+---
+
+Pedido de alteração: {mensagem_usuario}"""
+            
+            mensagens.append({"role": "user", "content": user_message})
+            
+            # Chama a IA
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                response = await client.post(
+                    self.base_url,
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": self.modelo,
+                        "messages": mensagens,
+                        "temperature": 0.3,
+                        "max_tokens": 8000
+                    }
+                )
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                minuta_editada = result['choices'][0]['message']['content']
+                
+                # Remove possíveis blocos de código markdown que a IA pode ter adicionado
+                if minuta_editada.startswith('```markdown'):
+                    minuta_editada = minuta_editada[11:]
+                if minuta_editada.startswith('```'):
+                    minuta_editada = minuta_editada[3:]
+                if minuta_editada.endswith('```'):
+                    minuta_editada = minuta_editada[:-3]
+                
+                minuta_editada = minuta_editada.strip()
+                
+                return {
+                    "status": "sucesso",
+                    "minuta_markdown": minuta_editada
+                }
+                
+        except httpx.HTTPStatusError as e:
+            print(f"❌ Erro HTTP na edição: {e}")
+            return {
+                "status": "erro",
+                "mensagem": f"Erro na comunicação com a IA: {e.response.status_code}"
+            }
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {
+                "status": "erro",
+                "mensagem": str(e)
+            }

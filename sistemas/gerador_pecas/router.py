@@ -1,0 +1,643 @@
+# sistemas/gerador_pecas/router.py
+"""
+Router do sistema Gerador de Peças Jurídicas
+"""
+
+import os
+import re
+import json
+import uuid
+import asyncio
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query
+from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel
+from typing import Optional, List, Dict, AsyncGenerator
+from sqlalchemy.orm import Session
+
+from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
+from auth.models import User
+from database.connection import get_db
+from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
+from sistemas.gerador_pecas.services import GeradorPecasService
+from admin.models import ConfiguracaoIA, PromptConfig
+
+router = APIRouter(tags=["Gerador de Peças"])
+
+# Diretório temporário para arquivos DOCX
+TEMP_DIR = os.path.join(os.path.dirname(__file__), 'temp_docs')
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# Armazena estado de processamento em memória (para SSE)
+_processamento_status = {}
+
+
+class ProcessarProcessoRequest(BaseModel):
+    numero_cnj: str
+    tipo_peca: Optional[str] = None
+    resposta_usuario: Optional[str] = None
+
+
+class ExportarDocxRequest(BaseModel):
+    """Request para exportar markdown para DOCX"""
+    markdown: str  # Conteúdo markdown da minuta
+    numero_cnj: Optional[str] = None  # Número do processo para nome do arquivo
+    tipo_peca: Optional[str] = None  # Tipo da peça para nome do arquivo
+
+
+class FeedbackRequest(BaseModel):
+    geracao_id: int
+    avaliacao: str  # 'correto', 'parcial', 'incorreto', 'erro_ia'
+    nota: Optional[int] = None  # 1-5
+    comentario: Optional[str] = None
+    campos_incorretos: Optional[list] = None
+
+
+class EditarMinutaRequest(BaseModel):
+    """Request para edição de minuta via chat"""
+    minuta_atual: str  # Markdown da minuta atual
+    mensagem: str  # Pedido de alteração do usuário
+    historico: Optional[List[Dict]] = None  # Histórico de mensagens anteriores
+
+
+@router.get("/tipos-peca")
+async def listar_tipos_peca(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista os tipos de peças disponíveis baseado nos prompts modulares ativos.
+    Retorna apenas os tipos de peça que têm prompt configurado no banco.
+    """
+    from admin.models_prompts import PromptModulo
+    
+    # Busca módulos do tipo "peca" que estão ativos
+    modulos_peca = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "peca",
+        PromptModulo.ativo == True
+    ).order_by(PromptModulo.ordem).all()
+    
+    tipos = []
+    for modulo in modulos_peca:
+        tipos.append({
+            "valor": modulo.categoria,  # Ex: "contestacao", "recurso_apelacao"
+            "label": modulo.titulo,      # Ex: "Contestação", "Recurso de Apelação"
+            "descricao": modulo.conteudo[:100] + "..." if len(modulo.conteudo) > 100 else modulo.conteudo
+        })
+    
+    return {
+        "tipos": tipos,
+        "permite_auto": True  # Permite a opção "detectar automaticamente"
+    }
+
+
+@router.post("/processar")
+async def processar_processo(
+    req: ProcessarProcessoRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Processa um processo e gera a peça jurídica
+    
+    Returns:
+        - Se status == "pergunta": {"pergunta": "...", "opcoes": [...]}
+        - Se status == "sucesso": {"url_download": "...", "tipo_peca": "...", "conteudo_json": {...}}
+        - Se status == "erro": {"mensagem": "..."}
+    """
+    try:
+        # Normaliza o CNJ
+        cnj_limpo = re.sub(r'\D', '', req.numero_cnj)
+        
+        # Busca configurações de IA
+        config_modelo = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "modelo_geracao"
+        ).first()
+        modelo = config_modelo.valor if config_modelo else "anthropic/claude-3.5-sonnet"
+        
+        # Busca prompt do sistema
+        prompt_config = db.query(PromptConfig).filter(
+            PromptConfig.sistema == "gerador_pecas",
+            PromptConfig.tipo == "system",
+            PromptConfig.is_active == True
+        ).first()
+        # O prompt_sistema não é mais usado diretamente - agora vem dos módulos
+        
+        # Inicializa o serviço
+        service = GeradorPecasService(
+            modelo=modelo,
+            db=db
+        )
+        
+        # Processa o processo
+        resultado = await service.processar_processo(
+            numero_cnj=cnj_limpo,
+            numero_cnj_formatado=req.numero_cnj,
+            tipo_peca=req.tipo_peca,
+            resposta_usuario=req.resposta_usuario,
+            usuario_id=current_user.id
+        )
+        
+        return resultado
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/processar-stream")
+async def processar_processo_stream(
+    req: ProcessarProcessoRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Processa um processo com streaming SSE para atualização em tempo real.
+    Retorna eventos conforme cada agente processa.
+    
+    Se tipo_peca não for especificado, o Agente 2 detecta automaticamente
+    qual tipo de peça é mais adequado baseado nos documentos do processo.
+    """
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            cnj_limpo = re.sub(r'\D', '', req.numero_cnj)
+            
+            # Evento inicial
+            yield f"data: {json.dumps({'tipo': 'inicio', 'mensagem': 'Iniciando processamento...'})}\n\n"
+            
+            # Busca configurações
+            config_modelo = db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == "modelo_geracao"
+            ).first()
+            modelo = config_modelo.valor if config_modelo else "google/gemini-2.5-pro-preview-05-06"
+            
+            # Inicializa o serviço
+            service = GeradorPecasService(modelo=modelo, db=db)
+            
+            # Se tem orquestrador, processa com eventos
+            if service.orquestrador:
+                orq = service.orquestrador
+                
+                # Agente 1: Coletor TJ-MS
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': 'Baixando documentos do TJ-MS...'})}\n\n"
+                
+                resultado_agente1 = await orq.agente1.coletar_e_resumir(cnj_limpo)
+                
+                if resultado_agente1.erro:
+                    yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'erro', 'mensagem': resultado_agente1.erro})}\n\n"
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente1.erro})}\n\n"
+                    return
+                
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'concluido', 'mensagem': f'{resultado_agente1.documentos_analisados} documentos processados'})}\n\n"
+                
+                # Determina o tipo de peça (fornecido ou detectado automaticamente)
+                tipo_peca = req.tipo_peca or req.resposta_usuario
+                
+                # Agente 2: Detector de Módulos (e tipo de peça se necessário)
+                if not tipo_peca:
+                    yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Detectando tipo de peça automaticamente...'})}\n\n"
+                    
+                    # Detecta o tipo de peça via IA
+                    deteccao_tipo = await orq.agente2.detectar_tipo_peca(resultado_agente1.resumo_consolidado)
+                    tipo_peca = deteccao_tipo.get("tipo_peca")
+                    
+                    if tipo_peca:
+                        confianca = deteccao_tipo.get("confianca", "media")
+                        justificativa = deteccao_tipo.get("justificativa", "")
+                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Tipo detectado: {tipo_peca} (confiança: {confianca})'})}\n\n"
+                    else:
+                        # Fallback se não conseguiu detectar
+                        tipo_peca = "contestacao"
+                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Não foi possível detectar automaticamente. Usando: contestação'})}\n\n"
+                
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Analisando e ativando prompts...'})}\n\n"
+                
+                resultado_agente2 = await orq._executar_agente2(resultado_agente1.resumo_consolidado, tipo_peca)
+                
+                if resultado_agente2.erro:
+                    yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
+                    return
+                
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'concluido', 'mensagem': f'{len(resultado_agente2.modulos_ids)} módulos ativados'})}\n\n"
+                
+                # Agente 3: Gerador
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peça jurídica com IA...'})}\n\n"
+                
+                resultado_agente3 = await orq._executar_agente3(
+                    resumo_consolidado=resultado_agente1.resumo_consolidado,
+                    prompt_sistema=resultado_agente2.prompt_sistema,
+                    prompt_peca=resultado_agente2.prompt_peca,
+                    prompt_conteudo=resultado_agente2.prompt_conteudo,
+                    tipo_peca=tipo_peca
+                )
+                
+                if resultado_agente3.erro:
+                    yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
+                    return
+                
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'concluido', 'mensagem': 'Peça gerada com sucesso!'})}\n\n"
+                
+                # Salva no banco
+                geracao = GeracaoPeca(
+                    numero_cnj=cnj_limpo,
+                    numero_cnj_formatado=req.numero_cnj,
+                    tipo_peca=tipo_peca,
+                    conteudo_gerado=resultado_agente3.conteudo_markdown,
+                    prompt_enviado=resultado_agente3.prompt_enviado,
+                    resumo_consolidado=resultado_agente1.resumo_consolidado,
+                    modelo_usado=modelo,
+                    usuario_id=current_user.id
+                )
+                db.add(geracao)
+                db.commit()
+                db.refresh(geracao)
+                
+                # Resultado final
+                yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao.id, 'tipo_peca': tipo_peca, 'minuta_markdown': resultado_agente3.conteudo_markdown})}\n\n"
+            else:
+                # Fallback sem orquestrador
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Usando modo simplificado...'})}\n\n"
+                resultado = await service.processar_processo(
+                    numero_cnj=cnj_limpo,
+                    numero_cnj_formatado=req.numero_cnj,
+                    tipo_peca=req.tipo_peca,
+                    resposta_usuario=req.resposta_usuario,
+                    usuario_id=current_user.id
+                )
+                yield f"data: {json.dumps(resultado)}\n\n"
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.post("/editar-minuta")
+async def editar_minuta(
+    req: EditarMinutaRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Processa pedido de edição da minuta via chat.
+    Usa o mesmo modelo de IA configurado para geração.
+    Retorna a minuta atualizada em markdown.
+    """
+    try:
+        # Busca configurações de IA
+        config_modelo = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "modelo_geracao"
+        ).first()
+        modelo = config_modelo.valor if config_modelo else "anthropic/claude-3.5-sonnet"
+        
+        # Inicializa o serviço
+        service = GeradorPecasService(
+            modelo=modelo,
+            db=db
+        )
+        
+        # Processa a edição
+        resultado = await service.editar_minuta(
+            minuta_atual=req.minuta_atual,
+            mensagem_usuario=req.mensagem,
+            historico=req.historico
+        )
+        
+        return resultado
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/exportar-docx")
+async def exportar_docx(
+    req: ExportarDocxRequest,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Exporta markdown para DOCX usando template personalizado.
+    
+    Converte o conteúdo markdown da minuta para um documento Word (.docx)
+    preservando toda a formatação: negrito, itálico, títulos, listas, citações.
+    
+    O documento é gerado com:
+    - Margens ABNT (3cm esq/sup, 2cm dir/inf)
+    - Fonte Arial 12pt
+    - Recuo de primeira linha 1.25cm
+    - Espaçamento 1.5
+    - Citações com recuo de 4cm e fonte 11pt
+    
+    Returns:
+        JSON com URL para download do documento
+    """
+    try:
+        from sistemas.gerador_pecas.docx_converter import markdown_to_docx
+        
+        # Gera nome único para o arquivo
+        file_id = str(uuid.uuid4())
+        
+        # Monta nome amigável baseado no processo
+        if req.numero_cnj and req.tipo_peca:
+            cnj_clean = re.sub(r'\D', '', req.numero_cnj)[-8:]  # Últimos 8 dígitos
+            tipo_map = {
+                'contestacao': 'contestacao',
+                'recurso_apelacao': 'apelacao',
+                'contrarrazoes': 'contrarrazoes',
+                'parecer': 'parecer'
+            }
+            tipo_nome = tipo_map.get(req.tipo_peca, req.tipo_peca)
+            base_filename = f"{tipo_nome}_{cnj_clean}"
+        else:
+            base_filename = "peca_juridica"
+        
+        filename = f"{base_filename}_{file_id[:8]}.docx"
+        filepath = os.path.join(TEMP_DIR, filename)
+        
+        # Converte markdown para DOCX
+        success = markdown_to_docx(req.markdown, filepath)
+        
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Erro ao converter documento para DOCX"
+            )
+        
+        return {
+            "status": "sucesso",
+            "url_download": f"/gerador-pecas/api/download/{filename}",
+            "filename": filename
+        }
+        
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Módulo de conversão não disponível: {str(e)}"
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao exportar documento: {str(e)}"
+        )
+
+
+@router.get("/download/{filename}")
+async def download_documento(
+    filename: str,
+    background_tasks: BackgroundTasks,
+    token: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user_from_token_or_query)
+):
+    """Download do documento gerado (aceita token via header ou query param)"""
+    
+    filepath = os.path.join(TEMP_DIR, filename)
+    
+    if not os.path.exists(filepath):
+        raise HTTPException(
+            status_code=404,
+            detail="Documento não encontrado ou expirado"
+        )
+    
+    # Determina nome amigável do arquivo
+    # Extrai informações do nome do arquivo se disponível
+    if filename.startswith('peca_juridica_'):
+        download_name = filename
+    else:
+        # Nome já é amigável (contestacao_12345678_abc.docx)
+        download_name = filename
+    
+    return FileResponse(
+        filepath,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=download_name
+    )
+
+
+@router.get("/historico")
+async def listar_historico(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista o histórico de gerações do usuário.
+    """
+    try:
+        geracoes = db.query(GeracaoPeca).filter(
+            GeracaoPeca.usuario_id == current_user.id
+        ).order_by(GeracaoPeca.criado_em.desc()).limit(50).all()
+        
+        return [
+            {
+                "id": g.id,
+                "cnj": g.numero_cnj_formatado or g.numero_cnj,
+                "tipo_peca": g.tipo_peca,
+                "data": g.criado_em.isoformat() if g.criado_em else None
+            }
+            for g in geracoes
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/historico/{geracao_id}")
+async def excluir_historico(
+    geracao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Remove uma geração do histórico do usuário."""
+    try:
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.id == geracao_id,
+            GeracaoPeca.usuario_id == current_user.id
+        ).first()
+        
+        if not geracao:
+            raise HTTPException(status_code=404, detail="Geração não encontrada")
+        
+        db.delete(geracao)
+        db.commit()
+        
+        return {"success": True, "message": "Geração removida do histórico"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/historico/{geracao_id}")
+async def obter_geracao(
+    geracao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtém detalhes completos de uma geração específica.
+    Permite reabrir uma peça antiga no editor.
+    """
+    try:
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.id == geracao_id,
+            GeracaoPeca.usuario_id == current_user.id
+        ).first()
+        
+        if not geracao:
+            raise HTTPException(status_code=404, detail="Geração não encontrada")
+        
+        # Detecta se o conteúdo é markdown (string) ou JSON (dict)
+        # Novas gerações são markdown, antigas são JSON
+        is_markdown = isinstance(geracao.conteudo_gerado, str)
+        
+        return {
+            "id": geracao.id,
+            "cnj": geracao.numero_cnj_formatado or geracao.numero_cnj,
+            "tipo_peca": geracao.tipo_peca,
+            "data": geracao.criado_em.isoformat() if geracao.criado_em else None,
+            "minuta_markdown": geracao.conteudo_gerado if is_markdown else None,
+            "conteudo_json": geracao.conteudo_gerado if not is_markdown else None,
+            "resumo_consolidado": geracao.resumo_consolidado,
+            "modelo_usado": geracao.modelo_usado,
+            "tempo_processamento": geracao.tempo_processamento,
+            "historico_chat": geracao.historico_chat or [],
+            "has_markdown": is_markdown
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SalvarMinutaRequest(BaseModel):
+    """Request para salvar alterações na minuta"""
+    minuta_markdown: str
+    historico_chat: Optional[List[Dict]] = None
+
+
+@router.put("/historico/{geracao_id}")
+async def salvar_geracao(
+    geracao_id: int,
+    req: SalvarMinutaRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Salva alterações feitas na minuta via chat.
+    Atualiza o conteudo_gerado com o novo markdown e o histórico de chat.
+    """
+    try:
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.id == geracao_id,
+            GeracaoPeca.usuario_id == current_user.id
+        ).first()
+        
+        if not geracao:
+            raise HTTPException(status_code=404, detail="Geração não encontrada")
+        
+        # Atualiza o conteúdo com o novo markdown
+        geracao.conteudo_gerado = req.minuta_markdown
+        
+        # Atualiza o histórico de chat se fornecido
+        if req.historico_chat is not None:
+            geracao.historico_chat = req.historico_chat
+        
+        db.commit()
+        
+        return {"success": True, "message": "Minuta salva com sucesso"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Endpoints de Feedback
+# ============================================
+
+@router.post("/feedback")
+async def enviar_feedback(
+    req: FeedbackRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Envia feedback sobre a peça gerada."""
+    try:
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.id == req.geracao_id
+        ).first()
+        
+        if not geracao:
+            raise HTTPException(status_code=404, detail="Geração não encontrada")
+        
+        feedback_existente = db.query(FeedbackPeca).filter(
+            FeedbackPeca.geracao_id == req.geracao_id
+        ).first()
+        
+        if feedback_existente:
+            feedback_existente.avaliacao = req.avaliacao
+            feedback_existente.nota = req.nota
+            feedback_existente.comentario = req.comentario
+            feedback_existente.campos_incorretos = req.campos_incorretos
+        else:
+            feedback = FeedbackPeca(
+                geracao_id=req.geracao_id,
+                usuario_id=current_user.id,
+                avaliacao=req.avaliacao,
+                nota=req.nota,
+                comentario=req.comentario,
+                campos_incorretos=req.campos_incorretos
+            )
+            db.add(feedback)
+        
+        db.commit()
+        
+        return {"success": True, "message": "Feedback registrado com sucesso"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/feedback/{geracao_id}")
+async def obter_feedback(
+    geracao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Obtém o feedback de uma geração específica."""
+    try:
+        feedback = db.query(FeedbackPeca).filter(
+            FeedbackPeca.geracao_id == geracao_id
+        ).first()
+        
+        if not feedback:
+            return {"has_feedback": False}
+        
+        return {
+            "has_feedback": True,
+            "avaliacao": feedback.avaliacao,
+            "nota": feedback.nota,
+            "comentario": feedback.comentario,
+            "campos_incorretos": feedback.campos_incorretos,
+            "criado_em": feedback.criado_em.isoformat() if feedback.criado_em else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
