@@ -40,15 +40,23 @@ class AgenteTJMSIntegrado:
     4. Produzir resumo consolidado para os próximos agentes
     """
     
-    def __init__(self, modelo: str = None):
+    def __init__(self, modelo: str = None, db_session = None, formato_saida: str = "json"):
         """
         Inicializa o agente.
         
         Args:
             modelo: Modelo LLM a usar (padrão: gemini-2.5-flash-lite)
+            db_session: Sessão do banco de dados para buscar formatos JSON
+            formato_saida: 'json' ou 'md' - formato de saída dos resumos
         """
         self.modelo = modelo or MODELO_PADRAO
-        self.agente = AgenteTJMS(modelo=self.modelo)
+        self.db_session = db_session
+        self.formato_saida = formato_saida
+        self.agente = AgenteTJMS(
+            modelo=self.modelo,
+            formato_saida=formato_saida,
+            db_session=db_session
+        )
     
     async def coletar_e_resumir(
         self, 
@@ -110,19 +118,31 @@ class AgenteTJMSIntegrado:
         Monta o resumo consolidado a partir dos resumos individuais.
         
         Formato otimizado para o Agente 2 (detector de módulos) processar.
+        Os resumos podem estar em formato JSON ou Markdown, dependendo da configuração.
         """
+        import json
         partes = []
         
         # Cabeçalho
         partes.append(f"# RESUMO CONSOLIDADO DO PROCESSO")
         partes.append(f"**Processo**: {analise.numero_processo}")
         partes.append(f"**Data da Análise**: {analise.data_analise.strftime('%d/%m/%Y %H:%M')}")
+        partes.append(f"**Formato dos Resumos**: {self.formato_saida.upper()}")
         
         if analise.is_agravo:
             partes.append(f"\n**⚠️ AGRAVO DE INSTRUMENTO**")
             partes.append(f"**Processo de Origem (1º Grau)**: {analise.processo_origem}")
         
         partes.append(f"\n**Total de Documentos Analisados**: {len(analise.documentos_com_resumo())}")
+        
+        # Dados do processo extraídos do XML (SEM IA)
+        if analise.dados_processo:
+            partes.append("\n---\n")
+            partes.append("## DADOS DO PROCESSO (extraídos do sistema)")
+            partes.append("```json")
+            partes.append(json.dumps(analise.dados_processo.to_json(), indent=2, ensure_ascii=False))
+            partes.append("```")
+        
         partes.append("\n---\n")
         
         # Documentos do processo principal (ou do AI)
@@ -136,6 +156,8 @@ class AgenteTJMSIntegrado:
             for i, doc in enumerate(docs_principal, 1):
                 partes.append(f"### {i}. {doc.categoria_nome}")
                 partes.append(f"**Data**: {doc.data_formatada}")
+                if doc.descricao_ia:
+                    partes.append(f"**Tipo identificado**: {doc.descricao_ia}")
                 partes.append(f"\n{doc.resumo}\n")
                 partes.append("---\n")
         
@@ -147,6 +169,8 @@ class AgenteTJMSIntegrado:
             for i, doc in enumerate(docs_origem, 1):
                 partes.append(f"### [ORIGEM] {i}. {doc.categoria_nome}")
                 partes.append(f"**Data**: {doc.data_formatada}")
+                if doc.descricao_ia:
+                    partes.append(f"**Tipo identificado**: {doc.descricao_ia}")
                 partes.append(f"\n{doc.resumo}\n")
                 partes.append("---\n")
         
@@ -157,17 +181,19 @@ class AgenteTJMSIntegrado:
         return "\n".join(partes)
 
 
-async def processar_processo_tjms(numero_processo: str) -> ResultadoAgente1:
+async def processar_processo_tjms(numero_processo: str, db_session = None, formato_saida: str = "json") -> ResultadoAgente1:
     """
     Função de conveniência para processar um processo.
     
     Args:
         numero_processo: Número CNJ do processo
+        db_session: Sessão do banco de dados (opcional, para formato JSON)
+        formato_saida: 'json' ou 'md' - formato de saída dos resumos
         
     Returns:
         ResultadoAgente1 com resumo consolidado
     """
-    agente = AgenteTJMSIntegrado()
+    agente = AgenteTJMSIntegrado(db_session=db_session, formato_saida=formato_saida)
     return await agente.coletar_e_resumir(numero_processo)
 
 

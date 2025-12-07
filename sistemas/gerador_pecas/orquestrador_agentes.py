@@ -120,7 +120,12 @@ class OrquestradorAgentes:
         self.modelo_geracao = self.modelo_agente3
         
         # Inicializa agentes com modelos configurados
-        self.agente1 = AgenteTJMSIntegrado(modelo=self.modelo_agente1)
+        # O Agente 1 recebe a sessão do banco para buscar formatos JSON
+        self.agente1 = AgenteTJMSIntegrado(
+            modelo=self.modelo_agente1,
+            db_session=db,
+            formato_saida="json"  # Usa formato JSON para resumos
+        )
         self.agente2 = DetectorModulosIA(db=db, modelo=self.modelo_agente2)
     
     async def processar_processo(
