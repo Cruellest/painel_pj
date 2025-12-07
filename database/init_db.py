@@ -170,9 +170,14 @@ def run_migrations():
                         numero_cnj_formatado VARCHAR(30),
                         tipo_peca VARCHAR(50),
                         dados_processo JSON,
-                        conteudo_gerado JSON,
+                        documentos_processados JSON,
+                        conteudo_gerado TEXT,
+                        prompt_enviado TEXT,
+                        resumo_consolidado TEXT,
+                        historico_chat JSON,
                         arquivo_path VARCHAR(500),
                         modelo_usado VARCHAR(100),
+                        tempo_processamento INTEGER,
                         usuario_id INTEGER REFERENCES users(id),
                         criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -186,9 +191,14 @@ def run_migrations():
                         numero_cnj_formatado VARCHAR(30),
                         tipo_peca VARCHAR(50),
                         dados_processo JSON,
-                        conteudo_gerado JSON,
+                        documentos_processados JSON,
+                        conteudo_gerado TEXT,
+                        prompt_enviado TEXT,
+                        resumo_consolidado TEXT,
+                        historico_chat JSON,
                         arquivo_path VARCHAR(500),
                         modelo_usado VARCHAR(100),
+                        tempo_processamento INTEGER,
                         usuario_id INTEGER REFERENCES users(id),
                         criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -441,6 +451,27 @@ def run_migrations():
         except Exception as e:
             db.rollback()
             print(f"[AVISO] Migracao tipo conteudo_gerado: {e}")
+
+    # Migração: Adicionar colunas faltantes em geracoes_pecas
+    if table_exists('geracoes_pecas'):
+        colunas_para_adicionar = [
+            ('documentos_processados', 'JSON'),
+            ('prompt_enviado', 'TEXT'),
+            ('resumo_consolidado', 'TEXT'),
+            ('historico_chat', 'JSON'),
+            ('tempo_processamento', 'INTEGER'),
+            ('dados_processo', 'JSON'),
+        ]
+        
+        for coluna, tipo in colunas_para_adicionar:
+            if not column_exists('geracoes_pecas', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE geracoes_pecas ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"✅ Migração: coluna {coluna} adicionada em geracoes_pecas")
+                except Exception as e:
+                    db.rollback()
+                    print(f"⚠️ Migração {coluna} geracoes_pecas: {e}")
 
     db.close()
 
