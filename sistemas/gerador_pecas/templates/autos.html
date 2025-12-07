@@ -325,6 +325,11 @@
                 div.className = 'doc-item p-3 rounded-lg cursor-pointer hover:bg-gray-50 transition-all border border-transparent hover:border-gray-200';
                 div.onclick = () => selecionarDocumento(index);
 
+                // Indicador de documento multi-parte
+                const partesIndicator = doc.total_partes > 1 
+                    ? `<span class="bg-blue-100 text-blue-600 text-[10px] px-1.5 py-0.5 rounded-full ml-1" title="${doc.total_partes} partes">${doc.total_partes}p</span>` 
+                    : '';
+
                 div.innerHTML = `
                     <div class="flex items-start gap-3">
                         <span class="bg-gray-100 text-gray-600 text-xs font-bold px-2 py-1 rounded flex-shrink-0">
@@ -332,7 +337,7 @@
                         </span>
                         <div class="min-w-0 flex-1">
                             <p class="text-sm font-medium text-gray-800 truncate" title="${doc.descricao}">
-                                ${doc.descricao}
+                                ${doc.descricao}${partesIndicator}
                             </p>
                             <p class="doc-date text-xs text-gray-500 mt-0.5">
                                 ${doc.data_formatada}
@@ -366,15 +371,17 @@
             document.getElementById('btn-prev').disabled = index === 0;
             document.getElementById('btn-next').disabled = index === state.documentos.length - 1;
 
-            // Atualiza link de download
-            const downloadUrl = `/gerador-pecas/api/autos/${encodeURIComponent(state.numeroCnj)}/documento/${state.documentoAtual.id}?token=${state.token}`;
+            // Monta URL com todos os IDs (para merge de PDFs)
+            const ids = state.documentoAtual.ids || [state.documentoAtual.id];
+            const idsParam = ids.length > 1 ? `&ids=${encodeURIComponent(ids.join(','))}` : '';
+            const downloadUrl = `/gerador-pecas/api/autos/${encodeURIComponent(state.numeroCnj)}/documento/${state.documentoAtual.id}?token=${state.token}${idsParam}`;
             document.getElementById('btn-download').href = downloadUrl;
 
-            // Carrega o PDF
-            await carregarPDF(state.documentoAtual.id);
+            // Carrega o PDF (passando IDs para merge)
+            await carregarPDF(state.documentoAtual.id, ids);
         }
 
-        async function carregarPDF(docId) {
+        async function carregarPDF(docId, ids = null) {
             const container = document.getElementById('pdf-pages');
             const loading = document.getElementById('pdf-loading');
             const error = document.getElementById('pdf-error');
@@ -387,7 +394,9 @@
             loading.classList.remove('hidden');
 
             try {
-                const url = `/gerador-pecas/api/autos/${encodeURIComponent(state.numeroCnj)}/documento/${docId}?token=${state.token}`;
+                // Monta URL com IDs para merge se necessário
+                const idsParam = ids && ids.length > 1 ? `&ids=${encodeURIComponent(ids.join(','))}` : '';
+                const url = `/gerador-pecas/api/autos/${encodeURIComponent(state.numeroCnj)}/documento/${docId}?token=${state.token}${idsParam}`;
 
                 const loadingTask = pdfjsLib.getDocument(url);
                 state.pdfDoc = await loadingTask.promise;
@@ -466,7 +475,8 @@
 
         function retryLoad() {
             if (state.documentoAtual) {
-                carregarPDF(state.documentoAtual.id);
+                const ids = state.documentoAtual.ids || [state.documentoAtual.id];
+                carregarPDF(state.documentoAtual.id, ids);
             }
         }
 
