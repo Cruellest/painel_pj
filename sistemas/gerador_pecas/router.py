@@ -647,6 +647,51 @@ async def obter_feedback(
 # Endpoints de Autos do Processo (Visualização de PDFs)
 # ============================================
 
+def _agrupar_documentos_por_descricao(docs: List) -> List:
+    """
+    Agrupa documentos com mesma descrição juntados no mesmo minuto.
+    Retorna lista de documentos agrupados (cada item pode ter múltiplos IDs).
+    """
+    from collections import defaultdict
+    
+    grupos = defaultdict(list)
+    
+    for doc in docs:
+        # Chave: descrição + data arredondada para o minuto
+        descricao = doc.descricao or doc.categoria_nome or 'desconhecido'
+        if doc.data_juntada:
+            data_key = doc.data_juntada.strftime('%Y%m%d%H%M')
+        else:
+            data_key = 'sem_data'
+        
+        chave = (descricao, data_key)
+        grupos[chave].append(doc)
+    
+    # Monta resultado agrupado
+    resultado = []
+    for (descricao, data_key), docs_grupo in grupos.items():
+        # Ordena por ID para consistência
+        docs_grupo.sort(key=lambda d: d.id)
+        
+        doc_principal = docs_grupo[0]
+        ids_todos = [d.id for d in docs_grupo]
+        
+        resultado.append({
+            "ids": ids_todos,  # Lista de IDs para merge
+            "id": ids_todos[0],  # ID principal (retrocompatibilidade)
+            "descricao": descricao,
+            "tipo_documento": doc_principal.tipo_documento,
+            "data_juntada": doc_principal.data_juntada,
+            "data_formatada": doc_principal.data_formatada,
+            "total_partes": len(ids_todos)
+        })
+    
+    # Ordena por data cronológica
+    resultado.sort(key=lambda d: d["data_juntada"] or datetime.min)
+    
+    return resultado
+
+
 @router.get("/autos/{numero_cnj}")
 async def listar_documentos_processo(
     numero_cnj: str,
@@ -656,6 +701,7 @@ async def listar_documentos_processo(
     """
     Lista todos os documentos de um processo para visualização.
     Retorna lista ordenada cronologicamente com descrição do XML.
+    Documentos com mesma descrição e data (até 1 min) são agrupados.
     """
     import aiohttp
     from sistemas.gerador_pecas.agente_tjms import (
@@ -671,20 +717,24 @@ async def listar_documentos_processo(
             xml_response = await consultar_processo_async(session, cnj_limpo)
             docs = extrair_documentos_xml(xml_response)
         
-        # Filtra documentos permitidos e ordena por data (cronológico)
+        # Filtra documentos permitidos
         docs_filtrados = [d for d in docs if documento_permitido(int(d.tipo_documento or 0))]
-        docs_filtrados.sort(key=lambda d: d.data_juntada or datetime.min)
+        
+        # Agrupa documentos com mesma descrição/data
+        docs_agrupados = _agrupar_documentos_por_descricao(docs_filtrados)
         
         # Retorna lista com informações para exibição
         resultado = []
-        for i, doc in enumerate(docs_filtrados, 1):
+        for i, doc in enumerate(docs_agrupados, 1):
             resultado.append({
-                "id": doc.id,
+                "id": doc["id"],
+                "ids": doc["ids"],  # Lista de IDs para merge
                 "ordem": i,
-                "descricao": doc.descricao or doc.categoria_nome,
-                "tipo_documento": doc.tipo_documento,
-                "data_juntada": doc.data_juntada.isoformat() if doc.data_juntada else None,
-                "data_formatada": doc.data_formatada
+                "descricao": doc["descricao"],
+                "tipo_documento": doc["tipo_documento"],
+                "data_juntada": doc["data_juntada"].isoformat() if doc["data_juntada"] else None,
+                "data_formatada": doc["data_formatada"],
+                "total_partes": doc["total_partes"]
             })
         
         return {
@@ -703,11 +753,13 @@ async def listar_documentos_processo(
 async def baixar_documento_processo(
     numero_cnj: str,
     doc_id: str,
+    ids: Optional[str] = Query(None, description="Lista de IDs separados por vírgula para merge"),
     token: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user_from_token_or_query)
 ):
     """
-    Baixa um documento específico do processo do TJ-MS.
+    Baixa um ou mais documentos do processo do TJ-MS.
+    Se ids contiver múltiplos IDs (separados por vírgula), faz merge dos PDFs.
     Retorna o PDF diretamente para visualização no navegador.
     """
     import aiohttp
@@ -718,18 +770,24 @@ async def baixar_documento_processo(
     try:
         cnj_limpo = re.sub(r'\D', '', numero_cnj)
         
-        async with aiohttp.ClientSession() as session:
-            xml_response = await baixar_documentos_async(session, cnj_limpo, [doc_id])
+        # Parse lista de IDs (se fornecida)
+        if ids:
+            lista_ids = [id.strip() for id in ids.split(',') if id.strip()]
+        else:
+            lista_ids = [doc_id]
         
-        # Extrai o conteúdo base64 do documento
+        async with aiohttp.ClientSession() as session:
+            xml_response = await baixar_documentos_async(session, cnj_limpo, lista_ids)
+        
+        # Extrai conteúdo base64 de todos os documentos
         root = ET.fromstring(xml_response)
-        conteudo_base64 = None
+        pdfs_bytes = []
         
         for elem in root.iter():
             tag_no_ns = elem.tag.split('}')[-1].lower() if '}' in elem.tag else elem.tag.lower()
             if tag_no_ns == 'documento':
                 doc_id_found = elem.attrib.get("idDocumento") or elem.attrib.get("id")
-                if doc_id_found == doc_id:
+                if doc_id_found in lista_ids:
                     # Busca conteúdo base64
                     conteudo_base64 = elem.attrib.get("conteudo")
                     if not conteudo_base64:
@@ -738,13 +796,37 @@ async def baixar_documento_processo(
                             if child_tag == 'conteudo' and child.text:
                                 conteudo_base64 = child.text.strip()
                                 break
-                    break
+                    
+                    if conteudo_base64:
+                        pdfs_bytes.append((doc_id_found, base64.b64decode(conteudo_base64)))
         
-        if not conteudo_base64:
+        if not pdfs_bytes:
             raise HTTPException(status_code=404, detail="Documento não encontrado")
         
-        # Decodifica o PDF
-        pdf_bytes = base64.b64decode(conteudo_base64)
+        # Se só tem um PDF, retorna direto
+        if len(pdfs_bytes) == 1:
+            pdf_bytes = pdfs_bytes[0][1]
+        else:
+            # Faz merge dos PDFs usando PyMuPDF
+            import fitz
+            
+            # Ordena os PDFs pela ordem dos IDs na lista original
+            id_order = {id: i for i, id in enumerate(lista_ids)}
+            pdfs_bytes.sort(key=lambda x: id_order.get(x[0], 999))
+            
+            # Merge
+            merged_pdf = fitz.open()
+            for doc_id_item, pdf_data in pdfs_bytes:
+                try:
+                    pdf_doc = fitz.open(stream=pdf_data, filetype="pdf")
+                    merged_pdf.insert_pdf(pdf_doc)
+                    pdf_doc.close()
+                except Exception as e:
+                    print(f"Erro ao processar PDF {doc_id_item}: {e}")
+                    continue
+            
+            pdf_bytes = merged_pdf.tobytes()
+            merged_pdf.close()
         
         # Retorna como PDF para visualização inline
         return StreamingResponse(
