@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Histórico de Gerações - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- Marked.js para renderizar markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#f0f9ff', 100: '#e0f2fe', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .markdown-body { font-family: 'Times New Roman', Georgia, serif; font-size: 14px; line-height: 1.8; color: #1f2937; }
+        .markdown-body h2 { font-family: 'Arial', sans-serif; font-weight: 700; font-size: 1.1em; text-align: center; margin: 1.5em 0 0.75em; }
+        .markdown-body p { text-align: justify; text-indent: 2em; margin-bottom: 1em; }
+        .markdown-body blockquote { margin: 1.5em 3em; padding: 0.5em 1em; border-left: 4px solid #d1d5db; background: #f9fafb; font-style: italic; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
+        <div class="flex items-center justify-between max-w-7xl mx-auto">
+            <div class="flex items-center gap-4">
+                <a href="/dashboard" class="text-gray-500 hover:text-primary-600">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
+                <div>
+                    <h1 class="text-xl font-semibold text-gray-800">Histórico de Gerações</h1>
+                    <p class="text-sm text-gray-500">Visualize prompts enviados e resultados</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        <div id="lista-geracoes" class="space-y-4">
+            <div class="text-center py-12 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p>Carregando histórico...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal de Detalhes -->
+    <div id="modal-detalhes" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+            <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+                <h2 class="text-xl font-semibold text-gray-800">Detalhes da Geração</h2>
+                <button onclick="fecharModal()" class="p-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto flex-1">
+                <!-- Tabs -->
+                <div class="flex border-b border-gray-200 mb-4">
+                    <button onclick="mostrarTab('prompt')" id="tab-prompt" class="px-4 py-2 border-b-2 border-primary-600 text-primary-600 font-medium">
+                        Prompt Enviado
+                    </button>
+                    <button onclick="mostrarTab('resumo')" id="tab-resumo" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        Resumo Consolidado
+                    </button>
+                    <button onclick="mostrarTab('markdown')" id="tab-markdown" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        Minuta (Markdown)
+                    </button>
+                    <button onclick="mostrarTab('resultado')" id="tab-resultado" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        Resultado (Raw)
+                    </button>
+                </div>
+                
+                <!-- Conteúdo das Tabs -->
+                <div id="conteudo-prompt" class="tab-content">
+                    <div class="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                        <pre id="texto-prompt" class="text-sm text-gray-100 whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+                
+                <div id="conteudo-resumo" class="tab-content hidden">
+                    <div class="bg-gray-50 rounded-lg p-4 overflow-x-auto prose max-w-none">
+                        <pre id="texto-resumo" class="text-sm text-gray-700 whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+                
+                <div id="conteudo-resultado" class="tab-content hidden">
+                    <div class="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                        <pre id="texto-resultado" class="text-sm text-green-400 whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+                
+                <div id="conteudo-markdown" class="tab-content hidden">
+                    <div class="bg-white rounded-lg p-4 overflow-x-auto border prose max-w-none">
+                        <div id="texto-markdown" class="markdown-body"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-6 border-t border-gray-200 flex justify-between items-center">
+                <div id="info-geracao" class="text-sm text-gray-500"></div>
+                <button onclick="fecharModal()" class="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/admin/api/gerador-pecas-admin';
+        let geracoesCache = [];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarGeracoes();
+        });
+
+        function getToken() {
+            return localStorage.getItem('access_token');
+        }
+
+        async function carregarGeracoes() {
+            try {
+                const response = await fetch(`${API_BASE}/geracoes?limit=100`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+                
+                if (!response.ok) throw new Error('Erro ao carregar');
+                
+                geracoesCache = await response.json();
+                renderizarGeracoes();
+            } catch (error) {
+                console.error(error);
+                document.getElementById('lista-geracoes').innerHTML = `
+                    <div class="text-center py-12 text-red-500">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p>Erro ao carregar histórico</p>
+                    </div>`;
+            }
+        }
+
+        function renderizarGeracoes() {
+            const container = document.getElementById('lista-geracoes');
+            
+            if (geracoesCache.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-4"></i>
+                        <p>Nenhuma geração encontrada</p>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = geracoesCache.map(g => `
+                <div class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="verDetalhes(${g.id})">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                                <i class="fas fa-file-alt text-primary-600"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-800">${g.numero_cnj_formatado || g.numero_cnj}</p>
+                                <p class="text-sm text-gray-500">${formatarTipoPeca(g.tipo_peca)}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm text-gray-500">${new Date(g.criado_em).toLocaleDateString('pt-BR')}</p>
+                            <p class="text-xs text-gray-400">${new Date(g.criado_em).toLocaleTimeString('pt-BR')}</p>
+                            ${g.tempo_processamento ? `<p class="text-xs text-green-600 mt-1">⏱️ ${g.tempo_processamento}s</p>` : ''}
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3 flex items-center gap-4 text-xs text-gray-500">
+                        <span><i class="fas fa-robot mr-1"></i> ${g.modelo_usado || 'N/A'}</span>
+                        ${g.prompt_enviado ? '<span class="text-green-600"><i class="fas fa-check mr-1"></i> Prompt salvo</span>' : '<span class="text-gray-400"><i class="fas fa-times mr-1"></i> Sem prompt</span>'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function verDetalhes(id) {
+            try {
+                const response = await fetch(`${API_BASE}/geracoes/${id}`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+                
+                if (!response.ok) throw new Error('Erro ao carregar detalhes');
+                
+                const geracao = await response.json();
+                
+                document.getElementById('texto-prompt').textContent = geracao.prompt_enviado || 'Prompt não disponível';
+                document.getElementById('texto-resumo').textContent = geracao.resumo_consolidado || 'Resumo não disponível';
+                
+                // Detecta se é markdown (string) ou JSON (object)
+                const conteudo = geracao.conteudo_gerado;
+                const isMarkdown = typeof conteudo === 'string';
+                
+                if (isMarkdown && conteudo) {
+                    // Renderiza markdown
+                    document.getElementById('texto-markdown').innerHTML = marked.parse(conteudo);
+                    document.getElementById('texto-resultado').textContent = conteudo;
+                } else if (conteudo) {
+                    // JSON antigo
+                    document.getElementById('texto-markdown').innerHTML = '<p class="text-gray-500">Esta geração usa formato JSON antigo. Veja a aba "Resultado (Raw)".</p>';
+                    document.getElementById('texto-resultado').textContent = JSON.stringify(conteudo, null, 2);
+                } else {
+                    document.getElementById('texto-markdown').innerHTML = '<p class="text-gray-500">Conteúdo não disponível</p>';
+                    document.getElementById('texto-resultado').textContent = 'Resultado não disponível';
+                }
+                
+                document.getElementById('info-geracao').innerHTML = `
+                    <strong>${geracao.numero_cnj_formatado || geracao.numero_cnj}</strong> | 
+                    ${formatarTipoPeca(geracao.tipo_peca)} | 
+                    ${new Date(geracao.criado_em).toLocaleString('pt-BR')}
+                    ${isMarkdown ? ' | <span class="text-green-600">Markdown</span>' : ' | <span class="text-amber-600">JSON</span>'}
+                `;
+                
+                // Mostra a tab de markdown por padrão se for markdown
+                mostrarTab(isMarkdown ? 'markdown' : 'prompt');
+                document.getElementById('modal-detalhes').classList.remove('hidden');
+            } catch (error) {
+                console.error(error);
+                alert('Erro ao carregar detalhes');
+            }
+        }
+
+        function mostrarTab(tab) {
+            // Remove active de todas as tabs
+            document.querySelectorAll('[id^="tab-"]').forEach(el => {
+                el.classList.remove('border-primary-600', 'text-primary-600');
+                el.classList.add('border-transparent', 'text-gray-500');
+            });
+            
+            // Esconde todos os conteúdos
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            
+            // Ativa a tab selecionada
+            document.getElementById(`tab-${tab}`).classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById(`tab-${tab}`).classList.add('border-primary-600', 'text-primary-600');
+            document.getElementById(`conteudo-${tab}`).classList.remove('hidden');
+        }
+
+        function fecharModal() {
+            document.getElementById('modal-detalhes').classList.add('hidden');
+        }
+
+        function formatarTipoPeca(tipo) {
+            const labels = {
+                'contestacao': 'Contestação',
+                'recurso_apelacao': 'Recurso de Apelação',
+                'contrarrazoes': 'Contrarrazões',
+                'parecer': 'Parecer Jurídico'
+            };
+            return labels[tipo] || tipo || 'Não definido';
+        }
+    </script>
+</body>
+</html>

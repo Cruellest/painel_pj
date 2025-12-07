@@ -21,14 +21,26 @@ class GeracaoPeca(Base):
     # Dados do processo (JSON do TJ-MS)
     dados_processo = Column(JSON, nullable=True)
     
-    # Conteúdo gerado pela IA (JSON estruturado para DOCX)
-    conteudo_gerado = Column(JSON, nullable=True)
+    # Conteúdo gerado pela IA em Markdown
+    conteudo_gerado = Column(Text, nullable=True)
+    
+    # Prompt completo enviado à IA (para debug/auditoria)
+    prompt_enviado = Column(Text, nullable=True)
+    
+    # Resumo consolidado do processo (output do Agente 1)
+    resumo_consolidado = Column(Text, nullable=True)
+    
+    # Histórico de conversas do chat de edição (JSON array)
+    historico_chat = Column(JSON, nullable=True)
     
     # Caminho do arquivo DOCX gerado
     arquivo_path = Column(String(500), nullable=True)
     
     # Modelo de IA usado
     modelo_usado = Column(String(100), nullable=True)
+    
+    # Tempo de processamento (segundos)
+    tempo_processamento = Column(Integer, nullable=True)
     
     # Usuário que gerou
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)

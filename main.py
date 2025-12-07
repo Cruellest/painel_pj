@@ -39,6 +39,7 @@ from users.router import router as users_router
 from sistemas.assistencia_judiciaria.router import router as assistencia_router
 from sistemas.matriculas_confrontantes.router import router as matriculas_router
 from sistemas.gerador_pecas.router import router as gerador_pecas_router
+from sistemas.gerador_pecas.router_admin import router as gerador_pecas_admin_router
 
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
@@ -140,6 +141,7 @@ app.include_router(admin_router)
 app.include_router(assistencia_router, prefix="/assistencia/api")
 app.include_router(matriculas_router, prefix="/matriculas/api")
 app.include_router(gerador_pecas_router, prefix="/gerador-pecas/api")
+app.include_router(gerador_pecas_admin_router, prefix="/admin/api")
 
 # Router de Prompts Modulares (admin)
 app.include_router(prompts_modulos_router, prefix="/admin/api")
@@ -237,12 +239,30 @@ async def serve_gerador_pecas_static(filename: str = ""):
             ".svg": "image/svg+xml",
         }
         media_type = content_types.get(suffix, "application/octet-stream")
-        return FileResponse(file_path, media_type=media_type)
+        
+        # Adiciona headers para evitar cache em desenvolvimento
+        return FileResponse(
+            file_path, 
+            media_type=media_type,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
 
     # Se não encontrou, retorna index.html (SPA fallback)
     index_path = GERADOR_PECAS_TEMPLATES / "index.html"
     if index_path.exists():
-        return FileResponse(index_path, media_type="text/html")
+        return FileResponse(
+            index_path, 
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
 
     return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
 
@@ -279,6 +299,12 @@ async def admin_prompts_page(request: Request):
 async def admin_prompts_modulos_page(request: Request):
     """Página de gerenciamento de prompts modulares (requer autenticação via JS)"""
     return templates.TemplateResponse("admin_prompts_modulos.html", {"request": request})
+
+
+@app.get("/admin/gerador-pecas/historico")
+async def admin_gerador_historico_page(request: Request):
+    """Página de histórico de gerações com prompts"""
+    return templates.TemplateResponse("admin_gerador_historico.html", {"request": request})
 
 
 @app.get("/admin/users")

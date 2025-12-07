@@ -54,131 +54,6 @@
     </header>
 
     <main class="max-w-7xl mx-auto p-6">
-        
-        <!-- Seção Explicativa - Prompts Modulares para Gerador de Peças -->
-        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl shadow-sm border border-blue-200 p-6 mb-6">
-            <div class="flex items-start gap-4">
-                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <i class="fas fa-puzzle-piece text-blue-600 text-xl"></i>
-                </div>
-                <div class="flex-1">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-3">
-                        Como funcionam os Prompts Modulares
-                    </h3>
-                    
-                    <!-- Aviso sobre Prompt Base -->
-                    <div class="bg-indigo-100 border-l-4 border-indigo-500 p-3 rounded mb-4">
-                        <div class="flex items-start gap-2">
-                            <i class="fas fa-info-circle text-indigo-600 mt-0.5"></i>
-                            <div class="text-sm text-indigo-800">
-                                <strong>Onde fica o Prompt BASE (System Prompt)?</strong><br>
-                                O prompt base do Gerador de Peças é configurado no 
-                                <a href="/admin/prompts-config" class="underline font-semibold hover:text-indigo-900">
-                                    Gerenciamento de Prompts de IA
-                                </a>, junto com os prompts dos outros sistemas (Matrículas, Assistência).
-                                Lá você define a "personalidade" e comportamento geral da IA.
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <p class="text-sm text-gray-600 mb-4">
-                        Aqui você gerencia os <strong>módulos de PEÇA e CONTEÚDO</strong> - blocos reutilizáveis que a IA combina 
-                        automaticamente para gerar peças jurídicas completas:
-                    </p>
-                    
-                    <div class="grid md:grid-cols-2 gap-4 text-sm">
-                        <!-- PEÇA -->
-                        <div class="bg-white rounded-lg p-4 border-2 border-green-200">
-                            <div class="flex items-center gap-2 mb-2">
-                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-bold">PEÇA</span>
-                                <span class="text-green-600 text-xs">📋 Estrutura/Template</span>
-                            </div>
-                            <p class="text-gray-600 text-xs mb-2">
-                                Define a <strong>estrutura específica</strong> de cada tipo de peça jurídica.
-                            </p>
-                            <ul class="text-xs text-gray-500 space-y-1 mb-2">
-                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Contestação</li>
-                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Recurso de Apelação</li>
-                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Contrarrazões</li>
-                                <li><i class="fas fa-file-alt mr-1 text-green-500"></i> Parecer Jurídico</li>
-                            </ul>
-                            <div class="bg-green-50 rounded p-2 text-xs text-green-700">
-                                <i class="fas fa-hand-pointer mr-1"></i> Ativado quando o <strong>usuário escolhe</strong> o tipo de peça
-                            </div>
-                        </div>
-                        
-                        <!-- CONTEÚDO -->
-                        <div class="bg-white rounded-lg p-4 border-2 border-orange-200">
-                            <div class="flex items-center gap-2 mb-2">
-                                <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-bold">CONTEÚDO</span>
-                                <span class="text-orange-600 text-xs">🎯 Teses e Argumentos</span>
-                            </div>
-                            <p class="text-gray-600 text-xs mb-2">
-                                Módulos de <strong>argumentação jurídica</strong> ativados conforme a situação do caso.
-                            </p>
-                            <ul class="text-xs text-gray-500 space-y-1 mb-2">
-                                <li><i class="fas fa-clock mr-1 text-orange-500"></i> Prescrição</li>
-                                <li><i class="fas fa-user-times mr-1 text-orange-500"></i> Ilegitimidade Passiva</li>
-                                <li><i class="fas fa-pills mr-1 text-orange-500"></i> Medicamento não incorporado ao SUS</li>
-                                <li><i class="fas fa-flask mr-1 text-orange-500"></i> Tratamento experimental</li>
-                            </ul>
-                            <div class="bg-orange-50 rounded p-2 text-xs text-orange-700">
-                                <i class="fas fa-robot mr-1"></i> Ativado pelo <strong>agente de IA</strong> ao analisar os documentos
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Fluxo Visual -->
-                    <div class="mt-4 p-4 bg-white rounded-lg border border-gray-200">
-                        <p class="text-xs text-gray-500 mb-3 font-medium">Fluxo de montagem do prompt final:</p>
-                        <div class="flex items-center justify-center gap-2 flex-wrap">
-                            <div class="flex flex-col items-center">
-                                <a href="/admin/prompts-config" class="px-3 py-2 bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-200 transition-colors">
-                                    <i class="fas fa-cog mr-1"></i> BASE
-                                </a>
-                                <span class="text-xs text-gray-400 mt-1">Prompts de IA</span>
-                            </div>
-                            <i class="fas fa-plus text-gray-400 text-lg"></i>
-                            <div class="flex flex-col items-center">
-                                <div class="px-3 py-2 bg-green-100 text-green-700 rounded-lg text-sm font-medium">PEÇA</div>
-                                <span class="text-xs text-gray-400 mt-1">Ex: Contestação</span>
-                            </div>
-                            <i class="fas fa-plus text-gray-400 text-lg"></i>
-                            <div class="flex flex-col items-center">
-                                <div class="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg text-sm font-medium">CONTEÚDO</div>
-                                <span class="text-xs text-gray-400 mt-1">Ex: Prescrição + Ilegitimidade</span>
-                            </div>
-                            <i class="fas fa-arrow-right text-gray-400 text-lg mx-2"></i>
-                            <div class="flex flex-col items-center">
-                                <div class="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-sm font-medium border-2 border-purple-300">
-                                    <i class="fas fa-file-alt mr-1"></i> PROMPT FINAL
-                                </div>
-                                <span class="text-xs text-gray-400 mt-1">Enviado à IA</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Como a IA seleciona os módulos -->
-                    <div class="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
-                        <p class="text-xs text-amber-800 font-medium mb-2">
-                            <i class="fas fa-robot text-amber-600 mr-1"></i>
-                            Como a IA seleciona os módulos de CONTEÚDO?
-                        </p>
-                        <p class="text-xs text-amber-700">
-                            Um <strong>agente de IA auxiliar</strong> (modelo rápido e econômico) analisa os documentos do processo e 
-                            identifica quais situações jurídicas estão presentes. Baseado nisso, ele ativa automaticamente os módulos 
-                            de conteúdo relevantes (ex: detectou "prazo prescricional" → ativa módulo de Prescrição).
-                        </p>
-                    </div>
-                    
-                    <!-- Toggle para esconder -->
-                    <button onclick="this.closest('.bg-gradient-to-r').classList.add('hidden')" 
-                        class="mt-3 text-xs text-blue-600 hover:underline">
-                        <i class="fas fa-eye-slash mr-1"></i> Esconder esta explicação
-                    </button>
-                </div>
-            </div>
-        </div>
 
         <!-- Filtros -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
@@ -190,6 +65,7 @@
                 </div>
                 <select id="filtro-tipo" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="filtrarModulos()">
                     <option value="">Todos os tipos</option>
+                    <option value="base">Base (Sistema)</option>
                     <option value="peca">Peça</option>
                     <option value="conteudo">Conteúdo</option>
                 </select>
@@ -236,6 +112,7 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
                             <select id="modulo-tipo" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                                <option value="base">Base (Sistema)</option>
                                 <option value="peca">Peça</option>
                                 <option value="conteudo">Conteúdo</option>
                             </select>
@@ -263,17 +140,32 @@
                             placeholder="Título legível do módulo">
                     </div>
                     
+                    <!-- Condição de Ativação (apenas para tipo conteudo) -->
+                    <div id="condicao-ativacao-container">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                            <i class="fas fa-bolt text-yellow-500 mr-1"></i>
+                            Condição de Ativação
+                            <span class="text-xs text-gray-400 ml-2">(Quando este prompt deve ser acionado? - usado pelo Agente Detector)</span>
+                        </label>
+                        <textarea id="modulo-condicao-ativacao" rows="4" 
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm resize-y"
+                            placeholder="Descreva a situação em que este prompt deve ser ativado. Ex: 'Quando o processo envolve pedido de medicamento não incorporado ao SUS' ou 'Quando há alegação de dano moral'"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">Esta descrição é usada APENAS pelo Agente Detector para decidir se ativa este módulo. Não é enviada ao gerador de peça.</p>
+                    </div>
+                    
                     <!-- Editor de Conteúdo -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
+                            <i class="fas fa-file-alt text-blue-500 mr-1"></i>
                             Conteúdo do Prompt (Markdown)
+                            <span class="text-xs text-gray-400 ml-2">(Enviado ao Agente Gerador de Peça)</span>
                             <button type="button" onclick="toggleFullscreen()" class="ml-2 text-primary-600 hover:text-primary-700">
                                 <i class="fas fa-expand"></i> Tela cheia
                             </button>
                         </label>
                         <textarea id="modulo-conteudo" rows="15" 
                             class="editor-container w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm resize-y"
-                            placeholder="Digite o conteúdo do prompt aqui..."></textarea>
+                            placeholder="Digite o conteúdo do prompt aqui... Este é o texto que será incluído no prompt enviado à IA para gerar a peça."></textarea>
                     </div>
                     
                     <!-- Palavras-chave -->
@@ -404,7 +296,7 @@
                 params.append('apenas_ativos', apenasAtivos);
 
                 const response = await fetch(`${API_BASE}?${params}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
 
                 if (!response.ok) throw new Error('Erro ao carregar módulos');
@@ -424,7 +316,7 @@
         async function carregarCategorias() {
             try {
                 const response = await fetch(`${API_BASE}/categorias`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
                 const categorias = await response.json();
                 const select = document.getElementById('filtro-categoria');
@@ -455,12 +347,13 @@
             }
 
             // Agrupa por tipo
-            const grupos = { peca: [], conteudo: [] };
+            const grupos = { base: [], peca: [], conteudo: [] };
             modulosCache.forEach(m => {
                 if (grupos[m.tipo]) grupos[m.tipo].push(m);
             });
 
             const tipoLabels = {
+                base: { icon: 'fa-cog', label: 'Base (Prompt do Sistema)', color: 'indigo' },
                 peca: { icon: 'fa-file-alt', label: 'Peças (Estrutura/Template)', color: 'green' },
                 conteudo: { icon: 'fa-lightbulb', label: 'Conteúdo (Teses e Argumentos)', color: 'orange' }
             };
@@ -515,6 +408,9 @@
                                 <button onclick="verModulo(${m.id})" class="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg">
                                     <i class="fas fa-eye mr-1"></i> Ver
                                 </button>
+                                <button onclick="excluirModulo(${m.id}, '${m.titulo.replace(/'/g, "\\'")}')" class="px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg">
+                                    <i class="fas fa-trash mr-1"></i>
+                                </button>
                             </div>
                         </div>
                     `;
@@ -541,6 +437,7 @@
             document.getElementById('modulo-subcategoria').value = '';
             document.getElementById('modulo-nome').value = '';
             document.getElementById('modulo-titulo').value = '';
+            document.getElementById('modulo-condicao-ativacao').value = '';
             document.getElementById('modulo-conteudo').value = '';
             document.getElementById('modulo-ativo').checked = true;
             document.getElementById('modulo-ordem').value = 0;
@@ -551,16 +448,33 @@
             document.getElementById('btn-historico').classList.add('hidden');
             document.getElementById('versao-info').textContent = '';
             
+            // Mostra/esconde campo de condição baseado no tipo
+            toggleCondicaoAtivacao();
+            
             renderizarKeywords();
             renderizarTags();
             
             document.getElementById('modal-editor').classList.remove('hidden');
         }
+        
+        function toggleCondicaoAtivacao() {
+            const tipo = document.getElementById('modulo-tipo').value;
+            const container = document.getElementById('condicao-ativacao-container');
+            // Condição de ativação só faz sentido para tipo 'conteudo'
+            if (tipo === 'conteudo') {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+        
+        // Adiciona listener para mudança de tipo
+        document.getElementById('modulo-tipo').addEventListener('change', toggleCondicaoAtivacao);
 
         async function editarModulo(id) {
             try {
                 const response = await fetch(`${API_BASE}/${id}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
                 
                 if (!response.ok) throw new Error('Módulo não encontrado');
@@ -576,6 +490,7 @@
                 document.getElementById('modulo-subcategoria').value = modulo.subcategoria || '';
                 document.getElementById('modulo-nome').value = modulo.nome;
                 document.getElementById('modulo-titulo').value = modulo.titulo;
+                document.getElementById('modulo-condicao-ativacao').value = modulo.condicao_ativacao || '';
                 document.getElementById('modulo-conteudo').value = modulo.conteudo;
                 document.getElementById('modulo-ativo').checked = modulo.ativo;
                 document.getElementById('modulo-ordem').value = modulo.ordem || 0;
@@ -586,6 +501,9 @@
                 document.getElementById('motivo-container').classList.remove('hidden');
                 document.getElementById('btn-historico').classList.remove('hidden');
                 document.getElementById('versao-info').textContent = `Versão ${modulo.versao} • Atualizado em ${new Date(modulo.atualizado_em).toLocaleString('pt-BR')}`;
+                
+                // Mostra/esconde campo de condição baseado no tipo
+                toggleCondicaoAtivacao();
                 
                 renderizarKeywords();
                 renderizarTags();
@@ -603,13 +521,15 @@
         async function salvarModulo() {
             const id = document.getElementById('modulo-id').value;
             const isNovo = !id;
+            const tipo = document.getElementById('modulo-tipo').value;
             
             const dados = {
-                tipo: document.getElementById('modulo-tipo').value,
+                tipo: tipo,
                 categoria: document.getElementById('modulo-categoria').value || null,
                 subcategoria: document.getElementById('modulo-subcategoria').value || null,
                 nome: document.getElementById('modulo-nome').value,
                 titulo: document.getElementById('modulo-titulo').value,
+                condicao_ativacao: tipo === 'conteudo' ? (document.getElementById('modulo-condicao-ativacao').value || null) : null,
                 conteudo: document.getElementById('modulo-conteudo').value,
                 palavras_chave: keywordsAtuais,
                 tags: tagsAtuais,
@@ -630,7 +550,7 @@
                 const response = await fetch(isNovo ? API_BASE : `${API_BASE}/${id}`, {
                     method: isNovo ? 'POST' : 'PUT',
                     headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(dados)
@@ -644,6 +564,36 @@
                 fecharEditor();
                 carregarModulos();
                 alert(isNovo ? 'Módulo criado com sucesso!' : 'Módulo atualizado com sucesso!');
+            } catch (error) {
+                alert('Erro: ' + error.message);
+            }
+        }
+
+        async function excluirModulo(id, titulo) {
+            const opcao = confirm(`Excluir "${titulo}"?\n\nEscolha:\n- OK para DESATIVAR (pode reativar depois)\n- Cancele e use Shift+Clique para EXCLUIR PERMANENTEMENTE`);
+            
+            if (!opcao) return;
+            
+            // Se Shift estiver pressionado, exclusão permanente
+            const permanente = event?.shiftKey;
+            
+            try {
+                const url = permanente ? `${API_BASE}/${id}/permanente` : `${API_BASE}/${id}`;
+                const response = await fetch(url, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao excluir');
+                }
+                
+                const result = await response.json();
+                carregarModulos();
+                alert(result.message);
             } catch (error) {
                 alert('Erro: ' + error.message);
             }
@@ -718,7 +668,7 @@
             
             try {
                 const response = await fetch(`${API_BASE}/${moduloAtualId}/historico`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
                 
                 const historico = await response.json();
@@ -759,7 +709,7 @@
             try {
                 const response = await fetch(`${API_BASE}/${moduloAtualId}/restaurar/${versao}?motivo=${encodeURIComponent(motivo)}`, {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
                 
                 if (!response.ok) throw new Error('Erro ao restaurar');
@@ -776,7 +726,7 @@
         async function exportarTodos() {
             try {
                 const response = await fetch(`${API_BASE}/exportar/todos`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
                 
                 const data = await response.json();

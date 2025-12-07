@@ -26,7 +26,8 @@ class PromptModulo(Base):
     titulo = Column(String(200), nullable=False)
     
     # Conteúdo
-    conteudo = Column(Text, nullable=False)  # O prompt em si (markdown)
+    condicao_ativacao = Column(Text, nullable=True)  # Situação em que o prompt deve ser ativado (para o Agente 2 - Detector)
+    conteudo = Column(Text, nullable=False)  # O prompt em si (markdown) - enviado ao Agente 3 (Gerador)
     
     # Metadados
     palavras_chave = Column(JSON, nullable=True, default=list)  # Para detecção automática
@@ -67,6 +68,7 @@ class PromptModuloHistorico(Base):
     
     # Dados da versão
     versao = Column(Integer, nullable=False)
+    condicao_ativacao = Column(Text, nullable=True)  # Histórico da condição de ativação
     conteudo = Column(Text, nullable=False)
     palavras_chave = Column(JSON, nullable=True)
     tags = Column(JSON, nullable=True)

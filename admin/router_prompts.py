@@ -28,7 +28,8 @@ class PromptModuloBase(BaseModel):
     subcategoria: Optional[str] = None
     nome: str
     titulo: str
-    conteudo: str
+    condicao_ativacao: Optional[str] = None  # Situação em que o prompt deve ser ativado (para Agente 2)
+    conteudo: str  # Conteúdo do prompt (para Agente 3)
     palavras_chave: Optional[List[str]] = []
     tags: Optional[List[str]] = []
     ativo: bool = True
@@ -41,6 +42,7 @@ class PromptModuloCreate(PromptModuloBase):
 
 class PromptModuloUpdate(BaseModel):
     titulo: Optional[str] = None
+    condicao_ativacao: Optional[str] = None  # Atualiza condição de ativação
     conteudo: Optional[str] = None
     palavras_chave: Optional[List[str]] = None
     tags: Optional[List[str]] = None
@@ -65,6 +67,7 @@ class PromptHistoricoResponse(BaseModel):
     id: int
     modulo_id: int
     versao: int
+    condicao_ativacao: Optional[str]
     conteudo: str
     palavras_chave: Optional[List[str]]
     tags: Optional[List[str]]
@@ -208,7 +211,7 @@ async def criar_modulo(
     """Cria um novo módulo de prompt"""
     verificar_permissao_prompts(current_user, "criar")
     
-    # Verifica se já existe
+    # Verifica se já existe com mesmo nome
     existente = db.query(PromptModulo).filter(
         PromptModulo.tipo == modulo_data.tipo,
         PromptModulo.categoria == modulo_data.categoria,
@@ -221,6 +224,18 @@ async def criar_modulo(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Já existe um módulo com esta combinação tipo/categoria/subcategoria/nome"
         )
+    
+    # Para tipo "peca" e "base": se ativo, desativa outros da mesma categoria
+    if modulo_data.ativo and modulo_data.tipo in ("peca", "base"):
+        outros_ativos = db.query(PromptModulo).filter(
+            PromptModulo.tipo == modulo_data.tipo,
+            PromptModulo.categoria == modulo_data.categoria,
+            PromptModulo.ativo == True
+        ).all()
+        
+        for outro in outros_ativos:
+            outro.ativo = False
+            outro.atualizado_por = current_user.id
     
     modulo = PromptModulo(
         **modulo_data.model_dump(),
@@ -251,6 +266,19 @@ async def atualizar_modulo(
     if not modulo:
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
     
+    # Para tipo "peca" e "base": se está ativando, desativa outros da mesma categoria
+    if modulo_data.ativo == True and modulo.tipo in ("peca", "base"):
+        outros_ativos = db.query(PromptModulo).filter(
+            PromptModulo.tipo == modulo.tipo,
+            PromptModulo.categoria == modulo.categoria,
+            PromptModulo.ativo == True,
+            PromptModulo.id != modulo_id
+        ).all()
+        
+        for outro in outros_ativos:
+            outro.ativo = False
+            outro.atualizado_por = current_user.id
+    
     # Salva versão atual no histórico
     diff_resumo = ""
     if modulo_data.conteudo and modulo_data.conteudo != modulo.conteudo:
@@ -259,6 +287,7 @@ async def atualizar_modulo(
     historico = PromptModuloHistorico(
         modulo_id=modulo.id,
         versao=modulo.versao,
+        condicao_ativacao=modulo.condicao_ativacao,
         conteudo=modulo.conteudo,
         palavras_chave=modulo.palavras_chave,
         tags=modulo.tags,
@@ -302,6 +331,34 @@ async def desativar_modulo(
     db.commit()
     
     return {"message": f"Módulo '{modulo.titulo}' desativado com sucesso"}
+
+
+@router.delete("/{modulo_id}/permanente")
+async def excluir_modulo_permanente(
+    modulo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Exclui um módulo permanentemente (incluindo histórico)"""
+    verificar_permissao_prompts(current_user, "excluir")
+    
+    modulo = db.query(PromptModulo).filter(PromptModulo.id == modulo_id).first()
+    
+    if not modulo:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+    
+    titulo = modulo.titulo
+    
+    # Remove histórico primeiro
+    db.query(PromptModuloHistorico).filter(
+        PromptModuloHistorico.modulo_id == modulo_id
+    ).delete()
+    
+    # Remove o módulo
+    db.delete(modulo)
+    db.commit()
+    
+    return {"message": f"Módulo '{titulo}' excluído permanentemente"}
 
 
 # ==========================================
@@ -373,6 +430,7 @@ async def restaurar_versao(
     novo_historico = PromptModuloHistorico(
         modulo_id=modulo.id,
         versao=modulo.versao,
+        condicao_ativacao=modulo.condicao_ativacao,
         conteudo=modulo.conteudo,
         palavras_chave=modulo.palavras_chave,
         tags=modulo.tags,
@@ -383,6 +441,7 @@ async def restaurar_versao(
     db.add(novo_historico)
     
     # Restaura conteúdo
+    modulo.condicao_ativacao = historico.condicao_ativacao
     modulo.conteudo = historico.conteudo
     modulo.palavras_chave = historico.palavras_chave
     modulo.tags = historico.tags
@@ -469,6 +528,7 @@ async def exportar_todos(
             "subcategoria": modulo.subcategoria,
             "nome": modulo.nome,
             "titulo": modulo.titulo,
+            "condicao_ativacao": modulo.condicao_ativacao or "",
             "conteudo": modulo.conteudo,
             "palavras_chave": modulo.palavras_chave or [],
             "tags": modulo.tags or [],
