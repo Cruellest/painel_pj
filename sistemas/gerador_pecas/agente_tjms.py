@@ -114,6 +114,7 @@ class DocumentoTJMS:
     data_juntada: Optional[datetime] = None
     data_texto: Optional[str] = None
     descricao: Optional[str] = None  # Descrição do documento (ex: "Petição", "Contestação")
+    descricao_ia: Optional[str] = None  # Descrição identificada pela IA (mais precisa)
     ordem: Optional[int] = None
     conteudo_base64: Optional[str] = None
     texto_extraido: Optional[str] = None
@@ -133,6 +134,13 @@ class DocumentoTJMS:
         if self.tipo_documento:
             return CATEGORIAS_MAP.get(self.tipo_documento, f"Tipo {self.tipo_documento}")
         return "Desconhecido"
+    
+    @property
+    def nome_exibicao(self) -> str:
+        """Retorna o nome para exibição - prioriza identificação da IA"""
+        if self.descricao_ia:
+            return self.descricao_ia
+        return self.categoria_nome
 
     @property
     def data_formatada(self) -> str:
@@ -166,6 +174,29 @@ def _verificar_irrelevante(resumo: str) -> tuple[bool, str]:
         return True, motivo if motivo else "Documento irrelevante"
 
     return False, resumo
+
+
+def _extrair_tipo_documento_ia(resumo: str) -> Optional[str]:
+    """
+    Extrai o tipo de documento identificado pela IA do resumo.
+    Procura por padrão: **[TIPO: Nome do Documento]**
+    """
+    if not resumo:
+        return None
+    
+    import re
+    
+    # Padrão: **[TIPO: ...]** ou [TIPO: ...]
+    padrao = r'\*?\*?\[TIPO:\s*([^\]]+)\]\*?\*?'
+    match = re.search(padrao, resumo, re.IGNORECASE)
+    
+    if match:
+        tipo = match.group(1).strip()
+        # Limpa asteriscos extras
+        tipo = tipo.replace('**', '').replace('*', '').strip()
+        return tipo
+    
+    return None
 
 
 def _extrair_processo_origem(resumo: str) -> Optional[str]:
@@ -729,6 +760,30 @@ class AgenteTJMS:
         # Prompt padrão para resumo individual
         self.prompt_resumo = prompt_resumo or """Analise o documento judicial e produza um resumo DESCRITIVO e OBJETIVO, sem juízos de valor.
 
+## PRIMEIRA LINHA OBRIGATÓRIA - IDENTIFICAÇÃO DO DOCUMENTO:
+Comece o resumo com uma linha no formato:
+**[TIPO: Nome Exato do Documento]**
+
+Exemplos de tipos:
+- **[TIPO: Petição Inicial]**
+- **[TIPO: Contestação]**
+- **[TIPO: Recurso de Apelação]**
+- **[TIPO: Contrarrazões de Apelação]**
+- **[TIPO: Agravo de Instrumento]**
+- **[TIPO: Contrarrazões de Agravo]**
+- **[TIPO: Sentença]**
+- **[TIPO: Decisão Interlocutória]**
+- **[TIPO: Despacho]**
+- **[TIPO: Acórdão]**
+- **[TIPO: Parecer do NAT/CATES]**
+- **[TIPO: Laudo Médico]**
+- **[TIPO: Relatório Médico]**
+- **[TIPO: Prescrição Médica]**
+- **[TIPO: Manifestação do Ministério Público]**
+- **[TIPO: Manifestação da Fazenda Pública]**
+- **[TIPO: Embargos de Declaração]**
+- **[TIPO: Petição Intermediária]**
+
 ## DOCUMENTOS IRRELEVANTES - Marcar como [IRRELEVANTE]:
 Se o documento for de natureza **meramente administrativa ou acessória**, sem conteúdo substantivo para análise do mérito, responda APENAS:
 **[IRRELEVANTE]** Motivo breve.
@@ -756,16 +811,15 @@ Se o documento for de natureza **meramente administrativa ou acessória**, sem c
 
 ## EXTRAIR QUANDO APLICÁVEL:
 
-1. **Tipo de documento**
-2. **Partes**: Autor(es) e Réu(s)
-3. **Pedido/Objeto**: O que está sendo requerido
-4. **Diagnóstico/CID**: Se mencionado
-5. **Tratamento solicitado**:
+1. **Partes**: Autor(es) e Réu(s)
+2. **Pedido/Objeto**: O que está sendo requerido
+3. **Diagnóstico/CID**: Se mencionado
+4. **Tratamento solicitado**:
    - Se MEDICAMENTO: nome comercial, princípio ativo, posologia. **VERIFICAR: está incorporado ao SUS? Se sim, em qual componente (Básico/Estratégico/Especializado)?**
    - Se CIRURGIA: qual procedimento, **é urgente?**, de quem é a responsabilidade
-6. **Argumentos principais**: Fundamentos apresentados (sem avaliar mérito)
-7. **Decisão/Dispositivo**: Se houver, o que foi decidido, prazos e multas
-8. **Processo de Origem**: Se for AGRAVO DE INSTRUMENTO, informar o número do processo de origem (1º grau) no formato CNJ (NNNNNNN-NN.NNNN.N.NN.NNNN)
+5. **Argumentos principais**: Fundamentos apresentados (sem avaliar mérito)
+6. **Decisão/Dispositivo**: Se houver, o que foi decidido, prazos e multas
+7. **Processo de Origem**: Se for AGRAVO DE INSTRUMENTO, informar o número do processo de origem (1º grau) no formato CNJ (NNNNNNN-NN.NNNN.N.NN.NNNN)
 
 ## ATENÇÃO ESPECIAL:
 
@@ -1292,6 +1346,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         doc.resumo = conteudo
                     else:
                         doc.resumo = resposta
+                        # Extrai o tipo de documento identificado pela IA
+                        doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
 
                 elif todas_imagens:
                     # PDFs digitalizados - enviar imagens
@@ -1314,6 +1370,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         doc.resumo = conteudo
                     else:
                         doc.resumo = resposta
+                        # Extrai o tipo de documento identificado pela IA
+                        doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
                 else:
                     doc.erro = "Nenhum conteúdo extraível"
 
@@ -1344,6 +1402,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         doc.resumo = conteudo
                     else:
                         doc.resumo = resposta
+                        # Extrai o tipo de documento identificado pela IA
+                        doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
                 else:
                     # PDF digitalizado - enviar imagens para IA
                     imagens = conteudo_pdf.conteudo
@@ -1368,6 +1428,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         doc.resumo = conteudo
                     else:
                         doc.resumo = resposta
+                        # Extrai o tipo de documento identificado pela IA
+                        doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
 
         except Exception as e:
             import traceback

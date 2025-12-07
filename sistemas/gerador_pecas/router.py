@@ -242,6 +242,23 @@ async def processar_processo_stream(
                 
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'concluido', 'mensagem': 'Peça gerada com sucesso!'})}\n\n"
                 
+                # Prepara lista de documentos processados para salvar
+                documentos_processados = None
+                if resultado_agente1.dados_brutos and resultado_agente1.dados_brutos.documentos:
+                    documentos_processados = []
+                    for doc in resultado_agente1.dados_brutos.documentos:
+                        if not doc.irrelevante:
+                            documentos_processados.append({
+                                "id": doc.id,
+                                "ids": doc.ids_agrupados if doc.ids_agrupados else [doc.id],
+                                "descricao": doc.descricao,
+                                "descricao_ia": doc.descricao_ia,
+                                "tipo_documento": doc.tipo_documento,
+                                "data_juntada": doc.data_juntada.isoformat() if doc.data_juntada else None,
+                                "data_formatada": doc.data_formatada,
+                                "processo_origem": doc.processo_origem
+                            })
+                
                 # Salva no banco
                 geracao = GeracaoPeca(
                     numero_cnj=cnj_limpo,
@@ -250,6 +267,7 @@ async def processar_processo_stream(
                     conteudo_gerado=resultado_agente3.conteudo_markdown,
                     prompt_enviado=resultado_agente3.prompt_enviado,
                     resumo_consolidado=resultado_agente1.resumo_consolidado,
+                    documentos_processados=documentos_processados,
                     modelo_usado=modelo,
                     usuario_id=current_user.id
                 )
@@ -696,12 +714,14 @@ def _agrupar_documentos_por_descricao(docs: List) -> List:
 async def listar_documentos_processo(
     numero_cnj: str,
     token: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user_from_token_or_query)
+    current_user: User = Depends(get_current_user_from_token_or_query),
+    db: Session = Depends(get_db)
 ):
     """
     Lista todos os documentos de um processo para visualização.
     Retorna lista ordenada cronologicamente com descrição do XML.
     Documentos com mesma descrição e data (até 1 min) são agrupados.
+    Se houver processamento anterior, usa descrição identificada pela IA.
     """
     import aiohttp
     from sistemas.gerador_pecas.agente_tjms import (
@@ -712,6 +732,21 @@ async def listar_documentos_processo(
     
     try:
         cnj_limpo = re.sub(r'\D', '', numero_cnj)
+        
+        # Busca documentos processados salvos no banco (se existir)
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.numero_cnj == cnj_limpo,
+            GeracaoPeca.documentos_processados.isnot(None)
+        ).order_by(GeracaoPeca.criado_em.desc()).first()
+        
+        # Mapa de ID -> descricao_ia do processamento anterior
+        descricoes_ia_map = {}
+        if geracao and geracao.documentos_processados:
+            for doc_salvo in geracao.documentos_processados:
+                if doc_salvo.get("descricao_ia"):
+                    # Mapeia todos os IDs do documento agrupado
+                    for doc_id in doc_salvo.get("ids", [doc_salvo.get("id")]):
+                        descricoes_ia_map[doc_id] = doc_salvo["descricao_ia"]
         
         async with aiohttp.ClientSession() as session:
             xml_response = await consultar_processo_async(session, cnj_limpo)
@@ -726,11 +761,18 @@ async def listar_documentos_processo(
         # Retorna lista com informações para exibição
         resultado = []
         for i, doc in enumerate(docs_agrupados, 1):
+            # Verifica se há descrição da IA para este documento
+            descricao_exibir = doc["descricao"]
+            doc_id_principal = doc["ids"][0] if doc["ids"] else doc["id"]
+            if doc_id_principal in descricoes_ia_map:
+                descricao_exibir = descricoes_ia_map[doc_id_principal]
+            
             resultado.append({
                 "id": doc["id"],
                 "ids": doc["ids"],  # Lista de IDs para merge
                 "ordem": i,
-                "descricao": doc["descricao"],
+                "descricao": descricao_exibir,
+                "descricao_original": doc["descricao"],  # Mantém original para referência
                 "tipo_documento": doc["tipo_documento"],
                 "data_juntada": doc["data_juntada"].isoformat() if doc["data_juntada"] else None,
                 "data_formatada": doc["data_formatada"],
@@ -740,7 +782,8 @@ async def listar_documentos_processo(
         return {
             "numero_cnj": numero_cnj,
             "total_documentos": len(resultado),
-            "documentos": resultado
+            "documentos": resultado,
+            "tem_descricoes_ia": len(descricoes_ia_map) > 0
         }
         
     except Exception as e:
