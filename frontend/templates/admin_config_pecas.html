@@ -3,37 +3,68 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configuração de Tipos de Peça - Admin PGE</title>
+    <title>Configuração de Tipos de Peça - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
     <style>
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         .categoria-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; }
         .sortable-ghost { opacity: 0.4; }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body class="min-h-screen bg-gray-50">
+    
     <!-- Header -->
-    <header class="bg-gradient-to-r from-blue-800 to-blue-900 text-white shadow-lg">
-        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div class="flex items-center gap-4">
-                <a href="/admin" class="text-white/70 hover:text-white transition">
-                    <i class="fas fa-arrow-left"></i>
-                </a>
-                <div>
-                    <h1 class="text-xl font-bold">Configuração de Tipos de Peça</h1>
-                    <p class="text-blue-200 text-sm">Gerencie categorias de documentos e tipos de peça jurídica</p>
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-4">
+                    <a href="/admin/prompts" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-arrow-left"></i>
+                    </a>
+                    <a href="/dashboard" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                        <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+                    </a>
+                    <div class="border-l border-gray-300 pl-4">
+                        <h1 class="font-semibold text-gray-800">Configuração de Tipos de Peça</h1>
+                        <p class="text-xs text-gray-500">Categorias de documentos por tipo de peça jurídica</p>
+                    </div>
                 </div>
-            </div>
-            <div class="flex items-center gap-3">
-                <button onclick="seedDados()" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg text-sm transition">
-                    <i class="fas fa-database mr-2"></i>Carregar Dados Iniciais
-                </button>
+                <div class="flex items-center gap-3">
+                    <a href="/admin/prompts-modulos" 
+                       class="px-4 py-2 text-sm bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors flex items-center gap-2">
+                        <i class="fas fa-puzzle-piece"></i>
+                        Prompts Modulares
+                    </a>
+                    <button onclick="seedDados()" class="px-4 py-2 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors flex items-center gap-2">
+                        <i class="fas fa-database"></i>
+                        Carregar Dados Iniciais
+                    </button>
+                </div>
             </div>
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 py-8">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <!-- Tabs -->
         <div class="mb-6 border-b border-gray-200">
             <nav class="flex gap-6">
@@ -67,11 +98,16 @@
         <!-- Tab: Tipos de Peça -->
         <div id="panel-tipos" class="tab-panel hidden">
             <div class="flex justify-between items-center mb-6">
-                <h2 class="text-lg font-semibold text-gray-800">
-                    Tipos de Peça Jurídica
-                </h2>
-                <button onclick="abrirModalTipo()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">
-                    <i class="fas fa-plus mr-2"></i>Novo Tipo de Peça
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">
+                        Tipos de Peça Jurídica
+                    </h2>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Os tipos são baseados nos <a href="/admin/prompts-modulos" class="text-blue-600 hover:underline">Prompts Modulares</a> (tipo "peça")
+                    </p>
+                </div>
+                <button onclick="sincronizarTipos()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">
+                    <i class="fas fa-sync mr-2"></i>Sincronizar com Prompts
                 </button>
             </div>
 
@@ -245,6 +281,7 @@
         const API_BASE = '/api/gerador-pecas/config';
         let categoriasCache = [];
         let tiposCache = [];
+        let tiposPromptsCache = [];  // Tipos dos prompts modulares (fonte de verdade)
         let categoriasJsonCache = [];  // Categorias do arquivo JSON
         let codigosSelecionados = new Set();  // Códigos selecionados no modal
 
@@ -314,9 +351,17 @@
 
         async function carregarTipos() {
             try {
+                // Carrega tipos locais (com categorias de documento vinculadas)
                 const resp = await fetch(`${API_BASE}/tipos-peca`, { headers: getHeaders() });
                 if (!resp.ok) throw new Error('Erro ao carregar tipos');
                 tiposCache = await resp.json();
+                
+                // Carrega tipos dos prompts modulares (fonte de verdade)
+                const respPrompts = await fetch(`${API_BASE}/tipos-peca-prompts`, { headers: getHeaders() });
+                if (respPrompts.ok) {
+                    tiposPromptsCache = await respPrompts.json();
+                }
+                
                 renderizarTipos();
             } catch (e) {
                 console.error(e);
@@ -378,59 +423,190 @@
         function renderizarTipos() {
             const container = document.getElementById('lista-tipos');
             
-            if (tiposCache.length === 0) {
+            // Usa tiposPromptsCache como referência principal e verifica se tem TipoPeca local vinculado
+            const tiposParaMostrar = tiposPromptsCache.length > 0 ? tiposPromptsCache : tiposCache;
+            
+            if (tiposParaMostrar.length === 0) {
                 container.innerHTML = `
                     <div class="col-span-full text-center py-12 text-gray-500">
                         <i class="fas fa-file-contract text-4xl mb-4"></i>
                         <p>Nenhum tipo de peça cadastrado</p>
-                        <p class="text-sm">Clique em "Carregar Dados Iniciais" para começar</p>
+                        <p class="text-sm">Cadastre prompts do tipo "peça" em <a href="/admin/prompts-modulos" class="text-blue-600 hover:underline">Prompts Modulares</a></p>
                     </div>`;
                 return;
             }
             
-            container.innerHTML = tiposCache.map(tipo => `
-                <div class="bg-white rounded-lg shadow p-5 card-hover transition-all">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
-                                <i class="fas fa-${tipo.icone || 'file'}"></i>
-                            </div>
-                            <div>
-                                <h3 class="font-semibold text-gray-800">${tipo.titulo}</h3>
-                                <span class="text-xs font-mono text-gray-400">${tipo.nome}</span>
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="editarTipo(${tipo.id})" class="text-blue-600 hover:text-blue-800">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button onclick="excluirTipo(${tipo.id})" class="text-red-600 hover:text-red-800">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <p class="text-sm text-gray-500 mb-3">${tipo.descricao || ''}</p>
+            // Se estamos usando tiposPromptsCache, precisamos verificar vinculação local
+            if (tiposPromptsCache.length > 0) {
+                container.innerHTML = tiposPromptsCache.map(tipoPrompt => {
+                    // Procura TipoPeca local correspondente
+                    const tipoLocal = tiposCache.find(t => t.nome === tipoPrompt.nome);
+                    const temVinculo = !!tipoLocal;
                     
-                    <div class="mb-3">
-                        <p class="text-xs text-gray-500 mb-2">Categorias analisadas:</p>
-                        <div class="flex flex-wrap gap-2">
-                            ${(tipo.categorias_documento || []).map(cat => `
-                                <span class="categoria-badge" style="background: ${cat.cor || '#e5e7eb'}20; color: ${cat.cor || '#4b5563'}; border: 1px solid ${cat.cor || '#e5e7eb'}">
-                                    ${cat.titulo}
+                    return `
+                        <div class="bg-white rounded-lg shadow p-5 card-hover transition-all ${!temVinculo ? 'border-l-4 border-yellow-400' : ''}">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 ${temVinculo ? 'bg-blue-100' : 'bg-yellow-100'} rounded-lg flex items-center justify-center ${temVinculo ? 'text-blue-600' : 'text-yellow-600'}">
+                                        <i class="fas fa-${tipoLocal?.icone || 'file'}"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-semibold text-gray-800">${tipoPrompt.titulo}</h3>
+                                        <span class="text-xs font-mono text-gray-400">${tipoPrompt.nome}</span>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    ${temVinculo ? `
+                                        <button onclick="editarTipo(${tipoLocal.id})" class="text-blue-600 hover:text-blue-800" title="Editar categorias">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                    ` : `
+                                        <button onclick="criarVinculoTipo('${tipoPrompt.nome}', '${tipoPrompt.titulo}')" 
+                                                class="text-green-600 hover:text-green-800" title="Vincular categorias">
+                                            <i class="fas fa-link"></i>
+                                        </button>
+                                    `}
+                                </div>
+                            </div>
+                            
+                            ${temVinculo ? `
+                                <div class="mb-3">
+                                    <p class="text-xs text-gray-500 mb-2">Categorias de documentos analisadas:</p>
+                                    <div class="flex flex-wrap gap-2">
+                                        ${(tipoLocal.categorias_documento || []).length > 0 ? 
+                                            (tipoLocal.categorias_documento || []).map(cat => `
+                                                <span class="categoria-badge" style="background: ${cat.cor || '#e5e7eb'}20; color: ${cat.cor || '#4b5563'}; border: 1px solid ${cat.cor || '#e5e7eb'}">
+                                                    ${cat.titulo}
+                                                </span>
+                                            `).join('') :
+                                            '<span class="text-gray-400 text-xs">Nenhuma categoria vinculada (analisa todos os documentos)</span>'
+                                        }
+                                    </div>
+                                </div>
+                            ` : `
+                                <div class="mb-3 p-3 bg-yellow-50 rounded-lg">
+                                    <p class="text-xs text-yellow-700">
+                                        <i class="fas fa-info-circle mr-1"></i>
+                                        Este tipo ainda não tem categorias de documentos definidas. 
+                                        Clique no <i class="fas fa-link"></i> para configurar quais documentos a IA deve analisar.
+                                    </p>
+                                </div>
+                            `}
+                            
+                            <div class="flex items-center gap-4 text-xs">
+                                <span class="${tipoPrompt.ativo ? 'text-green-600' : 'text-red-600'}">
+                                    <i class="fas fa-${tipoPrompt.ativo ? 'check' : 'times'}-circle"></i>
+                                    ${tipoPrompt.ativo ? 'Ativo' : 'Inativo'}
                                 </span>
-                            `).join('')}
+                                ${temVinculo ? 
+                                    '<span class="text-blue-600"><i class="fas fa-link"></i> Vinculado</span>' : 
+                                    '<span class="text-yellow-600"><i class="fas fa-unlink"></i> Não vinculado</span>'
+                                }
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                // Fallback: renderiza do cache local
+                container.innerHTML = tiposCache.map(tipo => `
+                    <div class="bg-white rounded-lg shadow p-5 card-hover transition-all">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
+                                    <i class="fas fa-${tipo.icone || 'file'}"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-gray-800">${tipo.titulo}</h3>
+                                    <span class="text-xs font-mono text-gray-400">${tipo.nome}</span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button onclick="editarTipo(${tipo.id})" class="text-blue-600 hover:text-blue-800">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button onclick="excluirTipo(${tipo.id})" class="text-red-600 hover:text-red-800">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-500 mb-3">${tipo.descricao || ''}</p>
+                        
+                        <div class="mb-3">
+                            <p class="text-xs text-gray-500 mb-2">Categorias analisadas:</p>
+                            <div class="flex flex-wrap gap-2">
+                                ${(tipo.categorias_documento || []).map(cat => `
+                                    <span class="categoria-badge" style="background: ${cat.cor || '#e5e7eb'}20; color: ${cat.cor || '#4b5563'}; border: 1px solid ${cat.cor || '#e5e7eb'}">
+                                        ${cat.titulo}
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center gap-4 text-xs">
+                            <span class="${tipo.ativo ? 'text-green-600' : 'text-red-600'}">
+                                <i class="fas fa-${tipo.ativo ? 'check' : 'times'}-circle"></i>
+                                ${tipo.ativo ? 'Ativo' : 'Inativo'}
+                            </span>
+                            ${tipo.is_padrao ? '<span class="text-purple-600"><i class="fas fa-star"></i> Padrão</span>' : ''}
                         </div>
                     </div>
-                    
-                    <div class="flex items-center gap-4 text-xs">
-                        <span class="${tipo.ativo ? 'text-green-600' : 'text-red-600'}">
-                            <i class="fas fa-${tipo.ativo ? 'check' : 'times'}-circle"></i>
-                            ${tipo.ativo ? 'Ativo' : 'Inativo'}
-                        </span>
-                        ${tipo.is_padrao ? '<span class="text-purple-600"><i class="fas fa-star"></i> Padrão</span>' : ''}
-                    </div>
-                </div>
-            `).join('');
+                `).join('');
+            }
+        }
+        
+        async function criarVinculoTipo(nome, titulo) {
+            // Abre o modal para criar um TipoPeca local vinculado ao prompt
+            document.getElementById('modal-tipo-titulo').textContent = `Configurar: ${titulo}`;
+            document.getElementById('tipo-id').value = '';
+            document.getElementById('tipo-nome').value = nome;
+            document.getElementById('tipo-titulo').value = titulo;
+            document.getElementById('tipo-descricao').value = '';
+            document.getElementById('tipo-icone').value = 'file-alt';
+            document.getElementById('tipo-ordem').value = 0;
+            document.getElementById('tipo-ativo').checked = true;
+            document.getElementById('tipo-padrao').checked = false;
+            
+            renderizarCategoriasCheckbox([]);
+            
+            document.getElementById('modal-tipo').classList.remove('hidden');
+            document.getElementById('modal-tipo').classList.add('flex');
+        }
+        
+        async function sincronizarTipos() {
+            try {
+                // Para cada tipo de prompt que não tem TipoPeca local, cria um
+                let criados = 0;
+                for (const tipoPrompt of tiposPromptsCache) {
+                    const tipoLocal = tiposCache.find(t => t.nome === tipoPrompt.nome);
+                    if (!tipoLocal) {
+                        // Cria TipoPeca local
+                        const resp = await fetch(`${API_BASE}/tipos-peca`, {
+                            method: 'POST',
+                            headers: getHeaders(),
+                            body: JSON.stringify({
+                                nome: tipoPrompt.nome,
+                                titulo: tipoPrompt.titulo,
+                                descricao: '',
+                                icone: 'file-alt',
+                                ordem: tipoPrompt.ordem || 0,
+                                ativo: true,
+                                is_padrao: false,
+                                categorias_ids: []
+                            })
+                        });
+                        if (resp.ok) criados++;
+                    }
+                }
+                
+                if (criados > 0) {
+                    alert(`${criados} tipo(s) sincronizado(s) com sucesso!`);
+                    await carregarTipos();
+                } else {
+                    alert('Todos os tipos já estão sincronizados!');
+                }
+            } catch (e) {
+                alert('Erro ao sincronizar: ' + e.message);
+            }
         }
 
         // ==========================================
