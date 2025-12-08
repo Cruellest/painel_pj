@@ -25,7 +25,9 @@ from sistemas.gerador_pecas.models_config_pecas import (
     TipoPeca,
     tipo_peca_categorias,
     get_categorias_documento_seed,
-    get_tipos_peca_seed
+    get_tipos_peca_seed,
+    carregar_categorias_json,
+    get_codigos_por_categoria_json
 )
 
 router = APIRouter(prefix="/api/gerador-pecas/config", tags=["Config Peças"])
@@ -88,6 +90,32 @@ class AssociacaoCategoriasRequest(BaseModel):
 # Endpoints - Categorias de Documento
 # ===========================================
 
+@router.get("/categorias-json")
+async def listar_categorias_json(
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lista todas as categorias e documentos do arquivo categorias_documentos.json.
+    Útil para o frontend mostrar os documentos individuais por categoria.
+    """
+    categorias = carregar_categorias_json()
+    
+    # Formatar para o frontend
+    resultado = []
+    for cat_nome, documentos in categorias.items():
+        resultado.append({
+            "categoria": cat_nome,
+            "nome_id": cat_nome.lower().replace(" ", "_").replace("ã", "a").replace("ç", "c").replace("é", "e").replace("ó", "o"),
+            "documentos": documentos,
+            "codigos": [d["codigo"] for d in documentos]
+        })
+    
+    # Ordenar por nome da categoria
+    resultado.sort(key=lambda x: x["categoria"])
+    
+    return resultado
+
+
 @router.get("/categorias", response_model=List[CategoriaDocumentoResponse])
 async def listar_categorias(
     ativo: Optional[bool] = None,
@@ -123,7 +151,7 @@ async def criar_categoria(
     current_user: User = Depends(get_current_user)
 ):
     """Cria uma nova categoria de documento"""
-    if not current_user.is_admin:
+    if not current_user.role == "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     # Verifica se já existe categoria com esse nome
@@ -149,7 +177,7 @@ async def atualizar_categoria(
     current_user: User = Depends(get_current_user)
 ):
     """Atualiza uma categoria de documento"""
-    if not current_user.is_admin:
+    if not current_user.role == "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     categoria = db.query(CategoriaDocumento).filter(CategoriaDocumento.id == categoria_id).first()
@@ -181,7 +209,7 @@ async def excluir_categoria(
     current_user: User = Depends(get_current_user)
 ):
     """Exclui uma categoria de documento"""
-    if not current_user.is_admin:
+    if not current_user.role == "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     categoria = db.query(CategoriaDocumento).filter(CategoriaDocumento.id == categoria_id).first()
@@ -260,7 +288,7 @@ async def criar_tipo_peca(
     current_user: User = Depends(get_current_user)
 ):
     """Cria um novo tipo de peça"""
-    if not current_user.is_admin:
+    if not current_user.role == "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     # Verifica se já existe tipo com esse nome
@@ -296,7 +324,7 @@ async def atualizar_tipo_peca(
     current_user: User = Depends(get_current_user)
 ):
     """Atualiza um tipo de peça"""
-    if not current_user.is_admin:
+    if not current_user.role == "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     tipo = db.query(TipoPeca).filter(TipoPeca.id == tipo_id).first()
@@ -338,7 +366,7 @@ async def atualizar_categorias_tipo_peca(
     current_user: User = Depends(get_current_user)
 ):
     """Atualiza apenas as categorias de um tipo de peça"""
-    if not current_user.is_admin:
+    if not current_user.role == "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     tipo = db.query(TipoPeca).filter(TipoPeca.id == tipo_id).first()
@@ -366,7 +394,7 @@ async def excluir_tipo_peca(
     current_user: User = Depends(get_current_user)
 ):
     """Exclui um tipo de peça"""
-    if not current_user.is_admin:
+    if not current_user.role == "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     tipo = db.query(TipoPeca).filter(TipoPeca.id == tipo_id).first()
@@ -389,7 +417,7 @@ async def seed_dados_iniciais(
     current_user: User = Depends(get_current_user)
 ):
     """Popula dados iniciais de categorias e tipos de peça"""
-    if not current_user.is_admin:
+    if not current_user.role == "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
     
     categorias_criadas = 0
