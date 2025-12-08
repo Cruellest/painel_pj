@@ -181,6 +181,22 @@ async def processar_processo_stream(
             if service.orquestrador:
                 orq = service.orquestrador
                 
+                # Determina tipo de peça inicial (se fornecido manualmente)
+                tipo_peca_inicial = req.tipo_peca or req.resposta_usuario
+                
+                # Se tipo de peça foi escolhido manualmente, configura filtro de categorias ANTES do Agente 1
+                if tipo_peca_inicial:
+                    try:
+                        from sistemas.gerador_pecas.filtro_categorias import FiltroCategoriasDocumento
+                        filtro = FiltroCategoriasDocumento(db)
+                        if filtro.tem_configuracao():
+                            codigos = filtro.get_codigos_permitidos(tipo_peca_inicial)
+                            if codigos:
+                                orq.agente1.atualizar_codigos_permitidos(codigos)
+                                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Filtro ativado: {len(codigos)} categorias para {tipo_peca_inicial}'})}\n\n"
+                    except Exception as e:
+                        print(f"[AVISO] Erro ao carregar filtro de categorias: {e}")
+                
                 # Agente 1: Coletor TJ-MS
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': 'Baixando documentos do TJ-MS...'})}\n\n"
                 
@@ -193,8 +209,8 @@ async def processar_processo_stream(
                 
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'concluido', 'mensagem': f'{resultado_agente1.documentos_analisados} documentos processados'})}\n\n"
                 
-                # Determina o tipo de peça (fornecido ou detectado automaticamente)
-                tipo_peca = req.tipo_peca or req.resposta_usuario
+                # Usa o tipo de peça inicial (já determinado acima)
+                tipo_peca = tipo_peca_inicial
                 
                 # Agente 2: Detector de Módulos (e tipo de peça se necessário)
                 if not tipo_peca:
