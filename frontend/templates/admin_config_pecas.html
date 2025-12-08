@@ -232,6 +232,27 @@
         let tiposCache = [];
 
         // ==========================================
+        // Autenticação
+        // ==========================================
+        function getToken() {
+            return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+        }
+
+        function getHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getToken()}`
+            };
+        }
+
+        // Verifica autenticação ao carregar
+        (function checkAuth() {
+            if (!getToken()) {
+                window.location.href = '/login';
+            }
+        })();
+
+        // ==========================================
         // Tabs
         // ==========================================
         function showTab(tab) {
@@ -251,7 +272,7 @@
         // ==========================================
         async function carregarCategorias() {
             try {
-                const resp = await fetch(`${API_BASE}/categorias`);
+                const resp = await fetch(`${API_BASE}/categorias`, { headers: getHeaders() });
                 if (!resp.ok) throw new Error('Erro ao carregar categorias');
                 categoriasCache = await resp.json();
                 renderizarCategorias();
@@ -264,7 +285,7 @@
 
         async function carregarTipos() {
             try {
-                const resp = await fetch(`${API_BASE}/tipos-peca`);
+                const resp = await fetch(`${API_BASE}/tipos-peca`, { headers: getHeaders() });
                 if (!resp.ok) throw new Error('Erro ao carregar tipos');
                 tiposCache = await resp.json();
                 renderizarTipos();
@@ -439,7 +460,7 @@
                 
                 const resp = await fetch(url, {
                     method,
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getHeaders(),
                     body: JSON.stringify(dados)
                 });
                 
@@ -460,7 +481,7 @@
             if (!confirm('Tem certeza que deseja excluir esta categoria?')) return;
             
             try {
-                const resp = await fetch(`${API_BASE}/categorias/${id}`, { method: 'DELETE' });
+                const resp = await fetch(`${API_BASE}/categorias/${id}`, { method: 'DELETE', headers: getHeaders() });
                 if (!resp.ok) throw new Error('Erro ao excluir');
                 await carregarCategorias();
                 await carregarTipos();
@@ -544,7 +565,7 @@
                 
                 const resp = await fetch(url, {
                     method,
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: getHeaders(),
                     body: JSON.stringify(dados)
                 });
                 
@@ -564,7 +585,7 @@
             if (!confirm('Tem certeza que deseja excluir este tipo de peça?')) return;
             
             try {
-                const resp = await fetch(`${API_BASE}/tipos-peca/${id}`, { method: 'DELETE' });
+                const resp = await fetch(`${API_BASE}/tipos-peca/${id}`, { method: 'DELETE', headers: getHeaders() });
                 if (!resp.ok) throw new Error('Erro ao excluir');
                 await carregarTipos();
             } catch (e) {
@@ -579,7 +600,7 @@
             if (!confirm('Isso irá carregar as categorias e tipos de peça padrão. Continuar?')) return;
             
             try {
-                const resp = await fetch(`${API_BASE}/seed`, { method: 'POST' });
+                const resp = await fetch(`${API_BASE}/seed`, { method: 'POST', headers: getHeaders() });
                 const data = await resp.json();
                 
                 if (!resp.ok) throw new Error(data.detail || 'Erro ao executar seed');
