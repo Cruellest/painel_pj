@@ -421,7 +421,12 @@ class OrquestradorAgentes:
                 if modulos_conteudo:
                     partes_conteudo = ["## ARGUMENTOS E TESES APLICÁVEIS\n"]
                     for modulo in modulos_conteudo:
-                        partes_conteudo.append(f"### {modulo.titulo}\n{modulo.conteudo}\n")
+                        # Inclui a condição de ativação para que o Agente 3 possa fazer juízo crítico
+                        condicao = modulo.condicao_ativacao or ""
+                        if condicao:
+                            partes_conteudo.append(f"### {modulo.titulo}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
+                        else:
+                            partes_conteudo.append(f"### {modulo.titulo}\n{modulo.conteudo}\n")
                         print(f"   ✓ Módulo ativado: {modulo.titulo}")
                     resultado.prompt_conteudo = "\n".join(partes_conteudo)
             
@@ -478,6 +483,11 @@ class OrquestradorAgentes:
 ## INSTRUÇÕES FINAIS:
 
 Com base nos documentos acima e nas instruções do sistema, gere a peça jurídica completa.
+
+**IMPORTANTE sobre os Argumentos e Teses Aplicáveis:**
+Cada argumento/tese acima possui uma "Condição de ativação" que indica em qual situação fática ele deve ser utilizado. 
+Antes de incorporar cada argumento na peça, avalie criticamente se a condição de ativação realmente se aplica aos fatos do caso concreto.
+Se a condição NÃO corresponder aos fatos, NÃO inclua esse argumento na peça.
 
 Retorne a peça formatada em **Markdown**, seguindo a estrutura indicada no prompt de peça acima.
 Use formatação adequada: ## para títulos de seção, **negrito** para ênfase, > para citações.

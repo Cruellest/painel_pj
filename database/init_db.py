@@ -245,6 +245,39 @@ def run_migrations():
             db.rollback()
             print(f"⚠️ Migração feedbacks_pecas: {e}")
     
+    # Migração: Criar tabela feedbacks_matricula (sistema de matrículas confrontantes)
+    if not table_exists('feedbacks_matricula'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE feedbacks_matricula (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        analise_id INTEGER NOT NULL REFERENCES analises(id),
+                        usuario_id INTEGER NOT NULL REFERENCES users(id),
+                        avaliacao VARCHAR(20) NOT NULL,
+                        comentario TEXT,
+                        campos_incorretos JSON,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS feedbacks_matricula (
+                        id SERIAL PRIMARY KEY,
+                        analise_id INTEGER NOT NULL REFERENCES analises(id),
+                        usuario_id INTEGER NOT NULL REFERENCES users(id),
+                        avaliacao VARCHAR(20) NOT NULL,
+                        comentario TEXT,
+                        campos_incorretos JSON,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            db.commit()
+            print("✅ Migração: tabela feedbacks_matricula criada")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração feedbacks_matricula: {e}")
+    
     # Migração: Adicionar colunas de permissões na tabela users
     if table_exists('users') and not column_exists('users', 'sistemas_permitidos'):
         try:
