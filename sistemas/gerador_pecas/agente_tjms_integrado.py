@@ -196,6 +196,111 @@ class AgenteTJMSIntegrado:
         partes.append("*Este resumo consolidado foi gerado automaticamente a partir dos documentos do processo.*")
         
         return "\n".join(partes)
+    
+    def filtrar_e_remontar_resumo(
+        self,
+        resultado: ResultadoAgente1,
+        codigos_permitidos: set
+    ) -> str:
+        """
+        Filtra os documentos do resultado por códigos permitidos e remonta o resumo consolidado.
+        
+        Usado no modo automático após a detecção do tipo de peça.
+        
+        Args:
+            resultado: Resultado original do Agente 1
+            codigos_permitidos: Conjunto de códigos de documento permitidos
+            
+        Returns:
+            Novo resumo consolidado com apenas os documentos filtrados
+        """
+        if not resultado.dados_brutos or not codigos_permitidos:
+            return resultado.resumo_consolidado
+        
+        analise = resultado.dados_brutos
+        
+        # Conta quantos documentos serão mantidos
+        docs_antes = len(analise.documentos_com_resumo())
+        
+        # Filtra os documentos temporariamente (sem modificar o original)
+        docs_filtrados = []
+        for doc in analise.documentos:
+            if doc.resumo and not doc.irrelevante:
+                try:
+                    codigo = int(doc.tipo_documento) if doc.tipo_documento else 0
+                    if codigo in codigos_permitidos:
+                        docs_filtrados.append(doc)
+                except (ValueError, TypeError):
+                    # Se não conseguir converter, mantém o documento
+                    docs_filtrados.append(doc)
+        
+        docs_depois = len(docs_filtrados)
+        print(f"📋 Filtro pós-detecção: {docs_antes} -> {docs_depois} documentos")
+        
+        if not docs_filtrados:
+            return resultado.resumo_consolidado
+        
+        # Remonta o resumo com os documentos filtrados
+        import json
+        partes = []
+        
+        # Cabeçalho
+        partes.append(f"# RESUMO CONSOLIDADO DO PROCESSO (FILTRADO)")
+        partes.append(f"**Processo**: {analise.numero_processo}")
+        partes.append(f"**Data da Análise**: {analise.data_analise.strftime('%d/%m/%Y %H:%M')}")
+        partes.append(f"**Formato dos Resumos**: {self.formato_saida.upper()}")
+        partes.append(f"**Documentos após filtro**: {docs_depois} de {docs_antes}")
+        
+        if analise.is_agravo:
+            partes.append(f"\n**⚠️ AGRAVO DE INSTRUMENTO**")
+            partes.append(f"**Processo de Origem (1º Grau)**: {analise.processo_origem}")
+        
+        # Dados do processo extraídos do XML (SEM IA)
+        if analise.dados_processo:
+            partes.append("\n---\n")
+            partes.append("## DADOS DO PROCESSO (extraídos do sistema)")
+            partes.append("```json")
+            partes.append(json.dumps(analise.dados_processo.to_json(), indent=2, ensure_ascii=False))
+            partes.append("```")
+        
+        partes.append("\n---\n")
+        
+        # Separa documentos do principal e origem
+        docs_principal = [d for d in docs_filtrados if not d.processo_origem]
+        docs_origem = [d for d in docs_filtrados if d.processo_origem]
+        
+        # Documentos do processo principal (ou do AI)
+        if docs_principal:
+            if analise.is_agravo:
+                partes.append("## DOCUMENTOS DO AGRAVO DE INSTRUMENTO\n")
+            else:
+                partes.append("## DOCUMENTOS DO PROCESSO\n")
+            
+            for i, doc in enumerate(docs_principal, 1):
+                partes.append(f"### {i}. {doc.categoria_nome}")
+                partes.append(f"**Data**: {doc.data_formatada}")
+                if doc.descricao_ia:
+                    partes.append(f"**Tipo identificado**: {doc.descricao_ia}")
+                partes.append(f"\n{doc.resumo}\n")
+                partes.append("---\n")
+        
+        # Documentos do processo de origem (se for agravo)
+        if docs_origem:
+            partes.append(f"\n## DOCUMENTOS DO PROCESSO DE ORIGEM ({analise.processo_origem})\n")
+            
+            for i, doc in enumerate(docs_origem, 1):
+                partes.append(f"### [ORIGEM] {i}. {doc.categoria_nome}")
+                partes.append(f"**Data**: {doc.data_formatada}")
+                if doc.descricao_ia:
+                    partes.append(f"**Tipo identificado**: {doc.descricao_ia}")
+                partes.append(f"\n{doc.resumo}\n")
+                partes.append("---\n")
+        
+        # Nota final
+        partes.append("\n---")
+        partes.append("*Este resumo foi filtrado para incluir apenas documentos relevantes para o tipo de peça selecionado.*")
+        
+        return "\n".join(partes)
 
 
 async def processar_processo_tjms(numero_processo: str, db_session = None, formato_saida: str = "json") -> ResultadoAgente1:

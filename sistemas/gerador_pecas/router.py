@@ -213,7 +213,12 @@ async def processar_processo_stream(
                 tipo_peca = tipo_peca_inicial
                 
                 # Agente 2: Detector de Módulos (e tipo de peça se necessário)
+                # Variável para controlar se foi modo automático
+                modo_automatico = False
+                resumo_para_geracao = resultado_agente1.resumo_consolidado
+                
                 if not tipo_peca:
+                    modo_automatico = True
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Detectando tipo de peça automaticamente...'})}\n\n"
                     
                     # Detecta o tipo de peça via IA
@@ -229,9 +234,25 @@ async def processar_processo_stream(
                         tipo_peca = "contestacao"
                         yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Não foi possível detectar automaticamente. Usando: contestação'})}\n\n"
                 
+                # No modo automático, após detectar o tipo, filtra os resumos
+                if modo_automatico and tipo_peca:
+                    try:
+                        codigos_tipo = filtro.get_codigos_permitidos(tipo_peca)
+                        if codigos_tipo:
+                            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Filtrando resumos para {tipo_peca}: {len(codigos_tipo)} categorias'})}\n\n"
+                            
+                            # Usa o método do agente para filtrar e remontar o resumo
+                            resumo_para_geracao = orq.agente1.filtrar_e_remontar_resumo(
+                                resultado_agente1,
+                                codigos_tipo
+                            )
+                    except Exception as e:
+                        print(f"Aviso: Erro ao filtrar resumos no modo automático: {e}")
+                        # Continua com o resumo completo
+                
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Analisando e ativando prompts...'})}\n\n"
                 
-                resultado_agente2 = await orq._executar_agente2(resultado_agente1.resumo_consolidado, tipo_peca)
+                resultado_agente2 = await orq._executar_agente2(resumo_para_geracao, tipo_peca)
                 
                 if resultado_agente2.erro:
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
@@ -244,7 +265,7 @@ async def processar_processo_stream(
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peça jurídica com IA...'})}\n\n"
                 
                 resultado_agente3 = await orq._executar_agente3(
-                    resumo_consolidado=resultado_agente1.resumo_consolidado,
+                    resumo_consolidado=resumo_para_geracao,
                     prompt_sistema=resultado_agente2.prompt_sistema,
                     prompt_peca=resultado_agente2.prompt_peca,
                     prompt_conteudo=resultado_agente2.prompt_conteudo,
@@ -275,14 +296,14 @@ async def processar_processo_stream(
                                 "processo_origem": doc.processo_origem
                             })
                 
-                # Salva no banco
+                # Salva no banco (usa resumo filtrado se disponível)
                 geracao = GeracaoPeca(
                     numero_cnj=cnj_limpo,
                     numero_cnj_formatado=req.numero_cnj,
                     tipo_peca=tipo_peca,
                     conteudo_gerado=resultado_agente3.conteudo_markdown,
                     prompt_enviado=resultado_agente3.prompt_enviado,
-                    resumo_consolidado=resultado_agente1.resumo_consolidado,
+                    resumo_consolidado=resumo_para_geracao,
                     documentos_processados=documentos_processados,
                     modelo_usado=modelo,
                     usuario_id=current_user.id
