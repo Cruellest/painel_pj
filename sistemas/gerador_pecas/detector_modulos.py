@@ -158,20 +158,27 @@ A seguir, uma lista de módulos de argumentos/teses disponíveis. O campo "condi
 {json.dumps(modulos_info, ensure_ascii=False, indent=2)}
 ```
 
-## SUA TAREFA
+##SUA TAREFA
 
-Analise cuidadosamente os documentos do processo e determine quais módulos são RELEVANTES para este caso específico.
+Analise os documentos do processo e identifique quais módulos têm relação clara, provável ou potencialmente útil para este caso.
 
-**Critérios de Relevância:**
-1. A SITUAÇÃO descrita na "condicao_ativacao" do módulo está presente no caso?
-2. Os fatos do processo correspondem às condições de ativação do módulo?
-3. Ativar este módulo faria sentido para a defesa do Estado neste processo?
+###Como avaliar relevância:
 
-**IMPORTANTE:**
-- Seja SELETIVO: Retorne apenas módulos cuja condição de ativação REALMENTE corresponde ao caso
-- Analise a "condicao_ativacao" de cada módulo e verifique se ela se aplica
-- NÃO inclua módulos cujas condições não se aplicam aos fatos específicos
-- É melhor retornar POUCOS módulos relevantes do que MUITOS irrelevantes
+A condição de ativação aparece total ou parcialmente no caso?
+
+O módulo pode ajudar a defender o Estado mesmo que a correspondência não seja perfeita?
+
+Há elementos, indícios ou temas que sugerem que este módulo possa ser aplicável?
+
+Instruções:
+
+Seja flexível: inclua o módulo sempre que houver uma correspondência razoável com os fatos.
+
+NÃO exija aderência literal à “condicao_ativacao”; considere semelhanças temáticas, contexto e finalidade jurídica.
+
+Evite apenas módulos claramente irrelevantes ou totalmente desconectados dos fatos.
+
+Quando em dúvida entre incluir ou excluir, prefira incluir, justificando brevemente.
 
 ## FORMATO DE RESPOSTA
 
