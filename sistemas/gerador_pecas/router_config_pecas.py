@@ -441,29 +441,10 @@ async def seed_dados_iniciais(
 # ===========================================
 
 @router.get("/admin", response_class=HTMLResponse)
-async def pagina_admin_config_pecas(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Página de administração de tipos de peça e categorias"""
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Acesso negado")
-    
-    categorias = db.query(CategoriaDocumento).order_by(
-        CategoriaDocumento.ordem, CategoriaDocumento.titulo
-    ).all()
-    
-    tipos_peca = db.query(TipoPeca).order_by(
-        TipoPeca.ordem, TipoPeca.titulo
-    ).all()
-    
+async def pagina_admin_config_pecas(request: Request):
+    """Página de administração de tipos de peça e categorias.
+    A autenticação é feita via JavaScript no cliente."""
     return templates.TemplateResponse(
         "admin_config_pecas.html",
-        {
-            "request": request,
-            "user": current_user,
-            "categorias": categorias,
-            "tipos_peca": tipos_peca
-        }
+        {"request": request}
     )
