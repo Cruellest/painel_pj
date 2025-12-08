@@ -226,6 +226,34 @@ async def excluir_categoria(
 # Endpoints - Tipos de Peça
 # ===========================================
 
+@router.get("/tipos-peca-prompts")
+async def listar_tipos_peca_prompts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Lista os tipos de peça baseados nos prompts modulares (fonte de verdade).
+    Usado para sincronizar o TipoPeca local com os prompts cadastrados.
+    """
+    from admin.models_prompts import PromptModulo
+    
+    modulos_peca = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "peca",
+        PromptModulo.ativo == True
+    ).order_by(PromptModulo.ordem).all()
+    
+    return [
+        {
+            "prompt_id": m.id,
+            "nome": m.categoria or m.nome,  # categoria é o identificador (contestacao, recurso_apelacao)
+            "titulo": m.titulo,
+            "ativo": m.ativo,
+            "ordem": m.ordem
+        }
+        for m in modulos_peca
+    ]
+
+
 @router.get("/tipos-peca", response_model=List[TipoPecaResponse])
 async def listar_tipos_peca(
     ativo: Optional[bool] = None,
