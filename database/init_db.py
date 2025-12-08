@@ -474,6 +474,19 @@ def run_migrations():
                     db.rollback()
                     print(f"⚠️ Migração {coluna} geracoes_pecas: {e}")
 
+    # Migração: Adicionar coluna is_primeiro_documento na tabela categorias_documento
+    if table_exists('categorias_documento') and not column_exists('categorias_documento', 'is_primeiro_documento'):
+        try:
+            if is_sqlite:
+                db.execute(text("ALTER TABLE categorias_documento ADD COLUMN is_primeiro_documento BOOLEAN DEFAULT 0"))
+            else:
+                db.execute(text("ALTER TABLE categorias_documento ADD COLUMN is_primeiro_documento BOOLEAN DEFAULT false"))
+            db.commit()
+            print("✅ Migração: coluna is_primeiro_documento adicionada em categorias_documento")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração is_primeiro_documento: {e}")
+
     db.close()
 
 

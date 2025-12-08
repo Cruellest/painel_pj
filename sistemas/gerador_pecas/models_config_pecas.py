@@ -50,6 +50,10 @@ class CategoriaDocumento(Base):
     # Cor para exibição no frontend (opcional)
     cor = Column(String(20), nullable=True)
     
+    # Categoria especial: considera apenas o primeiro documento cronológico
+    # Usado para "Petição Inicial" que pega só o primeiro doc 9500/500 do processo
+    is_primeiro_documento = Column(Boolean, default=False)
+    
     # Auditoria
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -123,6 +127,17 @@ class TipoPeca(Base):
         codigos = set()
         for categoria in self.categorias_documento:
             if categoria.ativo:
+                codigos.update(categoria.get_codigos())
+        return codigos
+    
+    def get_codigos_primeiro_documento(self) -> set:
+        """
+        Retorna códigos de categorias que devem considerar apenas o primeiro documento.
+        Exemplo: Petição Inicial (só o primeiro documento 9500/500 do processo).
+        """
+        codigos = set()
+        for categoria in self.categorias_documento:
+            if categoria.ativo and categoria.is_primeiro_documento:
                 codigos.update(categoria.get_codigos())
         return codigos
     
@@ -217,8 +232,8 @@ def get_categorias_documento_seed() -> list:
         "descricao": "Primeiro documento do processo (geralmente código 9500 ou 500). Categoria especial que considera apenas o primeiro documento cronológico.",
         "codigos_documento": [9500, 500],
         "ordem": ordem,
-        "cor": "#2980b9"
-        # Nota: Esta é uma categoria especial - considera apenas o primeiro documento cronológico
+        "cor": "#2980b9",
+        "is_primeiro_documento": True  # Marca como categoria que pega só o primeiro documento
     })
     ordem += 1
     

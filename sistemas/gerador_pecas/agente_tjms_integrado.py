@@ -45,7 +45,8 @@ class AgenteTJMSIntegrado:
         modelo: str = None, 
         db_session = None, 
         formato_saida: str = "json",
-        codigos_permitidos: set = None  # Códigos de documento a analisar (None = usa filtro legado)
+        codigos_permitidos: set = None,  # Códigos de documento a analisar (None = usa filtro legado)
+        codigos_primeiro_doc: set = None  # Códigos que devem pegar só o primeiro documento cronológico
     ):
         """
         Inicializa o agente.
@@ -55,25 +56,36 @@ class AgenteTJMSIntegrado:
             db_session: Sessão do banco de dados para buscar formatos JSON
             formato_saida: 'json' ou 'md' - formato de saída dos resumos
             codigos_permitidos: Conjunto de códigos de documento a analisar (None = usa filtro legado)
+            codigos_primeiro_doc: Códigos que devem pegar só o primeiro documento (ex: Petição Inicial)
         """
         self.modelo = modelo or MODELO_PADRAO
         self.db_session = db_session
         self.formato_saida = formato_saida
         self.codigos_permitidos = codigos_permitidos
+        self.codigos_primeiro_doc = codigos_primeiro_doc or set()
         self.agente = AgenteTJMS(
             modelo=self.modelo,
             formato_saida=formato_saida,
             db_session=db_session,
-            codigos_permitidos=codigos_permitidos
+            codigos_permitidos=codigos_permitidos,
+            codigos_primeiro_doc=codigos_primeiro_doc
         )
     
-    def atualizar_codigos_permitidos(self, codigos: set):
+    def atualizar_codigos_permitidos(self, codigos: set, codigos_primeiro_doc: set = None):
         """
         Atualiza os códigos permitidos após inicialização.
         Útil para modo automático onde os códigos são definidos depois.
+        
+        Args:
+            codigos: Códigos de documentos permitidos
+            codigos_primeiro_doc: Códigos que devem pegar só o primeiro documento
         """
         self.codigos_permitidos = codigos
         self.agente.codigos_permitidos = codigos
+        
+        if codigos_primeiro_doc is not None:
+            self.codigos_primeiro_doc = codigos_primeiro_doc
+            self.agente.codigos_primeiro_doc = codigos_primeiro_doc
     
     async def coletar_e_resumir(
         self, 

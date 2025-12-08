@@ -46,6 +46,7 @@ class CategoriaDocumentoBase(BaseModel):
     ativo: bool = True
     ordem: int = 0
     cor: Optional[str] = None
+    is_primeiro_documento: bool = False  # Se True, pega só o primeiro documento cronológico
 
 
 class CategoriaDocumentoResponse(CategoriaDocumentoBase):
@@ -461,6 +462,10 @@ async def seed_dados_iniciais(
             categoria = CategoriaDocumento(**cat_data)
             db.add(categoria)
             categorias_criadas += 1
+        else:
+            # Atualiza is_primeiro_documento se for a categoria peticao_inicial
+            if cat_data.get("is_primeiro_documento") and not existente.is_primeiro_documento:
+                existente.is_primeiro_documento = True
     
     db.commit()
     

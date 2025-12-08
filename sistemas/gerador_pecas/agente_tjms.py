@@ -972,13 +972,15 @@ class AgenteTJMS:
         max_workers: int = 10,
         formato_saida: str = "json",  # 'json' ou 'md'
         db_session = None,  # Sessão do banco para buscar formatos JSON
-        codigos_permitidos: set = None  # Códigos de documento a analisar (None = usa filtro legado)
+        codigos_permitidos: set = None,  # Códigos de documento a analisar (None = usa filtro legado)
+        codigos_primeiro_doc: set = None  # Códigos que devem pegar só o primeiro documento cronológico
     ):
         self.modelo = modelo
         self.max_workers = max_workers
         self.formato_saida = formato_saida
         self.db_session = db_session
         self.codigos_permitidos = codigos_permitidos  # None = usa CATEGORIAS_EXCLUIDAS
+        self.codigos_primeiro_doc = codigos_primeiro_doc or set()  # Códigos especiais (ex: Petição Inicial)
         
         # Gerenciador de formatos JSON (carregado sob demanda)
         self._gerenciador_json = None
@@ -1289,15 +1291,37 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     print(f"      Filtrado para {len(docs_para_analisar)} documentos por ID")
                 else:
                     # Filtrar documentos usando códigos permitidos ou filtro legado
-                    docs_para_analisar = [
-                        d for d in docs_para_analisar
-                        if d.tipo_documento and documento_permitido(
-                            int(d.tipo_documento), 
-                            self.codigos_permitidos
-                        )
-                    ]
+                    # Aplica também lógica especial de "primeiro documento" (ex: Petição Inicial)
+                    docs_filtrados = []
+                    codigos_primeiro_usados = set()  # Rastreia códigos especiais já usados
+                    
+                    for d in docs_para_analisar:
+                        if not d.tipo_documento:
+                            continue
+                        
+                        codigo = int(d.tipo_documento)
+                        
+                        # Verifica se o documento é permitido
+                        if not documento_permitido(codigo, self.codigos_permitidos):
+                            continue
+                        
+                        # Verifica se é código de "primeiro documento" (ex: Petição Inicial)
+                        if codigo in self.codigos_primeiro_doc:
+                            # Se já pegamos um documento com este código, pula os demais
+                            if codigo in codigos_primeiro_usados:
+                                continue
+                            # Marca como usado
+                            codigos_primeiro_usados.add(codigo)
+                        
+                        docs_filtrados.append(d)
+                    
+                    docs_para_analisar = docs_filtrados
+                    
                     if self.codigos_permitidos:
-                        print(f"      Filtrado para {len(docs_para_analisar)} documentos (categorias configuradas)")
+                        msg_filtro = f"Filtrado para {len(docs_para_analisar)} documentos (categorias configuradas)"
+                        if self.codigos_primeiro_doc:
+                            msg_filtro += f" | {len(self.codigos_primeiro_doc)} códigos com filtro 'primeiro documento'"
+                        print(f"      {msg_filtro}")
                     else:
                         print(f"      Filtrado para {len(docs_para_analisar)} documentos (excluídas categorias administrativas)")
 

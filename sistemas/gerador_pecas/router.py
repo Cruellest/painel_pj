@@ -191,8 +191,9 @@ async def processar_processo_stream(
                         filtro = FiltroCategoriasDocumento(db)
                         if filtro.tem_configuracao():
                             codigos = filtro.get_codigos_permitidos(tipo_peca_inicial)
+                            codigos_primeiro = filtro.get_codigos_primeiro_documento(tipo_peca_inicial)
                             if codigos:
-                                orq.agente1.atualizar_codigos_permitidos(codigos)
+                                orq.agente1.atualizar_codigos_permitidos(codigos, codigos_primeiro)
                                 yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Filtro ativado: {len(codigos)} categorias para {tipo_peca_inicial}'})}\n\n"
                     except Exception as e:
                         print(f"[AVISO] Erro ao carregar filtro de categorias: {e}")

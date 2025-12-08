@@ -124,7 +124,7 @@ class OrquestradorAgentes:
         
         # Carrega filtro de categorias (se configurado no banco)
         self._filtro_categorias = None
-        codigos_permitidos = self._obter_codigos_permitidos(tipo_peca)
+        codigos_permitidos, codigos_primeiro_doc = self._obter_codigos_permitidos(tipo_peca)
         
         # Inicializa agentes com modelos configurados
         # O Agente 1 recebe a sessão do banco para buscar formatos JSON
@@ -132,7 +132,8 @@ class OrquestradorAgentes:
             modelo=self.modelo_agente1,
             db_session=db,
             formato_saida="json",  # Usa formato JSON para resumos
-            codigos_permitidos=codigos_permitidos
+            codigos_permitidos=codigos_permitidos,
+            codigos_primeiro_doc=codigos_primeiro_doc
         )
         self.agente2 = DetectorModulosIA(db=db, modelo=self.modelo_agente2)
     
@@ -147,7 +148,7 @@ class OrquestradorAgentes:
                 return None
         return self._filtro_categorias
     
-    def _obter_codigos_permitidos(self, tipo_peca: str = None) -> set:
+    def _obter_codigos_permitidos(self, tipo_peca: str = None) -> tuple:
         """
         Obtém os códigos de documento permitidos para o tipo de peça.
         
@@ -155,28 +156,31 @@ class OrquestradorAgentes:
             tipo_peca: Tipo de peça (ex: 'contestacao'). Se None, retorna None (modo legado).
             
         Returns:
-            Conjunto de códigos permitidos, ou None para usar filtro legado.
+            Tupla (codigos_permitidos, codigos_primeiro_doc), ou (None, set()) para usar filtro legado.
         """
         filtro = self._obter_filtro_categorias()
         
         if filtro is None or not filtro.tem_configuracao():
             # Sem configuração no banco, usa filtro legado
-            return None
+            return None, set()
         
         if tipo_peca:
             # Modo manual: usa categorias do tipo de peça específico
             codigos = filtro.get_codigos_permitidos(tipo_peca)
+            codigos_primeiro = filtro.get_codigos_primeiro_documento(tipo_peca)
             if codigos:
                 print(f"[CONFIG] Usando {len(codigos)} códigos de documento para '{tipo_peca}'")
-                return codigos
+                if codigos_primeiro:
+                    print(f"[CONFIG] {len(codigos_primeiro)} códigos com filtro 'primeiro documento' (ex: Petição Inicial)")
+                return codigos, codigos_primeiro
         
         # Modo automático ou tipo não encontrado: usa todos os códigos configurados
         codigos = filtro.get_todos_codigos()
         if codigos:
             print(f"[CONFIG] Modo automático: usando {len(codigos)} códigos de documento")
-            return codigos
+            return codigos, set()  # No modo automático, não aplica filtro de primeiro documento
         
-        return None
+        return None, set()
     
     async def processar_processo(
         self,
@@ -209,9 +213,9 @@ class OrquestradorAgentes:
             
             # Se modo manual, atualiza os códigos permitidos para o tipo específico
             if not modo_automatico:
-                codigos = self._obter_codigos_permitidos(tipo_peca)
+                codigos, codigos_primeiro = self._obter_codigos_permitidos(tipo_peca)
                 if codigos:
-                    self.agente1.atualizar_codigos_permitidos(codigos)
+                    self.agente1.atualizar_codigos_permitidos(codigos, codigos_primeiro)
             
             inicio = datetime.now()
             resultado.agente1 = await self.agente1.coletar_e_resumir(numero_processo)

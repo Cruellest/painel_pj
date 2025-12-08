@@ -47,7 +47,8 @@ class FiltroCategoriasDocumento:
             self._cache_tipos[tipo.nome.lower()] = {
                 "id": tipo.id,
                 "titulo": tipo.titulo,
-                "codigos": tipo.get_codigos_permitidos()
+                "codigos": tipo.get_codigos_permitidos(),
+                "codigos_primeiro_doc": tipo.get_codigos_primeiro_documento()
             }
     
     def get_codigos_permitidos(self, tipo_peca: str) -> Set[int]:
@@ -76,11 +77,39 @@ class FiltroCategoriasDocumento:
             self._cache_tipos[tipo_lower] = {
                 "id": tipo.id,
                 "titulo": tipo.titulo,
-                "codigos": codigos
+                "codigos": codigos,
+                "codigos_primeiro_doc": tipo.get_codigos_primeiro_documento()
             }
             return codigos
         
         # Se não encontrar, retorna conjunto vazio
+        return set()
+    
+    def get_codigos_primeiro_documento(self, tipo_peca: str) -> Set[int]:
+        """
+        Retorna códigos que devem considerar apenas o primeiro documento cronológico.
+        Exemplo: Petição Inicial (só o primeiro 9500/500 do processo).
+        
+        Args:
+            tipo_peca: Nome do tipo de peça
+            
+        Returns:
+            Conjunto de códigos de documentos que devem pegar só o primeiro
+        """
+        tipo_lower = tipo_peca.lower() if tipo_peca else ""
+        
+        if tipo_lower in self._cache_tipos:
+            return self._cache_tipos[tipo_lower].get("codigos_primeiro_doc", set())
+        
+        # Busca no banco se não estiver em cache
+        tipo = self.db.query(TipoPeca).filter(
+            TipoPeca.nome.ilike(tipo_peca),
+            TipoPeca.ativo == True
+        ).first()
+        
+        if tipo:
+            return tipo.get_codigos_primeiro_documento()
+        
         return set()
     
     def get_todos_codigos(self) -> Set[int]:
@@ -137,8 +166,11 @@ class FiltroCategoriasDocumento:
         """
         Filtra lista de documentos por tipo de peça.
         
+        Aplica lógica especial para categorias marcadas como "primeiro documento"
+        (ex: Petição Inicial - pega só o primeiro documento 9500/500 cronologicamente).
+        
         Args:
-            documentos: Lista de DocumentoTJMS
+            documentos: Lista de DocumentoTJMS (deve estar ordenada cronologicamente)
             tipo_peca: Nome do tipo de peça (None = modo automático)
             
         Returns:
@@ -146,13 +178,35 @@ class FiltroCategoriasDocumento:
         """
         if tipo_peca:
             codigos = self.get_codigos_permitidos(tipo_peca)
+            codigos_primeiro_doc = self.get_codigos_primeiro_documento(tipo_peca)
         else:
             codigos = self.get_todos_codigos()
+            codigos_primeiro_doc = set()  # No modo automático, não aplica filtro especial
         
-        return [
-            doc for doc in documentos
-            if doc.tipo_documento and int(doc.tipo_documento) in codigos
-        ]
+        # Filtragem inicial por código
+        docs_filtrados = []
+        codigos_primeiro_doc_usados = set()  # Rastreia quais códigos especiais já foram usados
+        
+        for doc in documentos:
+            if not doc.tipo_documento:
+                continue
+                
+            codigo = int(doc.tipo_documento)
+            
+            if codigo not in codigos:
+                continue
+            
+            # Verifica se é código de "primeiro documento"
+            if codigo in codigos_primeiro_doc:
+                # Se já pegamos um documento com este código, pula os demais
+                if codigo in codigos_primeiro_doc_usados:
+                    continue
+                # Marca como usado (próximos documentos com este código serão ignorados)
+                codigos_primeiro_doc_usados.add(codigo)
+            
+            docs_filtrados.append(doc)
+        
+        return docs_filtrados
     
     def filtrar_resumos_por_tipo(
         self,
@@ -164,19 +218,40 @@ class FiltroCategoriasDocumento:
         Usado quando o modo automático gera resumos de tudo e depois 
         precisa filtrar apenas os relevantes para o tipo de peça detectado.
         
+        Aplica lógica especial para categorias marcadas como "primeiro documento".
+        
         Args:
-            resumos: Lista de dicts com campo 'tipo_documento'
+            resumos: Lista de dicts com campo 'tipo_documento' (deve estar ordenada cronologicamente)
             tipo_peca: Nome do tipo de peça
             
         Returns:
             Lista filtrada de resumos
         """
         codigos = self.get_codigos_permitidos(tipo_peca)
+        codigos_primeiro_doc = self.get_codigos_primeiro_documento(tipo_peca)
         
-        return [
-            resumo for resumo in resumos
-            if resumo.get("tipo_documento") and int(resumo["tipo_documento"]) in codigos
-        ]
+        resumos_filtrados = []
+        codigos_primeiro_doc_usados = set()
+        
+        for resumo in resumos:
+            tipo_doc = resumo.get("tipo_documento")
+            if not tipo_doc:
+                continue
+            
+            codigo = int(tipo_doc)
+            
+            if codigo not in codigos:
+                continue
+            
+            # Verifica se é código de "primeiro documento"
+            if codigo in codigos_primeiro_doc:
+                if codigo in codigos_primeiro_doc_usados:
+                    continue
+                codigos_primeiro_doc_usados.add(codigo)
+            
+            resumos_filtrados.append(resumo)
+        
+        return resumos_filtrados
     
     def get_tipos_peca_disponiveis(self) -> List[dict]:
         """
