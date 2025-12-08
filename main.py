@@ -41,6 +41,7 @@ from sistemas.matriculas_confrontantes.router import router as matriculas_router
 from sistemas.gerador_pecas.router import router as gerador_pecas_router
 from sistemas.gerador_pecas.router_admin import router as gerador_pecas_admin_router
 from sistemas.gerador_pecas.router_categorias_json import router as categorias_json_router
+from sistemas.gerador_pecas.router_config_pecas import router as config_pecas_router
 
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
@@ -149,6 +150,9 @@ app.include_router(prompts_modulos_router, prefix="/admin/api")
 
 # Router de Categorias de Formato JSON (admin)
 app.include_router(categorias_json_router, prefix="/admin/api")
+
+# Router de Configuração de Tipos de Peça e Categorias de Documentos (admin)
+app.include_router(config_pecas_router)
 
 
 # ==================================================

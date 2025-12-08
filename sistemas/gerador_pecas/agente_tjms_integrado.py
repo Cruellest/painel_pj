@@ -40,7 +40,13 @@ class AgenteTJMSIntegrado:
     4. Produzir resumo consolidado para os próximos agentes
     """
     
-    def __init__(self, modelo: str = None, db_session = None, formato_saida: str = "json"):
+    def __init__(
+        self, 
+        modelo: str = None, 
+        db_session = None, 
+        formato_saida: str = "json",
+        codigos_permitidos: set = None  # Códigos de documento a analisar (None = usa filtro legado)
+    ):
         """
         Inicializa o agente.
         
@@ -48,15 +54,26 @@ class AgenteTJMSIntegrado:
             modelo: Modelo LLM a usar (padrão: gemini-2.5-flash-lite)
             db_session: Sessão do banco de dados para buscar formatos JSON
             formato_saida: 'json' ou 'md' - formato de saída dos resumos
+            codigos_permitidos: Conjunto de códigos de documento a analisar (None = usa filtro legado)
         """
         self.modelo = modelo or MODELO_PADRAO
         self.db_session = db_session
         self.formato_saida = formato_saida
+        self.codigos_permitidos = codigos_permitidos
         self.agente = AgenteTJMS(
             modelo=self.modelo,
             formato_saida=formato_saida,
-            db_session=db_session
+            db_session=db_session,
+            codigos_permitidos=codigos_permitidos
         )
+    
+    def atualizar_codigos_permitidos(self, codigos: set):
+        """
+        Atualiza os códigos permitidos após inicialização.
+        Útil para modo automático onde os códigos são definidos depois.
+        """
+        self.codigos_permitidos = codigos
+        self.agente.codigos_permitidos = codigos
     
     async def coletar_e_resumir(
         self, 
