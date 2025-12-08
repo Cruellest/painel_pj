@@ -135,70 +135,123 @@ class TipoPeca(Base):
 # Funções auxiliares para seed inicial
 # ===========================================
 
+import json
+from pathlib import Path
+
+def carregar_categorias_json() -> dict:
+    """
+    Carrega as categorias de documentos do arquivo categorias_documentos.json
+    e retorna um dicionário organizado por categoria.
+    
+    Returns:
+        dict: {
+            "Petição": [{"Nome": "...", "Código": "..."}, ...],
+            "Decisão": [...],
+            ...
+        }
+    """
+    json_path = Path(__file__).parent.parent.parent / "categorias_documentos.json"
+    
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            documentos = json.load(f)
+    except FileNotFoundError:
+        return {}
+    
+    # Agrupar por categoria
+    categorias = {}
+    for doc in documentos:
+        cat = doc.get("Categoria", "Outros")
+        if cat not in categorias:
+            categorias[cat] = []
+        categorias[cat].append({
+            "nome": doc.get("Nome", ""),
+            "codigo": int(doc.get("Código", 0))
+        })
+    
+    return categorias
+
+
+def get_codigos_por_categoria_json() -> dict:
+    """
+    Retorna um dicionário com os códigos agrupados por categoria do JSON.
+    
+    Returns:
+        dict: {"Petição": [500, 510, 9500, ...], "Decisão": [...], ...}
+    """
+    categorias = carregar_categorias_json()
+    return {
+        cat: [doc["codigo"] for doc in docs]
+        for cat, docs in categorias.items()
+    }
+
+
 def get_categorias_documento_seed() -> list:
-    """Retorna dados iniciais para categorias de documento"""
-    return [
-        {
-            "nome": "peticoes",
-            "titulo": "Petições",
-            "descricao": "Petições iniciais, intermediárias, contestações e manifestações",
-            "codigos_documento": [500, 510, 9500, 8320, 8323, 8338],
-            "ordem": 1,
-            "cor": "#3498db"
-        },
-        {
-            "nome": "decisoes",
-            "titulo": "Decisões Judiciais",
-            "descricao": "Despachos, decisões interlocutórias, sentenças e acórdãos",
-            "codigos_documento": [6, 8, 15, 34, 44, 137],
-            "ordem": 2,
-            "cor": "#9b59b6"
-        },
-        {
-            "nome": "recursos",
-            "titulo": "Recursos",
-            "descricao": "Recursos de apelação, agravos e contrarrazões",
-            "codigos_documento": [8335, 8305],
-            "ordem": 3,
-            "cor": "#e74c3c"
-        },
-        {
-            "nome": "laudos_medicos",
-            "titulo": "Laudos e Documentos Médicos",
-            "descricao": "Laudos periciais, receitas, exames e pareceres médicos",
-            "codigos_documento": [9534, 8369, 59, 9827],
-            "ordem": 4,
-            "cor": "#2ecc71"
-        },
-        {
-            "nome": "documentos_parte",
-            "titulo": "Documentos da Parte",
-            "descricao": "Documentos pessoais, declarações e comprovantes juntados pelas partes",
-            "codigos_documento": [9509, 9512, 9513, 9600, 9612, 9740],
-            "ordem": 5,
-            "cor": "#f39c12"
-        },
-        {
-            "nome": "mp_defensoria",
-            "titulo": "Peças do MP e Defensoria",
-            "descricao": "Manifestações do Ministério Público e peças da Defensoria",
-            "codigos_documento": [21, 30, 8333],
-            "ordem": 6,
-            "cor": "#1abc9c"
-        },
-        {
-            "nome": "mandados_citacao",
-            "titulo": "Mandados e Citações",
-            "descricao": "Mandados de citação, intimação e certidões de oficiais",
-            "codigos_documento": [1, 19, 8366],
-            "ordem": 7,
-            "cor": "#95a5a6"
-        },
-    ]
+    """
+    Retorna dados iniciais para categorias de documento baseados no JSON.
+    Inclui categoria especial 'Petição Inicial'.
+    """
+    categorias_json = get_codigos_por_categoria_json()
+    
+    # Cores por categoria
+    cores = {
+        "Petição": "#3498db",
+        "Decisão": "#9b59b6",
+        "Despacho": "#8e44ad",
+        "Sentença": "#e74c3c",
+        "Acórdão": "#c0392b",
+        "Recurso": "#d35400",
+        "Recursos": "#d35400",
+        "Documento": "#27ae60",
+        "Parecer": "#16a085",
+        "Outros": "#7f8c8d"
+    }
+    
+    resultado = []
+    ordem = 1
+    
+    # Categoria especial: Petição Inicial (primeiro documento 9500 ou 500)
+    resultado.append({
+        "nome": "peticao_inicial",
+        "titulo": "Petição Inicial",
+        "descricao": "Primeiro documento do processo (geralmente código 9500 ou 500). Categoria especial que considera apenas o primeiro documento cronológico.",
+        "codigos_documento": [9500, 500],
+        "ordem": ordem,
+        "cor": "#2980b9"
+        # Nota: Esta é uma categoria especial - considera apenas o primeiro documento cronológico
+    })
+    ordem += 1
+    
+    # Gerar categorias a partir do JSON
+    for cat_nome, codigos in categorias_json.items():
+        # Normalizar nome para usar como identificador
+        nome_id = cat_nome.lower().replace(" ", "_").replace("ã", "a").replace("ç", "c").replace("é", "e").replace("ó", "o")
+        
+        resultado.append({
+            "nome": nome_id,
+            "titulo": cat_nome,
+            "descricao": f"Documentos da categoria '{cat_nome}' do TJ-MS ({len(codigos)} tipos)",
+            "codigos_documento": codigos,
+            "ordem": ordem,
+            "cor": cores.get(cat_nome, "#7f8c8d")
+        })
+        ordem += 1
+    
+    # Categoria "Outros" para códigos não categorizados
+    resultado.append({
+        "nome": "outros",
+        "titulo": "Outros",
+        "descricao": "Documentos que não se enquadram em nenhuma categoria específica",
+        "codigos_documento": [],  # Será preenchido dinamicamente
+        "ordem": ordem,
+        "cor": "#95a5a6"
+    })
+    
+    return resultado
 
 
 def get_tipos_peca_seed() -> list:
-    """Retorna dados iniciais para tipos de peça"""
+    """Retorna dados iniciais para tipos de peça usando as categorias do JSON"""
     return [
         {
             "nome": "contestacao",
@@ -206,7 +259,7 @@ def get_tipos_peca_seed() -> list:
             "descricao": "Peça de defesa em ações cíveis contra o Estado",
             "icone": "file-text",
             "ordem": 1,
-            "categorias": ["peticoes", "decisoes", "laudos_medicos", "documentos_parte", "mp_defensoria"]
+            "categorias": ["peticao_inicial", "peticao", "decisao", "despacho", "sentenca", "documento", "parecer"]
         },
         {
             "nome": "contrarrazoes",
@@ -214,7 +267,7 @@ def get_tipos_peca_seed() -> list:
             "descricao": "Resposta a recurso de apelação",
             "icone": "git-pull-request",
             "ordem": 2,
-            "categorias": ["peticoes", "decisoes", "recursos", "laudos_medicos", "documentos_parte"]
+            "categorias": ["peticao_inicial", "peticao", "decisao", "sentenca", "acordao", "recurso", "recursos", "documento"]
         },
         {
             "nome": "parecer",
@@ -222,7 +275,7 @@ def get_tipos_peca_seed() -> list:
             "descricao": "Manifestação técnico-jurídica sobre matéria consultada",
             "icone": "clipboard",
             "ordem": 3,
-            "categorias": ["peticoes", "decisoes", "laudos_medicos", "mp_defensoria"]
+            "categorias": ["peticao_inicial", "peticao", "decisao", "despacho", "sentenca", "documento", "parecer"]
         },
         {
             "nome": "recurso_apelacao",
@@ -230,7 +283,7 @@ def get_tipos_peca_seed() -> list:
             "descricao": "Recurso contra sentença de primeiro grau",
             "icone": "arrow-up-circle",
             "ordem": 4,
-            "categorias": ["peticoes", "decisoes", "recursos", "laudos_medicos"]
+            "categorias": ["peticao_inicial", "peticao", "decisao", "sentenca", "documento"]
         },
         {
             "nome": "agravo_instrumento",
@@ -238,6 +291,6 @@ def get_tipos_peca_seed() -> list:
             "descricao": "Recurso contra decisão interlocutória",
             "icone": "alert-triangle",
             "ordem": 5,
-            "categorias": ["peticoes", "decisoes", "laudos_medicos"]
+            "categorias": ["peticao_inicial", "peticao", "decisao", "despacho", "documento"]
         },
     ]

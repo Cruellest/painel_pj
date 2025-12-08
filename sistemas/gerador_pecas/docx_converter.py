@@ -200,11 +200,15 @@ class DocxConverter:
             header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
             header_para.clear()
             header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Remove recuos para centralização perfeita
+            header_para.paragraph_format.left_indent = Cm(0)
+            header_para.paragraph_format.right_indent = Cm(0)
+            header_para.paragraph_format.first_line_indent = Cm(0)
             
-            # Adiciona imagem do logo no cabeçalho
+            # Adiciona imagem do logo no cabeçalho (30% menor)
             if LOGO_PATH.exists():
                 run = header_para.add_run()
-                run.add_picture(str(LOGO_PATH), width=Cm(8))  # Largura de 8cm para logo horizontal
+                run.add_picture(str(LOGO_PATH), width=Cm(5.6))  # Largura de 5.6cm (30% menor que 8cm)
             else:
                 # Fallback: texto se não houver logo
                 run = header_para.add_run("PROCURADORIA-GERAL DO ESTADO DE MATO GROSSO DO SUL")

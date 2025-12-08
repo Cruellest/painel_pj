@@ -1,0 +1,622 @@
+[
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação (Outras)",
+    "Código": "357"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação da Recuperanda/Falida",
+    "Código": "306"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Autor",
+    "Código": "8323"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Curador",
+    "Código": "8327"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Ministério Público",
+    "Código": "8333"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Perito",
+    "Código": "215"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Procurador da Fazenda Pública Estadual",
+    "Código": "8338"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Procurador da Fazenda Pública Municipal",
+    "Código": "8426"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Procurador da Fazendo Pública Nacional",
+    "Código": "579"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Requerido",
+    "Código": "9875"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do Réu",
+    "Código": "8350"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação do terceiro interessado",
+    "Código": "225"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação Sobre Cálculo",
+    "Código": "8361"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação Sobre Impugnação",
+    "Código": "8365"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Manifestação Sobre Laudo Pericial",
+    "Código": "8368"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Memoriais",
+    "Código": "8373"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Abertura de Conta",
+    "Código": "8388"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Arquivamento",
+    "Código": "8330"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Cumprimento de Sentença contra a Fazenda Pública",
+    "Código": "286"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de de desistência da ação - Faz. Pública",
+    "Código": "238"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Desarquivamento",
+    "Código": "8356"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Desistência da Ação",
+    "Código": "8367"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Desistência do Prazo Recursal",
+    "Código": "8428"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Dilação de Prazo",
+    "Código": "8423"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Expedição de Alvará",
+    "Código": "8380"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Expedição de Ofício",
+    "Código": "8387"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Extinção de Feito",
+    "Código": "8390"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Informações",
+    "Código": "270"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Intimação de Partes",
+    "Código": "8392"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Julgamento Antecipado da Lide",
+    "Código": "8393"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Penhora",
+    "Código": "8395"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Providências",
+    "Código": "8315"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Reconsideração de Despacho",
+    "Código": "8397"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de Requisição",
+    "Código": "8399"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de substabelecimento",
+    "Código": "333"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de suspensão do processo pelo parcelamento - Faz. Púb",
+    "Código": "240"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Pedido de utilização do SISBAJUD",
+    "Código": "8438"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Petição",
+    "Código": "9500"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Petição Inicial",
+    "Código": "500"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Petição Intermediária",
+    "Código": "510"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Quesitos parte autora",
+    "Código": "9615"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Emenda a Inicial",
+    "Código": "8326"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Emenda à inicial - Faz. Pública",
+    "Código": "239"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Memoriais",
+    "Código": "8373"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Oposição",
+    "Código": "93"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Oposição ao Julgamento Virtual",
+    "Código": "330"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Peças da Defensoria",
+    "Código": "21"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Peças da Defensoria Pública",
+    "Código": "209"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Peças do MP",
+    "Código": "30"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Impugnação à Contestação",
+    "Código": "8331"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Impugnação à Defesa",
+    "Código": "8334"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Impugnação ao Cumprimento de Decisão",
+    "Código": "256"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Impugnação ao Cumprimento de Sentença",
+    "Código": "273"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Impugnação de Embargos",
+    "Código": "8336"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Informações",
+    "Código": "8425"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Cumprimento de Sentença",
+    "Código": "9511"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Alegação de Incompetência",
+    "Código": "277"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Alegações Finais",
+    "Código": "8303"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Execução de Sentença Contra Fazenda Pública",
+    "Código": "25"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Liquidação de Sentença",
+    "Código": "9635"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Execução de Sentença Contra Fazenda Pública",
+    "Código": "25"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Contestação",
+    "Código": "8320"
+  },
+  {
+    "Categoria": "Petição",
+    "Nome": "Contrarrazões de Apelação",
+    "Código": "8305"
+  },
+  {
+    "Categoria": "Despacho",
+    "Nome": "Despacho",
+    "Código": "141"
+  },
+  {
+    "Categoria": "Despacho",
+    "Nome": "Despacho",
+    "Código": "27"
+  },
+  {
+    "Categoria": "Despacho",
+    "Nome": "Despacho",
+    "Código": "6"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Decisão",
+    "Código": "8506"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Decisão da Turma Recursal",
+    "Código": "517"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Decisão Interlocutória",
+    "Código": "137"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Decisão Monocrática Segundo Grau",
+    "Código": "9653"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Decisão Terminativa",
+    "Código": "9654"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Decisões Interlocutórias",
+    "Código": "15"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Decisões Monocráticas",
+    "Código": "45"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Decisões Monocráticas",
+    "Código": "44"
+  },
+  {
+    "Categoria": "Decisão",
+    "Nome": "Declínio de Competência",
+    "Código": "9817"
+  },
+  {
+    "Categoria": "Sentença",
+    "Nome": "Sentença",
+    "Código": "8"
+  },
+  {
+    "Categoria": "Sentença",
+    "Nome": "Sentença do Juiz Leigo",
+    "Código": "9626"
+  },
+  {
+    "Categoria": "Sentença",
+    "Nome": "Sentença do Juiz Leigo",
+    "Código": "54"
+  },
+  {
+    "Categoria": "Acórdão",
+    "Nome": "Acórdão",
+    "Código": "37"
+  },
+  {
+    "Categoria": "Acórdão",
+    "Nome": "Acórdãos",
+    "Código": "202"
+  },
+  {
+    "Categoria": "Acórdão",
+    "Nome": "Acórdãos",
+    "Código": "34"
+  },
+  {
+    "Categoria": "Acórdão",
+    "Nome": "Acórdãos - Turma Recursais",
+    "Código": "35"
+  },
+  {
+    "Categoria": "Recursos",
+    "Nome": "Agravo",
+    "Código": "17"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Agravo de Instrumento",
+    "Código": "8435"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Agravo Interno",
+    "Código": "576"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Agravo Regimental",
+    "Código": "9628"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Recurso Adesivo",
+    "Código": "272"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Recurso de Apelação",
+    "Código": "8335"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Recurso Especial",
+    "Código": "9629"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Recurso Extraordinário",
+    "Código": "9630"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Recurso Inominado",
+    "Código": "264"
+  },
+  {
+    "Categoria": "Recurso",
+    "Nome": "Embargos de Declaração",
+    "Código": "62"
+  },
+  {
+    "Categoria": "Parecer",
+    "Nome": "Parecer do CATES - Câmara Técnica em Saúde",
+    "Código": "207"
+  },
+  {
+    "Categoria": "Parecer",
+    "Nome": "Parecer do NAT - Núcleo de Apoio Técnico",
+    "Código": "8451"
+  },
+  {
+    "Categoria": "Parecer",
+    "Nome": "Parecer NAT",
+    "Código": "9636"
+  },
+  {
+    "Categoria": "Parecer",
+    "Nome": "Nota Técnica NATJus",
+    "Código": "59"
+  },
+  {
+    "Categoria": "Parecer",
+    "Nome": "Nota Técnica NATJus",
+    "Código": "8490"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Alvará",
+    "Código": "3"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Alvará",
+    "Código": "140"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Alvará de Levantamento com recibo",
+    "Código": "571"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Ato coator",
+    "Código": "9618"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Audiência",
+    "Código": "14"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Cálculo de Atualização Monetária",
+    "Código": "99010"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Cálculo Judicial",
+    "Código": "99058"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Cálculo Processual",
+    "Código": "99012"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Certidão de Casamento",
+    "Código": "9522"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Certidão de Nascimento",
+    "Código": "9523"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Certidão de Óbito",
+    "Código": "9524"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Receita/Laudo Médico",
+    "Código": "9534"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Título Executivo Extrajudicial",
+    "Código": "9539"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Título Executivo Judicial",
+    "Código": "9540"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Laudo Pericial",
+    "Código": "8369"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Laudo Pericial",
+    "Código": "9603"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Pedidos de Exames/Exames Médicos",
+    "Código": "9639"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Pedidos de Exames/Exames Médicos",
+    "Código": "310"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Procuração",
+    "Código": "9501"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Extrato bancário",
+    "Código": "9623"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Extrato da Conta Única",
+    "Código": "71"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Alvará",
+    "Código": "3"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Alvará",
+    "Código": "140"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Alvará de Levantamento com recibo",
+    "Código": "571"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Nota Fiscal",
+    "Código": "9870"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Outros documentos",
+    "Código": "9509"
+  },
+  {
+    "Categoria": "Documento",
+    "Nome": "Planilha de cálculo",
+    "Código": "9553"
+  }
+]
