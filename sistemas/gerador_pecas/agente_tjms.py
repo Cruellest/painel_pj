@@ -1269,14 +1269,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     resultado.dados_processo = dados_processo
                     print(f"      Partes extraídas: {len(dados_processo.polo_ativo)} no polo ativo, {len(dados_processo.polo_passivo)} no polo passivo")
 
-                # Extrair informações do processo (classe, vinculado)
-                info_processo = extrair_info_processo_xml(xml_consulta)
-                if info_processo["is_agravo"]:
-                    resultado.is_agravo = True
-                    if info_processo["processo_vinculado"]:
-                        resultado.processo_origem = info_processo["processo_vinculado"]
-                        print(f"      [!] Agravo de Instrumento detectado")
-                        print(f"      Processo de origem: {resultado.processo_origem}")
+                # NOTA: Detecção de agravo e busca de processo de origem foi desativada.
+                # O sistema agora trabalha apenas com os documentos do processo informado.
 
                 # 2. Extrair documentos
                 print("[2/4] Extraindo lista de documentos...")
@@ -1410,41 +1404,13 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     for doc in docs_erro:
                         print(f"         - ID {doc.id}: {doc.erro}")
 
-                # 5. Detectar se é Agravo de Instrumento e buscar processo de origem
-                # Se ainda não detectou via XML, tenta via resumos
-                if not resultado.processo_origem:
-                    for doc in docs_ok:
-                        if doc.resumo:
-                            processo_origem = _extrair_processo_origem(doc.resumo)
-                            if processo_origem:
-                                # Compara apenas os dígitos para evitar falsos positivos
-                                origem_limpo = _limpar_numero_processo(processo_origem)
-                                processo_limpo = _limpar_numero_processo(numero_processo)
-                                if origem_limpo != processo_limpo:
-                                    resultado.is_agravo = True
-                                    resultado.processo_origem = processo_origem
-                                    break
+                # NOTA: Busca de documentos do processo de origem foi desativada.
+                # O sistema agora trabalha apenas com os documentos do processo informado.
+                # A detecção de agravo e busca de origem pode ser reativada futuramente se necessário.
 
-                # Buscar documentos do processo de origem se for agravo
-                if resultado.is_agravo and resultado.processo_origem:
-                    print(f"\n[5/6] Buscando documentos do processo de origem...")
-                    print(f"      Processo: {resultado.processo_origem}")
-
-                    # Coletar hashes dos resumos já gerados para evitar duplicatas
-                    resumos_existentes = set()
-                    for doc in docs_ok:
-                        if doc.resumo and not doc.irrelevante:
-                            # Hash simplificado: primeiros 200 chars do resumo
-                            hash_resumo = doc.resumo[:200].lower().strip()
-                            resumos_existentes.add(hash_resumo)
-
-                    # Buscar documentos do processo de origem
-                    await self._buscar_processo_origem(session, resultado, resultado.processo_origem, resumos_existentes)
-
-                # 6. Gerar relatório final (se solicitado)
+                # 5. Gerar relatório final (se solicitado)
                 if gerar_relatorio and resultado.documentos_com_resumo():
-                    step = '6' if resultado.is_agravo else '5'
-                    print(f"\n[{step}/{step}] Gerando relatório final consolidado...")
+                    print(f"\n[5/5] Gerando relatório final consolidado...")
                     resultado.relatorio_final = await self._gerar_relatorio_async(
                         session, resultado
                     )
