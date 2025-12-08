@@ -401,7 +401,14 @@ def _first_text(elem: ET.Element, tag_suffix: str) -> Optional[str]:
 
 
 def _limpar_numero_processo(numero: str) -> str:
-    """Remove formatação do número do processo, deixando apenas 20 dígitos"""
+    """
+    Remove formatação do número do processo, deixando apenas 20 dígitos.
+    
+    Também remove sufixos após barra (ex: 0804330-09.2024.8.12.0017/50003 -> 0804330-09.2024.8.12.0017)
+    """
+    # Remove sufixo após barra (ex: /50003)
+    if '/' in numero:
+        numero = numero.split('/')[0]
     return ''.join(c for c in numero if c.isdigit())
 
 

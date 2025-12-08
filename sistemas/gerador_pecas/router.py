@@ -28,6 +28,21 @@ router = APIRouter(tags=["Gerador de Peças"])
 TEMP_DIR = os.path.join(os.path.dirname(__file__), 'temp_docs')
 os.makedirs(TEMP_DIR, exist_ok=True)
 
+
+def _limpar_cnj(numero_cnj: str) -> str:
+    """
+    Limpa número CNJ removendo formatação e sufixos.
+    
+    Exemplos:
+        - 0804330-09.2024.8.12.0017 -> 08043300920248120017
+        - 0804330-09.2024.8.12.0017/50003 -> 08043300920248120017
+    """
+    # Remove sufixo após barra (ex: /50003)
+    if '/' in numero_cnj:
+        numero_cnj = numero_cnj.split('/')[0]
+    # Remove caracteres não-dígitos
+    return re.sub(r'\D', '', numero_cnj)
+
 # Armazena estado de processamento em memória (para SSE)
 _processamento_status = {}
 
@@ -107,7 +122,7 @@ async def processar_processo(
     """
     try:
         # Normaliza o CNJ
-        cnj_limpo = re.sub(r'\D', '', req.numero_cnj)
+        cnj_limpo = _limpar_cnj(req.numero_cnj)
         
         # Busca configurações de IA
         config_modelo = db.query(ConfiguracaoIA).filter(
@@ -162,7 +177,7 @@ async def processar_processo_stream(
     """
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
-            cnj_limpo = re.sub(r'\D', '', req.numero_cnj)
+            cnj_limpo = _limpar_cnj(req.numero_cnj)
             
             # Evento inicial
             yield f"data: {json.dumps({'tipo': 'inicio', 'mensagem': 'Iniciando processamento...'})}\n\n"
@@ -412,7 +427,7 @@ async def exportar_docx(
         
         # Monta nome amigável baseado no processo
         if req.numero_cnj and req.tipo_peca:
-            cnj_clean = re.sub(r'\D', '', req.numero_cnj)[-8:]  # Últimos 8 dígitos
+            cnj_clean = _limpar_cnj(req.numero_cnj)[-8:]  # Últimos 8 dígitos
             tipo_map = {
                 'contestacao': 'contestacao',
                 'recurso_apelacao': 'apelacao',
@@ -769,7 +784,7 @@ async def listar_documentos_processo(
     )
     
     try:
-        cnj_limpo = re.sub(r'\D', '', numero_cnj)
+        cnj_limpo = _limpar_cnj(numero_cnj)
         
         # Busca documentos processados salvos no banco (se existir)
         geracao = db.query(GeracaoPeca).filter(
@@ -849,7 +864,7 @@ async def baixar_documento_processo(
     import xml.etree.ElementTree as ET
     
     try:
-        cnj_limpo = re.sub(r'\D', '', numero_cnj)
+        cnj_limpo = _limpar_cnj(numero_cnj)
         
         # Parse lista de IDs (se fornecida)
         if ids:
