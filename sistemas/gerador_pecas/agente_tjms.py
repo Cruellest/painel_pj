@@ -73,9 +73,27 @@ CATEGORIAS_EXCLUIDAS = [
 ]
 
 
-def documento_permitido(tipo_documento: int) -> bool:
-    """Verifica se o tipo de documento NÃO está na lista de excluídos"""
-    return tipo_documento not in CATEGORIAS_EXCLUIDAS
+def documento_permitido(
+    tipo_documento: int, 
+    codigos_permitidos: set = None
+) -> bool:
+    """
+    Verifica se o tipo de documento é permitido para análise.
+    
+    Args:
+        tipo_documento: Código do documento TJ-MS
+        codigos_permitidos: Conjunto de códigos permitidos (se configurado no banco).
+                           Se None, usa filtro legado (CATEGORIAS_EXCLUIDAS).
+    
+    Returns:
+        True se o documento deve ser analisado
+    """
+    if codigos_permitidos is not None:
+        # Modo novo: usa lista de códigos permitidos do banco
+        return tipo_documento in codigos_permitidos
+    else:
+        # Modo legado: usa lista de exclusão hardcoded
+        return tipo_documento not in CATEGORIAS_EXCLUIDAS
 
 
 # Mapa de categorias (código → descrição) - mantido para compatibilidade
@@ -953,12 +971,14 @@ class AgenteTJMS:
         modelo: str = MODELO_PADRAO,
         max_workers: int = 10,
         formato_saida: str = "json",  # 'json' ou 'md'
-        db_session = None  # Sessão do banco para buscar formatos JSON
+        db_session = None,  # Sessão do banco para buscar formatos JSON
+        codigos_permitidos: set = None  # Códigos de documento a analisar (None = usa filtro legado)
     ):
         self.modelo = modelo
         self.max_workers = max_workers
         self.formato_saida = formato_saida
         self.db_session = db_session
+        self.codigos_permitidos = codigos_permitidos  # None = usa CATEGORIAS_EXCLUIDAS
         
         # Gerenciador de formatos JSON (carregado sob demanda)
         self._gerenciador_json = None
@@ -1268,12 +1288,18 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     docs_para_analisar = [d for d in docs_para_analisar if d.id in ids_documentos]
                     print(f"      Filtrado para {len(docs_para_analisar)} documentos por ID")
                 else:
-                    # Filtrar documentos excluindo categorias administrativas
+                    # Filtrar documentos usando códigos permitidos ou filtro legado
                     docs_para_analisar = [
                         d for d in docs_para_analisar
-                        if d.tipo_documento and documento_permitido(int(d.tipo_documento))
+                        if d.tipo_documento and documento_permitido(
+                            int(d.tipo_documento), 
+                            self.codigos_permitidos
+                        )
                     ]
-                    print(f"      Filtrado para {len(docs_para_analisar)} documentos (excluídas categorias administrativas)")
+                    if self.codigos_permitidos:
+                        print(f"      Filtrado para {len(docs_para_analisar)} documentos (categorias configuradas)")
+                    else:
+                        print(f"      Filtrado para {len(docs_para_analisar)} documentos (excluídas categorias administrativas)")
 
                 if not docs_para_analisar:
                     resultado.erro_geral = "Nenhum documento encontrado com os filtros especificados"
@@ -1429,10 +1455,13 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
             todos_docs = extrair_documentos_xml(xml_consulta)
             print(f"      Encontrados {len(todos_docs)} documentos no processo de origem")
 
-            # Filtrar documentos excluindo categorias administrativas
+            # Filtrar documentos usando códigos permitidos ou filtro legado
             docs_filtrados = [
                 d for d in todos_docs
-                if d.tipo_documento and documento_permitido(int(d.tipo_documento))
+                if d.tipo_documento and documento_permitido(
+                    int(d.tipo_documento),
+                    self.codigos_permitidos
+                )
             ]
 
             # Agrupar documentos com mesma descrição/data

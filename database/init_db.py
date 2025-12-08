@@ -17,6 +17,7 @@ from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSiste
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON, CategoriaResumoJSONHistorico
+from sistemas.gerador_pecas.models_config_pecas import CategoriaDocumento, TipoPeca, tipo_peca_categorias
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico
 

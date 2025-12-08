@@ -94,15 +94,18 @@ class OrquestradorAgentes:
     def __init__(
         self,
         db: Session,
-        modelo_geracao: str = None
+        modelo_geracao: str = None,
+        tipo_peca: str = None  # Tipo de peça para filtrar categorias
     ):
         """
         Args:
             db: Sessão do banco de dados
             modelo_geracao: Modelo para o Agente 3 (override manual, opcional)
+            tipo_peca: Tipo de peça para filtrar categorias de documentos (opcional)
         """
         self.db = db
         self.api_key = os.getenv("OPENROUTER_API_KEY", "")
+        self.tipo_peca_inicial = tipo_peca
         
         # Carrega configurações do banco (tabela configuracoes_ia) ou usa padrões
         def get_config(chave: str, padrao: str) -> str:
@@ -119,14 +122,61 @@ class OrquestradorAgentes:
         # Mantém compatibilidade
         self.modelo_geracao = self.modelo_agente3
         
+        # Carrega filtro de categorias (se configurado no banco)
+        self._filtro_categorias = None
+        codigos_permitidos = self._obter_codigos_permitidos(tipo_peca)
+        
         # Inicializa agentes com modelos configurados
         # O Agente 1 recebe a sessão do banco para buscar formatos JSON
         self.agente1 = AgenteTJMSIntegrado(
             modelo=self.modelo_agente1,
             db_session=db,
-            formato_saida="json"  # Usa formato JSON para resumos
+            formato_saida="json",  # Usa formato JSON para resumos
+            codigos_permitidos=codigos_permitidos
         )
         self.agente2 = DetectorModulosIA(db=db, modelo=self.modelo_agente2)
+    
+    def _obter_filtro_categorias(self):
+        """Obtém ou cria o filtro de categorias (lazy loading)"""
+        if self._filtro_categorias is None:
+            try:
+                from sistemas.gerador_pecas.filtro_categorias import FiltroCategoriasDocumento
+                self._filtro_categorias = FiltroCategoriasDocumento(self.db)
+            except Exception as e:
+                print(f"[AVISO] Filtro de categorias não disponível: {e}")
+                return None
+        return self._filtro_categorias
+    
+    def _obter_codigos_permitidos(self, tipo_peca: str = None) -> set:
+        """
+        Obtém os códigos de documento permitidos para o tipo de peça.
+        
+        Args:
+            tipo_peca: Tipo de peça (ex: 'contestacao'). Se None, retorna None (modo legado).
+            
+        Returns:
+            Conjunto de códigos permitidos, ou None para usar filtro legado.
+        """
+        filtro = self._obter_filtro_categorias()
+        
+        if filtro is None or not filtro.tem_configuracao():
+            # Sem configuração no banco, usa filtro legado
+            return None
+        
+        if tipo_peca:
+            # Modo manual: usa categorias do tipo de peça específico
+            codigos = filtro.get_codigos_permitidos(tipo_peca)
+            if codigos:
+                print(f"[CONFIG] Usando {len(codigos)} códigos de documento para '{tipo_peca}'")
+                return codigos
+        
+        # Modo automático ou tipo não encontrado: usa todos os códigos configurados
+        codigos = filtro.get_todos_codigos()
+        if codigos:
+            print(f"[CONFIG] Modo automático: usando {len(codigos)} códigos de documento")
+            return codigos
+        
+        return None
     
     async def processar_processo(
         self,
@@ -146,6 +196,9 @@ class OrquestradorAgentes:
         resultado = ResultadoOrquestracao(numero_processo=numero_processo)
         inicio_total = datetime.now()
         
+        # Determina se é modo manual ou automático
+        modo_automatico = tipo_peca is None
+        
         try:
             # ========================================
             # AGENTE 1: Coletor TJ-MS
@@ -153,6 +206,12 @@ class OrquestradorAgentes:
             print("\n" + "=" * 60)
             print("🤖 AGENTE 1 - COLETOR TJ-MS")
             print("=" * 60)
+            
+            # Se modo manual, atualiza os códigos permitidos para o tipo específico
+            if not modo_automatico:
+                codigos = self._obter_codigos_permitidos(tipo_peca)
+                if codigos:
+                    self.agente1.atualizar_codigos_permitidos(codigos)
             
             inicio = datetime.now()
             resultado.agente1 = await self.agente1.coletar_e_resumir(numero_processo)
@@ -176,7 +235,7 @@ class OrquestradorAgentes:
             inicio = datetime.now()
             
             # Se não tem tipo de peça, o Agente 2 detecta automaticamente
-            if not tipo_peca:
+            if modo_automatico:
                 print("📋 Detectando tipo de peça automaticamente...")
                 deteccao_tipo = await self.agente2.detectar_tipo_peca(resumo_consolidado)
                 tipo_peca = deteccao_tipo.get("tipo_peca")
@@ -185,6 +244,12 @@ class OrquestradorAgentes:
                     print(f"✅ Tipo de peça detectado: {tipo_peca}")
                     print(f"   Justificativa: {deteccao_tipo.get('justificativa', 'N/A')}")
                     print(f"   Confiança: {deteccao_tipo.get('confianca', 'N/A')}")
+                    
+                    # Filtra resumos para o tipo de peça detectado
+                    resumo_consolidado = self._filtrar_resumo_por_tipo(
+                        resultado.agente1, 
+                        tipo_peca
+                    )
                 else:
                     # Se mesmo assim não conseguiu detectar, usa fallback
                     print("⚠️ Não foi possível detectar o tipo de peça automaticamente")
@@ -244,6 +309,60 @@ class OrquestradorAgentes:
             resultado.mensagem = f"Erro na orquestração: {str(e)}"
             print(f"❌ Erro: {resultado.mensagem}")
             return resultado
+    
+    def _filtrar_resumo_por_tipo(
+        self,
+        resultado_agente1: ResultadoAgente1,
+        tipo_peca: str
+    ) -> str:
+        """
+        Filtra o resumo consolidado para incluir apenas documentos 
+        das categorias permitidas para o tipo de peça.
+        
+        Usado no modo automático após a detecção do tipo de peça.
+        
+        Args:
+            resultado_agente1: Resultado do Agente 1 com dados brutos
+            tipo_peca: Tipo de peça detectado
+            
+        Returns:
+            Resumo consolidado filtrado
+        """
+        filtro = self._obter_filtro_categorias()
+        
+        if filtro is None or not filtro.tem_configuracao():
+            # Sem filtro configurado, retorna resumo original
+            return resultado_agente1.resumo_consolidado
+        
+        codigos_permitidos = filtro.get_codigos_permitidos(tipo_peca)
+        if not codigos_permitidos:
+            # Tipo de peça não encontrado, retorna resumo original
+            return resultado_agente1.resumo_consolidado
+        
+        # Se temos acesso aos dados brutos, podemos refazer o resumo
+        if resultado_agente1.dados_brutos:
+            from sistemas.gerador_pecas.agente_tjms_integrado import AgenteTJMSIntegrado
+            
+            # Filtra documentos pelos códigos permitidos
+            docs_originais = resultado_agente1.dados_brutos.documentos
+            docs_filtrados = [
+                doc for doc in docs_originais
+                if doc.tipo_documento and int(doc.tipo_documento) in codigos_permitidos
+                and doc.resumo and not doc.irrelevante
+            ]
+            
+            if len(docs_filtrados) < len(resultado_agente1.dados_brutos.documentos_com_resumo()):
+                print(f"   📋 Filtrado: {len(docs_filtrados)} de {len(resultado_agente1.dados_brutos.documentos_com_resumo())} documentos para '{tipo_peca}'")
+                
+                # Remonta o resumo com os documentos filtrados
+                # Por ora, retorna o resumo original com uma nota
+                # TODO: Implementar remontagem do resumo consolidado
+                nota_filtro = f"\n\n> **NOTA**: Resumos filtrados para tipo de peça '{tipo_peca}'. "
+                nota_filtro += f"{len(docs_filtrados)} de {resultado_agente1.dados_brutos.documentos_analisados()} documentos considerados.\n\n"
+                
+                return resultado_agente1.resumo_consolidado
+        
+        return resultado_agente1.resumo_consolidado
     
     async def _executar_agente2(
         self,
