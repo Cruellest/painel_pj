@@ -183,6 +183,82 @@ async def listar_tipos(
     return ["peca", "conteudo"]
 
 
+@router.get("/tipos-peca")
+async def listar_tipos_peca(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todos os tipos de peça disponíveis (módulos tipo='peca').
+    """
+    modulos_peca = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "peca",
+        PromptModulo.ativo == True
+    ).order_by(PromptModulo.ordem).all()
+    
+    return [
+        {
+            "categoria": m.categoria,
+            "titulo": m.titulo,
+            "nome": m.nome
+        }
+        for m in modulos_peca
+    ]
+
+
+@router.get("/resumo-configuracao-tipos-peca")
+async def resumo_configuracao_tipos_peca(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna um resumo da configuração de módulos por tipo de peça.
+    Mostra quantos módulos estão ativos para cada tipo.
+    """
+    # Busca tipos de peça
+    tipos_peca = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "peca",
+        PromptModulo.ativo == True
+    ).all()
+    
+    # Conta total de módulos de conteúdo
+    total_modulos = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.ativo == True
+    ).count()
+    
+    resultado = []
+    for tipo in tipos_peca:
+        # Conta associações ativas
+        ativos = db.query(ModuloTipoPeca).filter(
+            ModuloTipoPeca.tipo_peca == tipo.categoria,
+            ModuloTipoPeca.ativo == True
+        ).count()
+        
+        # Conta associações inativas
+        inativos = db.query(ModuloTipoPeca).filter(
+            ModuloTipoPeca.tipo_peca == tipo.categoria,
+            ModuloTipoPeca.ativo == False
+        ).count()
+        
+        # Módulos sem associação (considerados ativos por padrão)
+        sem_config = total_modulos - ativos - inativos
+        
+        resultado.append({
+            "tipo_peca": tipo.categoria,
+            "titulo": tipo.titulo,
+            "modulos_ativos": ativos + sem_config,  # Inclui sem config como ativos
+            "modulos_inativos": inativos,
+            "modulos_configurados": ativos + inativos,
+            "total_modulos": total_modulos
+        })
+    
+    return {
+        "tipos_peca": resultado,
+        "total_modulos_conteudo": total_modulos
+    }
+
+
 # ==========================================
 # Endpoints CRUD
 # ==========================================
@@ -720,29 +796,6 @@ class ModuloTipoPecaResponse(BaseModel):
     ativo_tipo_peca: bool  # Se está ativo para este tipo de peça específico
 
 
-@router.get("/tipos-peca")
-async def listar_tipos_peca(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Lista todos os tipos de peça disponíveis (módulos tipo='peca').
-    """
-    modulos_peca = db.query(PromptModulo).filter(
-        PromptModulo.tipo == "peca",
-        PromptModulo.ativo == True
-    ).order_by(PromptModulo.ordem).all()
-    
-    return [
-        {
-            "categoria": m.categoria,
-            "titulo": m.titulo,
-            "nome": m.nome
-        }
-        for m in modulos_peca
-    ]
-
-
 @router.get("/modulos-por-tipo-peca/{tipo_peca}")
 async def listar_modulos_por_tipo_peca(
     tipo_peca: str,
@@ -919,55 +972,3 @@ async def desativar_todos_modulos(
         "modulos_desativados": len(modulos)
     }
 
-
-@router.get("/resumo-configuracao-tipos-peca")
-async def resumo_configuracao_tipos_peca(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Retorna um resumo da configuração de módulos por tipo de peça.
-    Mostra quantos módulos estão ativos para cada tipo.
-    """
-    # Busca tipos de peça
-    tipos_peca = db.query(PromptModulo).filter(
-        PromptModulo.tipo == "peca",
-        PromptModulo.ativo == True
-    ).all()
-    
-    # Conta total de módulos de conteúdo
-    total_modulos = db.query(PromptModulo).filter(
-        PromptModulo.tipo == "conteudo",
-        PromptModulo.ativo == True
-    ).count()
-    
-    resultado = []
-    for tipo in tipos_peca:
-        # Conta associações ativas
-        ativos = db.query(ModuloTipoPeca).filter(
-            ModuloTipoPeca.tipo_peca == tipo.categoria,
-            ModuloTipoPeca.ativo == True
-        ).count()
-        
-        # Conta associações inativas
-        inativos = db.query(ModuloTipoPeca).filter(
-            ModuloTipoPeca.tipo_peca == tipo.categoria,
-            ModuloTipoPeca.ativo == False
-        ).count()
-        
-        # Módulos sem associação (considerados ativos por padrão)
-        sem_config = total_modulos - ativos - inativos
-        
-        resultado.append({
-            "tipo_peca": tipo.categoria,
-            "titulo": tipo.titulo,
-            "modulos_ativos": ativos + sem_config,  # Inclui sem config como ativos
-            "modulos_inativos": inativos,
-            "modulos_configurados": ativos + inativos,
-            "total_modulos": total_modulos
-        })
-    
-    return {
-        "tipos_peca": resultado,
-        "total_modulos_conteudo": total_modulos
-    }
