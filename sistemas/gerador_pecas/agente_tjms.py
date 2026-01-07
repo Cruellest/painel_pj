@@ -72,6 +72,19 @@ CATEGORIAS_EXCLUIDAS = [
     9558,  # Termos diversos
 ]
 
+# =========================
+# Documentos que devem ir INTEGRAIS para a IA (sem resumo JSON)
+# =========================
+# Para desativar esta funcionalidade, basta comentar ou esvaziar esta lista
+CODIGOS_TEXTO_INTEGRAL = {
+    207,   # Parecer do CATES - Câmara Técnica em Saúde
+    8451,  # Parecer do NAT - Núcleo de Apoio Técnico
+    9636,  # Parecer NAT
+    59,    # Nota Técnica NATJus
+    8490,  # Nota Técnica NATJus
+    8369,  # Laudo Pericial (pode incluir pareceres técnicos)
+}
+
 
 def documento_permitido(
     tipo_documento: int, 
@@ -1657,6 +1670,24 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 doc.resumo = resposta
                 doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
 
+    def _deve_enviar_texto_integral(self, doc: DocumentoTJMS) -> bool:
+        """
+        Verifica se o documento deve ser enviado com texto INTEGRAL (sem resumo JSON).
+        
+        Documentos como Parecer NAT/CATES devem ir completos para os agentes seguintes,
+        pois seu conteúdo técnico é essencial para a geração da peça.
+        
+        Para DESATIVAR esta funcionalidade, basta esvaziar CODIGOS_TEXTO_INTEGRAL no topo do arquivo.
+        """
+        if not CODIGOS_TEXTO_INTEGRAL:
+            return False
+        
+        try:
+            codigo = int(doc.tipo_documento) if doc.tipo_documento else 0
+            return codigo in CODIGOS_TEXTO_INTEGRAL
+        except (ValueError, TypeError):
+            return False
+
     async def _processar_documento_async(
         self,
         session: aiohttp.ClientSession,
@@ -1666,6 +1697,9 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
         try:
             # Determina se usa formato JSON ou MD
             usar_json = self._deve_usar_json()
+            
+            # Verifica se é documento que deve ir INTEGRAL (sem resumo)
+            enviar_integral = self._deve_enviar_texto_integral(doc)
             
             # Verificar se é documento agrupado (lista de conteúdos) ou único
             if isinstance(doc.conteudo_base64, list):
@@ -1694,6 +1728,14 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
 
                     if len(texto_completo.strip()) < 50:
                         doc.erro = "Texto extraído muito curto ou vazio"
+                        return
+
+                    # Se é documento que deve ir INTEGRAL, armazena texto completo como resumo
+                    if enviar_integral:
+                        # Limita a 150000 chars para evitar problemas de contexto
+                        texto_integral = texto_completo[:150000]
+                        doc.resumo = f"**[DOCUMENTO INTEGRAL - {doc.categoria_nome}]**\n\n{texto_integral}"
+                        doc.descricao_ia = doc.descricao or doc.categoria_nome
                         return
 
                     # Truncar se muito grande
@@ -1746,6 +1788,14 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
 
                     if not doc.texto_extraido or len(doc.texto_extraido.strip()) < 50:
                         doc.erro = "Texto extraído muito curto ou vazio"
+                        return
+
+                    # Se é documento que deve ir INTEGRAL, armazena texto completo como resumo
+                    if enviar_integral:
+                        # Limita a 150000 chars para evitar problemas de contexto
+                        texto_integral = doc.texto_extraido[:150000]
+                        doc.resumo = f"**[DOCUMENTO INTEGRAL - {doc.categoria_nome}]**\n\n{texto_integral}"
+                        doc.descricao_ia = doc.descricao or doc.categoria_nome
                         return
 
                     texto = doc.texto_extraido[:50000]
