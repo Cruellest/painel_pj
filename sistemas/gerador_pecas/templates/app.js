@@ -15,6 +15,10 @@ class GeradorPecasApp {
         this.historicoChat = [];
         this.isProcessingEdit = false;
 
+        // Modo de entrada: 'cnj' ou 'pdf'
+        this.modoEntrada = 'cnj';
+        this.arquivosPdf = [];
+
         this.initEventListeners();
         this.checkAuth();
     }
@@ -75,6 +79,106 @@ class GeradorPecasApp {
         }
     }
 
+    // ==========================================
+    // Modo de Entrada (CNJ ou PDF)
+    // ==========================================
+
+    setModoEntrada(modo) {
+        this.modoEntrada = modo;
+        
+        const btnCnj = document.getElementById('btn-modo-cnj');
+        const btnPdf = document.getElementById('btn-modo-pdf');
+        const modoCnj = document.getElementById('modo-cnj');
+        const modoPdf = document.getElementById('modo-pdf');
+        
+        if (modo === 'cnj') {
+            btnCnj.className = 'flex-1 py-2.5 px-4 rounded-lg font-medium transition-all bg-white shadow text-primary-700';
+            btnPdf.className = 'flex-1 py-2.5 px-4 rounded-lg font-medium transition-all text-gray-500 hover:text-gray-700';
+            modoCnj.classList.remove('hidden');
+            modoPdf.classList.add('hidden');
+        } else {
+            btnPdf.className = 'flex-1 py-2.5 px-4 rounded-lg font-medium transition-all bg-white shadow text-primary-700';
+            btnCnj.className = 'flex-1 py-2.5 px-4 rounded-lg font-medium transition-all text-gray-500 hover:text-gray-700';
+            modoPdf.classList.remove('hidden');
+            modoCnj.classList.add('hidden');
+        }
+    }
+
+    handleFileSelect(event) {
+        const files = Array.from(event.target.files);
+        this.adicionarArquivos(files);
+    }
+
+    handleDrop(event) {
+        event.preventDefault();
+        event.currentTarget.classList.remove('border-primary-500', 'bg-primary-50');
+        
+        const files = Array.from(event.dataTransfer.files).filter(f => f.type === 'application/pdf');
+        if (files.length === 0) {
+            this.showToast('Apenas arquivos PDF são aceitos', 'error');
+            return;
+        }
+        this.adicionarArquivos(files);
+    }
+
+    adicionarArquivos(files) {
+        for (const file of files) {
+            if (file.type !== 'application/pdf') {
+                this.showToast(`Arquivo ignorado (não é PDF): ${file.name}`, 'warning');
+                continue;
+            }
+            // Evita duplicatas
+            if (!this.arquivosPdf.find(f => f.name === file.name && f.size === file.size)) {
+                this.arquivosPdf.push(file);
+            }
+        }
+        this.atualizarListaArquivos();
+    }
+
+    atualizarListaArquivos() {
+        const container = document.getElementById('lista-arquivos');
+        const lista = document.getElementById('arquivos-lista');
+        
+        if (this.arquivosPdf.length === 0) {
+            container.classList.add('hidden');
+            return;
+        }
+        
+        container.classList.remove('hidden');
+        lista.innerHTML = this.arquivosPdf.map((file, index) => `
+            <div class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
+                <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-file-pdf text-red-500 text-sm"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-700 truncate">${this.escapeHtml(file.name)}</p>
+                    <p class="text-xs text-gray-400">${this.formatarTamanho(file.size)}</p>
+                </div>
+                <button type="button" onclick="app.removerArquivo(${index})" 
+                    class="p-1 text-gray-400 hover:text-red-500 transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `).join('');
+    }
+
+    removerArquivo(index) {
+        this.arquivosPdf.splice(index, 1);
+        this.atualizarListaArquivos();
+    }
+
+    limparArquivos() {
+        this.arquivosPdf = [];
+        this.atualizarListaArquivos();
+        document.getElementById('input-pdfs').value = '';
+    }
+
+    formatarTamanho(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
     initEventListeners() {
         // Form submit
         document.getElementById('form-processo').addEventListener('submit', (e) => {
@@ -126,7 +230,6 @@ class GeradorPecasApp {
     }
 
     async iniciarProcessamento() {
-        this.numeroCNJ = document.getElementById('numero-cnj').value;
         this.tipoPeca = document.getElementById('tipo-peca').value || null;
 
         this.esconderErro();
@@ -134,18 +237,51 @@ class GeradorPecasApp {
         this.mostrarLoading('Conectando ao servidor...', null);
 
         try {
-            // Usa SSE para streaming em tempo real
-            const response = await fetch(`${API_URL}/processar-stream`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.getToken()}`
-                },
-                body: JSON.stringify({
-                    numero_cnj: this.numeroCNJ,
-                    tipo_peca: this.tipoPeca
-                })
-            });
+            let response;
+            
+            if (this.modoEntrada === 'pdf') {
+                // Modo PDF: envia arquivos anexados
+                if (this.arquivosPdf.length === 0) {
+                    throw new Error('Selecione pelo menos um arquivo PDF');
+                }
+                
+                this.numeroCNJ = 'PDFs Anexados';
+                
+                const formData = new FormData();
+                for (const file of this.arquivosPdf) {
+                    formData.append('arquivos', file);
+                }
+                if (this.tipoPeca) {
+                    formData.append('tipo_peca', this.tipoPeca);
+                }
+                
+                response = await fetch(`${API_URL}/processar-pdfs-stream`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${this.getToken()}`
+                    },
+                    body: formData
+                });
+            } else {
+                // Modo CNJ: busca no TJ-MS
+                this.numeroCNJ = document.getElementById('numero-cnj').value;
+                
+                if (!this.numeroCNJ) {
+                    throw new Error('Informe o número do processo');
+                }
+                
+                response = await fetch(`${API_URL}/processar-stream`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.getToken()}`
+                    },
+                    body: JSON.stringify({
+                        numero_cnj: this.numeroCNJ,
+                        tipo_peca: this.tipoPeca
+                    })
+                });
+            }
 
             if (!response.ok) {
                 const errorData = await response.json();
@@ -690,8 +826,8 @@ class GeradorPecasApp {
     }
 
     abrirAutos() {
-        if (!this.numeroCNJ) {
-            this.showToast('Número do processo não disponível', 'error');
+        if (!this.numeroCNJ || this.numeroCNJ === 'PDFs Anexados') {
+            this.showToast('Autos disponíveis apenas para processos do TJ-MS', 'warning');
             return;
         }
 
@@ -1239,6 +1375,10 @@ class GeradorPecasApp {
         this.notaSelecionada = null;
         this.minutaMarkdown = null;
         this.historicoChat = [];
+        
+        // Reset arquivos PDF
+        this.arquivosPdf = [];
+        this.atualizarListaArquivos();
 
         // Reset estrelas
         document.querySelectorAll('.estrela').forEach(btn => {

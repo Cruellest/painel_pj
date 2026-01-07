@@ -9,10 +9,11 @@ import json
 import uuid
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, AsyncGenerator
+import fitz  # PyMuPDF para extração de texto de PDFs
 from sqlalchemy.orm import Session
 
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
@@ -356,6 +357,218 @@ async def processar_processo_stream(
             "X-Accel-Buffering": "no"
         }
     )
+
+
+def _extrair_texto_pdf(pdf_bytes: bytes) -> str:
+    """
+    Extrai texto de um arquivo PDF usando PyMuPDF.
+    
+    Args:
+        pdf_bytes: Bytes do arquivo PDF
+        
+    Returns:
+        Texto extraído do PDF
+    """
+    texto_completo = []
+    try:
+        pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
+        for pagina in pdf:
+            texto = pagina.get_text()
+            if texto.strip():
+                texto_completo.append(texto)
+        pdf.close()
+    except Exception as e:
+        print(f"Erro ao extrair texto do PDF: {e}")
+    
+    return "\n\n".join(texto_completo)
+
+
+@router.post("/processar-pdfs-stream")
+async def processar_pdfs_stream(
+    arquivos: List[UploadFile] = File(..., description="Arquivos PDF a serem analisados"),
+    tipo_peca: Optional[str] = Form(None, description="Tipo de peça a gerar"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Processa arquivos PDF anexados e gera a peça jurídica.
+    
+    Esta rota permite gerar peças a partir de PDFs enviados diretamente,
+    sem necessidade de informar um número de processo do TJ-MS.
+    
+    Returns:
+        Stream SSE com progresso da geração
+    """
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            # Evento inicial
+            yield f"data: {json.dumps({'tipo': 'inicio', 'mensagem': 'Processando arquivos PDF...'})}\n\n"
+            
+            # Extrai texto dos PDFs
+            yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': f'Extraindo texto de {len(arquivos)} arquivo(s)...'})}\n\n"
+            
+            documentos_texto = []
+            for i, arquivo in enumerate(arquivos):
+                if not arquivo.filename.lower().endswith('.pdf'):
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Ignorando arquivo não-PDF: {arquivo.filename}'})}\n\n"
+                    continue
+                    
+                conteudo = await arquivo.read()
+                texto = _extrair_texto_pdf(conteudo)
+                
+                if texto.strip():
+                    documentos_texto.append({
+                        "nome": arquivo.filename,
+                        "texto": texto,
+                        "ordem": i + 1
+                    })
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Extraído: {arquivo.filename} ({len(texto)} caracteres)'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Sem texto extraível: {arquivo.filename}'})}\n\n"
+            
+            if not documentos_texto:
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Nenhum texto foi extraído dos PDFs. Verifique se os arquivos contêm texto legível.'})}\n\n"
+                return
+            
+            # Monta o resumo consolidado a partir dos textos extraídos
+            resumo_consolidado = _montar_resumo_pdfs(documentos_texto)
+            
+            yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'concluido', 'mensagem': f'{len(documentos_texto)} documento(s) processado(s)'})}\n\n"
+            
+            # Busca configurações
+            config_modelo = db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == "modelo_geracao"
+            ).first()
+            modelo = config_modelo.valor if config_modelo else "google/gemini-2.5-pro-preview-05-06"
+            
+            # Inicializa o serviço
+            service = GeradorPecasService(modelo=modelo, db=db)
+            
+            # Se tem orquestrador, usa os agentes 2 e 3
+            if service.orquestrador:
+                orq = service.orquestrador
+                tipo_peca_final = tipo_peca
+                
+                # Agente 2: Detector de Módulos (e tipo de peça se necessário)
+                if not tipo_peca_final:
+                    yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Detectando tipo de peça automaticamente...'})}\n\n"
+                    
+                    deteccao_tipo = await orq.agente2.detectar_tipo_peca(resumo_consolidado)
+                    tipo_peca_final = deteccao_tipo.get("tipo_peca")
+                    
+                    if tipo_peca_final:
+                        confianca = deteccao_tipo.get("confianca", "media")
+                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Tipo detectado: {tipo_peca_final} (confiança: {confianca})'})}\n\n"
+                    else:
+                        tipo_peca_final = "contestacao"
+                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Não foi possível detectar automaticamente. Usando: contestação'})}\n\n"
+                
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Analisando e ativando prompts...'})}\n\n"
+                
+                resultado_agente2 = await orq._executar_agente2(resumo_consolidado, tipo_peca_final)
+                
+                if resultado_agente2.erro:
+                    yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
+                    return
+                
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'concluido', 'mensagem': f'{len(resultado_agente2.modulos_ids)} módulos ativados'})}\n\n"
+                
+                # Agente 3: Gerador
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peça jurídica com IA...'})}\n\n"
+                
+                resultado_agente3 = await orq._executar_agente3(
+                    resumo_consolidado=resumo_consolidado,
+                    prompt_sistema=resultado_agente2.prompt_sistema,
+                    prompt_peca=resultado_agente2.prompt_peca,
+                    prompt_conteudo=resultado_agente2.prompt_conteudo,
+                    tipo_peca=tipo_peca_final
+                )
+                
+                if resultado_agente3.erro:
+                    yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
+                    return
+                
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'concluido', 'mensagem': 'Peça gerada com sucesso!'})}\n\n"
+                
+                # Prepara lista de documentos processados
+                documentos_processados = [
+                    {"nome": doc["nome"], "ordem": doc["ordem"]}
+                    for doc in documentos_texto
+                ]
+                
+                # Salva no banco
+                geracao = GeracaoPeca(
+                    numero_cnj=None,  # Não há número de processo
+                    numero_cnj_formatado="PDFs Anexados",
+                    tipo_peca=tipo_peca_final,
+                    conteudo_gerado=resultado_agente3.conteudo_markdown,
+                    prompt_enviado=resultado_agente3.prompt_enviado,
+                    resumo_consolidado=resumo_consolidado,
+                    documentos_processados=documentos_processados,
+                    modelo_usado=modelo,
+                    usuario_id=current_user.id
+                )
+                db.add(geracao)
+                db.commit()
+                db.refresh(geracao)
+                
+                # Resultado final
+                yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao.id, 'tipo_peca': tipo_peca_final, 'minuta_markdown': resultado_agente3.conteudo_markdown})}\n\n"
+            else:
+                # Fallback sem orquestrador
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Orquestrador de agentes não disponível'})}\n\n"
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+def _montar_resumo_pdfs(documentos: List[Dict]) -> str:
+    """
+    Monta o resumo consolidado a partir dos textos dos PDFs.
+    
+    Args:
+        documentos: Lista de dicts com 'nome', 'texto' e 'ordem'
+        
+    Returns:
+        Resumo consolidado em formato similar ao do Agente 1
+    """
+    partes = []
+    
+    partes.append("# RESUMO CONSOLIDADO DOS DOCUMENTOS")
+    partes.append(f"**Origem**: Arquivos PDF anexados")
+    partes.append(f"**Data da Análise**: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    partes.append(f"**Total de Documentos**: {len(documentos)}")
+    partes.append("\n---\n")
+    partes.append("## DOCUMENTOS ANALISADOS\n")
+    
+    for doc in documentos:
+        partes.append(f"### {doc['ordem']}. {doc['nome']}")
+        # Limita o texto a 50000 caracteres por documento para evitar tokens excessivos
+        texto = doc['texto']
+        if len(texto) > 50000:
+            texto = texto[:50000] + "\n\n[... texto truncado por limite de tamanho ...]"
+        partes.append(f"\n{texto}\n")
+        partes.append("---\n")
+    
+    partes.append("\n---")
+    partes.append("*Este resumo foi gerado a partir de arquivos PDF anexados.*")
+    
+    return "\n".join(partes)
 
 
 @router.post("/editar-minuta")

@@ -292,14 +292,60 @@
             </h2>
 
             <form id="form-processo" class="space-y-4">
-                <div>
-                    <label for="numero-cnj" class="block text-sm font-medium text-gray-700 mb-2">
-                        Número do Processo (CNJ)
-                    </label>
-                    <input type="text" id="numero-cnj" name="numero_cnj" placeholder="0000000-00.2024.8.12.0001"
-                        class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-sm"
-                        required />
-                    <p class="text-xs text-gray-500 mt-1">Digite o número completo do processo no formato CNJ</p>
+                <!-- Seleção de Modo de Entrada -->
+                <div class="flex gap-2 p-1 bg-gray-100 rounded-xl">
+                    <button type="button" id="btn-modo-cnj" onclick="app.setModoEntrada('cnj')"
+                        class="flex-1 py-2.5 px-4 rounded-lg font-medium transition-all bg-white shadow text-primary-700">
+                        <i class="fas fa-search mr-2"></i>Buscar por Número CNJ
+                    </button>
+                    <button type="button" id="btn-modo-pdf" onclick="app.setModoEntrada('pdf')"
+                        class="flex-1 py-2.5 px-4 rounded-lg font-medium transition-all text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-file-pdf mr-2"></i>Anexar PDFs
+                    </button>
+                </div>
+
+                <!-- Modo CNJ -->
+                <div id="modo-cnj" class="space-y-4">
+                    <div>
+                        <label for="numero-cnj" class="block text-sm font-medium text-gray-700 mb-2">
+                            Número do Processo (CNJ)
+                        </label>
+                        <input type="text" id="numero-cnj" name="numero_cnj" placeholder="0000000-00.2024.8.12.0001"
+                            class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-sm" />
+                        <p class="text-xs text-gray-500 mt-1">Digite o número completo do processo no formato CNJ</p>
+                    </div>
+                </div>
+
+                <!-- Modo PDF -->
+                <div id="modo-pdf" class="space-y-4 hidden">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            Arquivos PDF
+                        </label>
+                        <div id="dropzone" 
+                            class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-primary-400 hover:bg-primary-50/50 transition-all cursor-pointer"
+                            onclick="document.getElementById('input-pdfs').click()"
+                            ondragover="event.preventDefault(); this.classList.add('border-primary-500', 'bg-primary-50')"
+                            ondragleave="this.classList.remove('border-primary-500', 'bg-primary-50')"
+                            ondrop="app.handleDrop(event)">
+                            <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-600 font-medium">Arraste arquivos PDF aqui</p>
+                            <p class="text-sm text-gray-400 mt-1">ou clique para selecionar</p>
+                        </div>
+                        <input type="file" id="input-pdfs" name="arquivos" accept=".pdf" multiple class="hidden"
+                            onchange="app.handleFileSelect(event)" />
+                    </div>
+                    
+                    <!-- Lista de arquivos selecionados -->
+                    <div id="lista-arquivos" class="hidden">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700">Arquivos selecionados:</span>
+                            <button type="button" onclick="app.limparArquivos()" class="text-xs text-red-500 hover:text-red-700">
+                                <i class="fas fa-trash-alt mr-1"></i>Limpar todos
+                            </button>
+                        </div>
+                        <div id="arquivos-lista" class="space-y-2 max-h-48 overflow-y-auto custom-scrollbar"></div>
+                    </div>
                 </div>
 
                 <div>
