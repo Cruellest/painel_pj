@@ -124,10 +124,12 @@ class DocxConverter:
         # Numeração de títulos
         self.numerar_titulos = numerar_titulos
         self._heading_counters = [0, 0, 0, 0]  # Contadores para níveis 1, 2, 3, 4
+        self._last_was_heading = False  # Flag para controlar parágrafos após headings
     
     def _reset_heading_counters(self):
         """Reseta os contadores de numeração de títulos."""
         self._heading_counters = [0, 0, 0, 0]
+        self._last_was_heading = False
     
     def _get_heading_number(self, level: int) -> str:
         """
@@ -381,19 +383,25 @@ class DocxConverter:
             # Parágrafo normal
             else:
                 line_lower = line.lower()
+                line_upper = line.upper()
                 
-                # Detecta se é o direcionamento (primeira linha com **EXCELENTÍSSIMO**)
-                if is_first_paragraph and '**' in line and ('EXCELENTÍSSIMO' in line.upper() or 'EXMO' in line.upper()):
+                # Detecta se é o direcionamento (primeira linha com EXCELENTÍSSIMO ou EXMO)
+                # Pode ou não ter marcação ** de negrito
+                if is_first_paragraph and ('EXCELENTÍSSIMO' in line_upper or 'EXMO' in line_upper):
                     self._add_direcionamento(doc, line)
                     found_direcionamento = True
                     is_first_paragraph = False
                     
-                # Detecta número do processo (Processo nº ou similar) - campo de cabeçalho
-                elif 'processo' in line_lower and ('nº' in line_lower or 'n°' in line_lower or 'n.' in line_lower):
+                # Detecta número do processo ou tipo de ação com número (Processo nº, Agravo nº, Apelação nº, etc.)
+                elif self._is_process_number_field(line):
                     # Adiciona linhas em branco antes do número do processo (se logo após direcionamento)
                     if found_direcionamento:
                         for _ in range(self.linhas_apos_direcionamento):
-                            doc.add_paragraph()
+                            blank_para = doc.add_paragraph()
+                            blank_para.paragraph_format.space_before = Pt(0)
+                            blank_para.paragraph_format.space_after = Pt(0)
+                            blank_para.paragraph_format.line_spacing = 1.0
+                            blank_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
                         found_direcionamento = False
                     self._add_header_field(doc, line, is_last=False)  # Campo de cabeçalho
                     
@@ -413,6 +421,53 @@ class DocxConverter:
         # Processa blockquote pendente
         if blockquote_lines:
             self._add_blockquote(doc, blockquote_lines)
+    
+    def _is_process_number_field(self, line: str) -> bool:
+        """
+        Verifica se a linha é um campo de número do processo ou tipo de ação com número.
+        Exemplos: "Processo nº 123", "Agravo de Instrumento nº: 123", "Apelação nº 456", etc.
+        """
+        line_lower = line.strip().lower()
+        
+        if not line_lower:
+            return False
+        
+        # Verifica se contém indicador de número (nº, n°, n.)
+        has_number_indicator = 'nº' in line_lower or 'n°' in line_lower or 'n.' in line_lower
+        
+        if not has_number_indicator:
+            return False
+        
+        # Padrões de tipos de processo/ação que indicam campo de cabeçalho
+        process_patterns = [
+            r'^processo',
+            r'^autos',
+            r'^agravo',
+            r'^apelação',
+            r'^recurso',
+            r'^ação',
+            r'^mandado\s+de\s+segurança',
+            r'^habeas\s+corpus',
+            r'^embargos',
+            r'^execução',
+            r'^cumprimento\s+de\s+sentença',
+            r'^reclamação',
+            r'^conflito',
+            r'^incidente',
+            r'^procedimento',
+            r'^petição',
+            r'^representação',
+            r'^inquérito',
+            r'^adi',  # Ação Direta de Inconstitucionalidade
+            r'^adc',  # Ação Declaratória de Constitucionalidade
+            r'^adpf', # Arguição de Descumprimento de Preceito Fundamental
+        ]
+        
+        for pattern in process_patterns:
+            if re.match(pattern, line_lower):
+                return True
+        
+        return False
     
     def _is_header_field(self, line: str) -> bool:
         """Verifica se a linha é um campo de cabeçalho (Requerente, Requerido, etc.)
@@ -481,7 +536,9 @@ class DocxConverter:
         p.paragraph_format.line_spacing = 1.0  # Espaçamento simples
         p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
         p.paragraph_format.space_after = Pt(0)  # Sem espaço após (linhas serão adicionadas)
+        p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.first_line_indent = Cm(0)  # SEM recuo
+        p.paragraph_format.left_indent = Cm(0)  # SEM recuo esquerdo
         
         # Processa formatação inline (negrito, itálico)
         self._add_formatted_text(p, text)
@@ -489,7 +546,8 @@ class DocxConverter:
     def _add_header_field(self, doc: Document, text: str, is_last: bool = False):
         """
         Adiciona campo de cabeçalho (Processo nº, Requerente, Requerido).
-        Formatação: alinhado à esquerda, espaçamento simples (1.0), sem recuo.
+        Formatação: alinhado à esquerda, espaçamento simples (1.0), sem recuo,
+        sem espaçamento entre parágrafos (space_before e space_after = 0).
         A etiqueta (antes dos dois pontos ou do valor) fica em negrito e maiúsculo.
         """
         p = doc.add_paragraph()
@@ -497,7 +555,9 @@ class DocxConverter:
         p.paragraph_format.line_spacing = 1.0  # Espaçamento simples
         p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
         p.paragraph_format.space_after = Pt(0)  # Sem espaço após (campos ficam juntos)
+        p.paragraph_format.space_before = Pt(0)  # Sem espaço antes
         p.paragraph_format.first_line_indent = Cm(0)  # SEM recuo
+        p.paragraph_format.left_indent = Cm(0)  # SEM recuo esquerdo
         
         # Padrão especial para "Processo nº XXX" (sem dois pontos)
         text_lower = text.lower()
@@ -545,7 +605,11 @@ class DocxConverter:
         
         # Se for o último campo (Requerido), pula uma linha após
         if is_last:
-            doc.add_paragraph()  # Linha em branco após cabeçalho
+            blank_para = doc.add_paragraph()  # Linha em branco após cabeçalho
+            blank_para.paragraph_format.space_before = Pt(0)
+            blank_para.paragraph_format.space_after = Pt(0)
+            blank_para.paragraph_format.line_spacing = 1.0
+            blank_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
     
     def _add_heading(self, doc: Document, text: str, level: int):
         """Adiciona título formatado - justificado, sem recuo, negrito, numerado."""
@@ -571,8 +635,12 @@ class DocxConverter:
         p.paragraph_format.space_before = Pt(18)
         p.paragraph_format.space_after = Pt(12)
         p.paragraph_format.first_line_indent = Cm(0)  # SEM recuo
+        p.paragraph_format.left_indent = Cm(0)  # SEM recuo esquerdo
         p.paragraph_format.line_spacing = self.line_spacing  # Espaçamento consistente
         p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE  # Tipo de espaçamento
+        
+        # Marca que o próximo parágrafo virá após um heading (para garantir formatação)
+        self._last_was_heading = True
     
     def _add_paragraph(self, doc: Document, text: str, indent: bool = True):
         """Adiciona parágrafo com formatação inline e formatação consistente."""
@@ -581,14 +649,16 @@ class DocxConverter:
         # Força o estilo 'Normal' explicitamente
         p.style = doc.styles['Normal']
         
-        # Aplica formatação direta (sobrescreve estilo)
+        # Aplica formatação direta (sobrescreve estilo) - GARANTE formatação correta
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.line_spacing = self.line_spacing
         p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
         p.paragraph_format.space_after = self.space_after
         p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.left_indent = Cm(0)  # Sem recuo esquerdo
+        p.paragraph_format.right_indent = Cm(0)  # Sem recuo direito
         
-        # Configura recuo de primeira linha
+        # Configura recuo de primeira linha - SEMPRE aplicar explicitamente
         if indent:
             p.paragraph_format.first_line_indent = self.first_line_indent
         else:
@@ -596,6 +666,9 @@ class DocxConverter:
         
         # Processa formatação inline (negrito, itálico)
         self._add_formatted_text(p, text)
+        
+        # Reseta flag de heading
+        self._last_was_heading = False
     
     def _add_formatted_text(self, paragraph, text: str):
         """Adiciona texto com formatação inline (negrito, itálico)."""
