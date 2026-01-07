@@ -501,7 +501,7 @@ async def processar_pdfs_stream(
                 
                 # Salva no banco
                 geracao = GeracaoPeca(
-                    numero_cnj=None,  # Não há número de processo
+                    numero_cnj="PDF_UPLOAD",  # Identificador para uploads de PDF
                     numero_cnj_formatado="PDFs Anexados",
                     tipo_peca=tipo_peca_final,
                     conteudo_gerado=resultado_agente3.conteudo_markdown,
