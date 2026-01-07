@@ -49,7 +49,8 @@ class DetectorModulosIA:
     async def detectar_modulos_relevantes(
         self,
         documentos_resumo: str,
-        documentos_completos: Optional[str] = None
+        documentos_completos: Optional[str] = None,
+        tipo_peca: Optional[str] = None
     ) -> List[int]:
         """
         Analisa os documentos e retorna IDs dos módulos de CONTEÚDO relevantes.
@@ -57,23 +58,30 @@ class DetectorModulosIA:
         Args:
             documentos_resumo: Resumo dos documentos do processo
             documentos_completos: Texto completo dos documentos (opcional)
+            tipo_peca: Tipo de peça para filtrar módulos disponíveis (opcional)
 
         Returns:
             Lista de IDs dos módulos relevantes
         """
-        # Verificar cache
-        cache_key = self._gerar_cache_key(documentos_resumo)
+        # Verificar cache (inclui tipo_peca na chave)
+        cache_key = self._gerar_cache_key(f"{tipo_peca or ''}:{documentos_resumo}")
         cached = self._verificar_cache(cache_key)
         if cached is not None:
             print(f"✅ Cache hit - módulos detectados anteriormente")
             return cached
 
-        # Carregar todos os módulos de CONTEÚDO disponíveis
-        modulos = self._carregar_modulos_disponiveis()
+        # Carregar módulos de CONTEÚDO disponíveis (filtrado por tipo de peça se especificado)
+        modulos = self._carregar_modulos_disponiveis(tipo_peca)
 
         if not modulos:
-            print("⚠️ Nenhum módulo de CONTEÚDO disponível no banco")
+            if tipo_peca:
+                print(f"⚠️ Nenhum módulo de CONTEÚDO disponível para tipo de peça '{tipo_peca}'")
+            else:
+                print("⚠️ Nenhum módulo de CONTEÚDO disponível no banco")
             return []
+
+        if tipo_peca:
+            print(f"📋 {len(modulos)} módulos disponíveis para tipo '{tipo_peca}'")
 
         # Preparar prompt para a IA
         prompt_deteccao = self._montar_prompt_deteccao(
@@ -98,12 +106,45 @@ class DetectorModulosIA:
             # Fallback: usar detecção simples por palavras-chave
             return self._detectar_por_palavras_chave(documentos_resumo, modulos)
 
-    def _carregar_modulos_disponiveis(self) -> List[PromptModulo]:
-        """Carrega todos os módulos de CONTEÚDO ativos do banco"""
-        return self.db.query(PromptModulo).filter(
+    def _carregar_modulos_disponiveis(self, tipo_peca: str = None) -> List[PromptModulo]:
+        """
+        Carrega módulos de CONTEÚDO ativos do banco.
+        
+        Se tipo_peca for especificado, filtra apenas módulos ativos para esse tipo.
+        """
+        from admin.models_prompts import ModuloTipoPeca
+        
+        # Busca todos os módulos de conteúdo ativos globalmente
+        modulos = self.db.query(PromptModulo).filter(
             PromptModulo.tipo == "conteudo",
             PromptModulo.ativo == True
         ).order_by(PromptModulo.ordem).all()
+        
+        # Se não há tipo de peça especificado, retorna todos
+        if not tipo_peca:
+            return modulos
+        
+        # Busca associações para este tipo de peça
+        associacoes = self.db.query(ModuloTipoPeca).filter(
+            ModuloTipoPeca.tipo_peca == tipo_peca
+        ).all()
+        
+        # Se não há associações configuradas, retorna todos (retrocompatibilidade)
+        if not associacoes:
+            return modulos
+        
+        # Cria mapa: modulo_id -> ativo
+        mapa_ativo = {a.modulo_id: a.ativo for a in associacoes}
+        
+        # Filtra módulos
+        modulos_filtrados = []
+        for modulo in modulos:
+            # Se não tem associação configurada, considera ativo (retrocompatibilidade)
+            ativo_para_tipo = mapa_ativo.get(modulo.id, True)
+            if ativo_para_tipo:
+                modulos_filtrados.append(modulo)
+        
+        return modulos_filtrados
 
     def _montar_prompt_deteccao(
         self,

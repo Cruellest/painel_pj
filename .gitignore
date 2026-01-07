@@ -40,3 +40,4 @@ node_modules/
 .DS_Store
 Thumbs.db
 *.ini
+sistemas/gerador_pecas/temp_docs/

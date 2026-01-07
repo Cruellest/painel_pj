@@ -309,6 +309,12 @@ async def admin_prompts_modulos_page(request: Request):
     return templates.TemplateResponse("admin_prompts_modulos.html", {"request": request})
 
 
+@app.get("/admin/modulos-tipo-peca")
+async def admin_modulos_tipo_peca_page(request: Request):
+    """Página de configuração de módulos por tipo de peça (requer autenticação via JS)"""
+    return templates.TemplateResponse("admin_modulos_tipo_peca.html", {"request": request})
+
+
 @app.get("/admin/gerador-pecas/historico")
 async def admin_gerador_historico_page(request: Request):
     """Página de histórico de gerações com prompts"""

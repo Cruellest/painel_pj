@@ -13,7 +13,7 @@ import difflib
 from database.connection import get_db
 from auth.models import User
 from auth.dependencies import get_current_active_user, require_admin
-from admin.models_prompts import PromptModulo, PromptModuloHistorico
+from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
 
 router = APIRouter(prefix="/prompts-modulos", tags=["Prompts Modulares"])
 
@@ -691,3 +691,283 @@ async def importar_modulos(
         ignorados=ignorados,
         erros=erros
     )
+
+
+# ==========================================
+# Endpoints: Associação Módulos x Tipos de Peça
+# ==========================================
+
+class ModuloTipoPecaItem(BaseModel):
+    """Item de associação módulo-tipo de peça"""
+    modulo_id: int
+    ativo: bool = True
+
+
+class ConfigurarModulosTipoPecaRequest(BaseModel):
+    """Request para configurar módulos de um tipo de peça"""
+    tipo_peca: str  # Ex: 'contestacao', 'recurso_apelacao'
+    modulos: List[ModuloTipoPecaItem]  # Lista de módulos com status
+
+
+class ModuloTipoPecaResponse(BaseModel):
+    """Resposta com informações do módulo e status por tipo de peça"""
+    modulo_id: int
+    nome: str
+    titulo: str
+    categoria: Optional[str]
+    subcategoria: Optional[str]
+    ativo_global: bool  # Se o módulo está ativo globalmente
+    ativo_tipo_peca: bool  # Se está ativo para este tipo de peça específico
+
+
+@router.get("/tipos-peca")
+async def listar_tipos_peca(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todos os tipos de peça disponíveis (módulos tipo='peca').
+    """
+    modulos_peca = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "peca",
+        PromptModulo.ativo == True
+    ).order_by(PromptModulo.ordem).all()
+    
+    return [
+        {
+            "categoria": m.categoria,
+            "titulo": m.titulo,
+            "nome": m.nome
+        }
+        for m in modulos_peca
+    ]
+
+
+@router.get("/modulos-por-tipo-peca/{tipo_peca}")
+async def listar_modulos_por_tipo_peca(
+    tipo_peca: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todos os módulos de conteúdo com status de ativação para um tipo de peça específico.
+    """
+    # Busca todos os módulos de conteúdo ativos
+    modulos_conteudo = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.ativo == True
+    ).order_by(PromptModulo.categoria, PromptModulo.ordem).all()
+    
+    # Busca associações existentes para este tipo de peça
+    associacoes = db.query(ModuloTipoPeca).filter(
+        ModuloTipoPeca.tipo_peca == tipo_peca
+    ).all()
+    
+    # Cria mapa de associações
+    mapa_associacoes = {a.modulo_id: a.ativo for a in associacoes}
+    
+    # Monta resposta
+    resultado = []
+    for modulo in modulos_conteudo:
+        # Se não há associação, considera ATIVO por padrão (retrocompatibilidade)
+        ativo_tipo_peca = mapa_associacoes.get(modulo.id, True)
+        
+        resultado.append({
+            "modulo_id": modulo.id,
+            "nome": modulo.nome,
+            "titulo": modulo.titulo,
+            "categoria": modulo.categoria,
+            "subcategoria": modulo.subcategoria,
+            "condicao_ativacao": modulo.condicao_ativacao[:200] + "..." if modulo.condicao_ativacao and len(modulo.condicao_ativacao) > 200 else modulo.condicao_ativacao,
+            "ativo_global": modulo.ativo,
+            "ativo_tipo_peca": ativo_tipo_peca
+        })
+    
+    return {
+        "tipo_peca": tipo_peca,
+        "total_modulos": len(resultado),
+        "modulos": resultado
+    }
+
+
+@router.post("/configurar-modulos-tipo-peca")
+async def configurar_modulos_tipo_peca(
+    req: ConfigurarModulosTipoPecaRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Configura quais módulos de conteúdo estão ativos para um tipo de peça específico.
+    Permite ativar/desativar módulos em lote para um tipo de peça.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+    
+    atualizados = 0
+    criados = 0
+    
+    for item in req.modulos:
+        # Verifica se já existe associação
+        associacao = db.query(ModuloTipoPeca).filter(
+            ModuloTipoPeca.modulo_id == item.modulo_id,
+            ModuloTipoPeca.tipo_peca == req.tipo_peca
+        ).first()
+        
+        if associacao:
+            # Atualiza
+            if associacao.ativo != item.ativo:
+                associacao.ativo = item.ativo
+                atualizados += 1
+        else:
+            # Cria nova associação
+            nova_assoc = ModuloTipoPeca(
+                modulo_id=item.modulo_id,
+                tipo_peca=req.tipo_peca,
+                ativo=item.ativo
+            )
+            db.add(nova_assoc)
+            criados += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "tipo_peca": req.tipo_peca,
+        "criados": criados,
+        "atualizados": atualizados,
+        "mensagem": f"Configuração salva: {criados} associações criadas, {atualizados} atualizadas"
+    }
+
+
+@router.post("/ativar-todos-modulos/{tipo_peca}")
+async def ativar_todos_modulos(
+    tipo_peca: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Ativa todos os módulos de conteúdo para um tipo de peça.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+    
+    # Busca todos os módulos de conteúdo ativos
+    modulos = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.ativo == True
+    ).all()
+    
+    for modulo in modulos:
+        associacao = db.query(ModuloTipoPeca).filter(
+            ModuloTipoPeca.modulo_id == modulo.id,
+            ModuloTipoPeca.tipo_peca == tipo_peca
+        ).first()
+        
+        if associacao:
+            associacao.ativo = True
+        else:
+            db.add(ModuloTipoPeca(
+                modulo_id=modulo.id,
+                tipo_peca=tipo_peca,
+                ativo=True
+            ))
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "tipo_peca": tipo_peca,
+        "modulos_ativados": len(modulos)
+    }
+
+
+@router.post("/desativar-todos-modulos/{tipo_peca}")
+async def desativar_todos_modulos(
+    tipo_peca: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Desativa todos os módulos de conteúdo para um tipo de peça.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+    
+    # Busca todos os módulos de conteúdo ativos
+    modulos = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.ativo == True
+    ).all()
+    
+    for modulo in modulos:
+        associacao = db.query(ModuloTipoPeca).filter(
+            ModuloTipoPeca.modulo_id == modulo.id,
+            ModuloTipoPeca.tipo_peca == tipo_peca
+        ).first()
+        
+        if associacao:
+            associacao.ativo = False
+        else:
+            db.add(ModuloTipoPeca(
+                modulo_id=modulo.id,
+                tipo_peca=tipo_peca,
+                ativo=False
+            ))
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "tipo_peca": tipo_peca,
+        "modulos_desativados": len(modulos)
+    }
+
+
+@router.get("/resumo-configuracao-tipos-peca")
+async def resumo_configuracao_tipos_peca(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna um resumo da configuração de módulos por tipo de peça.
+    Mostra quantos módulos estão ativos para cada tipo.
+    """
+    # Busca tipos de peça
+    tipos_peca = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "peca",
+        PromptModulo.ativo == True
+    ).all()
+    
+    # Conta total de módulos de conteúdo
+    total_modulos = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.ativo == True
+    ).count()
+    
+    resultado = []
+    for tipo in tipos_peca:
+        # Conta associações ativas
+        ativos = db.query(ModuloTipoPeca).filter(
+            ModuloTipoPeca.tipo_peca == tipo.categoria,
+            ModuloTipoPeca.ativo == True
+        ).count()
+        
+        # Conta associações inativas
+        inativos = db.query(ModuloTipoPeca).filter(
+            ModuloTipoPeca.tipo_peca == tipo.categoria,
+            ModuloTipoPeca.ativo == False
+        ).count()
+        
+        # Módulos sem associação (considerados ativos por padrão)
+        sem_config = total_modulos - ativos - inativos
+        
+        resultado.append({
+            "tipo_peca": tipo.categoria,
+            "titulo": tipo.titulo,
+            "modulos_ativos": ativos + sem_config,  # Inclui sem config como ativos
+            "modulos_inativos": inativos,
+            "modulos_configurados": ativos + inativos,
+            "total_modulos": total_modulos
+        })
+    
+    return {
+        "tipos_peca": resultado,
+        "total_modulos_conteudo": total_modulos
+    }

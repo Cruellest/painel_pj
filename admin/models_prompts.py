@@ -9,6 +9,29 @@ from sqlalchemy.orm import relationship
 from database.connection import Base
 
 
+class ModuloTipoPeca(Base):
+    """
+    Associação entre módulos de conteúdo e tipos de peça.
+    Define quais módulos de conteúdo estão disponíveis para cada tipo de peça.
+    """
+    
+    __tablename__ = "prompt_modulo_tipo_peca"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    modulo_id = Column(Integer, ForeignKey("prompt_modulos.id"), nullable=False, index=True)
+    tipo_peca = Column(String(50), nullable=False, index=True)  # Ex: 'contestacao', 'recurso_apelacao'
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    
+    # Constraint de unicidade
+    __table_args__ = (
+        UniqueConstraint('modulo_id', 'tipo_peca', name='uq_modulo_tipo_peca'),
+    )
+    
+    def __repr__(self):
+        return f"<ModuloTipoPeca(modulo_id={self.modulo_id}, tipo_peca='{self.tipo_peca}', ativo={self.ativo})>"
+
+
 class PromptModulo(Base):
     """Módulo de prompt editável (base, peça ou conteúdo)"""
     

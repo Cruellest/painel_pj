@@ -382,8 +382,10 @@ class OrquestradorAgentes:
         
         try:
             # Detecta módulos de conteúdo relevantes via IA
+            # Passa tipo_peca para filtrar módulos disponíveis
             modulos_ids = await self.agente2.detectar_modulos_relevantes(
-                documentos_resumo=resumo_consolidado
+                documentos_resumo=resumo_consolidado,
+                tipo_peca=tipo_peca
             )
             resultado.modulos_ids = modulos_ids
             

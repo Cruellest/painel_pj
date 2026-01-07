@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configurar Módulos por Tipo de Peça - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd',
+                            300: '#7dd3fc', 400: '#38bdf8', 500: '#0ea5e9',
+                            600: '#0284c7', 700: '#0369a1', 800: '#075985', 900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .tipo-peca-card {
+            transition: all 0.2s ease;
+        }
+        .tipo-peca-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .modulo-item {
+            transition: all 0.15s ease;
+        }
+        .modulo-item:hover {
+            background-color: #f8fafc;
+        }
+        .collapse-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .collapse-content.expanded {
+            max-height: 5000px;
+            transition: max-height 0.5s ease-in;
+        }
+        .chevron-icon {
+            transition: transform 0.2s ease;
+        }
+        .chevron-icon.rotated {
+            transform: rotate(180deg);
+        }
+        .checkbox-custom {
+            appearance: none;
+            width: 1.25rem;
+            height: 1.25rem;
+            border: 2px solid #d1d5db;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .checkbox-custom:checked {
+            background-color: #0ea5e9;
+            border-color: #0ea5e9;
+            background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+        }
+        .checkbox-custom:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm sticky top-0 z-50">
+        <div class="flex items-center justify-between max-w-7xl mx-auto">
+            <div class="flex items-center gap-4">
+                <a href="/admin/prompts-config" class="text-gray-500 hover:text-primary-600">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
+                <div>
+                    <h1 class="text-xl font-semibold text-gray-800">Módulos por Tipo de Peça</h1>
+                    <p class="text-sm text-gray-500">Configure quais módulos de conteúdo estão disponíveis para cada tipo de peça</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="salvarTodas()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
+                    <i class="fas fa-save"></i> Salvar Todas Alterações
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6">
+        <!-- Estatísticas -->
+        <div id="stats-container" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-file-alt text-blue-600"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-800" id="stat-tipos">-</p>
+                        <p class="text-sm text-gray-500">Tipos de Peça</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-puzzle-piece text-green-600"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-800" id="stat-modulos">-</p>
+                        <p class="text-sm text-gray-500">Módulos de Conteúdo</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-check-circle text-purple-600"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-800" id="stat-configurados">-</p>
+                        <p class="text-sm text-gray-500">Configurações Salvas</p>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-exclamation-triangle text-amber-600"></i>
+                    </div>
+                    <div>
+                        <p class="text-2xl font-bold text-gray-800" id="stat-pendentes">-</p>
+                        <p class="text-sm text-gray-500">Alterações Pendentes</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instruções -->
+        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+            <div class="flex items-start gap-3">
+                <i class="fas fa-info-circle text-blue-500 mt-0.5"></i>
+                <div>
+                    <p class="text-sm text-blue-800 font-medium">Como funciona</p>
+                    <p class="text-sm text-blue-700 mt-1">
+                        Cada tipo de peça pode ter um conjunto diferente de módulos de conteúdo disponíveis. 
+                        Quando o detector de módulos analisar um caso, ele considerará apenas os módulos 
+                        <strong>ativos</strong> para o tipo de peça selecionado.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lista de Tipos de Peça -->
+        <div id="tipos-peca-container" class="space-y-4">
+            <div class="text-center py-12 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p>Carregando configurações...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast -->
+    <div id="toast" class="hidden fixed bottom-4 right-4 z-50">
+        <div class="bg-gray-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3">
+            <i id="toast-icon" class="fas fa-check-circle text-green-400"></i>
+            <span id="toast-message">Mensagem</span>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/admin/prompts-modulos';
+        let tiposPeca = [];
+        let modulosPorTipo = {};
+        let alteracoesPendentes = {};
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuth();
+        });
+
+        async function checkAuth() {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/auth/me', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) throw new Error('Token inválido');
+                
+                await carregarDados();
+            } catch (error) {
+                localStorage.removeItem('access_token');
+                window.location.href = '/login';
+            }
+        }
+
+        function getToken() {
+            return localStorage.getItem('access_token');
+        }
+
+        async function carregarDados() {
+            try {
+                // Carrega resumo e tipos de peça
+                const [resumoRes, tiposRes] = await Promise.all([
+                    fetch(`${API_URL}/resumo-configuracao-tipos-peca`, {
+                        headers: { 'Authorization': `Bearer ${getToken()}` }
+                    }),
+                    fetch(`${API_URL}/tipos-peca`, {
+                        headers: { 'Authorization': `Bearer ${getToken()}` }
+                    })
+                ]);
+
+                const resumo = await resumoRes.json();
+                tiposPeca = await tiposRes.json();
+
+                // Atualiza estatísticas
+                document.getElementById('stat-tipos').textContent = tiposPeca.length;
+                document.getElementById('stat-modulos').textContent = resumo.total_modulos_conteudo || 0;
+                
+                let totalConfigurados = 0;
+                resumo.tipos_peca?.forEach(t => totalConfigurados += t.modulos_configurados || 0);
+                document.getElementById('stat-configurados').textContent = totalConfigurados;
+                document.getElementById('stat-pendentes').textContent = '0';
+
+                // Renderiza tipos de peça
+                await renderizarTiposPeca(resumo.tipos_peca || []);
+
+            } catch (error) {
+                console.error('Erro ao carregar dados:', error);
+                showToast('Erro ao carregar dados', 'error');
+            }
+        }
+
+        async function renderizarTiposPeca(resumoTipos) {
+            const container = document.getElementById('tipos-peca-container');
+            
+            if (tiposPeca.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-exclamation-circle text-4xl mb-4"></i>
+                        <p>Nenhum tipo de peça configurado</p>
+                        <p class="text-sm mt-1">Crie módulos do tipo "peça" primeiro</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Cria mapa de resumos
+            const resumoMap = {};
+            resumoTipos.forEach(r => resumoMap[r.tipo_peca] = r);
+
+            let html = '';
+            for (const tipo of tiposPeca) {
+                const resumo = resumoMap[tipo.categoria] || {
+                    modulos_ativos: 0,
+                    modulos_inativos: 0,
+                    total_modulos: 0
+                };
+
+                html += `
+                    <div class="tipo-peca-card bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" data-tipo="${tipo.categoria}">
+                        <!-- Cabeçalho Colapsável -->
+                        <div class="px-6 py-4 cursor-pointer hover:bg-gray-50 transition-colors" onclick="toggleTipoPeca('${tipo.categoria}')">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
+                                        <i class="fas fa-file-contract text-white text-lg"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="text-lg font-semibold text-gray-800">${tipo.titulo}</h3>
+                                        <p class="text-sm text-gray-500">
+                                            <span class="text-green-600 font-medium">${resumo.modulos_ativos}</span> ativos · 
+                                            <span class="text-gray-400">${resumo.modulos_inativos}</span> inativos
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span id="badge-${tipo.categoria}" class="hidden px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">
+                                        Alterações pendentes
+                                    </span>
+                                    <i id="chevron-${tipo.categoria}" class="fas fa-chevron-down text-gray-400 chevron-icon"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Conteúdo Colapsável -->
+                        <div id="content-${tipo.categoria}" class="collapse-content border-t border-gray-100">
+                            <div class="p-6">
+                                <!-- Ações em Lote -->
+                                <div class="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
+                                    <div class="flex items-center gap-2">
+                                        <button onclick="selecionarTodos('${tipo.categoria}', true)" 
+                                            class="px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors">
+                                            <i class="fas fa-check-double mr-1"></i> Ativar Todos
+                                        </button>
+                                        <button onclick="selecionarTodos('${tipo.categoria}', false)" 
+                                            class="px-3 py-1.5 text-sm bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors">
+                                            <i class="fas fa-times mr-1"></i> Desativar Todos
+                                        </button>
+                                        <button onclick="inverterSelecao('${tipo.categoria}')" 
+                                            class="px-3 py-1.5 text-sm bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
+                                            <i class="fas fa-exchange-alt mr-1"></i> Inverter
+                                        </button>
+                                    </div>
+                                    <button onclick="salvarTipoPeca('${tipo.categoria}')" 
+                                        class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium">
+                                        <i class="fas fa-save mr-1"></i> Salvar
+                                    </button>
+                                </div>
+
+                                <!-- Lista de Módulos -->
+                                <div id="modulos-${tipo.categoria}" class="space-y-2">
+                                    <div class="text-center py-4 text-gray-400">
+                                        <i class="fas fa-spinner fa-spin"></i> Carregando módulos...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        async function toggleTipoPeca(tipoPeca) {
+            const content = document.getElementById(`content-${tipoPeca}`);
+            const chevron = document.getElementById(`chevron-${tipoPeca}`);
+            
+            if (content.classList.contains('expanded')) {
+                // Colapsa
+                content.classList.remove('expanded');
+                chevron.classList.remove('rotated');
+            } else {
+                // Expande e carrega módulos se necessário
+                content.classList.add('expanded');
+                chevron.classList.add('rotated');
+                
+                if (!modulosPorTipo[tipoPeca]) {
+                    await carregarModulosTipoPeca(tipoPeca);
+                }
+            }
+        }
+
+        async function carregarModulosTipoPeca(tipoPeca) {
+            try {
+                const response = await fetch(`${API_URL}/modulos-por-tipo-peca/${tipoPeca}`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+                
+                const data = await response.json();
+                modulosPorTipo[tipoPeca] = data.modulos;
+                
+                renderizarModulos(tipoPeca, data.modulos);
+                
+            } catch (error) {
+                console.error('Erro ao carregar módulos:', error);
+                document.getElementById(`modulos-${tipoPeca}`).innerHTML = `
+                    <div class="text-center py-4 text-red-500">
+                        <i class="fas fa-exclamation-circle mr-1"></i> Erro ao carregar módulos
+                    </div>
+                `;
+            }
+        }
+
+        function renderizarModulos(tipoPeca, modulos) {
+            const container = document.getElementById(`modulos-${tipoPeca}`);
+            
+            if (modulos.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-4 text-gray-400">
+                        Nenhum módulo de conteúdo disponível
+                    </div>
+                `;
+                return;
+            }
+
+            // Agrupa por categoria
+            const porCategoria = {};
+            modulos.forEach(m => {
+                const cat = m.categoria || 'Sem categoria';
+                if (!porCategoria[cat]) porCategoria[cat] = [];
+                porCategoria[cat].push(m);
+            });
+
+            let html = '';
+            for (const [categoria, modulosCategoria] of Object.entries(porCategoria)) {
+                html += `
+                    <div class="mb-4">
+                        <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">${categoria}</h4>
+                        <div class="space-y-1">
+                `;
+                
+                for (const modulo of modulosCategoria) {
+                    const checked = modulo.ativo_tipo_peca ? 'checked' : '';
+                    html += `
+                        <div class="modulo-item flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200">
+                            <input type="checkbox" 
+                                id="modulo-${tipoPeca}-${modulo.modulo_id}"
+                                class="checkbox-custom"
+                                data-tipo="${tipoPeca}"
+                                data-modulo="${modulo.modulo_id}"
+                                ${checked}
+                                onchange="marcarAlteracao('${tipoPeca}', ${modulo.modulo_id}, this.checked)">
+                            <label for="modulo-${tipoPeca}-${modulo.modulo_id}" class="flex-1 cursor-pointer">
+                                <p class="text-sm font-medium text-gray-800">${modulo.titulo}</p>
+                                ${modulo.condicao_ativacao ? `<p class="text-xs text-gray-500 mt-0.5">${modulo.condicao_ativacao}</p>` : ''}
+                            </label>
+                            ${modulo.subcategoria ? `<span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">${modulo.subcategoria}</span>` : ''}
+                        </div>
+                    `;
+                }
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function marcarAlteracao(tipoPeca, moduloId, ativo) {
+            if (!alteracoesPendentes[tipoPeca]) {
+                alteracoesPendentes[tipoPeca] = {};
+            }
+            alteracoesPendentes[tipoPeca][moduloId] = ativo;
+            
+            // Atualiza badge
+            document.getElementById(`badge-${tipoPeca}`).classList.remove('hidden');
+            
+            // Atualiza contador
+            let total = 0;
+            Object.keys(alteracoesPendentes).forEach(t => {
+                total += Object.keys(alteracoesPendentes[t]).length;
+            });
+            document.getElementById('stat-pendentes').textContent = total;
+        }
+
+        function selecionarTodos(tipoPeca, ativo) {
+            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"]`);
+            checkboxes.forEach(cb => {
+                cb.checked = ativo;
+                marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), ativo);
+            });
+        }
+
+        function inverterSelecao(tipoPeca) {
+            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"]`);
+            checkboxes.forEach(cb => {
+                cb.checked = !cb.checked;
+                marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), cb.checked);
+            });
+        }
+
+        async function salvarTipoPeca(tipoPeca) {
+            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"]`);
+            const modulos = [];
+            
+            checkboxes.forEach(cb => {
+                modulos.push({
+                    modulo_id: parseInt(cb.dataset.modulo),
+                    ativo: cb.checked
+                });
+            });
+
+            try {
+                const response = await fetch(`${API_URL}/configurar-modulos-tipo-peca`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: JSON.stringify({
+                        tipo_peca: tipoPeca,
+                        modulos: modulos
+                    })
+                });
+
+                if (!response.ok) throw new Error('Erro ao salvar');
+
+                const result = await response.json();
+                
+                // Limpa alterações pendentes deste tipo
+                delete alteracoesPendentes[tipoPeca];
+                document.getElementById(`badge-${tipoPeca}`).classList.add('hidden');
+                
+                // Atualiza contador
+                let total = 0;
+                Object.keys(alteracoesPendentes).forEach(t => {
+                    total += Object.keys(alteracoesPendentes[t]).length;
+                });
+                document.getElementById('stat-pendentes').textContent = total;
+
+                showToast(result.mensagem || 'Configuração salva!', 'success');
+
+            } catch (error) {
+                console.error('Erro ao salvar:', error);
+                showToast('Erro ao salvar configuração', 'error');
+            }
+        }
+
+        async function salvarTodas() {
+            const tiposComAlteracoes = Object.keys(alteracoesPendentes);
+            
+            if (tiposComAlteracoes.length === 0) {
+                showToast('Nenhuma alteração pendente', 'warning');
+                return;
+            }
+
+            let sucesso = 0;
+            for (const tipoPeca of tiposComAlteracoes) {
+                try {
+                    await salvarTipoPeca(tipoPeca);
+                    sucesso++;
+                } catch (e) {
+                    console.error(`Erro ao salvar ${tipoPeca}:`, e);
+                }
+            }
+
+            showToast(`${sucesso} configuração(ões) salva(s)`, 'success');
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const icon = document.getElementById('toast-icon');
+            const msg = document.getElementById('toast-message');
+
+            msg.textContent = message;
+
+            if (type === 'success') {
+                icon.className = 'fas fa-check-circle text-green-400';
+            } else if (type === 'error') {
+                icon.className = 'fas fa-exclamation-circle text-red-400';
+            } else if (type === 'warning') {
+                icon.className = 'fas fa-exclamation-triangle text-amber-400';
+            }
+
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+    </script>
+</body>
+</html>

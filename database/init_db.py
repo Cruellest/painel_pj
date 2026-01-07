@@ -19,7 +19,7 @@ from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON, CategoriaResumoJSONHistorico
 from sistemas.gerador_pecas.models_config_pecas import CategoriaDocumento, TipoPeca, tipo_peca_categorias
 from admin.models import PromptConfig, ConfiguracaoIA
-from admin.models_prompts import PromptModulo, PromptModuloHistorico
+from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
 
 
 def wait_for_db(max_retries=10, delay=3):
