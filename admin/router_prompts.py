@@ -722,7 +722,7 @@ class ModuloTipoPecaResponse(BaseModel):
 
 @router.get("/tipos-peca")
 async def listar_tipos_peca(
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -746,7 +746,7 @@ async def listar_tipos_peca(
 @router.get("/modulos-por-tipo-peca/{tipo_peca}")
 async def listar_modulos_por_tipo_peca(
     tipo_peca: str,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -793,7 +793,7 @@ async def listar_modulos_por_tipo_peca(
 @router.post("/configurar-modulos-tipo-peca")
 async def configurar_modulos_tipo_peca(
     req: ConfigurarModulosTipoPecaRequest,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -841,7 +841,7 @@ async def configurar_modulos_tipo_peca(
 @router.post("/ativar-todos-modulos/{tipo_peca}")
 async def ativar_todos_modulos(
     tipo_peca: str,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -882,7 +882,7 @@ async def ativar_todos_modulos(
 @router.post("/desativar-todos-modulos/{tipo_peca}")
 async def desativar_todos_modulos(
     tipo_peca: str,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -922,7 +922,7 @@ async def desativar_todos_modulos(
 
 @router.get("/resumo-configuracao-tipos-peca")
 async def resumo_configuracao_tipos_peca(
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
