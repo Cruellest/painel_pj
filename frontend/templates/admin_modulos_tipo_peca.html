@@ -545,6 +545,10 @@
                 delete alteracoesPendentes[tipoPeca];
                 document.getElementById(`badge-${tipoPeca}`).classList.add('hidden');
                 
+                // Limpa cache e recarrega os dados do servidor
+                delete modulosPorTipo[tipoPeca];
+                await carregarModulosTipoPeca(tipoPeca);
+                
                 // Atualiza contador
                 let total = 0;
                 Object.keys(alteracoesPendentes).forEach(t => {
