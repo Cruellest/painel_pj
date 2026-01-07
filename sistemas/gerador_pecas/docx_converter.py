@@ -50,7 +50,7 @@ class DocxConverter:
     - Espaçamento entre linhas: 1.5
     - Margens: ABNT (3cm esq/sup, 2cm dir/inf)
     - Citações: Recuo 4cm, fonte 11pt, itálico
-    - Headers: justificados, SEM recuo, negrito
+    - Headers: justificados, SEM recuo, negrito, numerados automaticamente
     """
     
     def __init__(
@@ -74,6 +74,8 @@ class DocxConverter:
         margin_right_cm: float = 2.0,
         # Linhas em branco após direcionamento
         linhas_apos_direcionamento: int = 5,
+        # Numeração de títulos
+        numerar_titulos: bool = False,  # Desabilitado - IA já gera títulos numerados
     ):
         """
         Inicializa o conversor com configurações personalizadas.
@@ -90,6 +92,7 @@ class DocxConverter:
             quote_line_spacing: Espaçamento entre linhas para citações
             margin_*: Margens do documento em cm
             linhas_apos_direcionamento: Linhas em branco após o direcionamento
+            numerar_titulos: Se True, numera títulos automaticamente (1., 2., 2.1., etc.)
         """
         self.template_path = template_path or (
             str(TEMPLATE_PATH) if TEMPLATE_PATH.exists() else None
@@ -117,6 +120,46 @@ class DocxConverter:
         self.margin_bottom = Cm(margin_bottom_cm)
         self.margin_left = Cm(margin_left_cm)
         self.margin_right = Cm(margin_right_cm)
+        
+        # Numeração de títulos
+        self.numerar_titulos = numerar_titulos
+        self._heading_counters = [0, 0, 0, 0]  # Contadores para níveis 1, 2, 3, 4
+    
+    def _reset_heading_counters(self):
+        """Reseta os contadores de numeração de títulos."""
+        self._heading_counters = [0, 0, 0, 0]
+    
+    def _get_heading_number(self, level: int) -> str:
+        """
+        Retorna o número do título com base no nível.
+        
+        Exemplos:
+        - Nível 1: 1., 2., 3.
+        - Nível 2: 1.1., 1.2., 2.1.
+        - Nível 3: 1.1.1., 1.1.2.
+        """
+        if not self.numerar_titulos:
+            return ""
+        
+        # Ajusta índice (level 1 = index 0)
+        idx = level - 1
+        if idx < 0 or idx >= len(self._heading_counters):
+            return ""
+        
+        # Incrementa o contador do nível atual
+        self._heading_counters[idx] += 1
+        
+        # Reseta contadores de níveis inferiores
+        for i in range(idx + 1, len(self._heading_counters)):
+            self._heading_counters[i] = 0
+        
+        # Monta a numeração
+        parts = []
+        for i in range(idx + 1):
+            if self._heading_counters[i] > 0:
+                parts.append(str(self._heading_counters[i]))
+        
+        return ".".join(parts) + ". " if parts else ""
     
     def convert(self, markdown_text: str, output_path: str) -> bool:
         """
@@ -130,6 +173,9 @@ class DocxConverter:
             True se conversão bem sucedida
         """
         try:
+            # Reseta contadores de numeração
+            self._reset_heading_counters()
+            
             # Carrega template ou cria documento novo
             if self.template_path and os.path.exists(self.template_path):
                 doc = Document(self.template_path)
@@ -433,6 +479,7 @@ class DocxConverter:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.line_spacing = 1.0  # Espaçamento simples
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
         p.paragraph_format.space_after = Pt(0)  # Sem espaço após (linhas serão adicionadas)
         p.paragraph_format.first_line_indent = Cm(0)  # SEM recuo
         
@@ -448,6 +495,7 @@ class DocxConverter:
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.LEFT  # Alinhado à esquerda (não justificado)
         p.paragraph_format.line_spacing = 1.0  # Espaçamento simples
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
         p.paragraph_format.space_after = Pt(0)  # Sem espaço após (campos ficam juntos)
         p.paragraph_format.first_line_indent = Cm(0)  # SEM recuo
         
@@ -500,14 +548,20 @@ class DocxConverter:
             doc.add_paragraph()  # Linha em branco após cabeçalho
     
     def _add_heading(self, doc: Document, text: str, level: int):
-        """Adiciona título formatado - justificado, sem recuo, negrito."""
+        """Adiciona título formatado - justificado, sem recuo, negrito, numerado."""
         p = doc.add_paragraph()
         
         # Remove formatação markdown do texto
         clean_text = self._strip_markdown(text)
         
+        # Obtém numeração automática
+        numero = self._get_heading_number(level)
+        
+        # Monta texto do título (com número se habilitado)
+        titulo_texto = f"{numero}{clean_text.upper() if level <= 2 else clean_text}"
+        
         # Configura formatação do título
-        run = p.add_run(clean_text.upper() if level <= 2 else clean_text)
+        run = p.add_run(titulo_texto)
         run.font.name = self.font_name
         run.font.bold = True
         run.font.size = Pt(12)
@@ -517,16 +571,28 @@ class DocxConverter:
         p.paragraph_format.space_before = Pt(18)
         p.paragraph_format.space_after = Pt(12)
         p.paragraph_format.first_line_indent = Cm(0)  # SEM recuo
+        p.paragraph_format.line_spacing = self.line_spacing  # Espaçamento consistente
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE  # Tipo de espaçamento
     
     def _add_paragraph(self, doc: Document, text: str, indent: bool = True):
-        """Adiciona parágrafo com formatação inline."""
+        """Adiciona parágrafo com formatação inline e formatação consistente."""
         p = doc.add_paragraph()
+        
+        # Força o estilo 'Normal' explicitamente
+        p.style = doc.styles['Normal']
+        
+        # Aplica formatação direta (sobrescreve estilo)
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.line_spacing = self.line_spacing
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
         p.paragraph_format.space_after = self.space_after
+        p.paragraph_format.space_before = Pt(0)
         
+        # Configura recuo de primeira linha
         if indent:
             p.paragraph_format.first_line_indent = self.first_line_indent
+        else:
+            p.paragraph_format.first_line_indent = Cm(0)
         
         # Processa formatação inline (negrito, itálico)
         self._add_formatted_text(p, text)
@@ -583,6 +649,9 @@ class DocxConverter:
             run.font.name = self.font_name
             run.font.size = Pt(self.font_size)
             
+            # Configura fonte para caracteres asiáticos/especiais (evita fallback)
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), self.font_name)
+            
             if style == 'bold' or style == 'bold_italic':
                 run.bold = True
             if style == 'italic' or style == 'bold_italic':
@@ -598,6 +667,7 @@ class DocxConverter:
         p.paragraph_format.left_indent = self.quote_indent
         p.paragraph_format.right_indent = Cm(1)
         p.paragraph_format.line_spacing = self.quote_line_spacing
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
         p.paragraph_format.space_before = Pt(6)
         p.paragraph_format.space_after = Pt(6)
         p.paragraph_format.first_line_indent = Cm(0)  # Citações sem recuo de primeira linha
@@ -647,6 +717,7 @@ class DocxConverter:
             p.paragraph_format.first_line_indent = Cm(0)
             p.paragraph_format.space_after = Pt(3)
             p.paragraph_format.line_spacing = self.line_spacing
+            p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
             
             # Marcador
             if ordered:

@@ -178,7 +178,7 @@ NÃO exija aderência literal à “condicao_ativacao”; considere semelhanças
 
 Evite apenas módulos claramente irrelevantes ou totalmente desconectados dos fatos.
 
-Quando em dúvida entre incluir ou excluir, prefira incluir, justificando brevemente.
+Quando em dúvida entre incluir ou excluir, prefira incluir.
 
 ## FORMATO DE RESPOSTA
 

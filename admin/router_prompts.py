@@ -536,3 +536,158 @@ async def exportar_todos(
         })
     
     return export_data
+
+
+class ImportarModulosRequest(BaseModel):
+    """Schema para importação de módulos"""
+    modulos: List[dict]
+    sobrescrever_existentes: bool = False
+
+
+class ImportarModulosResponse(BaseModel):
+    """Resposta da importação"""
+    total_recebidos: int
+    criados: int
+    atualizados: int
+    ignorados: int
+    erros: List[str]
+
+
+@router.post("/importar", response_model=ImportarModulosResponse)
+async def importar_modulos(
+    dados: ImportarModulosRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Importa módulos de prompts a partir de arquivo JSON.
+    
+    Formato esperado do JSON:
+    {
+        "modulos": [
+            {
+                "tipo": "Conteúdo",  # ou "conteudo"
+                "categoria": "Preliminar",
+                "subcategoria": "Competência",
+                "nome_unico": "prel_jef_estadual",  # ou "nome"
+                "titulo": "Competência do Juizado...",
+                "condicao_ativacao": "Quando o juízo for...",
+                "conteudo_prompt": "## COMPETÊNCIA...",  # ou "conteudo"
+                "palavras_chave": [],
+                "tags": []
+            }
+        ]
+    }
+    """
+    verificar_permissao_prompts(current_user, "criar")
+    
+    criados = 0
+    atualizados = 0
+    ignorados = 0
+    erros = []
+    
+    for i, item in enumerate(dados.modulos):
+        try:
+            # Normalizar campos (aceita formatos diferentes)
+            tipo_raw = item.get("tipo", "conteudo")
+            tipo = tipo_raw.lower().replace("ú", "u")  # "Conteúdo" -> "conteudo"
+            if tipo not in ("base", "peca", "conteudo"):
+                tipo = "conteudo"  # Default para conteúdo
+            
+            # Aceita "nome_unico" ou "nome"
+            nome = item.get("nome_unico") or item.get("nome")
+            if not nome:
+                erros.append(f"Módulo {i+1}: campo 'nome' ou 'nome_unico' é obrigatório")
+                continue
+            
+            # Aceita "conteudo_prompt" ou "conteudo"
+            conteudo = item.get("conteudo_prompt") or item.get("conteudo")
+            if not conteudo:
+                erros.append(f"Módulo {i+1} ({nome}): campo 'conteudo' ou 'conteudo_prompt' é obrigatório")
+                continue
+            
+            titulo = item.get("titulo")
+            if not titulo:
+                erros.append(f"Módulo {i+1} ({nome}): campo 'titulo' é obrigatório")
+                continue
+            
+            categoria = item.get("categoria")
+            subcategoria = item.get("subcategoria")
+            condicao_ativacao = item.get("condicao_ativacao")
+            palavras_chave = item.get("palavras_chave", [])
+            tags = item.get("tags", [])
+            ordem = item.get("ordem", 0)
+            
+            # Verifica se já existe
+            existente = db.query(PromptModulo).filter(
+                PromptModulo.tipo == tipo,
+                PromptModulo.categoria == categoria,
+                PromptModulo.subcategoria == subcategoria,
+                PromptModulo.nome == nome
+            ).first()
+            
+            if existente:
+                if dados.sobrescrever_existentes:
+                    # Salva versão atual no histórico
+                    diff_resumo = gerar_diff_resumo(existente.conteudo, conteudo)
+                    historico = PromptModuloHistorico(
+                        modulo_id=existente.id,
+                        versao=existente.versao,
+                        condicao_ativacao=existente.condicao_ativacao,
+                        conteudo=existente.conteudo,
+                        palavras_chave=existente.palavras_chave,
+                        tags=existente.tags,
+                        alterado_por=current_user.id,
+                        motivo="Atualizado via importação JSON",
+                        diff_resumo=diff_resumo
+                    )
+                    db.add(historico)
+                    
+                    # Atualiza módulo existente
+                    existente.titulo = titulo
+                    existente.condicao_ativacao = condicao_ativacao
+                    existente.conteudo = conteudo
+                    existente.palavras_chave = palavras_chave
+                    existente.tags = tags
+                    existente.ordem = ordem
+                    existente.versao += 1
+                    existente.atualizado_por = current_user.id
+                    existente.atualizado_em = datetime.utcnow()
+                    existente.ativo = True
+                    
+                    atualizados += 1
+                else:
+                    ignorados += 1
+            else:
+                # Cria novo módulo
+                novo_modulo = PromptModulo(
+                    tipo=tipo,
+                    categoria=categoria,
+                    subcategoria=subcategoria,
+                    nome=nome,
+                    titulo=titulo,
+                    condicao_ativacao=condicao_ativacao,
+                    conteudo=conteudo,
+                    palavras_chave=palavras_chave,
+                    tags=tags,
+                    ordem=ordem,
+                    ativo=True,
+                    versao=1,
+                    criado_por=current_user.id,
+                    atualizado_por=current_user.id
+                )
+                db.add(novo_modulo)
+                criados += 1
+        
+        except Exception as e:
+            erros.append(f"Módulo {i+1}: {str(e)}")
+    
+    db.commit()
+    
+    return ImportarModulosResponse(
+        total_recebidos=len(dados.modulos),
+        criados=criados,
+        atualizados=atualizados,
+        ignorados=ignorados,
+        erros=erros
+    )

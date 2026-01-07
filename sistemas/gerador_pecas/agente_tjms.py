@@ -976,7 +976,7 @@ class AgenteTJMS:
         prompt_resumo: str = None,
         prompt_relatorio: str = None,
         modelo: str = MODELO_PADRAO,
-        max_workers: int = 10,
+        max_workers: int = 30,  # Número máximo de chamadas paralelas à IA
         formato_saida: str = "json",  # 'json' ou 'md'
         db_session = None,  # Sessão do banco para buscar formatos JSON
         codigos_permitidos: set = None,  # Códigos de documento a analisar (None = usa filtro legado)
@@ -988,6 +988,9 @@ class AgenteTJMS:
         self.db_session = db_session
         self.codigos_permitidos = codigos_permitidos  # None = usa CATEGORIAS_EXCLUIDAS
         self.codigos_primeiro_doc = codigos_primeiro_doc or set()  # Códigos especiais (ex: Petição Inicial)
+        
+        # Semáforo para controlar concorrência de chamadas à IA
+        self._semaphore = None  # Criado sob demanda no contexto async
         
         # Gerenciador de formatos JSON (carregado sob demanda)
         self._gerenciador_json = None
@@ -1382,19 +1385,27 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 for doc in resultado.documentos:
                     doc.numero_processo = numero_processo
 
-                # 4. Processar documentos em PARALELO
-                print("[4/4] Processando documentos em paralelo com IA...")
+                # 4. Processar documentos em PARALELO com controle de concorrência
+                print(f"[4/4] Processando documentos em paralelo com IA (max {self.max_workers} simultâneos)...")
+
+                # Criar semáforo para limitar concorrência
+                semaphore = asyncio.Semaphore(self.max_workers)
+                
+                async def processar_com_semaforo(doc):
+                    """Wrapper que aplica o semáforo para controlar concorrência"""
+                    async with semaphore:
+                        await self._processar_documento_async(session, doc)
 
                 # Criar tasks para processamento paralelo
                 tasks = []
                 for doc in resultado.documentos:
                     if doc.conteudo_base64:
-                        task = self._processar_documento_async(session, doc)
+                        task = processar_com_semaforo(doc)
                         tasks.append(task)
                     else:
                         doc.erro = "Documento sem conteúdo disponível"
 
-                # Executar todos em paralelo
+                # Executar todos em paralelo (limitado pelo semáforo)
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -1502,12 +1513,21 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 doc.processo_origem = True
                 doc.numero_processo = numero_processo_origem
 
-            # 5. Processar em paralelo
-            print(f"      Processando {len(docs_origem)} documentos do 1º grau...")
+            # 5. Processar em paralelo com controle de concorrência
+            print(f"      Processando {len(docs_origem)} documentos do 1º grau (max {self.max_workers} simultâneos)...")
+            
+            # Criar semáforo para limitar concorrência
+            semaphore = asyncio.Semaphore(self.max_workers)
+            
+            async def processar_com_semaforo(doc):
+                """Wrapper que aplica o semáforo para controlar concorrência"""
+                async with semaphore:
+                    await self._processar_documento_async(session, doc)
+            
             tasks = []
             for doc in docs_origem:
                 if doc.conteudo_base64:
-                    task = self._processar_documento_async(session, doc)
+                    task = processar_com_semaforo(doc)
                     tasks.append(task)
 
             if tasks:

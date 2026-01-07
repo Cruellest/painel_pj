@@ -46,7 +46,8 @@ class AgenteTJMSIntegrado:
         db_session = None, 
         formato_saida: str = "json",
         codigos_permitidos: set = None,  # Códigos de documento a analisar (None = usa filtro legado)
-        codigos_primeiro_doc: set = None  # Códigos que devem pegar só o primeiro documento cronológico
+        codigos_primeiro_doc: set = None,  # Códigos que devem pegar só o primeiro documento cronológico
+        max_workers: int = 30  # Número máximo de chamadas paralelas à IA
     ):
         """
         Inicializa o agente.
@@ -57,18 +58,21 @@ class AgenteTJMSIntegrado:
             formato_saida: 'json' ou 'md' - formato de saída dos resumos
             codigos_permitidos: Conjunto de códigos de documento a analisar (None = usa filtro legado)
             codigos_primeiro_doc: Códigos que devem pegar só o primeiro documento (ex: Petição Inicial)
+            max_workers: Número máximo de chamadas paralelas à IA (padrão: 30)
         """
         self.modelo = modelo or MODELO_PADRAO
         self.db_session = db_session
         self.formato_saida = formato_saida
         self.codigos_permitidos = codigos_permitidos
         self.codigos_primeiro_doc = codigos_primeiro_doc or set()
+        self.max_workers = max_workers
         self.agente = AgenteTJMS(
             modelo=self.modelo,
             formato_saida=formato_saida,
             db_session=db_session,
             codigos_permitidos=codigos_permitidos,
-            codigos_primeiro_doc=codigos_primeiro_doc
+            codigos_primeiro_doc=codigos_primeiro_doc,
+            max_workers=max_workers
         )
     
     def atualizar_codigos_permitidos(self, codigos: set, codigos_primeiro_doc: set = None):
