@@ -418,17 +418,25 @@ class OrquestradorAgentes:
                     PromptModulo.tipo == "conteudo",
                     PromptModulo.ativo == True,
                     PromptModulo.id.in_(modulos_ids)
-                ).order_by(PromptModulo.ordem).all()
+                ).order_by(PromptModulo.categoria, PromptModulo.ordem).all()
                 
                 if modulos_conteudo:
                     partes_conteudo = ["## ARGUMENTOS E TESES APLICÁVEIS\n"]
                     for modulo in modulos_conteudo:
+                        # Monta cabeçalho com categoria e subcategoria
+                        categoria_info = ""
+                        if modulo.categoria:
+                            categoria_info = f"[{modulo.categoria}"
+                            if modulo.subcategoria:
+                                categoria_info += f" > {modulo.subcategoria}"
+                            categoria_info += "] "
+                        
                         # Inclui a condição de ativação para que o Agente 3 possa fazer juízo crítico
                         condicao = modulo.condicao_ativacao or ""
                         if condicao:
-                            partes_conteudo.append(f"### {modulo.titulo}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
+                            partes_conteudo.append(f"### {categoria_info}{modulo.titulo}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
                         else:
-                            partes_conteudo.append(f"### {modulo.titulo}\n{modulo.conteudo}\n")
+                            partes_conteudo.append(f"### {categoria_info}{modulo.titulo}\n\n{modulo.conteudo}\n")
                         print(f"   ✓ Módulo ativado: {modulo.titulo}")
                     resultado.prompt_conteudo = "\n".join(partes_conteudo)
             
