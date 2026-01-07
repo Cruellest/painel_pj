@@ -394,40 +394,90 @@
             });
 
             let html = '';
+            let catIndex = 0;
             for (const [categoria, modulosCategoria] of Object.entries(porCategoria)) {
+                const catId = `cat-${tipoPeca}-${catIndex}`;
+                const ativosCategoria = modulosCategoria.filter(m => m.ativo_tipo_peca).length;
+                const totalCategoria = modulosCategoria.length;
+                
                 html += `
-                    <div class="mb-4">
-                        <h4 class="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">${categoria}</h4>
-                        <div class="space-y-1">
+                    <div class="mb-3 border border-gray-200 rounded-lg overflow-hidden">
+                        <!-- Cabeçalho da Categoria (Colapsável) -->
+                        <div class="bg-gray-50 px-4 py-3 cursor-pointer hover:bg-gray-100 transition-colors flex items-center justify-between"
+                             onclick="toggleCategoria('${catId}')">
+                            <div class="flex items-center gap-3">
+                                <i id="chevron-${catId}" class="fas fa-chevron-right text-gray-400 text-xs transition-transform duration-200"></i>
+                                <span class="font-medium text-gray-700">${categoria}</span>
+                                <span class="text-xs text-gray-500">(${ativosCategoria}/${totalCategoria} ativos)</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="event.stopPropagation(); selecionarCategoria('${tipoPeca}', '${categoria}', true)" 
+                                    class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200" title="Ativar todos desta categoria">
+                                    <i class="fas fa-check"></i>
+                                </button>
+                                <button type="button" onclick="event.stopPropagation(); selecionarCategoria('${tipoPeca}', '${categoria}', false)" 
+                                    class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200" title="Desativar todos desta categoria">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Conteúdo da Categoria (Colapsável) -->
+                        <div id="${catId}" class="hidden border-t border-gray-200">
+                            <div class="p-3 space-y-1 bg-white">
                 `;
                 
                 for (const modulo of modulosCategoria) {
                     const checked = modulo.ativo_tipo_peca ? 'checked' : '';
                     html += `
-                        <div class="modulo-item flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200">
-                            <input type="checkbox" 
-                                id="modulo-${tipoPeca}-${modulo.modulo_id}"
-                                class="checkbox-custom"
-                                data-tipo="${tipoPeca}"
-                                data-modulo="${modulo.modulo_id}"
-                                ${checked}
-                                onchange="marcarAlteracao('${tipoPeca}', ${modulo.modulo_id}, this.checked)">
-                            <label for="modulo-${tipoPeca}-${modulo.modulo_id}" class="flex-1 cursor-pointer">
-                                <p class="text-sm font-medium text-gray-800">${modulo.titulo}</p>
-                                ${modulo.condicao_ativacao ? `<p class="text-xs text-gray-500 mt-0.5">${modulo.condicao_ativacao}</p>` : ''}
-                            </label>
-                            ${modulo.subcategoria ? `<span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">${modulo.subcategoria}</span>` : ''}
-                        </div>
+                                <div class="modulo-item flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50" data-categoria="${categoria}">
+                                    <input type="checkbox" 
+                                        id="modulo-${tipoPeca}-${modulo.modulo_id}"
+                                        class="checkbox-custom"
+                                        data-tipo="${tipoPeca}"
+                                        data-modulo="${modulo.modulo_id}"
+                                        data-categoria="${categoria}"
+                                        ${checked}
+                                        onchange="marcarAlteracao('${tipoPeca}', ${modulo.modulo_id}, this.checked)">
+                                    <label for="modulo-${tipoPeca}-${modulo.modulo_id}" class="flex-1 cursor-pointer">
+                                        <p class="text-sm font-medium text-gray-800">${modulo.titulo}</p>
+                                        ${modulo.condicao_ativacao ? `<p class="text-xs text-gray-500 mt-0.5 line-clamp-2">${modulo.condicao_ativacao}</p>` : ''}
+                                    </label>
+                                    ${modulo.subcategoria ? `<span class="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-600">${modulo.subcategoria}</span>` : ''}
+                                </div>
                     `;
                 }
                 
                 html += `
+                            </div>
                         </div>
                     </div>
                 `;
+                catIndex++;
             }
 
             container.innerHTML = html;
+        }
+
+        function toggleCategoria(catId) {
+            const content = document.getElementById(catId);
+            const chevron = document.getElementById(`chevron-${catId}`);
+            
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                chevron.classList.add('rotate-90');
+            } else {
+                content.classList.add('hidden');
+                chevron.classList.remove('rotate-90');
+            }
+        }
+
+        function selecionarCategoria(tipoPeca, categoria, ativo) {
+            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"][data-categoria="${categoria}"]`);
+            checkboxes.forEach(cb => {
+                cb.checked = ativo;
+                marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), ativo);
+            });
         }
 
         function marcarAlteracao(tipoPeca, moduloId, ativo) {
