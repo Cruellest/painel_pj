@@ -584,7 +584,7 @@ async def comparar_versoes(
 
 @router.get("/exportar/todos")
 async def exportar_todos(
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Exporta todos os módulos em formato JSON"""
@@ -594,6 +594,48 @@ async def exportar_todos(
         "versao": "1.0",
         "exportado_em": datetime.utcnow().isoformat(),
         "exportado_por": current_user.username,
+        "modulos": []
+    }
+    
+    for modulo in modulos:
+        export_data["modulos"].append({
+            "tipo": modulo.tipo,
+            "categoria": modulo.categoria,
+            "subcategoria": modulo.subcategoria,
+            "nome": modulo.nome,
+            "titulo": modulo.titulo,
+            "condicao_ativacao": modulo.condicao_ativacao or "",
+            "conteudo": modulo.conteudo,
+            "palavras_chave": modulo.palavras_chave or [],
+            "tags": modulo.tags or [],
+            "ordem": modulo.ordem
+        })
+    
+    return export_data
+
+
+class ExportarSelecionadosRequest(BaseModel):
+    """Schema para exportação de módulos selecionados"""
+    ids: List[int]
+
+
+@router.post("/exportar/selecionados")
+async def exportar_selecionados(
+    req: ExportarSelecionadosRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Exporta módulos selecionados em formato JSON compatível com importação"""
+    if not req.ids:
+        raise HTTPException(status_code=400, detail="Nenhum módulo selecionado")
+    
+    modulos = db.query(PromptModulo).filter(PromptModulo.id.in_(req.ids)).all()
+    
+    export_data = {
+        "versao": "1.0",
+        "exportado_em": datetime.utcnow().isoformat(),
+        "exportado_por": current_user.username,
+        "total": len(modulos),
         "modulos": []
     }
     

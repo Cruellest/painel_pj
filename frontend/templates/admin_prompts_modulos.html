@@ -63,7 +63,7 @@
                 <button onclick="abrirModalImportar()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
                     <i class="fas fa-upload"></i> Importar JSON
                 </button>
-                <button onclick="exportarTodos()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2">
+                <button onclick="abrirModalExportar()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2">
                     <i class="fas fa-download"></i> Exportar
                 </button>
             </div>
@@ -421,9 +421,99 @@
         </div>
     </div>
 
+    <!-- Modal de Exportação -->
+    <div id="modal-exportar" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col m-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">
+                        <i class="fas fa-download text-blue-600 mr-2"></i>
+                        Exportar Módulos de Prompts
+                    </h2>
+                    <p class="text-sm text-gray-500">Selecione os módulos para exportar em JSON</p>
+                </div>
+                <button onclick="fecharModalExportar()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-6">
+                <!-- Filtros de Exportação -->
+                <div class="flex flex-wrap gap-4 items-center mb-4 pb-4 border-b border-gray-200">
+                    <select id="export-filtro-tipo" class="px-3 py-2 border border-gray-300 rounded-lg text-sm" onchange="filtrarModulosExport()">
+                        <option value="">Todos os tipos</option>
+                        <option value="base">Base (Sistema)</option>
+                        <option value="peca">Peça</option>
+                        <option value="conteudo">Conteúdo</option>
+                    </select>
+                    <select id="export-filtro-categoria" class="px-3 py-2 border border-gray-300 rounded-lg text-sm" onchange="filtrarModulosExport()">
+                        <option value="">Todas as categorias</option>
+                    </select>
+                    <div class="flex-1"></div>
+                    <span id="export-contador" class="text-sm text-gray-500">0 selecionados</span>
+                </div>
+                
+                <!-- Ações em Lote -->
+                <div class="flex items-center gap-2 mb-4">
+                    <button onclick="selecionarTodosExport(true)" class="px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100">
+                        <i class="fas fa-check-double mr-1"></i> Selecionar Todos
+                    </button>
+                    <button onclick="selecionarTodosExport(false)" class="px-3 py-1.5 text-sm bg-red-50 text-red-700 rounded-lg hover:bg-red-100">
+                        <i class="fas fa-times mr-1"></i> Desmarcar Todos
+                    </button>
+                    <button onclick="selecionarPorTipo('conteudo')" class="px-3 py-1.5 text-sm bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100">
+                        <i class="fas fa-puzzle-piece mr-1"></i> Só Conteúdo
+                    </button>
+                    <button onclick="selecionarPorTipo('peca')" class="px-3 py-1.5 text-sm bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100">
+                        <i class="fas fa-file-alt mr-1"></i> Só Peça
+                    </button>
+                    <button onclick="inverterSelecaoExport()" class="px-3 py-1.5 text-sm bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100">
+                        <i class="fas fa-exchange-alt mr-1"></i> Inverter
+                    </button>
+                </div>
+                
+                <!-- Lista de Módulos para Exportar -->
+                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                    <div class="max-h-96 overflow-y-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-100 sticky top-0">
+                                <tr>
+                                    <th class="px-3 py-2 text-left w-10">
+                                        <input type="checkbox" id="export-select-all" onchange="selecionarTodosExport(this.checked)" class="w-4 h-4 text-blue-600 rounded">
+                                    </th>
+                                    <th class="px-3 py-2 text-left">Título</th>
+                                    <th class="px-3 py-2 text-left">Tipo</th>
+                                    <th class="px-3 py-2 text-left">Categoria</th>
+                                    <th class="px-3 py-2 text-left">Subcategoria</th>
+                                </tr>
+                            </thead>
+                            <tbody id="lista-modulos-exportar" class="divide-y divide-gray-100">
+                                <tr><td colspan="5" class="px-3 py-8 text-center text-gray-400">Carregando...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footer do Modal -->
+            <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+                <span id="export-info" class="text-sm text-gray-500"></span>
+                <div class="flex items-center gap-3">
+                    <button type="button" onclick="fecharModalExportar()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                        Cancelar
+                    </button>
+                    <button type="button" onclick="executarExportacao()" id="btn-exportar" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fas fa-download mr-1"></i> Exportar JSON
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '/admin/api/prompts-modulos';
         let modulosCache = [];
+        let modulosExportCache = [];
         let keywordsAtuais = [];
         let tagsAtuais = [];
         let moduloAtualId = null;
@@ -1074,6 +1164,167 @@
             const resultadoSucesso = document.getElementById('resultado-sucesso');
             if (!resultadoSucesso.classList.contains('hidden')) {
                 carregarModulos();
+            }
+        }
+        
+        // ==========================================
+        // Funções de Exportação
+        // ==========================================
+        
+        async function abrirModalExportar() {
+            document.getElementById('modal-exportar').classList.remove('hidden');
+            await carregarModulosParaExport();
+            atualizarContadorExport();
+        }
+        
+        function fecharModalExportar() {
+            document.getElementById('modal-exportar').classList.add('hidden');
+        }
+        
+        async function carregarModulosParaExport() {
+            try {
+                const response = await fetch(`${API_BASE}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+                
+                if (!response.ok) throw new Error('Erro ao carregar módulos');
+                
+                modulosExportCache = await response.json();
+                
+                // Popula categorias no filtro
+                const categorias = [...new Set(modulosExportCache.map(m => m.categoria).filter(c => c))];
+                const selectCategoria = document.getElementById('export-filtro-categoria');
+                selectCategoria.innerHTML = '<option value="">Todas as categorias</option>' +
+                    categorias.map(c => `<option value="${c}">${c}</option>`).join('');
+                
+                renderizarModulosExport(modulosExportCache);
+                
+            } catch (error) {
+                console.error('Erro ao carregar módulos para exportação:', error);
+            }
+        }
+        
+        function filtrarModulosExport() {
+            const tipo = document.getElementById('export-filtro-tipo').value;
+            const categoria = document.getElementById('export-filtro-categoria').value;
+            
+            let filtrados = modulosExportCache;
+            
+            if (tipo) {
+                filtrados = filtrados.filter(m => m.tipo === tipo);
+            }
+            if (categoria) {
+                filtrados = filtrados.filter(m => m.categoria === categoria);
+            }
+            
+            renderizarModulosExport(filtrados);
+        }
+        
+        function renderizarModulosExport(modulos) {
+            const tbody = document.getElementById('lista-modulos-exportar');
+            
+            if (modulos.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-3 py-8 text-center text-gray-400">Nenhum módulo encontrado</td></tr>';
+                return;
+            }
+            
+            const tipoLabels = {
+                'base': '<span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">Base</span>',
+                'peca': '<span class="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700">Peça</span>',
+                'conteudo': '<span class="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">Conteúdo</span>'
+            };
+            
+            tbody.innerHTML = modulos.map(m => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2">
+                        <input type="checkbox" class="export-checkbox w-4 h-4 text-blue-600 rounded" 
+                            data-id="${m.id}" data-tipo="${m.tipo}" onchange="atualizarContadorExport()">
+                    </td>
+                    <td class="px-3 py-2">
+                        <p class="font-medium text-gray-800">${m.titulo}</p>
+                        <p class="text-xs text-gray-500">${m.nome}</p>
+                    </td>
+                    <td class="px-3 py-2">${tipoLabels[m.tipo] || m.tipo}</td>
+                    <td class="px-3 py-2">${m.categoria || '-'}</td>
+                    <td class="px-3 py-2">${m.subcategoria || '-'}</td>
+                </tr>
+            `).join('');
+        }
+        
+        function selecionarTodosExport(selecionar) {
+            const checkboxes = document.querySelectorAll('.export-checkbox');
+            checkboxes.forEach(cb => cb.checked = selecionar);
+            document.getElementById('export-select-all').checked = selecionar;
+            atualizarContadorExport();
+        }
+        
+        function selecionarPorTipo(tipo) {
+            const checkboxes = document.querySelectorAll('.export-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = cb.dataset.tipo === tipo;
+            });
+            atualizarContadorExport();
+        }
+        
+        function inverterSelecaoExport() {
+            const checkboxes = document.querySelectorAll('.export-checkbox');
+            checkboxes.forEach(cb => cb.checked = !cb.checked);
+            atualizarContadorExport();
+        }
+        
+        function atualizarContadorExport() {
+            const checkboxes = document.querySelectorAll('.export-checkbox:checked');
+            const total = checkboxes.length;
+            document.getElementById('export-contador').textContent = `${total} selecionado${total !== 1 ? 's' : ''}`;
+            document.getElementById('btn-exportar').disabled = total === 0;
+            
+            // Atualiza info
+            if (total > 0) {
+                document.getElementById('export-info').textContent = `${total} módulo${total !== 1 ? 's' : ''} será${total !== 1 ? 'ão' : ''} exportado${total !== 1 ? 's' : ''}`;
+            } else {
+                document.getElementById('export-info').textContent = 'Selecione ao menos um módulo';
+            }
+        }
+        
+        async function executarExportacao() {
+            const checkboxes = document.querySelectorAll('.export-checkbox:checked');
+            const ids = Array.from(checkboxes).map(cb => parseInt(cb.dataset.id));
+            
+            if (ids.length === 0) {
+                alert('Selecione ao menos um módulo para exportar');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/exportar/selecionados`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    },
+                    body: JSON.stringify({ ids })
+                });
+                
+                if (!response.ok) throw new Error('Erro ao exportar');
+                
+                const data = await response.json();
+                
+                // Cria e baixa o arquivo
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `prompts_modulos_${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                fecharModalExportar();
+                
+            } catch (error) {
+                console.error('Erro ao exportar:', error);
+                alert('Erro ao exportar módulos');
             }
         }
         
