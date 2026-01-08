@@ -283,8 +283,14 @@
                 );
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Erro ao carregar documentos');
+                    // Tenta parsear como JSON, senão usa texto
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Erro ao carregar documentos');
+                    } else {
+                        throw new Error(`Erro ${response.status}: ${response.statusText}`);
+                    }
                 }
 
                 const data = await response.json();

@@ -254,13 +254,30 @@ Responda SOMENTE com o JSON, sem texto adicional.
 
         # Extrair JSON da resposta
         content = content.strip()
+        
         # Remover markdown se houver
         if content.startswith('```'):
             lines = content.split('\n')
-            lines = [l for l in lines if not l.startswith('```')]
-            content = '\n'.join(lines)
-
-        return json.loads(content)
+            # Remove primeira e última linha com ```
+            if lines[0].startswith('```'):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == '```':
+                lines = lines[:-1]
+            content = '\n'.join(lines).strip()
+        
+        # Tentar encontrar JSON dentro do texto
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', content)
+        if json_match:
+            content = json_match.group()
+        
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            print(f"⚠️ Erro ao parsear JSON: {e}")
+            print(f"⚠️ Conteúdo recebido: {content[:200]}...")
+            # Retorna estrutura vazia para fallback
+            return {"modulos_relevantes": [], "justificativa": "Erro no parsing", "confianca": "baixa"}
 
     def _processar_resposta_ia(
         self,
