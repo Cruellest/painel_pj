@@ -27,13 +27,13 @@ class DetectorModulosIA:
     def __init__(
         self,
         db: Session,
-        modelo: str = "gemini-2.5-flash-lite",
+        modelo: str = "gemini-3-flash-preview",
         cache_ttl_minutes: int = 60
     ):
         """
         Args:
             db: Sessão do banco de dados
-            modelo: Modelo a ser usado (padrão: gemini-2.5-flash-lite)
+            modelo: Modelo a ser usado (padrão: gemini-3-flash-preview)
             cache_ttl_minutes: Tempo de vida do cache em minutos
         """
         self.db = db

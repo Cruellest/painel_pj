@@ -282,14 +282,14 @@ async def listar_modelos_ia(
     resultado = {
         "assistencia_judiciaria": {
             "id": configs_aj.id if configs_aj else None,
-            "modelo": configs_aj.valor if configs_aj else "google/gemini-2.5-flash",
+            "modelo": configs_aj.valor if configs_aj else "google/gemini-3-flash-preview",
             "descricao": "Modelo para análise de processos judiciais"
         },
         "matriculas": {
             "id": configs_mat_analise.id if configs_mat_analise else None,
-            "modelo": configs_mat_analise.valor if configs_mat_analise else "google/gemini-2.5-flash",
-            "modelo_analise": configs_mat_analise.valor if configs_mat_analise else "google/gemini-2.5-flash",
-            "modelo_relatorio": configs_mat_relatorio.valor if configs_mat_relatorio else "google/gemini-2.5-flash",
+            "modelo": configs_mat_analise.valor if configs_mat_analise else "google/gemini-3-flash-preview",
+            "modelo_analise": configs_mat_analise.valor if configs_mat_analise else "google/gemini-3-flash-preview",
+            "modelo_relatorio": configs_mat_relatorio.valor if configs_mat_relatorio else "google/gemini-3-flash-preview",
             "descricao": "Modelo para análise de matrículas imobiliárias"
         }
     }
@@ -757,7 +757,7 @@ async def listar_feedbacks(
                 ConfiguracaoIA.sistema == "matriculas",
                 ConfiguracaoIA.chave == "modelo_relatorio"
             ).first()
-            modelo_matriculas_default = modelo_mat_config.valor if modelo_mat_config else "google/gemini-2.5-flash"
+            modelo_matriculas_default = modelo_mat_config.valor if modelo_mat_config else "google/gemini-3-flash-preview"
             
             for fb, file_name, matricula, modelo_usado, username, full_name in query_mat.all():
                 feedbacks_combinados.append({

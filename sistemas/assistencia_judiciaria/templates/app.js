@@ -34,7 +34,7 @@ let appState = {
     ultimoResultado: null,
     config: {
         apiKey: '',
-        model: 'google/gemini-2.5-flash'
+        model: 'google/gemini-3-flash-preview'
     }
 };
 
@@ -504,7 +504,7 @@ async function carregarSettings() {
     try {
         const config = await api('/settings');
         if (config) {
-            appState.config.model = config.default_model || 'google/gemini-2.5-flash';
+            appState.config.model = config.default_model || 'google/gemini-3-flash-preview';
         }
     } catch (error) {
         console.error('Erro ao carregar settings:', error);

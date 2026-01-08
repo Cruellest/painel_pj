@@ -434,7 +434,7 @@ DEFAULT_CONFIG_IA = [
     {
         "sistema": "matriculas",
         "chave": "modelo_relatorio",
-        "valor": "google/gemini-2.5-flash",
+        "valor": "google/gemini-3-flash-preview",
         "tipo_valor": "string",
         "descricao": "Modelo de IA para geração de relatórios"
     },

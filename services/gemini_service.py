@@ -52,8 +52,8 @@ class GeminiService:
     # Modelos disponíveis
     MODELS = {
         # Modelos rápidos (baixo custo)
-        "flash": "gemini-2.5-flash",
-        "flash-lite": "gemini-2.5-flash-lite",
+        "flash": "gemini-3-flash-preview",
+        "flash-lite": "gemini-3-flash-preview",
         
         # Modelos avançados
         "pro": "gemini-2.5-pro",
@@ -63,10 +63,10 @@ class GeminiService:
     
     # Modelo padrão para cada tipo de tarefa
     DEFAULT_MODELS = {
-        "resumo": "gemini-2.5-flash-lite",      # Resumir documentos
-        "analise": "gemini-2.5-flash",           # Analisar conteúdo
+        "resumo": "gemini-3-flash-preview",      # Resumir documentos
+        "analise": "gemini-3-flash-preview",           # Analisar conteúdo
         "geracao": "gemini-3-pro-preview",       # Gerar peças/relatórios
-        "visao": "gemini-2.5-flash",             # Análise de imagens
+        "visao": "gemini-3-flash-preview",             # Análise de imagens
     }
     
     def __init__(self, api_key: str = None):
@@ -102,7 +102,7 @@ class GeminiService:
         
         Exemplos:
             - google/gemini-3-pro-preview -> gemini-3-pro-preview
-            - flash -> gemini-2.5-flash
+            - flash -> gemini-3-flash-preview
             - pro-preview -> gemini-3-pro-preview
         """
         # Remove prefixo google/

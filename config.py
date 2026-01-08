@@ -56,15 +56,15 @@ TJ_WS_PASS = os.getenv("TJ_WS_PASS", "")
 # ==================================================
 GEMINI_API_KEY = os.getenv("GEMINI_KEY", "")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 
 # ==================================================
 # CONFIGURAÇÕES DO OPENROUTER (IA - Legado)
 # ==================================================
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.5-flash")
-FULL_REPORT_MODEL = os.getenv("FULL_REPORT_MODEL", "google/gemini-2.5-flash")
+DEFAULT_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-3-flash-preview")
+FULL_REPORT_MODEL = os.getenv("FULL_REPORT_MODEL", "google/gemini-3-flash-preview")
 
 # ==================================================
 # CONFIGURAÇÕES DE ARQUIVOS

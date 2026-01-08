@@ -45,7 +45,7 @@ if not WS_USER or not WS_PASS:
     print("⚠️ Credenciais TJ-MS não configuradas - defina TJ_WS_USER e TJ_WS_PASS no .env")
 
 # Modelo padrão (sem prefixo google/)
-MODELO_PADRAO = "gemini-2.5-flash-lite"
+MODELO_PADRAO = "gemini-3-flash-preview"
 
 # =========================
 # Categorias de documentos excluídas

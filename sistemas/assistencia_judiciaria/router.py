@@ -50,7 +50,7 @@ class DocumentRequest(BaseModel):
 
 class SettingsRequest(BaseModel):
     openrouter_api_key: str = ""
-    default_model: str = "google/gemini-2.5-flash"
+    default_model: str = "google/gemini-3-flash-preview"
 
 
 def load_settings():

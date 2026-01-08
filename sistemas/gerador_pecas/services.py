@@ -111,7 +111,7 @@ class GeradorPecasService:
                 ConfiguracaoIA.chave == "cache_ttl_minutos"
             ).first()
 
-            modelo = modelo_config.valor if modelo_config else "gemini-2.5-flash-lite"
+            modelo = modelo_config.valor if modelo_config else "gemini-3-flash-preview"
             cache_ttl = int(cache_config.valor) if cache_config else 60
 
             return DetectorModulosIA(

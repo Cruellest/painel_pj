@@ -28,7 +28,7 @@ async def chamar_gemini_aiohttp_async(
     session,
     prompt: str,
     system_prompt: str = "",
-    modelo: str = "gemini-2.5-flash-lite",
+    modelo: str = "gemini-3-flash-preview",
     max_tokens: int = 8192,
     temperature: float = 0.3,
     api_key: str = None

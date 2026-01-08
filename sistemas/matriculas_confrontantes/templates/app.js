@@ -43,7 +43,7 @@ let appState = {
     currentGrupoId: null,  // Para análise em lote
     config: {
         version: '1.0.0',
-        model: 'google/gemini-2.5-flash',
+        model: 'google/gemini-3-flash-preview',
         hasApiKey: false
     },
     pollingIntervals: {}

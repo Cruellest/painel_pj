@@ -26,8 +26,8 @@ from admin.models_prompts import PromptModulo
 
 
 # Modelos padrão (usados se não houver configuração no banco)
-MODELO_AGENTE1_PADRAO = "gemini-2.5-flash-lite"
-MODELO_AGENTE2_PADRAO = "gemini-2.5-flash-lite"
+MODELO_AGENTE1_PADRAO = "gemini-3-flash-preview"
+MODELO_AGENTE2_PADRAO = "gemini-3-flash-preview"
 MODELO_AGENTE3_PADRAO = "gemini-3-pro-preview"
 
 # NOTA: Templates de Formatação (TemplateFormatacao) foram removidos do prompt da IA.
