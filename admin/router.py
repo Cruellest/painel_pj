@@ -342,19 +342,33 @@ async def get_api_key_status(
     """Verifica se a API key está configurada (apenas admin)"""
     import os
     
-    # Verifica ambiente
+    # Verifica GEMINI_KEY primeiro (nova API direta)
+    gemini_key = os.getenv("GEMINI_KEY", "")
+    if gemini_key:
+        return {"configured": True, "source": "environment (GEMINI_KEY)"}
+    
+    # Verifica ambiente OpenRouter (legado)
     env_key = os.getenv("OPENROUTER_API_KEY", "")
     if env_key:
-        return {"configured": True, "source": "environment"}
+        return {"configured": True, "source": "environment (OpenRouter)"}
     
     # Verifica banco
+    config = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "global",
+        ConfiguracaoIA.chave == "gemini_api_key"
+    ).first()
+    
+    if config and config.valor:
+        return {"configured": True, "source": "database (Gemini)"}
+    
+    # Verifica banco OpenRouter (legado)
     config = db.query(ConfiguracaoIA).filter(
         ConfiguracaoIA.sistema == "global",
         ConfiguracaoIA.chave == "openrouter_api_key"
     ).first()
     
     if config and config.valor:
-        return {"configured": True, "source": "database"}
+        return {"configured": True, "source": "database (OpenRouter)"}
     
     return {"configured": False, "source": None}
 
@@ -365,13 +379,13 @@ async def update_api_key(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Atualiza a API key global do OpenRouter (apenas admin)"""
+    """Atualiza a API key global do Gemini (apenas admin)"""
     if not api_key or not api_key.strip():
         raise HTTPException(status_code=400, detail="API Key não pode estar vazia")
     
     config = db.query(ConfiguracaoIA).filter(
         ConfiguracaoIA.sistema == "global",
-        ConfiguracaoIA.chave == "openrouter_api_key"
+        ConfiguracaoIA.chave == "gemini_api_key"
     ).first()
     
     if config:
@@ -379,10 +393,10 @@ async def update_api_key(
     else:
         config = ConfiguracaoIA(
             sistema="global",
-            chave="openrouter_api_key",
+            chave="gemini_api_key",
             valor=api_key.strip(),
             tipo_valor="string",
-            descricao="API Key do OpenRouter (compartilhada por todos os sistemas)"
+            descricao="API Key do Google Gemini (compartilhada por todos os sistemas)"
         )
         db.add(config)
     

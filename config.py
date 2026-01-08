@@ -52,7 +52,14 @@ TJ_WS_USER = os.getenv("TJ_WS_USER", "")
 TJ_WS_PASS = os.getenv("TJ_WS_PASS", "")
 
 # ==================================================
-# CONFIGURAÇÕES DO OPENROUTER (IA)
+# CONFIGURAÇÕES DO GOOGLE GEMINI (IA)
+# ==================================================
+GEMINI_API_KEY = os.getenv("GEMINI_KEY", "")
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+# ==================================================
+# CONFIGURAÇÕES DO OPENROUTER (IA - Legado)
 # ==================================================
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"

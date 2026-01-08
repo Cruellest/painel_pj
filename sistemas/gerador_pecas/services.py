@@ -70,13 +70,11 @@ class GeradorPecasService:
     
     def __init__(
         self,
-        modelo: str = "google/gemini-2.5-pro-preview-05-06",
+        modelo: str = "gemini-3-pro-preview",
         db: Session = None
     ):
         self.modelo = modelo
         self.db = db
-        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
-        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
         # Diretório para arquivos temporários
         self.temp_dir = os.path.join(os.path.dirname(__file__), 'temp_docs')
@@ -113,7 +111,7 @@ class GeradorPecasService:
                 ConfiguracaoIA.chave == "cache_ttl_minutos"
             ).first()
 
-            modelo = modelo_config.valor if modelo_config else "google/gemini-2.0-flash-lite"
+            modelo = modelo_config.valor if modelo_config else "gemini-2.5-flash-lite"
             cache_ttl = int(cache_config.valor) if cache_config else 60
 
             return DetectorModulosIA(
@@ -559,10 +557,9 @@ OAB/MS nº [NÚMERO]
         Returns:
             Dict com status e minuta atualizada
         """
+        from sistemas.gerador_pecas.gemini_client import chamar_gemini_async
+        
         try:
-            if not self.api_key:
-                raise ValueError("OPENROUTER_API_KEY não configurada")
-            
             # Monta o prompt de sistema para edição
             system_prompt = """Você é um assistente jurídico especializado em edição de peças jurídicas.
 
@@ -583,65 +580,51 @@ NÃO inclua:
 
 Retorne SOMENTE a minuta editada em markdown."""
 
-            # Monta as mensagens
-            mensagens = [
-                {"role": "system", "content": system_prompt}
-            ]
+            # Monta o prompt do usuário com histórico
+            prompt_parts = []
             
             # Adiciona histórico se houver
             if historico:
+                prompt_parts.append("### Histórico da conversa:")
                 for msg in historico:
-                    mensagens.append({
-                        "role": msg.get("role", "user"),
-                        "content": msg.get("content", "")
-                    })
+                    role = "Usuário" if msg.get("role") == "user" else "Assistente"
+                    prompt_parts.append(f"{role}: {msg.get('content', '')}")
+                prompt_parts.append("")
             
             # Adiciona a mensagem atual com a minuta
-            user_message = f"""Minuta atual:
+            prompt_parts.append(f"""### Minuta atual:
 
 {minuta_atual}
 
 ---
 
-Pedido de alteração: {mensagem_usuario}"""
+### Pedido de alteração: {mensagem_usuario}""")
             
-            mensagens.append({"role": "user", "content": user_message})
+            prompt_completo = "\n".join(prompt_parts)
             
             # Chama a IA
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                response = await client.post(
-                    self.base_url,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": self.modelo,
-                        "messages": mensagens,
-                        "temperature": 0.3,
-                        "max_tokens": 8000
-                    }
-                )
-                
-                response.raise_for_status()
-                result = response.json()
-                
-                minuta_editada = result['choices'][0]['message']['content']
-                
-                # Remove possíveis blocos de código markdown que a IA pode ter adicionado
-                if minuta_editada.startswith('```markdown'):
-                    minuta_editada = minuta_editada[11:]
-                if minuta_editada.startswith('```'):
-                    minuta_editada = minuta_editada[3:]
-                if minuta_editada.endswith('```'):
-                    minuta_editada = minuta_editada[:-3]
-                
-                minuta_editada = minuta_editada.strip()
-                
-                return {
-                    "status": "sucesso",
-                    "minuta_markdown": minuta_editada
-                }
+            minuta_editada = await chamar_gemini_async(
+                prompt=prompt_completo,
+                system_prompt=system_prompt,
+                modelo=self.modelo,
+                max_tokens=8000,
+                temperature=0.3
+            )
+            
+            # Remove possíveis blocos de código markdown que a IA pode ter adicionado
+            if minuta_editada.startswith('```markdown'):
+                minuta_editada = minuta_editada[11:]
+            if minuta_editada.startswith('```'):
+                minuta_editada = minuta_editada[3:]
+            if minuta_editada.endswith('```'):
+                minuta_editada = minuta_editada[:-3]
+            
+            minuta_editada = minuta_editada.strip()
+            
+            return {
+                "status": "sucesso",
+                "minuta_markdown": minuta_editada
+            }
                 
         except httpx.HTTPStatusError as e:
             print(f"❌ Erro HTTP na edição: {e}")

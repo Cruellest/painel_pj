@@ -19,16 +19,16 @@ from sqlalchemy.orm import Session
 
 from sistemas.gerador_pecas.agente_tjms_integrado import AgenteTJMSIntegrado, ResultadoAgente1
 from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
+from sistemas.gerador_pecas.gemini_client import chamar_gemini_async, normalizar_modelo
 # NOTA: TemplateFormatacao não é mais importado aqui - templates serão usados apenas para MD->DOCX
 from admin.models import ConfiguracaoIA
 from admin.models_prompts import PromptModulo
 
 
 # Modelos padrão (usados se não houver configuração no banco)
-MODELO_AGENTE1_PADRAO = "google/gemini-2.5-flash-lite"
-MODELO_AGENTE2_PADRAO = "google/gemini-2.5-flash-lite"
-MODELO_AGENTE3_PADRAO = "google/gemini-2.5-pro-preview-05-06"
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+MODELO_AGENTE1_PADRAO = "gemini-2.5-flash-lite"
+MODELO_AGENTE2_PADRAO = "gemini-2.5-flash-lite"
+MODELO_AGENTE3_PADRAO = "gemini-3-pro-preview"
 
 # NOTA: Templates de Formatação (TemplateFormatacao) foram removidos do prompt da IA.
 # Agora a peça é gerada diretamente em Markdown.
@@ -104,7 +104,6 @@ class OrquestradorAgentes:
             tipo_peca: Tipo de peça para filtrar categorias de documentos (opcional)
         """
         self.db = db
-        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
         self.tipo_peca_inicial = tipo_peca
         
         # Carrega configurações do banco (tabela configuracoes_ia) ou usa padrões
@@ -508,51 +507,29 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
             
             print(f"📝 Prompt montado: {len(prompt_completo)} caracteres (SEM template JSON)")
 
-            # Chama a API do OpenRouter com Gemini 3 Pro
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(
-                    OPENROUTER_URL,
-                    headers={
-                        "Authorization": f"Bearer {self.api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "https://pge-ms.gov.br",
-                        "X-Title": "PGE-MS - Gerador de Pecas"
-                    },
-                    json={
-                        "model": self.modelo_geracao,
-                        "messages": [
-                            {"role": "user", "content": prompt_completo}
-                        ],
-                        "temperature": 0.3,
-                        "max_tokens": 16000
-                    }
-                )
-                
-                response.raise_for_status()
-                data = response.json()
-                
-                content = data['choices'][0]['message']['content']
-                
-                # Remove possíveis blocos de código markdown que a IA pode ter adicionado
-                content_limpo = content.strip()
-                if content_limpo.startswith('```markdown'):
-                    content_limpo = content_limpo[11:]
-                elif content_limpo.startswith('```'):
-                    content_limpo = content_limpo[3:]
-                if content_limpo.endswith('```'):
-                    content_limpo = content_limpo[:-3]
-                
-                resultado.conteudo_markdown = content_limpo.strip()
-                
-                # Contabiliza tokens
-                if 'usage' in data:
-                    resultado.tokens_usados = data['usage'].get('total_tokens', 0)
-                
-                print(f"✅ Peça gerada com sucesso em Markdown!")
-                print(f"📊 Tokens usados: {resultado.tokens_usados}")
-                print(f"📄 Tamanho da peça: {len(resultado.conteudo_markdown)} caracteres")
-                
-                return resultado
+            # Chama a API do Gemini diretamente
+            content = await chamar_gemini_async(
+                prompt=prompt_completo,
+                modelo=self.modelo_geracao,
+                max_tokens=16000,
+                temperature=0.3
+            )
+            
+            # Remove possíveis blocos de código markdown que a IA pode ter adicionado
+            content_limpo = content.strip()
+            if content_limpo.startswith('```markdown'):
+                content_limpo = content_limpo[11:]
+            elif content_limpo.startswith('```'):
+                content_limpo = content_limpo[3:]
+            if content_limpo.endswith('```'):
+                content_limpo = content_limpo[:-3]
+            
+            resultado.conteudo_markdown = content_limpo.strip()
+            
+            print(f"✅ Peça gerada com sucesso em Markdown!")
+            print(f"📄 Tamanho da peça: {len(resultado.conteudo_markdown)} caracteres")
+            
+            return resultado
                 
         except Exception as e:
             import traceback

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from admin.models_prompts import PromptModulo
+from sistemas.gerador_pecas.gemini_client import chamar_gemini_async, normalizar_modelo
 
 
 class DetectorModulosIA:
@@ -20,13 +21,13 @@ class DetectorModulosIA:
     1. Qual TIPO DE PEÇA é mais adequado (contestação, recurso, etc)
     2. Quais módulos de CONTEÚDO são relevantes para o caso
 
-    Utiliza google/gemini-2.5-flash-lite para análise rápida e de baixo custo.
+    Utiliza API direta do Gemini para análise rápida e de baixo custo.
     """
 
     def __init__(
         self,
         db: Session,
-        modelo: str = "google/gemini-2.5-flash-lite",
+        modelo: str = "gemini-2.5-flash-lite",
         cache_ttl_minutes: int = 60
     ):
         """
@@ -36,10 +37,8 @@ class DetectorModulosIA:
             cache_ttl_minutes: Tempo de vida do cache em minutos
         """
         self.db = db
-        self.modelo = modelo
+        self.modelo = normalizar_modelo(modelo)
         self.cache_ttl = timedelta(minutes=cache_ttl_minutes)
-        self.api_key = os.getenv("OPENROUTER_API_KEY", "")
-        self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
         # Cache em memória {hash_documentos: (modulos_ids, timestamp)}
         self._cache = {}
@@ -244,49 +243,24 @@ Responda SOMENTE com o JSON, sem texto adicional.
         return prompt
 
     async def _chamar_ia(self, prompt: str) -> Dict:
-        """Chama a API do OpenRouter com o modelo Gemini Flash Lite"""
+        """Chama a API do Gemini diretamente"""
 
-        if not self.api_key:
-            raise ValueError("OPENROUTER_API_KEY não configurada")
+        content = await chamar_gemini_async(
+            prompt=prompt,
+            modelo=self.modelo,
+            max_tokens=1000,
+            temperature=0.1  # Baixa temperatura para resposta determinística
+        )
 
-        mensagens = [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
+        # Extrair JSON da resposta
+        content = content.strip()
+        # Remover markdown se houver
+        if content.startswith('```'):
+            lines = content.split('\n')
+            lines = [l for l in lines if not l.startswith('```')]
+            content = '\n'.join(lines)
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                self.base_url,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://pge-ms.gov.br",
-                    "X-Title": "PGE-MS - Detector Modulos"
-                },
-                json={
-                    "model": self.modelo,
-                    "messages": mensagens,
-                    "temperature": 0.1,  # Baixa temperatura para resposta determinística
-                    "max_tokens": 1000   # Resposta curta
-                }
-            )
-
-            response.raise_for_status()
-            result = response.json()
-
-            content = result['choices'][0]['message']['content']
-
-            # Extrair JSON da resposta
-            content = content.strip()
-            # Remover markdown se houver
-            if content.startswith('```'):
-                lines = content.split('\n')
-                lines = [l for l in lines if not l.startswith('```')]
-                content = '\n'.join(lines)
-
-            return json.loads(content)
+        return json.loads(content)
 
     def _processar_resposta_ia(
         self,
