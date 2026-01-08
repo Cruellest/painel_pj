@@ -359,15 +359,83 @@ async def processar_processo_stream(
     )
 
 
+def _normalizar_texto(texto: str) -> str:
+    """
+    Normaliza texto extraído de PDF removendo quebras excessivas e espaços.
+    
+    Args:
+        texto: Texto bruto extraído do PDF
+        
+    Returns:
+        Texto normalizado
+    """
+    import re
+    
+    if not texto:
+        return ""
+    
+    # Remove caracteres de controle exceto \n
+    texto = re.sub(r'[\x00-\x09\x0b\x0c\x0e-\x1f]', '', texto)
+    
+    # Substitui múltiplos espaços por um só
+    texto = re.sub(r'[ \t]+', ' ', texto)
+    
+    # Remove espaços no início e fim de cada linha
+    linhas = [linha.strip() for linha in texto.split('\n')]
+    
+    # Junta linhas que foram quebradas no meio de frases
+    # (linha que não termina com pontuação seguida de linha que começa com minúscula)
+    resultado = []
+    buffer = ""
+    
+    for linha in linhas:
+        if not linha:
+            # Linha vazia indica parágrafo
+            if buffer:
+                resultado.append(buffer)
+                buffer = ""
+            continue
+        
+        if buffer:
+            # Verifica se deve juntar com a linha anterior
+            # Junta se: linha anterior não termina com .!?:; e linha atual começa com minúscula
+            ultima_char = buffer[-1] if buffer else ''
+            primeira_char = linha[0] if linha else ''
+            
+            if ultima_char not in '.!?;:' and primeira_char.islower():
+                # Continua a mesma frase
+                buffer += ' ' + linha
+            elif ultima_char == '-':
+                # Palavra hifenizada quebrada
+                buffer = buffer[:-1] + linha
+            else:
+                # Nova frase/parágrafo
+                resultado.append(buffer)
+                buffer = linha
+        else:
+            buffer = linha
+    
+    if buffer:
+        resultado.append(buffer)
+    
+    # Junta parágrafos com dupla quebra de linha
+    texto_final = '\n\n'.join(resultado)
+    
+    # Remove mais de 2 quebras de linha consecutivas
+    texto_final = re.sub(r'\n{3,}', '\n\n', texto_final)
+    
+    return texto_final.strip()
+
+
 def _extrair_texto_pdf(pdf_bytes: bytes) -> str:
     """
-    Extrai texto de um arquivo PDF usando PyMuPDF.
+    Extrai texto de um arquivo PDF usando PyMuPDF e normaliza.
     
     Args:
         pdf_bytes: Bytes do arquivo PDF
         
     Returns:
-        Texto extraído do PDF
+        Texto extraído e normalizado do PDF
     """
     texto_completo = []
     try:
@@ -380,7 +448,9 @@ def _extrair_texto_pdf(pdf_bytes: bytes) -> str:
     except Exception as e:
         print(f"Erro ao extrair texto do PDF: {e}")
     
-    return "\n\n".join(texto_completo)
+    # Junta todas as páginas e normaliza
+    texto_bruto = "\n".join(texto_completo)
+    return _normalizar_texto(texto_bruto)
 
 
 @router.post("/processar-pdfs-stream")

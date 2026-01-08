@@ -31,6 +31,57 @@ import pymupdf4llm
 from dotenv import load_dotenv
 load_dotenv()
 
+
+def _normalizar_texto_pdf(texto: str) -> str:
+    """
+    Normaliza texto extraído de PDF removendo quebras excessivas e espaços.
+    """
+    if not texto:
+        return ""
+    
+    # Remove caracteres de controle exceto \n
+    texto = re.sub(r'[\x00-\x09\x0b\x0c\x0e-\x1f]', '', texto)
+    
+    # Substitui múltiplos espaços por um só
+    texto = re.sub(r'[ \t]+', ' ', texto)
+    
+    # Remove espaços no início e fim de cada linha
+    linhas = [linha.strip() for linha in texto.split('\n')]
+    
+    # Junta linhas que foram quebradas no meio de frases
+    resultado = []
+    buffer = ""
+    
+    for linha in linhas:
+        if not linha:
+            if buffer:
+                resultado.append(buffer)
+                buffer = ""
+            continue
+        
+        if buffer:
+            ultima_char = buffer[-1] if buffer else ''
+            primeira_char = linha[0] if linha else ''
+            
+            if ultima_char not in '.!?;:' and primeira_char.islower():
+                buffer += ' ' + linha
+            elif ultima_char == '-':
+                buffer = buffer[:-1] + linha
+            else:
+                resultado.append(buffer)
+                buffer = linha
+        else:
+            buffer = linha
+    
+    if buffer:
+        resultado.append(buffer)
+    
+    texto_final = '\n\n'.join(resultado)
+    texto_final = re.sub(r'\n{3,}', '\n\n', texto_final)
+    
+    return texto_final.strip()
+
+
 # =========================
 # Configurações
 # =========================
@@ -817,7 +868,7 @@ def extrair_conteudo_pdf(pdf_bytes: bytes, max_paginas_imagem: int = 10) -> Cont
         # Verifica se é RTF disfarçado
         if pdf_bytes.startswith(b'{\\rtf'):
             texto = pdf_bytes.decode('latin-1', errors='ignore')
-            return ConteudoPDF(tipo='texto', conteudo=texto, paginas=1)
+            return ConteudoPDF(tipo='texto', conteudo=_normalizar_texto_pdf(texto), paginas=1)
 
         # Tenta abrir como PDF
         with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
@@ -833,9 +884,11 @@ def extrair_conteudo_pdf(pdf_bytes: bytes, max_paginas_imagem: int = 10) -> Cont
                 # Usa pymupdf4llm para extração otimizada
                 try:
                     md_text = pymupdf4llm.to_markdown(doc)
+                    # pymupdf4llm já formata bem, mas aplicamos normalização leve
                     return ConteudoPDF(tipo='texto', conteudo=md_text, paginas=num_paginas)
                 except:
-                    return ConteudoPDF(tipo='texto', conteudo=texto_completo, paginas=num_paginas)
+                    # Fallback com normalização
+                    return ConteudoPDF(tipo='texto', conteudo=_normalizar_texto_pdf(texto_completo), paginas=num_paginas)
 
             # PDF digitalizado - converter páginas para imagens
             imagens = []
@@ -862,7 +915,7 @@ def extrair_conteudo_pdf(pdf_bytes: bytes, max_paginas_imagem: int = 10) -> Cont
                 for page in doc:
                     text += page.get_text()
                 if text.strip():
-                    return ConteudoPDF(tipo='texto', conteudo=text, paginas=len(doc))
+                    return ConteudoPDF(tipo='texto', conteudo=_normalizar_texto_pdf(text), paginas=len(doc))
         except:
             pass
         return ConteudoPDF(tipo='texto', conteudo=f"[Erro na extração: {str(e)}]", paginas=0)
