@@ -34,7 +34,7 @@ try:
 except ImportError:
     PDF2IMAGE_AVAILABLE = False
 
-from config import OPENROUTER_ENDPOINT, DEFAULT_MODEL, FULL_REPORT_MODEL
+from config import DEFAULT_MODEL, FULL_REPORT_MODEL
 
 
 # =========================
@@ -553,97 +553,123 @@ def pdf_to_images(pdf_path: str, max_pages: Optional[int] = 10) -> List[Image.Im
 
 
 # =========================
-# API OpenRouter
+# API Gemini (usando serviço centralizado)
 # =========================
 
+def call_gemini_vision(model: str, system_prompt: str, user_prompt: str, 
+                       images_base64: List[str], temperature: float = 0.1, 
+                       max_tokens: int = 1500, api_key: str = None) -> Dict:
+    """Chama a API Gemini com suporte a visão computacional"""
+    import asyncio
+    from services.gemini_service import gemini_service
+    
+    logger.info(f"   └─ Enviando {len(images_base64)} imagem(ns) para análise...")
+    
+    # Prepara imagens no formato esperado (com prefixo data:)
+    images_with_prefix = []
+    for img_b64 in images_base64:
+        if img_b64:
+            if not img_b64.startswith("data:"):
+                img_b64 = f"data:image/jpeg;base64,{img_b64}"
+            images_with_prefix.append(img_b64)
+    
+    # Combina system_prompt e user_prompt
+    prompt_completo = f"{system_prompt}\n\n{user_prompt}"
+    
+    import time
+    start_time = time.time()
+    
+    # Executa a chamada assíncrona
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        response = loop.run_until_complete(
+            gemini_service.generate_with_images(
+                prompt=prompt_completo,
+                images_base64=images_with_prefix,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+        )
+    finally:
+        loop.close()
+    
+    elapsed = time.time() - start_time
+    
+    if not response.success:
+        logger.error(f"   ❌ API retornou erro: {response.error}")
+        raise RuntimeError(f"Erro na API: {response.error}")
+    
+    logger.info(f"   └─ Resposta recebida em {elapsed:.1f}s")
+    
+    # Retorna no formato esperado pelo código existente
+    return {
+        "choices": [{
+            "message": {
+                "content": response.content
+            }
+        }]
+    }
+
+
+def call_gemini_text(model: str, system_prompt: str, user_prompt: str,
+                     temperature: float = 0.2, max_tokens: int = 2000, 
+                     api_key: str = None) -> str:
+    """Chama a API Gemini para gerar texto"""
+    import asyncio
+    from services.gemini_service import gemini_service
+    
+    import time
+    start_time = time.time()
+    
+    # Executa a chamada assíncrona
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        response = loop.run_until_complete(
+            gemini_service.generate(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+        )
+    finally:
+        loop.close()
+    
+    elapsed = time.time() - start_time
+    
+    if not response.success:
+        raise RuntimeError(f"Erro na API: {response.error}")
+    
+    logger.info(f"   └─ Relatório gerado em {elapsed:.1f}s")
+    
+    return response.content
+
+
+# Aliases para compatibilidade
 def call_openrouter_vision(model: str, system_prompt: str, user_prompt: str, 
                            images_base64: List[str], temperature: float = 0.0, 
                            max_tokens: int = 1500, api_key: str = None) -> Dict:
-    """Chama a API OpenRouter com suporte a visão computacional"""
-    if not api_key:
-        raise RuntimeError("API Key não configurada")
-
-    logger.info(f"   └─ Enviando {len(images_base64)} imagem(ns) para análise...")
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://pge-ms.lab/analise-matriculas",
-        "X-Title": "Analise de Matriculas PGE-MS"
-    }
-
-    content = [{"type": "text", "text": user_prompt}]
-    
-    for img_b64 in images_base64:
-        if img_b64:
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{img_b64}",
-                    "detail": "high"
-                }
-            })
-
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content}
-        ],
-        "temperature": 0.1,
-        "max_tokens": max_tokens,
-        "response_format": {"type": "json_object"}
-    }
-
-    import time
-    start_time = time.time()
-    resp = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=180)
-    elapsed = time.time() - start_time
-    
-    if resp.status_code != 200:
-        logger.error(f"   ❌ API retornou erro {resp.status_code}")
-        raise RuntimeError(f"API retornou status {resp.status_code}: {resp.text[:200]}")
-    
-    logger.info(f"   └─ Resposta recebida em {elapsed:.1f}s")
-    return resp.json()
+    """Alias para call_gemini_vision (compatibilidade)"""
+    # Normaliza o modelo
+    from services.gemini_service import GeminiService
+    model = GeminiService.normalize_model(model)
+    return call_gemini_vision(model, system_prompt, user_prompt, images_base64, 
+                               temperature, max_tokens, api_key)
 
 
 def call_openrouter_text(model: str, system_prompt: str, user_prompt: str,
                          temperature: float = 0.2, max_tokens: int = 2000, 
                          api_key: str = None) -> str:
-    """Chama a API OpenRouter para gerar texto"""
-    if not api_key:
-        raise RuntimeError("API Key não configurada")
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://pge-ms.lab/analise-matriculas",
-        "X-Title": "Analise de Matriculas PGE-MS"
-    }
-
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": temperature,
-        "max_tokens": max_tokens
-    }
-
-    import time
-    start_time = time.time()
-    resp = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=180)
-    elapsed = time.time() - start_time
-    
-    if resp.status_code != 200:
-        raise RuntimeError(f"API retornou status {resp.status_code}")
-    
-    logger.info(f"   └─ Relatório gerado em {elapsed:.1f}s")
-    
-    data = resp.json()
-    return data["choices"][0]["message"].get("content", "")
+    """Alias para call_gemini_text (compatibilidade)"""
+    # Normaliza o modelo
+    from services.gemini_service import GeminiService
+    model = GeminiService.normalize_model(model)
+    return call_gemini_text(model, system_prompt, user_prompt, 
+                            temperature, max_tokens, api_key)
 
 
 def clean_json_response(content: str) -> str:

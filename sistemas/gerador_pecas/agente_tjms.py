@@ -37,7 +37,6 @@ load_dotenv()
 URL_WSDL = os.getenv('URL_WSDL') or os.getenv('TJ_WSDL_URL') or os.getenv('TJ_URL_WSDL')
 WS_USER = os.getenv('WS_USER') or os.getenv('TJ_WS_USER')
 WS_PASS = os.getenv('WS_PASS') or os.getenv('TJ_WS_PASS')
-GEMINI_API_KEY = os.getenv('GEMINI_KEY')
 
 # Validação das configurações
 if not URL_WSDL:
@@ -47,9 +46,6 @@ if not WS_USER or not WS_PASS:
 
 # Modelo padrão (sem prefixo google/)
 MODELO_PADRAO = "gemini-2.5-flash-lite"
-
-# URL base da API Gemini
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 # =========================
 # Categorias de documentos excluídas
@@ -880,16 +876,12 @@ def extrair_texto_pdf(pdf_bytes: bytes) -> str:
     return "[PDF digitalizado - sem texto extraível]"
 
 
-def _normalizar_modelo(modelo: str) -> str:
-    """Remove prefixo google/ se presente"""
-    if modelo.startswith("google/"):
-        return modelo[7:]
-    return modelo
+# =========================
+# Funções Gemini/LLM (usando serviço centralizado)
+# =========================
+from services.gemini_service import gemini_service
 
 
-# =========================
-# Funções Gemini/LLM
-# =========================
 async def chamar_llm_async(
     session: aiohttp.ClientSession,
     prompt: str,
@@ -899,52 +891,19 @@ async def chamar_llm_async(
     temperature: float = 0.3
 ) -> str:
     """Chama modelo Gemini diretamente (async)"""
-
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_KEY não configurada")
+    response = await gemini_service.generate_with_session(
+        session=session,
+        prompt=prompt,
+        system_prompt=system_prompt,
+        model=modelo,
+        max_tokens=max_tokens,
+        temperature=temperature
+    )
     
-    # Normaliza o modelo
-    modelo = _normalizar_modelo(modelo)
+    if not response.success:
+        raise ValueError(response.error)
     
-    # Monta URL
-    url = f"{GEMINI_BASE_URL}/{modelo}:generateContent?key={GEMINI_API_KEY}"
-    
-    # Monta conteúdo
-    contents = [{"role": "user", "parts": [{"text": prompt}]}]
-    
-    # System instruction
-    system_instruction = None
-    if system_prompt:
-        system_instruction = {"parts": [{"text": system_prompt}]}
-    
-    # Payload
-    payload = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens
-        }
-    }
-    
-    if system_instruction:
-        payload["systemInstruction"] = system_instruction
-
-    async with session.post(
-        url,
-        json=payload,
-        timeout=aiohttp.ClientTimeout(total=120)
-    ) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
-        
-        # Extrai texto da resposta
-        candidates = data.get('candidates', [])
-        if candidates:
-            content = candidates[0].get('content', {})
-            parts = content.get('parts', [])
-            if parts:
-                return parts[0].get('text', '')
-        return ''
+    return response.content
 
 
 async def chamar_llm_com_imagens_async(
@@ -957,77 +916,20 @@ async def chamar_llm_com_imagens_async(
     temperature: float = 0.3
 ) -> str:
     """Chama modelo Gemini com imagens (async) - para PDFs digitalizados"""
-
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_KEY não configurada")
+    response = await gemini_service.generate_with_images_session(
+        session=session,
+        prompt=prompt,
+        images_base64=imagens_base64,
+        system_prompt=system_prompt,
+        model=modelo,
+        max_tokens=max_tokens,
+        temperature=temperature
+    )
     
-    # Normaliza o modelo
-    modelo = _normalizar_modelo(modelo)
+    if not response.success:
+        raise ValueError(response.error)
     
-    # Monta URL
-    url = f"{GEMINI_BASE_URL}/{modelo}:generateContent?key={GEMINI_API_KEY}"
-    
-    # Monta partes do conteúdo
-    parts = []
-    
-    # Adiciona as imagens
-    for img_base64 in imagens_base64:
-        # Extrai mime type e dados do base64
-        if img_base64.startswith("data:"):
-            # Formato: data:image/png;base64,<dados>
-            header, img_data = img_base64.split(",", 1)
-            mime_type = header.split(":")[1].split(";")[0]
-        else:
-            # Assume PNG se não tiver header
-            mime_type = "image/png"
-            img_data = img_base64
-        
-        parts.append({
-            "inline_data": {
-                "mime_type": mime_type,
-                "data": img_data
-            }
-        })
-    
-    # Adiciona o prompt de texto
-    parts.append({"text": prompt})
-    
-    # Monta conteúdo
-    contents = [{"role": "user", "parts": parts}]
-    
-    # System instruction
-    system_instruction = None
-    if system_prompt:
-        system_instruction = {"parts": [{"text": system_prompt}]}
-    
-    # Payload
-    payload = {
-        "contents": contents,
-        "generationConfig": {
-            "temperature": temperature,
-            "maxOutputTokens": max_tokens
-        }
-    }
-    
-    if system_instruction:
-        payload["systemInstruction"] = system_instruction
-
-    async with session.post(
-        url,
-        json=payload,
-        timeout=aiohttp.ClientTimeout(total=180)  # Mais tempo para imagens
-    ) as resp:
-        resp.raise_for_status()
-        data = await resp.json()
-        
-        # Extrai texto da resposta
-        candidates = data.get('candidates', [])
-        if candidates:
-            content = candidates[0].get('content', {})
-            parts = content.get('parts', [])
-            if parts:
-                return parts[0].get('text', '')
-        return ''
+    return response.content
 
 
 # =========================

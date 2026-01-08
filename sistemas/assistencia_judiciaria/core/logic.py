@@ -12,8 +12,7 @@ import xml.etree.ElementTree as ET
 
 from config import (
     TJ_WSDL_URL, TJ_WS_USER, TJ_WS_PASS,
-    OPENROUTER_ENDPOINT, DEFAULT_MODEL,
-    STRICT_CNJ_CHECK, CLASSES_CUMPRIMENTO, NS
+    DEFAULT_MODEL, STRICT_CNJ_CHECK, CLASSES_CUMPRIMENTO, NS
 )
 from database.connection import SessionLocal
 from admin.models import PromptConfig, ConfiguracaoIA
@@ -21,28 +20,34 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger("sistemas.assistencia_judiciaria.core.logic")
 
-def get_openrouter_api_key():
-    """Busca a API key dinamicamente do ambiente ou banco de dados."""
-    # Primeiro tenta do ambiente
-    api_key = os.getenv("OPENROUTER_API_KEY", "")
+def get_gemini_api_key():
+    """Busca a API key do Gemini dinamicamente do ambiente ou banco de dados."""
+    # Primeiro tenta GEMINI_KEY do ambiente
+    api_key = os.getenv("GEMINI_KEY", "")
     if api_key:
-        logger.info("API key encontrada no ambiente")
+        logger.info("GEMINI_KEY encontrada no ambiente")
         return api_key
     
     # Tenta buscar do banco de dados (configuração global)
     try:
         db = SessionLocal()
-        config = db.query(ConfiguracaoIA).filter_by(sistema="global", chave="openrouter_api_key").first()
+        config = db.query(ConfiguracaoIA).filter_by(sistema="global", chave="gemini_api_key").first()
         if config and config.valor:
-            logger.info("API key encontrada no banco de dados")
+            logger.info("Gemini API key encontrada no banco de dados")
             db.close()
             return config.valor
         db.close()
     except Exception as e:
-        logger.warning(f"Erro ao buscar API key do banco: {e}")
+        logger.warning(f"Erro ao buscar Gemini API key do banco: {e}")
     
-    logger.warning("API key não encontrada em nenhuma fonte")
+    logger.warning("Gemini API key não encontrada em nenhuma fonte")
     return ""
+
+
+# Alias para compatibilidade
+def get_openrouter_api_key():
+    """Alias para get_gemini_api_key (compatibilidade)"""
+    return get_gemini_api_key()
 
 def make_session() -> requests.Session:
     s = requests.Session()
@@ -72,9 +77,9 @@ def validate_config() -> Tuple[bool, str]:
     if not TJ_WS_USER:  miss.append("TJ_WS_USER")
     if not TJ_WS_PASS:  miss.append("TJ_WS_PASS")
     
-    api_key = get_openrouter_api_key()
-    if not api_key or api_key == "SUA_CHAVE_AQUI":
-        miss.append("OPENROUTER_API_KEY")
+    api_key = get_gemini_api_key()
+    if not api_key:
+        miss.append("GEMINI_KEY")
     if miss:
         return False, "Variáveis ausentes no config: " + ", ".join(miss)
     return True, "OK"
@@ -327,52 +332,63 @@ A resposta deve ser redigida em **Markdown**, no formato de relatório jurídico
         {"role": "user", "content": user},
     ]
 
-def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60) -> str:
-    api_key = get_openrouter_api_key()
-    if not api_key:
-        return "Erro: OPENROUTER_API_KEY não configurada."
+def call_gemini(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60) -> str:
+    """Chama a API do Gemini usando o serviço centralizado"""
+    import asyncio
+    from services.gemini_service import gemini_service, GeminiService
     
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://pge-ms.lab",
-        "X-Title": "Relatório TJMS",
-    }
-    payload = {
-        "model": model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
+    # Normaliza o modelo
+    model = GeminiService.normalize_model(model)
     
-    logger.info(f"Chamando OpenRouter com modelo {model}...")
+    # Extrai system e user prompts das mensagens
+    system_prompt = ""
+    user_prompt = ""
+    
+    for msg in messages:
+        if msg.get("role") == "system":
+            system_prompt = msg.get("content", "")
+        elif msg.get("role") == "user":
+            user_prompt = msg.get("content", "")
+    
+    logger.info(f"Chamando Gemini com modelo {model}...")
+    
     try:
-        r = requests.post(OPENROUTER_ENDPOINT, headers=headers, json=payload, timeout=timeout)
-        r.raise_for_status()
-        logger.info("Resposta recebida do OpenRouter")
-    except requests.exceptions.Timeout:
-        logger.error("Timeout na chamada ao OpenRouter")
-        return "Erro: Timeout na chamada à API de IA. Tente novamente."
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Erro na requisição ao OpenRouter: {e}")
-        return f"Erro na requisição à API: {str(e)}"
-    
-    j = r.json()
-
-    try:
-        message = j["choices"][0]["message"]
-        content = message.get("content", "")
-        if content and content.strip():
-            return content
-            
-        reasoning = message.get("reasoning", "")
-        if reasoning and reasoning.strip():
-            return reasoning
-            
+        # Executa a chamada assíncrona
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            response = loop.run_until_complete(
+                gemini_service.generate(
+                    prompt=user_prompt,
+                    system_prompt=system_prompt,
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+            )
+        finally:
+            loop.close()
+        
+        if not response.success:
+            logger.error(f"Erro na API Gemini: {response.error}")
+            return f"Erro: {response.error}"
+        
+        logger.info("Resposta recebida do Gemini")
+        
+        if response.content and response.content.strip():
+            return response.content
+        
         return "Erro: A API retornou uma resposta vazia."
+        
     except Exception as e:
-        logger.exception("Falha ao interpretar resposta da LLM")
+        logger.exception("Falha ao chamar Gemini")
         return f"Erro ao processar resposta da API: {str(e)}"
+
+
+# Alias para compatibilidade
+def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60) -> str:
+    """Alias para call_gemini (compatibilidade)"""
+    return call_gemini(messages, model, temperature, max_tokens, timeout)
 
 def full_flow(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[str, Any], str]:
     ok_config, msg_config = validate_config()
