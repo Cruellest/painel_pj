@@ -322,7 +322,7 @@ async def excluir_historico(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Remove uma consulta do histórico do usuário."""
+    """Remove uma consulta do histórico do usuário - PRESERVA feedbacks."""
     try:
         consulta = db.query(ConsultaProcesso).filter(
             ConsultaProcesso.id == consulta_id,
@@ -331,6 +331,15 @@ async def excluir_historico(
         
         if not consulta:
             raise HTTPException(status_code=404, detail="Consulta não encontrada")
+        
+        # Verifica se tem feedback associado - se tiver, não permite excluir
+        from sistemas.assistencia_judiciaria.models import FeedbackAnalise
+        feedback = db.query(FeedbackAnalise).filter(FeedbackAnalise.consulta_id == consulta_id).first()
+        if feedback:
+            raise HTTPException(
+                status_code=400, 
+                detail="Não é possível excluir consulta que possui feedback registrado"
+            )
         
         db.delete(consulta)
         db.commit()

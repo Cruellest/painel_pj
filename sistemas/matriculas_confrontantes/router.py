@@ -263,13 +263,10 @@ async def upload_file(
             if old_filepath.exists():
                 os.remove(old_filepath)
             
-            # Remove análise e feedback associados
-            analise = db.query(Analise).filter(Analise.file_id == arquivo_existente.file_id).first()
-            if analise:
-                db.query(FeedbackMatricula).filter(FeedbackMatricula.analise_id == analise.id).delete()
-                db.delete(analise)
+            # NÃO remove análise nem feedback - preserva histórico
+            # A análise antiga ficará órfã mas com feedback preservado
             
-            # Remove registro do arquivo antigo
+            # Remove apenas registro do arquivo antigo
             db.delete(arquivo_existente)
             db.commit()
     
@@ -313,7 +310,7 @@ async def delete_file(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Exclui um arquivo"""
+    """Exclui um arquivo - PRESERVA análise e feedback para histórico"""
     # Verifica se o arquivo pertence ao usuário
     arquivo = db.query(ArquivoUpload).filter(
         ArquivoUpload.file_id == file_id,
@@ -333,8 +330,8 @@ async def delete_file(
         # Remove registro do arquivo
         db.delete(arquivo)
         
-        # Remove análise associada
-        db.query(Analise).filter(Analise.file_id == file_id).delete()
+        # NÃO remove análise nem feedback - preserva para histórico de feedbacks
+        # A análise ficará com file_id referenciando arquivo inexistente
         db.commit()
         
         add_log(db, f"Arquivo excluído: {file_id}", "warning")
@@ -358,13 +355,10 @@ async def list_analyses(
     
     result = []
     for analise in analises:
-        # Verifica se o arquivo ainda existe
+        # Verifica se o arquivo ainda existe - mas NÃO deleta análise/feedback
+        # Apenas marca como indisponível
         filepath = UPLOAD_FOLDER / analise.file_id
-        if not filepath.exists():
-            # Deleta feedback associado antes de deletar análise
-            db.query(FeedbackMatricula).filter(FeedbackMatricula.analise_id == analise.id).delete()
-            db.delete(analise)
-            continue
+        arquivo_existe = filepath.exists()
         
         # Extrai confrontantes do resultado JSON
         confrontantes = []
@@ -385,13 +379,12 @@ async def list_analyses(
             dataOperacao=analise.analisado_em.strftime("%d/%m/%Y") if analise.analisado_em else datetime.now().strftime("%d/%m/%Y"),
             tipo="Matrícula",
             proprietario=analise.proprietario or "N/A",
-            estado="Analisado",
+            estado="Analisado" if arquivo_existe else "Arquivo Indisponível",
             confianca=int(analise.confianca * 100) if analise.confianca and analise.confianca <= 1 else int(analise.confianca or 0),
             confrontantes=confrontantes,
             num_confrontantes=len(confrontantes)
         ))
     
-    db.commit()
     return result
 
 
