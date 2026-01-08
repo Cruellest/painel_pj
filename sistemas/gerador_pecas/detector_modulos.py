@@ -248,7 +248,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
         content = await chamar_gemini_async(
             prompt=prompt,
             modelo=self.modelo,
-            max_tokens=1000,
+            max_tokens=2000,  # Aumentado para evitar truncamento
             temperature=0.1  # Baixa temperatura para resposta determinística
         )
 
@@ -276,6 +276,25 @@ Responda SOMENTE com o JSON, sem texto adicional.
         except json.JSONDecodeError as e:
             print(f"⚠️ Erro ao parsear JSON: {e}")
             print(f"⚠️ Conteúdo recebido: {content[:200]}...")
+            
+            # Tenta extrair array de módulos mesmo de JSON truncado
+            # Procura por "modulos_relevantes": [1, 2, 3, ...]
+            modulos_match = re.search(r'"modulos_relevantes"\s*:\s*\[([\d,\s]+)', content)
+            if modulos_match:
+                try:
+                    # Extrai os números que conseguiu
+                    nums_str = modulos_match.group(1).rstrip(',').strip()
+                    if nums_str:
+                        modulos = [int(n.strip()) for n in nums_str.split(',') if n.strip().isdigit()]
+                        print(f"🔧 Recuperados {len(modulos)} módulos de JSON truncado")
+                        return {
+                            "modulos_relevantes": modulos,
+                            "justificativa": "Recuperado de JSON truncado",
+                            "confianca": "media"
+                        }
+                except:
+                    pass
+            
             # Retorna estrutura vazia para fallback
             return {"modulos_relevantes": [], "justificativa": "Erro no parsing", "confianca": "baixa"}
 
