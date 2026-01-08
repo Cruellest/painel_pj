@@ -427,13 +427,14 @@ class DocxConverter:
         Verifica se a linha é um campo de número do processo ou tipo de ação com número.
         Exemplos: "Processo nº 123", "Agravo de Instrumento nº: 123", "Apelação nº 456", etc.
         """
-        line_lower = line.strip().lower()
+        # Remove marcação markdown (negrito, itálico) para detectar corretamente
+        line_clean = self._strip_markdown(line).strip().lower()
         
-        if not line_lower:
+        if not line_clean:
             return False
         
         # Verifica se contém indicador de número (nº, n°, n.)
-        has_number_indicator = 'nº' in line_lower or 'n°' in line_lower or 'n.' in line_lower
+        has_number_indicator = 'nº' in line_clean or 'n°' in line_clean or 'n.' in line_clean
         
         if not has_number_indicator:
             return False
@@ -461,10 +462,12 @@ class DocxConverter:
             r'^adi',  # Ação Direta de Inconstitucionalidade
             r'^adc',  # Ação Declaratória de Constitucionalidade
             r'^adpf', # Arguição de Descumprimento de Preceito Fundamental
+            r'^processo\s+de\s+origem',  # Processo de Origem nº
+            r'^origem',  # Origem nº
         ]
         
         for pattern in process_patterns:
-            if re.match(pattern, line_lower):
+            if re.match(pattern, line_clean):
                 return True
         
         return False
@@ -472,12 +475,11 @@ class DocxConverter:
     def _is_header_field(self, line: str) -> bool:
         """Verifica se a linha é um campo de cabeçalho (Requerente, Requerido, etc.)
         NOTA: Processo nº tem tratamento especial e não está incluído aqui."""
-        # Remove espaços e caracteres invisíveis
-        line_clean = line.strip()
-        line_lower = line_clean.lower()
+        # Remove marcação markdown (negrito, itálico) para detectar corretamente
+        line_clean = self._strip_markdown(line).strip().lower()
         
         # Se a linha estiver vazia, não é campo de cabeçalho
-        if not line_lower:
+        if not line_clean:
             return False
         
         # Padrões de campos de cabeçalho (SEM processo - tem tratamento separado)
@@ -502,14 +504,15 @@ class DocxConverter:
         ]
         
         for pattern in header_patterns:
-            if re.match(pattern, line_lower):
+            if re.match(pattern, line_clean):
                 return True
         
         return False
     
     def _is_last_header_field(self, line: str) -> bool:
         """Verifica se é o último campo do cabeçalho (parte passiva) para pular linha após."""
-        line_lower = line.strip().lower()
+        # Remove marcação markdown para detectar corretamente
+        line_clean = self._strip_markdown(line).strip().lower()
         # Padrões que indicam fim do cabeçalho (parte passiva em diferentes tipos de ação)
         last_patterns = [
             r'^requerido',
@@ -525,12 +528,13 @@ class DocxConverter:
             r'^demandado',
         ]
         for pattern in last_patterns:
-            if re.match(pattern, line_lower):
+            if re.match(pattern, line_clean):
                 return True
         return False
     
     def _add_direcionamento(self, doc: Document, text: str):
-        """Adiciona direcionamento (primeira linha) sem recuo, espaçamento simples."""
+        """Adiciona direcionamento (primeira linha) sem recuo, espaçamento simples.
+        O direcionamento deve ficar em NEGRITO e MAIÚSCULO."""
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.line_spacing = 1.0  # Espaçamento simples
@@ -540,8 +544,14 @@ class DocxConverter:
         p.paragraph_format.first_line_indent = Cm(0)  # SEM recuo
         p.paragraph_format.left_indent = Cm(0)  # SEM recuo esquerdo
         
-        # Processa formatação inline (negrito, itálico)
-        self._add_formatted_text(p, text)
+        # Remove markdown do texto e deixa em maiúsculo
+        clean_text = self._strip_markdown(text).upper()
+        
+        # Adiciona como negrito
+        run = p.add_run(clean_text)
+        run.font.name = self.font_name
+        run.font.size = Pt(self.font_size)
+        run.bold = True
     
     def _add_header_field(self, doc: Document, text: str, is_last: bool = False):
         """
