@@ -248,7 +248,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
         content = await chamar_gemini_async(
             prompt=prompt,
             modelo=self.modelo,
-            max_tokens=2000,  # Aumentado para evitar truncamento
+            max_tokens=50000,  # Aumentado para evitar truncamento
             temperature=0.1  # Baixa temperatura para resposta determinística
         )
 
