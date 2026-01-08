@@ -60,6 +60,46 @@
     </header>
 
     <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Filtros -->
+        <div class="bg-white rounded-xl shadow-sm p-4 border border-gray-200 mb-6">
+            <div class="flex flex-wrap items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-gray-700">Período:</label>
+                    <select id="filtro-mes" onchange="aplicarFiltros()" class="text-sm border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Todos os meses</option>
+                        <option value="1">Janeiro</option>
+                        <option value="2">Fevereiro</option>
+                        <option value="3">Março</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Maio</option>
+                        <option value="6">Junho</option>
+                        <option value="7">Julho</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Setembro</option>
+                        <option value="10">Outubro</option>
+                        <option value="11">Novembro</option>
+                        <option value="12">Dezembro</option>
+                    </select>
+                    <select id="filtro-ano" onchange="aplicarFiltros()" class="text-sm border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Todos os anos</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-gray-700">Sistema:</label>
+                    <select id="filtro-sistema" onchange="aplicarFiltros()" class="text-sm border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Todos os sistemas</option>
+                        <option value="assistencia_judiciaria">Assistência Judiciária</option>
+                        <option value="matriculas">Matrículas Confrontantes</option>
+                    </select>
+                </div>
+                <button onclick="limparFiltros()" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                    <i class="fas fa-times-circle"></i>
+                    Limpar filtros
+                </button>
+                <span id="filtro-info" class="text-xs text-gray-500 ml-auto"></span>
+            </div>
+        </div>
+
         <!-- Cards de Estatísticas -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
@@ -342,9 +382,73 @@
             return response.json();
         }
 
+        function inicializarFiltroAno() {
+            const select = document.getElementById('filtro-ano');
+            const anoAtual = new Date().getFullYear();
+            for (let ano = anoAtual; ano >= 2024; ano--) {
+                const option = document.createElement('option');
+                option.value = ano;
+                option.textContent = ano;
+                select.appendChild(option);
+            }
+            // Seleciona o ano atual por padrão
+            select.value = anoAtual;
+        }
+
+        function getFiltros() {
+            const mes = document.getElementById('filtro-mes').value;
+            const ano = document.getElementById('filtro-ano').value;
+            const sistema = document.getElementById('filtro-sistema').value;
+            
+            const params = new URLSearchParams();
+            if (mes) params.append('mes', mes);
+            if (ano) params.append('ano', ano);
+            if (sistema) params.append('sistema', sistema);
+            
+            return params.toString() ? '?' + params.toString() : '';
+        }
+
+        function aplicarFiltros() {
+            carregarDashboard();
+            carregarFeedbacks();
+            atualizarInfoFiltro();
+        }
+
+        function limparFiltros() {
+            document.getElementById('filtro-mes').value = '';
+            document.getElementById('filtro-ano').value = '';
+            document.getElementById('filtro-sistema').value = '';
+            aplicarFiltros();
+        }
+
+        function atualizarInfoFiltro() {
+            const mes = document.getElementById('filtro-mes').value;
+            const ano = document.getElementById('filtro-ano').value;
+            const sistema = document.getElementById('filtro-sistema').value;
+            
+            const partes = [];
+            if (mes) {
+                const meses = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
+                              'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+                partes.push(meses[parseInt(mes)]);
+            }
+            if (ano) partes.push(ano);
+            if (sistema) {
+                partes.push(sistema === 'assistencia_judiciaria' ? 'Assistência' : 'Matrículas');
+            }
+            
+            const info = document.getElementById('filtro-info');
+            if (partes.length > 0) {
+                info.textContent = 'Filtro: ' + partes.join(' / ');
+            } else {
+                info.textContent = 'Mostrando todos os dados';
+            }
+        }
+
         async function carregarDashboard() {
             try {
-                const data = await api('/admin/feedbacks/dashboard');
+                const filtros = getFiltros();
+                const data = await api('/admin/feedbacks/dashboard' + filtros);
                 
                 if (!data) return;
 
@@ -457,7 +561,15 @@
         async function carregarFeedbacks() {
             try {
                 const avaliacao = document.getElementById('filtro-avaliacao').value;
-                const url = `/admin/feedbacks/lista?page=${currentPage}&per_page=20${avaliacao ? `&avaliacao=${avaliacao}` : ''}`;
+                const mes = document.getElementById('filtro-mes').value;
+                const ano = document.getElementById('filtro-ano').value;
+                const sistema = document.getElementById('filtro-sistema').value;
+                
+                let url = `/admin/feedbacks/lista?page=${currentPage}&per_page=20`;
+                if (avaliacao) url += `&avaliacao=${avaliacao}`;
+                if (mes) url += `&mes=${mes}`;
+                if (ano) url += `&ano=${ano}`;
+                if (sistema) url += `&sistema=${sistema}`;
                 
                 const data = await api(url);
                 if (!data) return;
@@ -650,6 +762,8 @@
         document.addEventListener('DOMContentLoaded', () => {
             if (!checkAuth()) return;
             
+            inicializarFiltroAno();
+            atualizarInfoFiltro();
             carregarDashboard();
             carregarFeedbacks();
             carregarModelosIA();

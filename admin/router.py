@@ -435,58 +435,127 @@ async def get_prompt_by_tipo(
 
 @router.get("/feedbacks/dashboard")
 async def dashboard_feedbacks(
+    mes: Optional[int] = None,
+    ano: Optional[int] = None,
+    sistema: Optional[str] = None,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
-    Retorna estatísticas do dashboard de feedbacks de ambos os sistemas.
+    Retorna estatísticas do dashboard de feedbacks.
+    
+    Parâmetros:
+        - mes: Mês para filtrar (1-12)
+        - ano: Ano para filtrar (ex: 2026)
+        - sistema: Sistema específico ('assistencia_judiciaria' ou 'matriculas')
+    
     Exclui feedbacks de usuários admin e teste.
     Apenas para administradores.
     """
     try:
+        # Calcula período de filtro
+        data_inicio = None
+        data_fim = None
+        if ano:
+            if mes:
+                # Mês específico
+                data_inicio = datetime(ano, mes, 1)
+                if mes == 12:
+                    data_fim = datetime(ano + 1, 1, 1)
+                else:
+                    data_fim = datetime(ano, mes + 1, 1)
+            else:
+                # Ano inteiro
+                data_inicio = datetime(ano, 1, 1)
+                data_fim = datetime(ano + 1, 1, 1)
+        
         # Usuarios a excluir (admin e teste)
         usuarios_excluir = db.query(User.id).filter(
             (User.role == 'admin') | (User.username.ilike('%teste%')) | (User.username.ilike('%test%'))
         ).all()
         ids_excluir = [u.id for u in usuarios_excluir]
         
+        # Flags para incluir cada sistema
+        incluir_aj = sistema is None or sistema == 'assistencia_judiciaria'
+        incluir_mat = sistema is None or sistema == 'matriculas'
+        
+        total_consultas_aj = 0
+        total_feedbacks_aj = 0
+        feedbacks_por_avaliacao_aj = []
+        
+        total_analises_mat = 0
+        total_feedbacks_mat = 0
+        feedbacks_por_avaliacao_mat = []
+        
         # === Sistema Assistência Judiciária ===
-        query_total_aj = db.query(ConsultaProcesso)
-        if ids_excluir:
-            query_total_aj = query_total_aj.filter(~ConsultaProcesso.usuario_id.in_(ids_excluir))
-        total_consultas_aj = query_total_aj.count()
-        
-        query_feedbacks_aj = db.query(FeedbackAnalise)
-        if ids_excluir:
-            query_feedbacks_aj = query_feedbacks_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
-        total_feedbacks_aj = query_feedbacks_aj.count()
-        
-        query_avaliacoes_aj = db.query(
-            FeedbackAnalise.avaliacao,
-            func.count(FeedbackAnalise.id).label('count')
-        )
-        if ids_excluir:
-            query_avaliacoes_aj = query_avaliacoes_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
-        feedbacks_por_avaliacao_aj = query_avaliacoes_aj.group_by(FeedbackAnalise.avaliacao).all()
+        if incluir_aj:
+            query_total_aj = db.query(ConsultaProcesso)
+            if ids_excluir:
+                query_total_aj = query_total_aj.filter(~ConsultaProcesso.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_total_aj = query_total_aj.filter(
+                    ConsultaProcesso.consultado_em >= data_inicio,
+                    ConsultaProcesso.consultado_em < data_fim
+                )
+            total_consultas_aj = query_total_aj.count()
+            
+            query_feedbacks_aj = db.query(FeedbackAnalise)
+            if ids_excluir:
+                query_feedbacks_aj = query_feedbacks_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_feedbacks_aj = query_feedbacks_aj.filter(
+                    FeedbackAnalise.criado_em >= data_inicio,
+                    FeedbackAnalise.criado_em < data_fim
+                )
+            total_feedbacks_aj = query_feedbacks_aj.count()
+            
+            query_avaliacoes_aj = db.query(
+                FeedbackAnalise.avaliacao,
+                func.count(FeedbackAnalise.id).label('count')
+            )
+            if ids_excluir:
+                query_avaliacoes_aj = query_avaliacoes_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_avaliacoes_aj = query_avaliacoes_aj.filter(
+                    FeedbackAnalise.criado_em >= data_inicio,
+                    FeedbackAnalise.criado_em < data_fim
+                )
+            feedbacks_por_avaliacao_aj = query_avaliacoes_aj.group_by(FeedbackAnalise.avaliacao).all()
         
         # === Sistema Matrículas ===
-        query_total_mat = db.query(Analise)
-        if ids_excluir:
-            query_total_mat = query_total_mat.filter(~Analise.usuario_id.in_(ids_excluir))
-        total_analises_mat = query_total_mat.count()
-        
-        query_feedbacks_mat = db.query(FeedbackMatricula)
-        if ids_excluir:
-            query_feedbacks_mat = query_feedbacks_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
-        total_feedbacks_mat = query_feedbacks_mat.count()
-        
-        query_avaliacoes_mat = db.query(
-            FeedbackMatricula.avaliacao,
-            func.count(FeedbackMatricula.id).label('count')
-        )
-        if ids_excluir:
-            query_avaliacoes_mat = query_avaliacoes_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
-        feedbacks_por_avaliacao_mat = query_avaliacoes_mat.group_by(FeedbackMatricula.avaliacao).all()
+        if incluir_mat:
+            query_total_mat = db.query(Analise)
+            if ids_excluir:
+                query_total_mat = query_total_mat.filter(~Analise.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_total_mat = query_total_mat.filter(
+                    Analise.analisado_em >= data_inicio,
+                    Analise.analisado_em < data_fim
+                )
+            total_analises_mat = query_total_mat.count()
+            
+            query_feedbacks_mat = db.query(FeedbackMatricula)
+            if ids_excluir:
+                query_feedbacks_mat = query_feedbacks_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_feedbacks_mat = query_feedbacks_mat.filter(
+                    FeedbackMatricula.criado_em >= data_inicio,
+                    FeedbackMatricula.criado_em < data_fim
+                )
+            total_feedbacks_mat = query_feedbacks_mat.count()
+            
+            query_avaliacoes_mat = db.query(
+                FeedbackMatricula.avaliacao,
+                func.count(FeedbackMatricula.id).label('count')
+            )
+            if ids_excluir:
+                query_avaliacoes_mat = query_avaliacoes_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_avaliacoes_mat = query_avaliacoes_mat.filter(
+                    FeedbackMatricula.criado_em >= data_inicio,
+                    FeedbackMatricula.criado_em < data_fim
+                )
+            feedbacks_por_avaliacao_mat = query_avaliacoes_mat.group_by(FeedbackMatricula.avaliacao).all()
         
         # === Totais combinados ===
         total_consultas = total_consultas_aj + total_analises_mat
@@ -511,24 +580,40 @@ async def dashboard_feedbacks(
         if total_feedbacks > 0:
             taxa_acerto = round((avaliacoes['correto'] / total_feedbacks) * 100, 1)
         
-        # Feedbacks dos últimos 7 dias (combinados) - excluindo admin/teste
-        data_limite = datetime.utcnow() - timedelta(days=7)
+        # Feedbacks por dia (no período selecionado ou últimos 30 dias)
+        if data_inicio and data_fim:
+            data_limite_recentes = data_inicio
+            data_fim_recentes = data_fim
+        else:
+            data_limite_recentes = datetime.utcnow() - timedelta(days=30)
+            data_fim_recentes = datetime.utcnow()
         
-        query_recentes_aj = db.query(
-            func.date(FeedbackAnalise.criado_em).label('data'),
-            func.count(FeedbackAnalise.id).label('count')
-        ).filter(FeedbackAnalise.criado_em >= data_limite)
-        if ids_excluir:
-            query_recentes_aj = query_recentes_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
-        feedbacks_recentes_aj = query_recentes_aj.group_by(func.date(FeedbackAnalise.criado_em)).all()
+        feedbacks_recentes_aj = []
+        feedbacks_recentes_mat = []
         
-        query_recentes_mat = db.query(
-            func.date(FeedbackMatricula.criado_em).label('data'),
-            func.count(FeedbackMatricula.id).label('count')
-        ).filter(FeedbackMatricula.criado_em >= data_limite)
-        if ids_excluir:
-            query_recentes_mat = query_recentes_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
-        feedbacks_recentes_mat = query_recentes_mat.group_by(func.date(FeedbackMatricula.criado_em)).all()
+        if incluir_aj:
+            query_recentes_aj = db.query(
+                func.date(FeedbackAnalise.criado_em).label('data'),
+                func.count(FeedbackAnalise.id).label('count')
+            ).filter(
+                FeedbackAnalise.criado_em >= data_limite_recentes,
+                FeedbackAnalise.criado_em < data_fim_recentes
+            )
+            if ids_excluir:
+                query_recentes_aj = query_recentes_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
+            feedbacks_recentes_aj = query_recentes_aj.group_by(func.date(FeedbackAnalise.criado_em)).all()
+        
+        if incluir_mat:
+            query_recentes_mat = db.query(
+                func.date(FeedbackMatricula.criado_em).label('data'),
+                func.count(FeedbackMatricula.id).label('count')
+            ).filter(
+                FeedbackMatricula.criado_em >= data_limite_recentes,
+                FeedbackMatricula.criado_em < data_fim_recentes
+            )
+            if ids_excluir:
+                query_recentes_mat = query_recentes_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
+            feedbacks_recentes_mat = query_recentes_mat.group_by(func.date(FeedbackMatricula.criado_em)).all()
         
         # Combina feedbacks recentes por data
         feedbacks_por_data = {}
@@ -539,26 +624,41 @@ async def dashboard_feedbacks(
         
         feedbacks_recentes = [{"data": data, "count": count} for data, count in sorted(feedbacks_por_data.items())]
         
-        # Feedbacks por usuário (top 10) - combinando ambos os sistemas, excluindo admin/teste
-        query_usuarios_aj = db.query(
-            User.username,
-            User.full_name,
-            func.count(FeedbackAnalise.id).label('total'),
-            func.sum(case((FeedbackAnalise.avaliacao == 'correto', 1), else_=0)).label('corretos')
-        ).join(FeedbackAnalise, FeedbackAnalise.usuario_id == User.id)
-        if ids_excluir:
-            query_usuarios_aj = query_usuarios_aj.filter(~User.id.in_(ids_excluir))
-        feedbacks_por_usuario_aj = query_usuarios_aj.group_by(User.id, User.username, User.full_name).all()
+        # Feedbacks por usuário (top 10) - combinando sistemas selecionados
+        feedbacks_por_usuario_aj = []
+        feedbacks_por_usuario_mat = []
         
-        query_usuarios_mat = db.query(
-            User.username,
-            User.full_name,
-            func.count(FeedbackMatricula.id).label('total'),
-            func.sum(case((FeedbackMatricula.avaliacao == 'correto', 1), else_=0)).label('corretos')
-        ).join(FeedbackMatricula, FeedbackMatricula.usuario_id == User.id)
-        if ids_excluir:
-            query_usuarios_mat = query_usuarios_mat.filter(~User.id.in_(ids_excluir))
-        feedbacks_por_usuario_mat = query_usuarios_mat.group_by(User.id, User.username, User.full_name).all()
+        if incluir_aj:
+            query_usuarios_aj = db.query(
+                User.username,
+                User.full_name,
+                func.count(FeedbackAnalise.id).label('total'),
+                func.sum(case((FeedbackAnalise.avaliacao == 'correto', 1), else_=0)).label('corretos')
+            ).join(FeedbackAnalise, FeedbackAnalise.usuario_id == User.id)
+            if ids_excluir:
+                query_usuarios_aj = query_usuarios_aj.filter(~User.id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_usuarios_aj = query_usuarios_aj.filter(
+                    FeedbackAnalise.criado_em >= data_inicio,
+                    FeedbackAnalise.criado_em < data_fim
+                )
+            feedbacks_por_usuario_aj = query_usuarios_aj.group_by(User.id, User.username, User.full_name).all()
+        
+        if incluir_mat:
+            query_usuarios_mat = db.query(
+                User.username,
+                User.full_name,
+                func.count(FeedbackMatricula.id).label('total'),
+                func.sum(case((FeedbackMatricula.avaliacao == 'correto', 1), else_=0)).label('corretos')
+            ).join(FeedbackMatricula, FeedbackMatricula.usuario_id == User.id)
+            if ids_excluir:
+                query_usuarios_mat = query_usuarios_mat.filter(~User.id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_usuarios_mat = query_usuarios_mat.filter(
+                    FeedbackMatricula.criado_em >= data_inicio,
+                    FeedbackMatricula.criado_em < data_fim
+                )
+            feedbacks_por_usuario_mat = query_usuarios_mat.group_by(User.id, User.username, User.full_name).all()
         
         # Combina por usuário
         usuarios_stats = {}
@@ -580,45 +680,60 @@ async def dashboard_feedbacks(
         )[:10]
         
         # Usuários que geraram relatório mas não deram feedback
+        consultas_sem_feedback_aj = []
+        analises_sem_feedback_mat = []
+        
         # Assistência Judiciária
-        query_pendentes_aj = db.query(
-            ConsultaProcesso.id,
-            ConsultaProcesso.cnj_formatado,
-            ConsultaProcesso.cnj,
-            ConsultaProcesso.consultado_em,
-            User.username,
-            User.full_name
-        ).outerjoin(
-            FeedbackAnalise, FeedbackAnalise.consulta_id == ConsultaProcesso.id
-        ).join(
-            User, ConsultaProcesso.usuario_id == User.id
-        ).filter(
-            FeedbackAnalise.id == None,
-            ConsultaProcesso.relatorio.isnot(None)
-        )
-        if ids_excluir:
-            query_pendentes_aj = query_pendentes_aj.filter(~ConsultaProcesso.usuario_id.in_(ids_excluir))
-        consultas_sem_feedback_aj = query_pendentes_aj.order_by(ConsultaProcesso.consultado_em.desc()).limit(20).all()
+        if incluir_aj:
+            query_pendentes_aj = db.query(
+                ConsultaProcesso.id,
+                ConsultaProcesso.cnj_formatado,
+                ConsultaProcesso.cnj,
+                ConsultaProcesso.consultado_em,
+                User.username,
+                User.full_name
+            ).outerjoin(
+                FeedbackAnalise, FeedbackAnalise.consulta_id == ConsultaProcesso.id
+            ).join(
+                User, ConsultaProcesso.usuario_id == User.id
+            ).filter(
+                FeedbackAnalise.id == None,
+                ConsultaProcesso.relatorio.isnot(None)
+            )
+            if ids_excluir:
+                query_pendentes_aj = query_pendentes_aj.filter(~ConsultaProcesso.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_pendentes_aj = query_pendentes_aj.filter(
+                    ConsultaProcesso.consultado_em >= data_inicio,
+                    ConsultaProcesso.consultado_em < data_fim
+                )
+            consultas_sem_feedback_aj = query_pendentes_aj.order_by(ConsultaProcesso.consultado_em.desc()).limit(20).all()
         
         # Matrículas
-        query_pendentes_mat = db.query(
-            Analise.id,
-            Analise.file_name,
-            Analise.matricula_principal,
-            Analise.analisado_em,
-            User.username,
-            User.full_name
-        ).outerjoin(
-            FeedbackMatricula, FeedbackMatricula.analise_id == Analise.id
-        ).join(
-            User, Analise.usuario_id == User.id
-        ).filter(
-            FeedbackMatricula.id == None,
-            Analise.resultado_json.isnot(None)
-        )
-        if ids_excluir:
-            query_pendentes_mat = query_pendentes_mat.filter(~Analise.usuario_id.in_(ids_excluir))
-        analises_sem_feedback_mat = query_pendentes_mat.order_by(Analise.analisado_em.desc()).limit(20).all()
+        if incluir_mat:
+            query_pendentes_mat = db.query(
+                Analise.id,
+                Analise.file_name,
+                Analise.matricula_principal,
+                Analise.analisado_em,
+                User.username,
+                User.full_name
+            ).outerjoin(
+                FeedbackMatricula, FeedbackMatricula.analise_id == Analise.id
+            ).join(
+                User, Analise.usuario_id == User.id
+            ).filter(
+                FeedbackMatricula.id == None,
+                Analise.resultado_json.isnot(None)
+            )
+            if ids_excluir:
+                query_pendentes_mat = query_pendentes_mat.filter(~Analise.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_pendentes_mat = query_pendentes_mat.filter(
+                    Analise.analisado_em >= data_inicio,
+                    Analise.analisado_em < data_fim
+                )
+            analises_sem_feedback_mat = query_pendentes_mat.order_by(Analise.analisado_em.desc()).limit(20).all()
         
         # Combina e formata
         pendentes_feedback = []
@@ -652,6 +767,11 @@ async def dashboard_feedbacks(
             "feedbacks_recentes": feedbacks_recentes,
             "feedbacks_por_usuario": feedbacks_por_usuario,
             "pendentes_feedback": pendentes_feedback,
+            "filtro_aplicado": {
+                "mes": mes,
+                "ano": ano,
+                "sistema": sistema
+            },
             "por_sistema": {
                 "assistencia_judiciaria": {
                     "total": total_consultas_aj,
@@ -674,6 +794,8 @@ async def listar_feedbacks(
     avaliacao: Optional[str] = None,
     usuario_id: Optional[int] = None,
     sistema: Optional[str] = None,
+    mes: Optional[int] = None,
+    ano: Optional[int] = None,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
@@ -683,6 +805,20 @@ async def listar_feedbacks(
     Apenas para administradores.
     """
     try:
+        # Calcula período de filtro
+        data_inicio = None
+        data_fim = None
+        if ano:
+            if mes:
+                data_inicio = datetime(ano, mes, 1)
+                if mes == 12:
+                    data_fim = datetime(ano + 1, 1, 1)
+                else:
+                    data_fim = datetime(ano, mes + 1, 1)
+            else:
+                data_inicio = datetime(ano, 1, 1)
+                data_fim = datetime(ano + 1, 1, 1)
+        
         # Usuarios a excluir (admin e teste)
         usuarios_excluir = db.query(User.id).filter(
             (User.role == 'admin') | (User.username.ilike('%teste%')) | (User.username.ilike('%test%'))
@@ -708,6 +844,11 @@ async def listar_feedbacks(
             
             if ids_excluir:
                 query_aj = query_aj.filter(~FeedbackAnalise.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_aj = query_aj.filter(
+                    FeedbackAnalise.criado_em >= data_inicio,
+                    FeedbackAnalise.criado_em < data_fim
+                )
             if avaliacao:
                 query_aj = query_aj.filter(FeedbackAnalise.avaliacao == avaliacao)
             if usuario_id:
@@ -747,6 +888,11 @@ async def listar_feedbacks(
             
             if ids_excluir:
                 query_mat = query_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_mat = query_mat.filter(
+                    FeedbackMatricula.criado_em >= data_inicio,
+                    FeedbackMatricula.criado_em < data_fim
+                )
             if avaliacao:
                 query_mat = query_mat.filter(FeedbackMatricula.avaliacao == avaliacao)
             if usuario_id:
@@ -757,7 +903,7 @@ async def listar_feedbacks(
                 ConfiguracaoIA.sistema == "matriculas",
                 ConfiguracaoIA.chave == "modelo_relatorio"
             ).first()
-            modelo_matriculas_default = modelo_mat_config.valor if modelo_mat_config else "google/gemini-3-flash-preview"
+            modelo_matriculas_default = modelo_mat_config.valor if modelo_mat_config else "gemini-3-flash-preview"
             
             for fb, file_name, matricula, modelo_usado, username, full_name in query_mat.all():
                 feedbacks_combinados.append({
