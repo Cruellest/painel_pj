@@ -149,7 +149,7 @@ async def processar_processo(
         # Processa o processo
         resultado = await service.processar_processo(
             numero_cnj=cnj_limpo,
-            numero_cnj_formatado=req.numero_cnj,
+            numero_cnj_formatado=cnj_limpo,
             tipo_peca=req.tipo_peca,
             resposta_usuario=req.resposta_usuario,
             usuario_id=current_user.id
@@ -316,7 +316,7 @@ async def processar_processo_stream(
                 # Salva no banco (usa resumo filtrado se disponível)
                 geracao = GeracaoPeca(
                     numero_cnj=cnj_limpo,
-                    numero_cnj_formatado=req.numero_cnj,
+                    numero_cnj_formatado=cnj_limpo,
                     tipo_peca=tipo_peca,
                     conteudo_gerado=resultado_agente3.conteudo_markdown,
                     prompt_enviado=resultado_agente3.prompt_enviado,
@@ -336,7 +336,7 @@ async def processar_processo_stream(
                 yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Usando modo simplificado...'})}\n\n"
                 resultado = await service.processar_processo(
                     numero_cnj=cnj_limpo,
-                    numero_cnj_formatado=req.numero_cnj,
+                    numero_cnj_formatado=cnj_limpo,
                     tipo_peca=req.tipo_peca,
                     resposta_usuario=req.resposta_usuario,
                     usuario_id=current_user.id
