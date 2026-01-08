@@ -556,11 +556,10 @@ def pdf_to_images(pdf_path: str, max_pages: Optional[int] = 10) -> List[Image.Im
 # API Gemini (usando serviço centralizado)
 # =========================
 
-def call_gemini_vision(model: str, system_prompt: str, user_prompt: str, 
-                       images_base64: List[str], temperature: float = 0.1, 
-                       max_tokens: int = 1500, api_key: str = None) -> Dict:
-    """Chama a API Gemini com suporte a visão computacional"""
-    import asyncio
+async def call_gemini_vision_async(model: str, system_prompt: str, user_prompt: str, 
+                                   images_base64: List[str], temperature: float = 0.1, 
+                                   max_tokens: int = 1500, api_key: str = None) -> Dict:
+    """Chama a API Gemini com suporte a visão computacional (versão assíncrona)"""
     from services.gemini_service import gemini_service
     
     logger.info(f"   └─ Enviando {len(images_base64)} imagem(ns) para análise...")
@@ -579,21 +578,13 @@ def call_gemini_vision(model: str, system_prompt: str, user_prompt: str,
     import time
     start_time = time.time()
     
-    # Executa a chamada assíncrona
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        response = loop.run_until_complete(
-            gemini_service.generate_with_images(
-                prompt=prompt_completo,
-                images_base64=images_with_prefix,
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-        )
-    finally:
-        loop.close()
+    response = await gemini_service.generate_with_images(
+        prompt=prompt_completo,
+        images_base64=images_with_prefix,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature
+    )
     
     elapsed = time.time() - start_time
     
@@ -613,31 +604,43 @@ def call_gemini_vision(model: str, system_prompt: str, user_prompt: str,
     }
 
 
-def call_gemini_text(model: str, system_prompt: str, user_prompt: str,
-                     temperature: float = 0.2, max_tokens: int = 2000, 
-                     api_key: str = None) -> str:
-    """Chama a API Gemini para gerar texto"""
+def call_gemini_vision(model: str, system_prompt: str, user_prompt: str, 
+                       images_base64: List[str], temperature: float = 0.1, 
+                       max_tokens: int = 1500, api_key: str = None) -> Dict:
+    """Chama a API Gemini com suporte a visão computacional (detecta contexto)"""
     import asyncio
+    
+    try:
+        loop = asyncio.get_running_loop()
+        import nest_asyncio
+        nest_asyncio.apply()
+        return loop.run_until_complete(
+            call_gemini_vision_async(model, system_prompt, user_prompt, 
+                                     images_base64, temperature, max_tokens, api_key)
+        )
+    except RuntimeError:
+        return asyncio.run(
+            call_gemini_vision_async(model, system_prompt, user_prompt, 
+                                     images_base64, temperature, max_tokens, api_key)
+        )
+
+
+async def call_gemini_text_async(model: str, system_prompt: str, user_prompt: str,
+                                 temperature: float = 0.2, max_tokens: int = 2000, 
+                                 api_key: str = None) -> str:
+    """Chama a API Gemini para gerar texto (versão assíncrona)"""
     from services.gemini_service import gemini_service
     
     import time
     start_time = time.time()
     
-    # Executa a chamada assíncrona
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        response = loop.run_until_complete(
-            gemini_service.generate(
-                prompt=user_prompt,
-                system_prompt=system_prompt,
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-        )
-    finally:
-        loop.close()
+    response = await gemini_service.generate(
+        prompt=user_prompt,
+        system_prompt=system_prompt,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature
+    )
     
     elapsed = time.time() - start_time
     
@@ -647,6 +650,27 @@ def call_gemini_text(model: str, system_prompt: str, user_prompt: str,
     logger.info(f"   └─ Relatório gerado em {elapsed:.1f}s")
     
     return response.content
+
+
+def call_gemini_text(model: str, system_prompt: str, user_prompt: str,
+                     temperature: float = 0.2, max_tokens: int = 2000, 
+                     api_key: str = None) -> str:
+    """Chama a API Gemini para gerar texto (detecta contexto)"""
+    import asyncio
+    
+    try:
+        loop = asyncio.get_running_loop()
+        import nest_asyncio
+        nest_asyncio.apply()
+        return loop.run_until_complete(
+            call_gemini_text_async(model, system_prompt, user_prompt, 
+                                   temperature, max_tokens, api_key)
+        )
+    except RuntimeError:
+        return asyncio.run(
+            call_gemini_text_async(model, system_prompt, user_prompt, 
+                                   temperature, max_tokens, api_key)
+        )
 
 
 # Aliases para compatibilidade

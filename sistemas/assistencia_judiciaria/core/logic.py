@@ -332,9 +332,8 @@ A resposta deve ser redigida em **Markdown**, no formato de relatório jurídico
         {"role": "user", "content": user},
     ]
 
-def call_gemini(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60) -> str:
-    """Chama a API do Gemini usando o serviço centralizado"""
-    import asyncio
+async def call_gemini_async(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60) -> str:
+    """Chama a API do Gemini usando o serviço centralizado (versão assíncrona)"""
     from services.gemini_service import gemini_service, GeminiService
     
     # Normaliza o modelo
@@ -353,21 +352,13 @@ def call_gemini(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max
     logger.info(f"Chamando Gemini com modelo {model}...")
     
     try:
-        # Executa a chamada assíncrona
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            response = loop.run_until_complete(
-                gemini_service.generate(
-                    prompt=user_prompt,
-                    system_prompt=system_prompt,
-                    model=model,
-                    max_tokens=max_tokens,
-                    temperature=temperature
-                )
-            )
-        finally:
-            loop.close()
+        response = await gemini_service.generate(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
         
         if not response.success:
             logger.error(f"Erro na API Gemini: {response.error}")
@@ -383,6 +374,22 @@ def call_gemini(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max
     except Exception as e:
         logger.exception("Falha ao chamar Gemini")
         return f"Erro ao processar resposta da API: {str(e)}"
+
+
+def call_gemini(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60) -> str:
+    """Chama a API do Gemini (versão síncrona - detecta contexto automaticamente)"""
+    import asyncio
+    
+    # Verifica se já estamos em um loop assíncrono
+    try:
+        loop = asyncio.get_running_loop()
+        # Estamos em contexto assíncrono - usar nest_asyncio ou retornar coroutine
+        import nest_asyncio
+        nest_asyncio.apply()
+        return loop.run_until_complete(call_gemini_async(messages, model, temperature, max_tokens, timeout))
+    except RuntimeError:
+        # Não há loop rodando - criar um novo
+        return asyncio.run(call_gemini_async(messages, model, temperature, max_tokens, timeout))
 
 
 # Alias para compatibilidade

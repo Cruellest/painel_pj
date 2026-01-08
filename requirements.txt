@@ -27,6 +27,7 @@ python-dotenv>=1.0.1
 requests>=2.32.0
 httpx>=0.27.0
 aiohttp>=3.9.0
+nest_asyncio>=1.6.0
 
 # Parser XML (TJ-MS)
 lxml>=5.2.0
