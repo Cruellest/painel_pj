@@ -117,7 +117,14 @@ class OrquestradorAgentes:
         self.modelo_agente1 = get_config("modelo_agente1", MODELO_AGENTE1_PADRAO)
         self.modelo_agente2 = get_config("modelo_deteccao", MODELO_AGENTE2_PADRAO)
         self.modelo_agente3 = modelo_geracao or get_config("modelo_geracao", MODELO_AGENTE3_PADRAO)
-        
+
+        # Temperatura do Agente 3 (configurável via admin)
+        temp_str = get_config("temperatura_geracao", "0.3")
+        try:
+            self.temperatura_agente3 = float(temp_str)
+        except ValueError:
+            self.temperatura_agente3 = 0.3
+
         # Mantém compatibilidade
         self.modelo_geracao = self.modelo_agente3
         
@@ -531,7 +538,7 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
                 prompt=prompt_completo,
                 modelo=self.modelo_geracao,
                 max_tokens=16000,
-                temperature=0.3
+                temperature=self.temperatura_agente3
             )
             
             # Remove possíveis blocos de código markdown que a IA pode ter adicionado
