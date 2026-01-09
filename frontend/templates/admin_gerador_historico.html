@@ -66,7 +66,7 @@
             
             <div class="p-6 overflow-y-auto flex-1">
                 <!-- Tabs -->
-                <div class="flex border-b border-gray-200 mb-4">
+                <div class="flex border-b border-gray-200 mb-4 flex-wrap">
                     <button onclick="mostrarTab('prompt')" id="tab-prompt" class="px-4 py-2 border-b-2 border-primary-600 text-primary-600 font-medium">
                         Prompt Enviado
                     </button>
@@ -75,6 +75,9 @@
                     </button>
                     <button onclick="mostrarTab('markdown')" id="tab-markdown" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
                         Minuta (Markdown)
+                    </button>
+                    <button onclick="mostrarTab('chat')" id="tab-chat" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-comments mr-1"></i>Edições Chat
                     </button>
                     <button onclick="mostrarTab('resultado')" id="tab-resultado" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
                         Resultado (Raw)
@@ -104,6 +107,10 @@
                     <div class="bg-white rounded-lg p-4 overflow-x-auto border prose max-w-none">
                         <div id="texto-markdown" class="markdown-body"></div>
                     </div>
+                </div>
+
+                <div id="conteudo-chat" class="tab-content hidden">
+                    <div id="chat-container" class="space-y-4"></div>
                 </div>
             </div>
             
@@ -228,11 +235,15 @@
                     document.getElementById('btn-download-docx').classList.add('hidden');
                 }
 
+                // Renderiza histórico de chat
+                renderizarHistoricoChat(geracao.historico_chat || []);
+
                 document.getElementById('info-geracao').innerHTML = `
                     <strong>${geracao.numero_cnj_formatado || geracao.numero_cnj}</strong> |
                     ${formatarTipoPeca(geracao.tipo_peca)} |
                     ${new Date(geracao.criado_em).toLocaleString('pt-BR')}
                     ${isMarkdown ? ' | <span class="text-green-600">Markdown</span>' : ' | <span class="text-amber-600">JSON</span>'}
+                    ${geracao.historico_chat && geracao.historico_chat.length > 0 ? ` | <span class="text-purple-600"><i class="fas fa-comments"></i> ${geracao.historico_chat.length} edições</span>` : ''}
                 `;
 
                 // Mostra a tab de markdown por padrão se for markdown
@@ -323,6 +334,55 @@
                 'parecer': 'Parecer Jurídico'
             };
             return labels[tipo] || tipo || 'Não definido';
+        }
+
+        function renderizarHistoricoChat(historico) {
+            const container = document.getElementById('chat-container');
+
+            if (!historico || historico.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-comments text-4xl mb-4"></i>
+                        <p>Nenhuma edição via chat foi realizada</p>
+                        <p class="text-sm mt-2">O usuário não solicitou alterações após a geração inicial</p>
+                    </div>`;
+                return;
+            }
+
+            let html = `
+                <div class="bg-purple-50 rounded-lg p-4 mb-4 border border-purple-200">
+                    <p class="text-purple-800 font-medium"><i class="fas fa-info-circle mr-2"></i>Histórico de Edições</p>
+                    <p class="text-purple-600 text-sm mt-1">O usuário solicitou ${historico.length} alteração(ões) via chat após a geração inicial.</p>
+                </div>
+            `;
+
+            historico.forEach((msg, index) => {
+                const isUser = msg.role === 'user';
+                const bgClass = isUser ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200';
+                const iconClass = isUser ? 'fa-user text-blue-600' : 'fa-robot text-green-600';
+                const labelClass = isUser ? 'text-blue-700' : 'text-green-700';
+                const label = isUser ? 'Usuário' : 'Assistente IA';
+
+                html += `
+                    <div class="rounded-lg border p-4 ${bgClass}">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fas ${iconClass}"></i>
+                            <span class="font-medium ${labelClass}">${label}</span>
+                            <span class="text-xs text-gray-400 ml-auto">#${index + 1}</span>
+                        </div>
+                        <div class="text-gray-700 text-sm whitespace-pre-wrap">${escapeHtml(msg.content)}</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
     </script>
 </body>

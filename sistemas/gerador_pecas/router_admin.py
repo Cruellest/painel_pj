@@ -33,6 +33,7 @@ class GeracaoDetalhadaResponse(BaseModel):
     prompt_enviado: Optional[str]
     resumo_consolidado: Optional[str]
     conteudo_gerado: Optional[str] = None  # Markdown string
+    historico_chat: Optional[List[Any]] = None  # Histórico de edições via chat
     criado_em: datetime
 
     class Config:
