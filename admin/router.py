@@ -1409,10 +1409,10 @@ async def obter_consulta_detalhes(
             return {
                 "id": g.id,
                 "sistema": "gerador_pecas",
-                "identificador": g.titulo or g.tipo_peca,
+                "identificador": g.numero_cnj_formatado or g.numero_cnj or g.tipo_peca,
+                "cnj": g.numero_cnj,
                 "tipo_peca": g.tipo_peca,
-                "titulo": g.titulo,
-                "dados": g.parametros,
+                "dados": g.dados_processo,
                 "relatorio": g.conteudo_gerado,
                 "modelo": g.modelo_usado,
                 "usuario": full_name or username,

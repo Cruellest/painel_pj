@@ -109,9 +109,14 @@
             
             <div class="p-6 border-t border-gray-200 flex justify-between items-center">
                 <div id="info-geracao" class="text-sm text-gray-500"></div>
-                <button onclick="fecharModal()" class="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
-                    Fechar
-                </button>
+                <div class="flex gap-3">
+                    <button id="btn-download-docx" onclick="baixarDocx()" class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 hidden">
+                        <i class="fas fa-file-word mr-2"></i>Baixar DOCX
+                    </button>
+                    <button onclick="fecharModal()" class="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                        Fechar
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -119,6 +124,7 @@
     <script>
         const API_BASE = '/admin/api/gerador-pecas-admin';
         let geracoesCache = [];
+        let geracaoAtual = null;
 
         document.addEventListener('DOMContentLoaded', () => {
             carregarGeracoes();
@@ -192,44 +198,100 @@
                 const response = await fetch(`${API_BASE}/geracoes/${id}`, {
                     headers: { 'Authorization': `Bearer ${getToken()}` }
                 });
-                
+
                 if (!response.ok) throw new Error('Erro ao carregar detalhes');
-                
+
                 const geracao = await response.json();
-                
+                geracaoAtual = geracao;
+
                 document.getElementById('texto-prompt').textContent = geracao.prompt_enviado || 'Prompt não disponível';
                 document.getElementById('texto-resumo').textContent = geracao.resumo_consolidado || 'Resumo não disponível';
-                
+
                 // Detecta se é markdown (string) ou JSON (object)
                 const conteudo = geracao.conteudo_gerado;
                 const isMarkdown = typeof conteudo === 'string';
-                
+
                 if (isMarkdown && conteudo) {
                     // Renderiza markdown
                     document.getElementById('texto-markdown').innerHTML = marked.parse(conteudo);
                     document.getElementById('texto-resultado').textContent = conteudo;
+                    // Mostra botão de download DOCX
+                    document.getElementById('btn-download-docx').classList.remove('hidden');
                 } else if (conteudo) {
                     // JSON antigo
                     document.getElementById('texto-markdown').innerHTML = '<p class="text-gray-500">Esta geração usa formato JSON antigo. Veja a aba "Resultado (Raw)".</p>';
                     document.getElementById('texto-resultado').textContent = JSON.stringify(conteudo, null, 2);
+                    document.getElementById('btn-download-docx').classList.add('hidden');
                 } else {
                     document.getElementById('texto-markdown').innerHTML = '<p class="text-gray-500">Conteúdo não disponível</p>';
                     document.getElementById('texto-resultado').textContent = 'Resultado não disponível';
+                    document.getElementById('btn-download-docx').classList.add('hidden');
                 }
-                
+
                 document.getElementById('info-geracao').innerHTML = `
-                    <strong>${geracao.numero_cnj_formatado || geracao.numero_cnj}</strong> | 
-                    ${formatarTipoPeca(geracao.tipo_peca)} | 
+                    <strong>${geracao.numero_cnj_formatado || geracao.numero_cnj}</strong> |
+                    ${formatarTipoPeca(geracao.tipo_peca)} |
                     ${new Date(geracao.criado_em).toLocaleString('pt-BR')}
                     ${isMarkdown ? ' | <span class="text-green-600">Markdown</span>' : ' | <span class="text-amber-600">JSON</span>'}
                 `;
-                
+
                 // Mostra a tab de markdown por padrão se for markdown
                 mostrarTab(isMarkdown ? 'markdown' : 'prompt');
                 document.getElementById('modal-detalhes').classList.remove('hidden');
             } catch (error) {
                 console.error(error);
                 alert('Erro ao carregar detalhes');
+            }
+        }
+
+        async function baixarDocx() {
+            if (!geracaoAtual || !geracaoAtual.conteudo_gerado) {
+                alert('Conteúdo não disponível para download');
+                return;
+            }
+
+            const btn = document.getElementById('btn-download-docx');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Gerando...';
+            btn.disabled = true;
+
+            try {
+                // Chama endpoint de conversão para DOCX
+                const response = await fetch('/gerador-pecas/api/exportar-docx', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: JSON.stringify({
+                        markdown: geracaoAtual.conteudo_gerado,
+                        tipo_peca: geracaoAtual.tipo_peca || 'peca',
+                        numero_processo: geracaoAtual.numero_cnj
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Erro ao gerar DOCX');
+                }
+
+                const data = await response.json();
+
+                // Faz download do arquivo
+                const downloadUrl = data.url_download + `?token=${encodeURIComponent(getToken())}`;
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = '';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+            } catch (error) {
+                console.error('Erro ao baixar DOCX:', error);
+                alert('Erro ao gerar DOCX: ' + error.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
 
