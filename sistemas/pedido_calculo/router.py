@@ -1115,7 +1115,7 @@ async def processar_stream(
                     geracao_existente.dados_agente2 = agente2_result.to_dict()
                     geracao_existente.documentos_baixados = documentos_baixados
                     geracao_existente.conteudo_gerado = markdown
-                    geracao_existente.modelo_usado = "gemini-3-flash-preview"
+                    geracao_existente.modelo_usado = service.modelo
                     geracao_existente.tempo_processamento = tempo_processamento
                     geracao_existente.criado_em = datetime.utcnow()  # Atualiza timestamp
 
@@ -1133,7 +1133,7 @@ async def processar_stream(
                         dados_agente2=agente2_result.to_dict(),
                         documentos_baixados=documentos_baixados,
                         conteudo_gerado=markdown,
-                        modelo_usado="gemini-3-flash-preview",
+                        modelo_usado=service.modelo,
                         tempo_processamento=tempo_processamento,
                         usuario_id=user_id
                     )
