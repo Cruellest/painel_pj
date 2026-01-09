@@ -24,6 +24,8 @@ from admin.seed_prompts import seed_default_prompts
 # Importa modelos de feedback
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
 from sistemas.matriculas_confrontantes.models import Analise, FeedbackMatricula
+from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
+from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo
 
 
 router = APIRouter(prefix="/admin", tags=["Administração"])
@@ -268,17 +270,27 @@ async def listar_modelos_ia(
         ConfiguracaoIA.sistema == "assistencia_judiciaria",
         ConfiguracaoIA.chave == "modelo_relatorio"
     ).first()
-    
+
     configs_mat_analise = db.query(ConfiguracaoIA).filter(
         ConfiguracaoIA.sistema == "matriculas",
         ConfiguracaoIA.chave == "modelo_analise"
     ).first()
-    
+
     configs_mat_relatorio = db.query(ConfiguracaoIA).filter(
         ConfiguracaoIA.sistema == "matriculas",
         ConfiguracaoIA.chave == "modelo_relatorio"
     ).first()
-    
+
+    configs_gp = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "gerador_pecas",
+        ConfiguracaoIA.chave == "modelo_agente_final"
+    ).first()
+
+    configs_pc = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "pedido_calculo",
+        ConfiguracaoIA.chave == "modelo_agente_final"
+    ).first()
+
     resultado = {
         "assistencia_judiciaria": {
             "id": configs_aj.id if configs_aj else None,
@@ -291,9 +303,19 @@ async def listar_modelos_ia(
             "modelo_analise": configs_mat_analise.valor if configs_mat_analise else "google/gemini-3-flash-preview",
             "modelo_relatorio": configs_mat_relatorio.valor if configs_mat_relatorio else "google/gemini-3-flash-preview",
             "descricao": "Modelo para análise de matrículas imobiliárias"
+        },
+        "gerador_pecas": {
+            "id": configs_gp.id if configs_gp else None,
+            "modelo": configs_gp.valor if configs_gp else "google/gemini-3-flash-preview",
+            "descricao": "Modelo para geração de peças jurídicas"
+        },
+        "pedido_calculo": {
+            "id": configs_pc.id if configs_pc else None,
+            "modelo": configs_pc.valor if configs_pc else "google/gemini-3-flash-preview",
+            "descricao": "Modelo para geração de pedidos de cálculo"
         }
     }
-    
+
     return resultado
 
 
@@ -478,14 +500,24 @@ async def dashboard_feedbacks(
         # Flags para incluir cada sistema
         incluir_aj = sistema is None or sistema == 'assistencia_judiciaria'
         incluir_mat = sistema is None or sistema == 'matriculas'
-        
+        incluir_gp = sistema is None or sistema == 'gerador_pecas'
+        incluir_pc = sistema is None or sistema == 'pedido_calculo'
+
         total_consultas_aj = 0
         total_feedbacks_aj = 0
         feedbacks_por_avaliacao_aj = []
-        
+
         total_analises_mat = 0
         total_feedbacks_mat = 0
         feedbacks_por_avaliacao_mat = []
+
+        total_geracoes_gp = 0
+        total_feedbacks_gp = 0
+        feedbacks_por_avaliacao_gp = []
+
+        total_geracoes_pc = 0
+        total_feedbacks_pc = 0
+        feedbacks_por_avaliacao_pc = []
         
         # === Sistema Assistência Judiciária ===
         if incluir_aj:
@@ -556,10 +588,80 @@ async def dashboard_feedbacks(
                     FeedbackMatricula.criado_em < data_fim
                 )
             feedbacks_por_avaliacao_mat = query_avaliacoes_mat.group_by(FeedbackMatricula.avaliacao).all()
-        
+
+        # === Sistema Gerador de Peças ===
+        if incluir_gp:
+            query_total_gp = db.query(GeracaoPeca)
+            if ids_excluir:
+                query_total_gp = query_total_gp.filter(~GeracaoPeca.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_total_gp = query_total_gp.filter(
+                    GeracaoPeca.criado_em >= data_inicio,
+                    GeracaoPeca.criado_em < data_fim
+                )
+            total_geracoes_gp = query_total_gp.count()
+
+            query_feedbacks_gp = db.query(FeedbackPeca)
+            if ids_excluir:
+                query_feedbacks_gp = query_feedbacks_gp.filter(~FeedbackPeca.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_feedbacks_gp = query_feedbacks_gp.filter(
+                    FeedbackPeca.criado_em >= data_inicio,
+                    FeedbackPeca.criado_em < data_fim
+                )
+            total_feedbacks_gp = query_feedbacks_gp.count()
+
+            query_avaliacoes_gp = db.query(
+                FeedbackPeca.avaliacao,
+                func.count(FeedbackPeca.id).label('count')
+            )
+            if ids_excluir:
+                query_avaliacoes_gp = query_avaliacoes_gp.filter(~FeedbackPeca.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_avaliacoes_gp = query_avaliacoes_gp.filter(
+                    FeedbackPeca.criado_em >= data_inicio,
+                    FeedbackPeca.criado_em < data_fim
+                )
+            feedbacks_por_avaliacao_gp = query_avaliacoes_gp.group_by(FeedbackPeca.avaliacao).all()
+
+        # === Sistema Pedido de Cálculo ===
+        if incluir_pc:
+            query_total_pc = db.query(GeracaoPedidoCalculo)
+            if ids_excluir:
+                query_total_pc = query_total_pc.filter(~GeracaoPedidoCalculo.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_total_pc = query_total_pc.filter(
+                    GeracaoPedidoCalculo.criado_em >= data_inicio,
+                    GeracaoPedidoCalculo.criado_em < data_fim
+                )
+            total_geracoes_pc = query_total_pc.count()
+
+            query_feedbacks_pc = db.query(FeedbackPedidoCalculo)
+            if ids_excluir:
+                query_feedbacks_pc = query_feedbacks_pc.filter(~FeedbackPedidoCalculo.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_feedbacks_pc = query_feedbacks_pc.filter(
+                    FeedbackPedidoCalculo.criado_em >= data_inicio,
+                    FeedbackPedidoCalculo.criado_em < data_fim
+                )
+            total_feedbacks_pc = query_feedbacks_pc.count()
+
+            query_avaliacoes_pc = db.query(
+                FeedbackPedidoCalculo.avaliacao,
+                func.count(FeedbackPedidoCalculo.id).label('count')
+            )
+            if ids_excluir:
+                query_avaliacoes_pc = query_avaliacoes_pc.filter(~FeedbackPedidoCalculo.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_avaliacoes_pc = query_avaliacoes_pc.filter(
+                    FeedbackPedidoCalculo.criado_em >= data_inicio,
+                    FeedbackPedidoCalculo.criado_em < data_fim
+                )
+            feedbacks_por_avaliacao_pc = query_avaliacoes_pc.group_by(FeedbackPedidoCalculo.avaliacao).all()
+
         # === Totais combinados ===
-        total_consultas = total_consultas_aj + total_analises_mat
-        total_feedbacks = total_feedbacks_aj + total_feedbacks_mat
+        total_consultas = total_consultas_aj + total_analises_mat + total_geracoes_gp + total_geracoes_pc
+        total_feedbacks = total_feedbacks_aj + total_feedbacks_mat + total_feedbacks_gp + total_feedbacks_pc
         
         # Combinar avaliações
         avaliacoes = {
@@ -572,6 +674,12 @@ async def dashboard_feedbacks(
             if avaliacao in avaliacoes:
                 avaliacoes[avaliacao] += count
         for avaliacao, count in feedbacks_por_avaliacao_mat:
+            if avaliacao in avaliacoes:
+                avaliacoes[avaliacao] += count
+        for avaliacao, count in feedbacks_por_avaliacao_gp:
+            if avaliacao in avaliacoes:
+                avaliacoes[avaliacao] += count
+        for avaliacao, count in feedbacks_por_avaliacao_pc:
             if avaliacao in avaliacoes:
                 avaliacoes[avaliacao] += count
         
@@ -590,7 +698,9 @@ async def dashboard_feedbacks(
         
         feedbacks_recentes_aj = []
         feedbacks_recentes_mat = []
-        
+        feedbacks_recentes_gp = []
+        feedbacks_recentes_pc = []
+
         if incluir_aj:
             query_recentes_aj = db.query(
                 func.date(FeedbackAnalise.criado_em).label('data'),
@@ -614,12 +724,40 @@ async def dashboard_feedbacks(
             if ids_excluir:
                 query_recentes_mat = query_recentes_mat.filter(~FeedbackMatricula.usuario_id.in_(ids_excluir))
             feedbacks_recentes_mat = query_recentes_mat.group_by(func.date(FeedbackMatricula.criado_em)).all()
-        
+
+        if incluir_gp:
+            query_recentes_gp = db.query(
+                func.date(FeedbackPeca.criado_em).label('data'),
+                func.count(FeedbackPeca.id).label('count')
+            ).filter(
+                FeedbackPeca.criado_em >= data_limite_recentes,
+                FeedbackPeca.criado_em < data_fim_recentes
+            )
+            if ids_excluir:
+                query_recentes_gp = query_recentes_gp.filter(~FeedbackPeca.usuario_id.in_(ids_excluir))
+            feedbacks_recentes_gp = query_recentes_gp.group_by(func.date(FeedbackPeca.criado_em)).all()
+
+        if incluir_pc:
+            query_recentes_pc = db.query(
+                func.date(FeedbackPedidoCalculo.criado_em).label('data'),
+                func.count(FeedbackPedidoCalculo.id).label('count')
+            ).filter(
+                FeedbackPedidoCalculo.criado_em >= data_limite_recentes,
+                FeedbackPedidoCalculo.criado_em < data_fim_recentes
+            )
+            if ids_excluir:
+                query_recentes_pc = query_recentes_pc.filter(~FeedbackPedidoCalculo.usuario_id.in_(ids_excluir))
+            feedbacks_recentes_pc = query_recentes_pc.group_by(func.date(FeedbackPedidoCalculo.criado_em)).all()
+
         # Combina feedbacks recentes por data
         feedbacks_por_data = {}
         for data, count in feedbacks_recentes_aj:
             feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
         for data, count in feedbacks_recentes_mat:
+            feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
+        for data, count in feedbacks_recentes_gp:
+            feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
+        for data, count in feedbacks_recentes_pc:
             feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
         
         feedbacks_recentes = [{"data": data, "count": count} for data, count in sorted(feedbacks_por_data.items())]
@@ -627,6 +765,8 @@ async def dashboard_feedbacks(
         # Feedbacks por usuário (top 10) - combinando sistemas selecionados
         feedbacks_por_usuario_aj = []
         feedbacks_por_usuario_mat = []
+        feedbacks_por_usuario_gp = []
+        feedbacks_por_usuario_pc = []
         
         if incluir_aj:
             query_usuarios_aj = db.query(
@@ -659,7 +799,39 @@ async def dashboard_feedbacks(
                     FeedbackMatricula.criado_em < data_fim
                 )
             feedbacks_por_usuario_mat = query_usuarios_mat.group_by(User.id, User.username, User.full_name).all()
-        
+
+        if incluir_gp:
+            query_usuarios_gp = db.query(
+                User.username,
+                User.full_name,
+                func.count(FeedbackPeca.id).label('total'),
+                func.sum(case((FeedbackPeca.avaliacao == 'correto', 1), else_=0)).label('corretos')
+            ).join(FeedbackPeca, FeedbackPeca.usuario_id == User.id)
+            if ids_excluir:
+                query_usuarios_gp = query_usuarios_gp.filter(~User.id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_usuarios_gp = query_usuarios_gp.filter(
+                    FeedbackPeca.criado_em >= data_inicio,
+                    FeedbackPeca.criado_em < data_fim
+                )
+            feedbacks_por_usuario_gp = query_usuarios_gp.group_by(User.id, User.username, User.full_name).all()
+
+        if incluir_pc:
+            query_usuarios_pc = db.query(
+                User.username,
+                User.full_name,
+                func.count(FeedbackPedidoCalculo.id).label('total'),
+                func.sum(case((FeedbackPedidoCalculo.avaliacao == 'correto', 1), else_=0)).label('corretos')
+            ).join(FeedbackPedidoCalculo, FeedbackPedidoCalculo.usuario_id == User.id)
+            if ids_excluir:
+                query_usuarios_pc = query_usuarios_pc.filter(~User.id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_usuarios_pc = query_usuarios_pc.filter(
+                    FeedbackPedidoCalculo.criado_em >= data_inicio,
+                    FeedbackPedidoCalculo.criado_em < data_fim
+                )
+            feedbacks_por_usuario_pc = query_usuarios_pc.group_by(User.id, User.username, User.full_name).all()
+
         # Combina por usuário
         usuarios_stats = {}
         for username, full_name, total, corretos in feedbacks_por_usuario_aj:
@@ -668,6 +840,16 @@ async def dashboard_feedbacks(
             usuarios_stats[username]["total"] += total
             usuarios_stats[username]["corretos"] += corretos or 0
         for username, full_name, total, corretos in feedbacks_por_usuario_mat:
+            if username not in usuarios_stats:
+                usuarios_stats[username] = {"nome": full_name or username, "total": 0, "corretos": 0}
+            usuarios_stats[username]["total"] += total
+            usuarios_stats[username]["corretos"] += corretos or 0
+        for username, full_name, total, corretos in feedbacks_por_usuario_gp:
+            if username not in usuarios_stats:
+                usuarios_stats[username] = {"nome": full_name or username, "total": 0, "corretos": 0}
+            usuarios_stats[username]["total"] += total
+            usuarios_stats[username]["corretos"] += corretos or 0
+        for username, full_name, total, corretos in feedbacks_por_usuario_pc:
             if username not in usuarios_stats:
                 usuarios_stats[username] = {"nome": full_name or username, "total": 0, "corretos": 0}
             usuarios_stats[username]["total"] += total
@@ -682,6 +864,8 @@ async def dashboard_feedbacks(
         # Usuários que geraram relatório mas não deram feedback
         consultas_sem_feedback_aj = []
         analises_sem_feedback_mat = []
+        geracoes_sem_feedback_gp = []
+        geracoes_sem_feedback_pc = []
         
         # Assistência Judiciária
         if incluir_aj:
@@ -734,7 +918,59 @@ async def dashboard_feedbacks(
                     Analise.analisado_em < data_fim
                 )
             analises_sem_feedback_mat = query_pendentes_mat.order_by(Analise.analisado_em.desc()).limit(20).all()
-        
+
+        # Gerador de Peças
+        if incluir_gp:
+            query_pendentes_gp = db.query(
+                GeracaoPeca.id,
+                GeracaoPeca.tipo_peca,
+                GeracaoPeca.titulo,
+                GeracaoPeca.criado_em,
+                User.username,
+                User.full_name
+            ).outerjoin(
+                FeedbackPeca, FeedbackPeca.geracao_id == GeracaoPeca.id
+            ).join(
+                User, GeracaoPeca.usuario_id == User.id
+            ).filter(
+                FeedbackPeca.id == None,
+                GeracaoPeca.conteudo_gerado.isnot(None)
+            )
+            if ids_excluir:
+                query_pendentes_gp = query_pendentes_gp.filter(~GeracaoPeca.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_pendentes_gp = query_pendentes_gp.filter(
+                    GeracaoPeca.criado_em >= data_inicio,
+                    GeracaoPeca.criado_em < data_fim
+                )
+            geracoes_sem_feedback_gp = query_pendentes_gp.order_by(GeracaoPeca.criado_em.desc()).limit(20).all()
+
+        # Pedido de Cálculo
+        if incluir_pc:
+            query_pendentes_pc = db.query(
+                GeracaoPedidoCalculo.id,
+                GeracaoPedidoCalculo.numero_processo,
+                GeracaoPedidoCalculo.titulo,
+                GeracaoPedidoCalculo.criado_em,
+                User.username,
+                User.full_name
+            ).outerjoin(
+                FeedbackPedidoCalculo, FeedbackPedidoCalculo.geracao_id == GeracaoPedidoCalculo.id
+            ).join(
+                User, GeracaoPedidoCalculo.usuario_id == User.id
+            ).filter(
+                FeedbackPedidoCalculo.id == None,
+                GeracaoPedidoCalculo.pedido_gerado.isnot(None)
+            )
+            if ids_excluir:
+                query_pendentes_pc = query_pendentes_pc.filter(~GeracaoPedidoCalculo.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_pendentes_pc = query_pendentes_pc.filter(
+                    GeracaoPedidoCalculo.criado_em >= data_inicio,
+                    GeracaoPedidoCalculo.criado_em < data_fim
+                )
+            geracoes_sem_feedback_pc = query_pendentes_pc.order_by(GeracaoPedidoCalculo.criado_em.desc()).limit(20).all()
+
         # Combina e formata
         pendentes_feedback = []
         for id, cnj_fmt, cnj, consultado_em, username, full_name in consultas_sem_feedback_aj:
@@ -752,6 +988,22 @@ async def dashboard_feedbacks(
                 "identificador": matricula or file_name,
                 "usuario": full_name or username,
                 "data": analisado_em.isoformat() if analisado_em else None
+            })
+        for id, tipo_peca, titulo, criado_em, username, full_name in geracoes_sem_feedback_gp:
+            pendentes_feedback.append({
+                "id": id,
+                "sistema": "gerador_pecas",
+                "identificador": titulo or tipo_peca,
+                "usuario": full_name or username,
+                "data": criado_em.isoformat() if criado_em else None
+            })
+        for id, numero_processo, titulo, criado_em, username, full_name in geracoes_sem_feedback_pc:
+            pendentes_feedback.append({
+                "id": id,
+                "sistema": "pedido_calculo",
+                "identificador": numero_processo or titulo,
+                "usuario": full_name or username,
+                "data": criado_em.isoformat() if criado_em else None
             })
         
         # Ordena por data (mais recentes primeiro)
@@ -780,6 +1032,14 @@ async def dashboard_feedbacks(
                 "matriculas": {
                     "total": total_analises_mat,
                     "feedbacks": total_feedbacks_mat
+                },
+                "gerador_pecas": {
+                    "total": total_geracoes_gp,
+                    "feedbacks": total_feedbacks_gp
+                },
+                "pedido_calculo": {
+                    "total": total_geracoes_pc,
+                    "feedbacks": total_feedbacks_pc
                 }
             }
         }
@@ -921,7 +1181,95 @@ async def listar_feedbacks(
                     "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
                     "criado_em_dt": fb.criado_em
                 })
-        
+
+        # Feedbacks de Gerador de Peças
+        if sistema is None or sistema == 'gerador_pecas':
+            query_gp = db.query(
+                FeedbackPeca,
+                GeracaoPeca.tipo_peca,
+                GeracaoPeca.titulo,
+                GeracaoPeca.modelo_usado,
+                User.username,
+                User.full_name
+            ).join(
+                GeracaoPeca, FeedbackPeca.geracao_id == GeracaoPeca.id
+            ).join(
+                User, FeedbackPeca.usuario_id == User.id
+            )
+
+            if ids_excluir:
+                query_gp = query_gp.filter(~FeedbackPeca.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_gp = query_gp.filter(
+                    FeedbackPeca.criado_em >= data_inicio,
+                    FeedbackPeca.criado_em < data_fim
+                )
+            if avaliacao:
+                query_gp = query_gp.filter(FeedbackPeca.avaliacao == avaliacao)
+            if usuario_id:
+                query_gp = query_gp.filter(FeedbackPeca.usuario_id == usuario_id)
+
+            for fb, tipo_peca, titulo, modelo_usado, username, full_name in query_gp.all():
+                feedbacks_combinados.append({
+                    "id": fb.id,
+                    "consulta_id": fb.geracao_id,
+                    "sistema": "gerador_pecas",
+                    "identificador": titulo or tipo_peca,
+                    "cnj": None,
+                    "modelo": modelo_usado or "gemini-3-flash-preview",
+                    "usuario": full_name or username,
+                    "username": username,
+                    "avaliacao": fb.avaliacao,
+                    "comentario": fb.comentario,
+                    "campos_incorretos": fb.campos_incorretos,
+                    "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
+                    "criado_em_dt": fb.criado_em
+                })
+
+        # Feedbacks de Pedido de Cálculo
+        if sistema is None or sistema == 'pedido_calculo':
+            query_pc = db.query(
+                FeedbackPedidoCalculo,
+                GeracaoPedidoCalculo.numero_processo,
+                GeracaoPedidoCalculo.titulo,
+                GeracaoPedidoCalculo.modelo_usado,
+                User.username,
+                User.full_name
+            ).join(
+                GeracaoPedidoCalculo, FeedbackPedidoCalculo.geracao_id == GeracaoPedidoCalculo.id
+            ).join(
+                User, FeedbackPedidoCalculo.usuario_id == User.id
+            )
+
+            if ids_excluir:
+                query_pc = query_pc.filter(~FeedbackPedidoCalculo.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_pc = query_pc.filter(
+                    FeedbackPedidoCalculo.criado_em >= data_inicio,
+                    FeedbackPedidoCalculo.criado_em < data_fim
+                )
+            if avaliacao:
+                query_pc = query_pc.filter(FeedbackPedidoCalculo.avaliacao == avaliacao)
+            if usuario_id:
+                query_pc = query_pc.filter(FeedbackPedidoCalculo.usuario_id == usuario_id)
+
+            for fb, numero_processo, titulo, modelo_usado, username, full_name in query_pc.all():
+                feedbacks_combinados.append({
+                    "id": fb.id,
+                    "consulta_id": fb.geracao_id,
+                    "sistema": "pedido_calculo",
+                    "identificador": numero_processo or titulo,
+                    "cnj": None,
+                    "modelo": modelo_usado or "gemini-3-flash-preview",
+                    "usuario": full_name or username,
+                    "username": username,
+                    "avaliacao": fb.avaliacao,
+                    "comentario": fb.comentario,
+                    "campos_incorretos": fb.campos_incorretos,
+                    "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
+                    "criado_em_dt": fb.criado_em
+                })
+
         # Ordena por data (mais recentes primeiro)
         feedbacks_combinados.sort(key=lambda x: x.get('criado_em_dt') or datetime.min, reverse=True)
         
@@ -1036,7 +1384,87 @@ async def obter_consulta_detalhes(
                     "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
                 } if feedback else None
             }
-        
+
+        elif sistema == "gerador_pecas":
+            geracao = db.query(
+                GeracaoPeca,
+                User.username,
+                User.full_name
+            ).join(
+                User, GeracaoPeca.usuario_id == User.id
+            ).filter(
+                GeracaoPeca.id == consulta_id
+            ).first()
+
+            if not geracao:
+                raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+            g, username, full_name = geracao
+
+            # Busca feedback se existir
+            feedback = db.query(FeedbackPeca).filter(
+                FeedbackPeca.geracao_id == consulta_id
+            ).first()
+
+            return {
+                "id": g.id,
+                "sistema": "gerador_pecas",
+                "identificador": g.titulo or g.tipo_peca,
+                "tipo_peca": g.tipo_peca,
+                "titulo": g.titulo,
+                "dados": g.parametros,
+                "relatorio": g.conteudo_gerado,
+                "modelo": g.modelo_usado,
+                "usuario": full_name or username,
+                "analisado_em": g.criado_em.isoformat() if g.criado_em else None,
+                "feedback": {
+                    "avaliacao": feedback.avaliacao if feedback else None,
+                    "comentario": feedback.comentario if feedback else None,
+                    "campos_incorretos": feedback.campos_incorretos if feedback else None,
+                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                } if feedback else None
+            }
+
+        elif sistema == "pedido_calculo":
+            geracao = db.query(
+                GeracaoPedidoCalculo,
+                User.username,
+                User.full_name
+            ).join(
+                User, GeracaoPedidoCalculo.usuario_id == User.id
+            ).filter(
+                GeracaoPedidoCalculo.id == consulta_id
+            ).first()
+
+            if not geracao:
+                raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+            p, username, full_name = geracao
+
+            # Busca feedback se existir
+            feedback = db.query(FeedbackPedidoCalculo).filter(
+                FeedbackPedidoCalculo.geracao_id == consulta_id
+            ).first()
+
+            return {
+                "id": p.id,
+                "sistema": "pedido_calculo",
+                "identificador": p.numero_processo or p.titulo,
+                "numero_processo": p.numero_processo,
+                "titulo": p.titulo,
+                "dados": p.parametros,
+                "relatorio": p.pedido_gerado,
+                "modelo": p.modelo_usado,
+                "usuario": full_name or username,
+                "analisado_em": p.criado_em.isoformat() if p.criado_em else None,
+                "feedback": {
+                    "avaliacao": feedback.avaliacao if feedback else None,
+                    "comentario": feedback.comentario if feedback else None,
+                    "campos_incorretos": feedback.campos_incorretos if feedback else None,
+                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                } if feedback else None
+            }
+
         else:
             raise HTTPException(status_code=400, detail="Sistema inválido")
     
@@ -1057,7 +1485,10 @@ async def exportar_feedbacks(
     Apenas para administradores.
     """
     try:
-        feedbacks = db.query(
+        data = []
+
+        # Feedbacks de Assistência Judiciária
+        feedbacks_aj = db.query(
             FeedbackAnalise,
             ConsultaProcesso.cnj_formatado,
             ConsultaProcesso.cnj,
@@ -1070,20 +1501,100 @@ async def exportar_feedbacks(
         ).order_by(
             FeedbackAnalise.criado_em.desc()
         ).all()
-        
-        data = [
-            {
+
+        for fb, cnj_fmt, cnj, username, full_name in feedbacks_aj:
+            data.append({
                 "id": fb.id,
-                "cnj": cnj_fmt or cnj,
+                "sistema": "assistencia_judiciaria",
+                "identificador": cnj_fmt or cnj,
                 "usuario": full_name or username,
                 "avaliacao": fb.avaliacao,
                 "comentario": fb.comentario,
                 "campos_incorretos": fb.campos_incorretos,
                 "criado_em": fb.criado_em.isoformat() if fb.criado_em else None
-            }
-            for fb, cnj_fmt, cnj, username, full_name in feedbacks
-        ]
-        
+            })
+
+        # Feedbacks de Matrículas
+        feedbacks_mat = db.query(
+            FeedbackMatricula,
+            Analise.file_name,
+            Analise.matricula_principal,
+            User.username,
+            User.full_name
+        ).join(
+            Analise, FeedbackMatricula.analise_id == Analise.id
+        ).join(
+            User, FeedbackMatricula.usuario_id == User.id
+        ).order_by(
+            FeedbackMatricula.criado_em.desc()
+        ).all()
+
+        for fb, file_name, matricula, username, full_name in feedbacks_mat:
+            data.append({
+                "id": fb.id,
+                "sistema": "matriculas",
+                "identificador": matricula or file_name,
+                "usuario": full_name or username,
+                "avaliacao": fb.avaliacao,
+                "comentario": fb.comentario,
+                "campos_incorretos": fb.campos_incorretos,
+                "criado_em": fb.criado_em.isoformat() if fb.criado_em else None
+            })
+
+        # Feedbacks de Gerador de Peças
+        feedbacks_gp = db.query(
+            FeedbackPeca,
+            GeracaoPeca.titulo,
+            GeracaoPeca.tipo_peca,
+            User.username,
+            User.full_name
+        ).join(
+            GeracaoPeca, FeedbackPeca.geracao_id == GeracaoPeca.id
+        ).join(
+            User, FeedbackPeca.usuario_id == User.id
+        ).order_by(
+            FeedbackPeca.criado_em.desc()
+        ).all()
+
+        for fb, titulo, tipo_peca, username, full_name in feedbacks_gp:
+            data.append({
+                "id": fb.id,
+                "sistema": "gerador_pecas",
+                "identificador": titulo or tipo_peca,
+                "usuario": full_name or username,
+                "avaliacao": fb.avaliacao,
+                "comentario": fb.comentario,
+                "campos_incorretos": fb.campos_incorretos,
+                "criado_em": fb.criado_em.isoformat() if fb.criado_em else None
+            })
+
+        # Feedbacks de Pedido de Cálculo
+        feedbacks_pc = db.query(
+            FeedbackPedidoCalculo,
+            GeracaoPedidoCalculo.numero_processo,
+            GeracaoPedidoCalculo.titulo,
+            User.username,
+            User.full_name
+        ).join(
+            GeracaoPedidoCalculo, FeedbackPedidoCalculo.geracao_id == GeracaoPedidoCalculo.id
+        ).join(
+            User, FeedbackPedidoCalculo.usuario_id == User.id
+        ).order_by(
+            FeedbackPedidoCalculo.criado_em.desc()
+        ).all()
+
+        for fb, numero_processo, titulo, username, full_name in feedbacks_pc:
+            data.append({
+                "id": fb.id,
+                "sistema": "pedido_calculo",
+                "identificador": numero_processo or titulo,
+                "usuario": full_name or username,
+                "avaliacao": fb.avaliacao,
+                "comentario": fb.comentario,
+                "campos_incorretos": fb.campos_incorretos,
+                "criado_em": fb.criado_em.isoformat() if fb.criado_em else None
+            })
+
         return {"feedbacks": data, "total": len(data)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

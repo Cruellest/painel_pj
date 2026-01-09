@@ -46,11 +46,16 @@ from sistemas.gerador_pecas.router_config_pecas import router as config_pecas_ro
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
 
+# Import do sistema de Pedido de Cálculo
+from sistemas.pedido_calculo.router import router as pedido_calculo_router
+from sistemas.pedido_calculo.router_admin import router as pedido_calculo_admin_router
+
 # Diretórios base
 BASE_DIR = Path(__file__).resolve().parent
 MATRICULAS_TEMPLATES = BASE_DIR / "sistemas" / "matriculas_confrontantes" / "templates"
 ASSISTENCIA_TEMPLATES = BASE_DIR / "sistemas" / "assistencia_judiciaria" / "templates"
 GERADOR_PECAS_TEMPLATES = BASE_DIR / "sistemas" / "gerador_pecas" / "templates"
+PEDIDO_CALCULO_TEMPLATES = BASE_DIR / "sistemas" / "pedido_calculo" / "templates"
 
 
 @asynccontextmanager
@@ -153,6 +158,10 @@ app.include_router(categorias_json_router, prefix="/admin/api")
 
 # Router de Configuração de Tipos de Peça e Categorias de Documentos (admin)
 app.include_router(config_pecas_router)
+
+# Router de Pedido de Cálculo
+app.include_router(pedido_calculo_router, prefix="/pedido-calculo/api")
+app.include_router(pedido_calculo_admin_router)  # Admin router - sem prefixo pois já tem no router
 
 
 # ==================================================
@@ -275,6 +284,56 @@ async def serve_gerador_pecas_static(filename: str = ""):
     return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
 
 
+# Pedido de Cálculo
+@app.get("/pedido-calculo/{filename:path}")
+@app.get("/pedido-calculo/")
+@app.get("/pedido-calculo")
+async def serve_pedido_calculo_static(filename: str = ""):
+    """Serve arquivos do frontend Pedido de Cálculo"""
+    if not filename or filename == "" or filename == "/":
+        filename = "index.html"
+
+    file_path = PEDIDO_CALCULO_TEMPLATES / filename
+
+    if file_path.exists() and file_path.is_file():
+        suffix = file_path.suffix.lower()
+        content_types = {
+            ".html": "text/html",
+            ".js": "application/javascript",
+            ".css": "text/css",
+            ".json": "application/json",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".svg": "image/svg+xml",
+        }
+        media_type = content_types.get(suffix, "application/octet-stream")
+        
+        return FileResponse(
+            file_path, 
+            media_type=media_type,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+
+    # Se não encontrou, retorna index.html (SPA fallback)
+    index_path = PEDIDO_CALCULO_TEMPLATES / "index.html"
+    if index_path.exists():
+        return FileResponse(
+            index_path, 
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+
+    return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
+
+
 # ==================================================
 # PÁGINAS DO PORTAL (Jinja2)
 # ==================================================
@@ -319,6 +378,12 @@ async def admin_modulos_tipo_peca_page(request: Request):
 async def admin_gerador_historico_page(request: Request):
     """Página de histórico de gerações com prompts"""
     return templates.TemplateResponse("admin_gerador_historico.html", {"request": request})
+
+
+@app.get("/admin/pedido-calculo/debug")
+async def admin_pedido_calculo_debug_page(request: Request):
+    """Página de debug do Pedido de Cálculo - visualiza chamadas de IA"""
+    return templates.TemplateResponse("admin_pedido_calculo_historico.html", {"request": request})
 
 
 @app.get("/admin/users")

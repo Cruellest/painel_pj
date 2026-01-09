@@ -90,6 +90,8 @@
                         <option value="">Todos os sistemas</option>
                         <option value="assistencia_judiciaria">Assistência Judiciária</option>
                         <option value="matriculas">Matrículas Confrontantes</option>
+                        <option value="gerador_pecas">Gerador de Peças</option>
+                        <option value="pedido_calculo">Pedido de Cálculo</option>
                     </select>
                 </div>
                 <button onclick="limparFiltros()" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
@@ -185,10 +187,24 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-3 p-4 bg-green-50 rounded-lg border border-green-100">
-                    <i class="fas fa-file-alt text-green-600 text-xl"></i>
+                    <i class="fas fa-file-contract text-green-600 text-xl"></i>
                     <div>
                         <p class="text-sm font-medium text-gray-700">Matrículas Confrontantes</p>
                         <p id="modelo-mat" class="text-xs text-green-600 font-mono">Carregando...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 p-4 bg-purple-50 rounded-lg border border-purple-100">
+                    <i class="fas fa-file-alt text-purple-600 text-xl"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Gerador de Peças</p>
+                        <p id="modelo-gp" class="text-xs text-purple-600 font-mono">Carregando...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 p-4 bg-amber-50 rounded-lg border border-amber-100">
+                    <i class="fas fa-calculator text-amber-600 text-xl"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Pedido de Cálculo</p>
+                        <p id="modelo-pc" class="text-xs text-amber-600 font-mono">Carregando...</p>
                     </div>
                 </div>
             </div>
@@ -434,7 +450,13 @@
             }
             if (ano) partes.push(ano);
             if (sistema) {
-                partes.push(sistema === 'assistencia_judiciaria' ? 'Assistência' : 'Matrículas');
+                const sistemaNomes = {
+                    'assistencia_judiciaria': 'Assistência',
+                    'matriculas': 'Matrículas',
+                    'gerador_pecas': 'Gerador de Peças',
+                    'pedido_calculo': 'Pedido de Cálculo'
+                };
+                partes.push(sistemaNomes[sistema] || sistema);
             }
             
             const info = document.getElementById('filtro-info');
@@ -534,7 +556,9 @@
                 const tabelaPendentes = document.getElementById('tabela-pendentes');
                 const sistemaLabels = {
                     'assistencia_judiciaria': '<span class="text-blue-600"><i class="fas fa-gavel mr-1"></i>Assist. Jud.</span>',
-                    'matriculas': '<span class="text-green-600"><i class="fas fa-file-alt mr-1"></i>Matrículas</span>'
+                    'matriculas': '<span class="text-green-600"><i class="fas fa-file-contract mr-1"></i>Matrículas</span>',
+                    'gerador_pecas': '<span class="text-purple-600"><i class="fas fa-file-alt mr-1"></i>Ger. Peças</span>',
+                    'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>'
                 };
                 tabelaPendentes.innerHTML = (data.pendentes_feedback || []).map(p => {
                     const dataFormatada = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
@@ -601,7 +625,9 @@
                     };
                     const sistemaLabels = {
                         'assistencia_judiciaria': '<span class="text-blue-600"><i class="fas fa-gavel mr-1"></i>Assist. Jud.</span>',
-                        'matriculas': '<span class="text-green-600"><i class="fas fa-file-alt mr-1"></i>Matrículas</span>'
+                        'matriculas': '<span class="text-green-600"><i class="fas fa-file-contract mr-1"></i>Matrículas</span>',
+                        'gerador_pecas': '<span class="text-purple-600"><i class="fas fa-file-alt mr-1"></i>Ger. Peças</span>',
+                        'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>'
                     };
                     const dataFormatada = fb.criado_em ? new Date(fb.criado_em).toLocaleDateString('pt-BR') : '-';
                     const modeloFormatado = fb.modelo ? `<span class="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-mono">${fb.modelo}</span>` : '<span class="text-gray-400">N/A</span>';
@@ -637,9 +663,11 @@
             try {
                 const data = await api('/admin/modelos-ia');
                 if (!data) return;
-                
+
                 document.getElementById('modelo-aj').textContent = data.assistencia_judiciaria?.modelo || 'Não configurado';
                 document.getElementById('modelo-mat').textContent = data.matriculas?.modelo || 'Não configurado';
+                document.getElementById('modelo-gp').textContent = data.gerador_pecas?.modelo || 'Não configurado';
+                document.getElementById('modelo-pc').textContent = data.pedido_calculo?.modelo || 'Não configurado';
             } catch (error) {
                 console.error('Erro ao carregar modelos:', error);
             }
@@ -698,7 +726,13 @@
                 }
                 
                 // Preenche informações do cabeçalho
-                const sistemaLabel = sistema === 'assistencia_judiciaria' ? 'Assistência Judiciária' : 'Matrículas Confrontantes';
+                const sistemaNomes = {
+                    'assistencia_judiciaria': 'Assistência Judiciária',
+                    'matriculas': 'Matrículas Confrontantes',
+                    'gerador_pecas': 'Gerador de Peças',
+                    'pedido_calculo': 'Pedido de Cálculo'
+                };
+                const sistemaLabel = sistemaNomes[sistema] || sistema;
                 document.getElementById('modal-titulo').textContent = `Relatório - ${sistemaLabel}`;
                 document.getElementById('modal-subtitulo').textContent = data.identificador || data.cnj || '-';
                 document.getElementById('modal-usuario').textContent = data.usuario || '-';

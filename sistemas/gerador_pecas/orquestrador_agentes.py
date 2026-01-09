@@ -456,15 +456,17 @@ class OrquestradorAgentes:
         prompt_sistema: str,
         prompt_peca: str,
         prompt_conteudo: str,
-        tipo_peca: str
+        tipo_peca: str,
+        observacao_usuario: Optional[str] = None
     ) -> ResultadoAgente3:
         """
         Executa o Agente 3 - Gerador de Peça (Gemini 3 Pro)
-        
+
         Recebe:
         - Resumo consolidado (do Agente 1)
         - Prompts modulares (do Agente 2)
-        
+        - Observação do usuário (opcional)
+
         Gera a peça jurídica final.
         """
         resultado = ResultadoAgente3(tipo_peca=tipo_peca)
@@ -474,13 +476,30 @@ class OrquestradorAgentes:
             # A peça é gerada diretamente em Markdown, usando o prompt_peca como guia de estrutura.
             # Os templates serão usados futuramente para conversão MD -> DOCX.
             
+            # Monta seção de observação do usuário (se houver)
+            secao_observacao = ""
+            if observacao_usuario:
+                secao_observacao = f"""
+---
+
+## OBSERVAÇÕES DO USUÁRIO:
+
+O usuário responsável pela peça forneceu as seguintes observações importantes que DEVEM ser consideradas na elaboração:
+
+> {observacao_usuario}
+
+**ATENÇÃO:** As observações acima são instruções específicas do usuário e devem ser incorporadas na peça conforme solicitado.
+
+"""
+                print(f"📝 Observação do usuário incluída: {len(observacao_usuario)} caracteres")
+
             # Monta o prompt final combinando tudo (SEM template JSON)
             prompt_completo = f"""{prompt_sistema}
 
 {prompt_peca}
 
 {prompt_conteudo}
-
+{secao_observacao}
 ---
 
 ## DOCUMENTOS DO PROCESSO PARA ANÁLISE:
@@ -494,7 +513,7 @@ class OrquestradorAgentes:
 Com base nos documentos acima e nas instruções do sistema, gere a peça jurídica completa.
 
 **IMPORTANTE sobre os Argumentos e Teses Aplicáveis:**
-Cada argumento/tese acima possui uma "Condição de ativação" que indica em qual situação fática ele deve ser utilizado. 
+Cada argumento/tese acima possui uma "Condição de ativação" que indica em qual situação fática ele deve ser utilizado.
 Antes de incorporar cada argumento na peça, avalie criticamente se a condição de ativação realmente se aplica aos fatos do caso concreto.
 Se a condição NÃO corresponder aos fatos, NÃO inclua esse argumento na peça.
 

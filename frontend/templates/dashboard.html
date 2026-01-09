@@ -183,6 +183,31 @@
                 </div>
             </a>
 
+            <!-- Card Pedido de Cálculo -->
+            <a 
+                href="/pedido-calculo/" 
+                id="card-pedido-calculo"
+                class="group bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-amber-300 transition-all"
+            >
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-amber-100 rounded-xl flex items-center justify-center group-hover:bg-amber-200 transition-colors">
+                        <i class="fas fa-calculator text-amber-600 text-xl"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-gray-800 group-hover:text-amber-600 transition-colors">
+                            Pedido de Cálculo
+                        </h3>
+                        <p class="text-gray-500 text-sm mt-1">
+                            Geração de pedido de cálculo para cumprimento de sentença.
+                        </p>
+                        <div class="flex items-center gap-2 mt-4 text-amber-600 text-sm font-medium">
+                            <span>Acessar sistema</span>
+                            <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
         </div>
 
         <!-- Painel Admin (visível apenas para admins) -->
@@ -238,8 +263,8 @@
                             <p class="text-xs text-gray-500">Avaliar qualidade da IA</p>
                         </div>
                     </a>
-                    <a 
-                        href="/admin/gerador-pecas/historico" 
+                    <a
+                        href="/admin/gerador-pecas/historico"
                         class="flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
                     >
                         <div class="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
@@ -248,6 +273,18 @@
                         <div>
                             <p class="font-medium text-gray-800">Histórico Gerações</p>
                             <p class="text-xs text-gray-500">Prompts e resultados</p>
+                        </div>
+                    </a>
+                    <a
+                        href="/admin/pedido-calculo/debug"
+                        class="flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                        <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-bug text-amber-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800">Debug Pedido Cálculo</p>
+                            <p class="text-xs text-gray-500">Logs de chamadas IA</p>
                         </div>
                     </a>
                     <a 
@@ -376,7 +413,8 @@
                     const sistemasMap = {
                         'assistencia_judiciaria': 'card-assistencia',
                         'matriculas': 'card-matriculas',
-                        'gerador_pecas': 'card-gerador'
+                        'gerador_pecas': 'card-gerador',
+                        'pedido_calculo': 'card-pedido-calculo'
                     };
                     
                     Object.entries(sistemasMap).forEach(([sistema, cardId]) => {

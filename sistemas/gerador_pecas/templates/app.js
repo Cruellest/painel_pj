@@ -9,6 +9,7 @@ class GeradorPecasApp {
         this.tipoPeca = null;
         this.geracaoId = null;
         this.notaSelecionada = null;
+        this.isNovaGeracao = false; // Flag para controlar se deve mostrar feedback
 
         // Dados para o editor interativo
         this.minutaMarkdown = null;
@@ -18,6 +19,9 @@ class GeradorPecasApp {
         // Modo de entrada: 'cnj' ou 'pdf'
         this.modoEntrada = 'cnj';
         this.arquivosPdf = [];
+
+        // Observação do usuário para a IA
+        this.observacaoUsuario = null;
 
         this.initEventListeners();
         this.checkAuth();
@@ -231,6 +235,7 @@ class GeradorPecasApp {
 
     async iniciarProcessamento() {
         this.tipoPeca = document.getElementById('tipo-peca').value || null;
+        this.observacaoUsuario = document.getElementById('observacao-usuario').value.trim() || null;
 
         this.esconderErro();
         this.resetarStatusAgentes();
@@ -238,15 +243,15 @@ class GeradorPecasApp {
 
         try {
             let response;
-            
+
             if (this.modoEntrada === 'pdf') {
                 // Modo PDF: envia arquivos anexados
                 if (this.arquivosPdf.length === 0) {
                     throw new Error('Selecione pelo menos um arquivo PDF');
                 }
-                
+
                 this.numeroCNJ = 'PDFs Anexados';
-                
+
                 const formData = new FormData();
                 for (const file of this.arquivosPdf) {
                     formData.append('arquivos', file);
@@ -254,7 +259,10 @@ class GeradorPecasApp {
                 if (this.tipoPeca) {
                     formData.append('tipo_peca', this.tipoPeca);
                 }
-                
+                if (this.observacaoUsuario) {
+                    formData.append('observacao_usuario', this.observacaoUsuario);
+                }
+
                 response = await fetch(`${API_URL}/processar-pdfs-stream`, {
                     method: 'POST',
                     headers: {
@@ -265,11 +273,11 @@ class GeradorPecasApp {
             } else {
                 // Modo CNJ: busca no TJ-MS
                 this.numeroCNJ = document.getElementById('numero-cnj').value;
-                
+
                 if (!this.numeroCNJ) {
                     throw new Error('Informe o número do processo');
                 }
-                
+
                 response = await fetch(`${API_URL}/processar-stream`, {
                     method: 'POST',
                     headers: {
@@ -278,7 +286,8 @@ class GeradorPecasApp {
                     },
                     body: JSON.stringify({
                         numero_cnj: this.numeroCNJ,
-                        tipo_peca: this.tipoPeca
+                        tipo_peca: this.tipoPeca,
+                        observacao_usuario: this.observacaoUsuario
                     })
                 });
             }
@@ -476,9 +485,10 @@ class GeradorPecasApp {
     // NOVO: Editor Interativo com Chat
     // ==========================================
 
-    exibirEditor(data) {
+    exibirEditor(data, isNova = true) {
         this.tipoPeca = data.tipo_peca;
         this.geracaoId = data.geracao_id;
+        this.isNovaGeracao = isNova;
         
         // Garante que o markdown é uma string limpa
         let markdown = data.minuta_markdown || '*Conteúdo não disponível*';
@@ -1029,6 +1039,7 @@ class GeradorPecasApp {
             this.geracaoId = data.id;
             this.tipoPeca = data.tipo_peca;
             this.numeroCNJ = data.cnj;
+            this.isNovaGeracao = false; // Do histórico, não mostrar feedback
 
             // Processa o markdown
             let markdown = data.minuta_markdown || '*Conteúdo não disponível*';
@@ -1369,13 +1380,16 @@ class GeradorPecasApp {
         document.getElementById('form-processo').reset();
         document.getElementById('resposta-usuario').value = '';
         document.getElementById('feedback-comentario').value = '';
+        document.getElementById('observacao-usuario').value = '';
         this.numeroCNJ = null;
         this.tipoPeca = null;
         this.geracaoId = null;
         this.notaSelecionada = null;
+        this.isNovaGeracao = false;
         this.minutaMarkdown = null;
         this.historicoChat = [];
-        
+        this.observacaoUsuario = null;
+
         // Reset arquivos PDF
         this.arquivosPdf = [];
         this.atualizarListaArquivos();
@@ -1405,8 +1419,10 @@ function toggleHistorico() {
 
 function fecharModalEditor() {
     document.getElementById('modal-editor').classList.add('hidden');
-    // Opcionalmente abrir modal de feedback
-    // document.getElementById('modal-feedback').classList.remove('hidden');
+    // Abrir modal de feedback apenas se for nova geração
+    if (app && app.isNovaGeracao) {
+        document.getElementById('modal-feedback').classList.remove('hidden');
+    }
 }
 
 // Inicializar app

@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Histórico - Pedido de Cálculo - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#f0f9ff', 100: '#e0f2fe', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .markdown-body { font-family: 'Times New Roman', Georgia, serif; font-size: 14px; line-height: 1.8; color: #1f2937; }
+        .markdown-body h2 { font-family: 'Arial', sans-serif; font-weight: 700; font-size: 1.1em; text-align: center; margin: 1.5em 0 0.75em; }
+        .markdown-body p { text-align: justify; text-indent: 2em; margin-bottom: 1em; }
+        .markdown-body blockquote { margin: 1.5em 3em; padding: 0.5em 1em; border-left: 4px solid #d1d5db; background: #f9fafb; font-style: italic; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
+        <div class="flex items-center justify-between max-w-7xl mx-auto">
+            <div class="flex items-center gap-4">
+                <a href="/dashboard" class="text-gray-500 hover:text-primary-600">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
+                <div>
+                    <h1 class="text-xl font-semibold text-gray-800">Histórico - Pedido de Cálculo</h1>
+                    <p class="text-sm text-gray-500">Visualize prompts enviados e resultados</p>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-6 py-8">
+        <div id="lista-geracoes" class="space-y-4">
+            <div class="text-center py-12 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p>Carregando histórico...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal de Texto Expandido -->
+    <div id="modal-expand" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
+        <div class="bg-white rounded-2xl w-full max-w-5xl max-h-[95vh] flex flex-col">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 id="expand-titulo" class="text-lg font-semibold text-gray-800">Texto Expandido</h3>
+                <button onclick="fecharExpand()" class="p-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-auto p-4">
+                <pre id="expand-conteudo" class="text-sm whitespace-pre-wrap p-4 rounded-lg"></pre>
+            </div>
+            <div class="p-4 border-t border-gray-200 flex justify-end gap-2">
+                <button onclick="copiarExpand()" class="px-4 py-2 text-sm text-primary-600 hover:bg-primary-50 rounded-lg">
+                    <i class="fas fa-copy mr-1"></i>Copiar
+                </button>
+                <button onclick="fecharExpand()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Detalhes -->
+    <div id="modal-detalhes" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col">
+            <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+                <h2 class="text-xl font-semibold text-gray-800">Detalhes da Geração</h2>
+                <button onclick="fecharModal()" class="p-2 text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto flex-1">
+                <!-- Tabs -->
+                <div class="flex border-b border-gray-200 mb-4">
+                    <button onclick="mostrarTab('markdown')" id="tab-markdown" class="px-4 py-2 border-b-2 border-primary-600 text-primary-600 font-medium">
+                        Pedido (Markdown)
+                    </button>
+                    <button onclick="mostrarTab('dados')" id="tab-dados" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        Dados Extraídos
+                    </button>
+                    <button onclick="mostrarTab('logs')" id="tab-logs" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        Logs IA
+                    </button>
+                    <button onclick="mostrarTab('resultado')" id="tab-resultado" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        Resultado (Raw)
+                    </button>
+                </div>
+                
+                <!-- Conteúdo das Tabs -->
+                <div id="conteudo-markdown" class="tab-content">
+                    <div class="bg-white rounded-lg p-4 overflow-x-auto border prose max-w-none">
+                        <div id="texto-markdown" class="markdown-body"></div>
+                    </div>
+                </div>
+                
+                <div id="conteudo-dados" class="tab-content hidden">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h3 class="font-semibold text-gray-700 mb-3"><i class="fas fa-user mr-2"></i>Dados do Processo</h3>
+                            <div id="dados-processo" class="text-sm space-y-2"></div>
+                        </div>
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <h3 class="font-semibold text-gray-700 mb-3"><i class="fas fa-calculator mr-2"></i>Dados para Cálculo</h3>
+                            <div id="dados-calculo" class="text-sm space-y-2"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="conteudo-logs" class="tab-content hidden">
+                    <div id="logs-container" class="space-y-3"></div>
+                </div>
+                
+                <div id="conteudo-resultado" class="tab-content hidden">
+                    <div class="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                        <pre id="texto-resultado" class="text-sm text-green-400 whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="p-6 border-t border-gray-200 flex justify-between items-center">
+                <div id="info-geracao" class="text-sm text-gray-500"></div>
+                <button onclick="fecharModal()" class="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/pedido-calculo-admin';
+        let geracoesCache = [];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            carregarGeracoes();
+        });
+
+        function getToken() {
+            return localStorage.getItem('access_token');
+        }
+
+        async function carregarGeracoes() {
+            try {
+                const response = await fetch(`${API_BASE}/geracoes?limit=100`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+                
+                if (!response.ok) throw new Error('Erro ao carregar');
+                
+                geracoesCache = await response.json();
+                renderizarGeracoes();
+            } catch (error) {
+                console.error(error);
+                document.getElementById('lista-geracoes').innerHTML = `
+                    <div class="text-center py-12 text-red-500">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p>Erro ao carregar histórico</p>
+                    </div>`;
+            }
+        }
+
+        function renderizarGeracoes() {
+            const container = document.getElementById('lista-geracoes');
+            
+            if (geracoesCache.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-inbox text-4xl mb-4"></i>
+                        <p>Nenhuma geração encontrada</p>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = geracoesCache.map(g => `
+                <div class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="verDetalhes(${g.id})">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 rounded-full ${g.tem_erro ? 'bg-red-100' : 'bg-primary-100'} flex items-center justify-center">
+                                <i class="fas ${g.tem_erro ? 'fa-exclamation-triangle text-red-600' : 'fa-calculator text-primary-600'}"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium text-gray-800">${g.numero_cnj_formatado || g.numero_cnj}</p>
+                                <p class="text-sm text-gray-500">Pedido de Cálculo</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm text-gray-500">${new Date(g.criado_em).toLocaleDateString('pt-BR')}</p>
+                            <p class="text-xs text-gray-400">${new Date(g.criado_em).toLocaleTimeString('pt-BR')}</p>
+                            ${g.tempo_processamento ? `<p class="text-xs text-green-600 mt-1">⏱️ ${g.tempo_processamento}s</p>` : ''}
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3 flex items-center gap-4 text-xs text-gray-500">
+                        <span><i class="fas fa-robot mr-1"></i> ${g.modelo_usado || 'N/A'}</span>
+                        <span><i class="fas fa-list mr-1"></i> ${g.total_logs || 0} etapas</span>
+                        ${g.tem_erro 
+                            ? '<span class="text-red-600"><i class="fas fa-times mr-1"></i> Erro</span>' 
+                            : '<span class="text-green-600"><i class="fas fa-check mr-1"></i> Sucesso</span>'}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function verDetalhes(id) {
+            try {
+                const response = await fetch(`${API_BASE}/geracoes/${id}`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+                
+                if (!response.ok) throw new Error('Erro ao carregar detalhes');
+                
+                const geracao = await response.json();
+                
+                // Preenche Pedido (Markdown)
+                const conteudo = geracao.conteudo_gerado;
+                if (conteudo && typeof conteudo === 'string') {
+                    document.getElementById('texto-markdown').innerHTML = marked.parse(conteudo);
+                    document.getElementById('texto-resultado').textContent = conteudo;
+                } else if (conteudo) {
+                    document.getElementById('texto-markdown').innerHTML = '<p class="text-gray-500">Formato JSON. Veja aba "Resultado (Raw)".</p>';
+                    document.getElementById('texto-resultado').textContent = JSON.stringify(conteudo, null, 2);
+                } else {
+                    document.getElementById('texto-markdown').innerHTML = '<p class="text-gray-500">Conteúdo não disponível</p>';
+                    document.getElementById('texto-resultado').textContent = 'Resultado não disponível';
+                }
+                
+                // Preenche Dados Extraídos
+                preencherDados(geracao);
+                
+                // Preenche Logs IA
+                preencherLogs(geracao.logs_ia || []);
+                
+                // Info rodapé
+                document.getElementById('info-geracao').innerHTML = `
+                    <strong>${geracao.numero_cnj_formatado || geracao.numero_cnj}</strong> | 
+                    ${new Date(geracao.criado_em).toLocaleString('pt-BR')} |
+                    ${(geracao.logs_ia || []).length} chamadas IA
+                `;
+                
+                mostrarTab('markdown');
+                document.getElementById('modal-detalhes').classList.remove('hidden');
+            } catch (error) {
+                console.error(error);
+                alert('Erro ao carregar detalhes');
+            }
+        }
+
+        function preencherDados(geracao) {
+            const dados1 = geracao.dados_agente1 || {};
+            const basicos = dados1.dados_basicos || {};
+            const docs = dados1.documentos_para_download || {};
+            
+            let processoHtml = '';
+            const camposProcesso = [
+                ['Autor', basicos.autor],
+                ['CPF', basicos.cpf_autor],
+                ['Réu', basicos.reu || 'Estado de MS'],
+                ['Comarca', basicos.comarca],
+                ['Vara', basicos.vara],
+                ['Ajuizamento', basicos.data_ajuizamento],
+                ['Tipo', docs.is_cumprimento_autonomo ? 'Cumprimento Autônomo' : 'Conhecimento'],
+            ];
+            
+            camposProcesso.forEach(([label, valor]) => {
+                if (valor) {
+                    processoHtml += `<div><span class="text-gray-500">${label}:</span> <span class="font-medium">${valor}</span></div>`;
+                }
+            });
+            document.getElementById('dados-processo').innerHTML = processoHtml || '<p class="text-gray-400">Sem dados</p>';
+            
+            const dados2 = geracao.dados_agente2 || {};
+            let calculoHtml = '';
+            const camposCalculo = [
+                ['Data Citação', dados2.data_citacao],
+                ['Termo Inicial', dados2.termo_inicial],
+                ['Termo Final', dados2.termo_final],
+                ['Índice Correção', dados2.indice_correcao],
+                ['Juros', dados2.juros],
+            ];
+            
+            camposCalculo.forEach(([label, valor]) => {
+                if (valor) {
+                    calculoHtml += `<div><span class="text-gray-500">${label}:</span> <span class="font-medium">${valor}</span></div>`;
+                }
+            });
+            
+            if (dados2.verbas && dados2.verbas.length > 0) {
+                calculoHtml += `<div class="mt-2 pt-2 border-t"><span class="text-gray-500">Verbas:</span>`;
+                dados2.verbas.forEach(v => {
+                    const nome = typeof v === 'string' ? v : (v.nome || v.descricao || JSON.stringify(v));
+                    calculoHtml += `<div class="ml-2 text-primary-600">• ${nome}</div>`;
+                });
+                calculoHtml += '</div>';
+            }
+            document.getElementById('dados-calculo').innerHTML = calculoHtml || '<p class="text-gray-400">Sem dados</p>';
+        }
+
+        function preencherLogs(logs) {
+            if (logs.length === 0) {
+                document.getElementById('logs-container').innerHTML = '<p class="text-gray-400 text-center py-4">Nenhum log registrado</p>';
+                return;
+            }
+            
+            const etapaLabels = {
+                'analise_xml': 'Análise XML',
+                'analise_certidao': 'Análise Certidão',
+                'extracao_docs': 'Extração Docs',
+                'extracao_processo_origem': 'Extração Origem',
+                'geracao_pedido': 'Geração Pedido'
+            };
+            
+            let html = '';
+            logs.forEach((log, i) => {
+                const etapaLabel = etapaLabels[log.etapa] || log.etapa;
+                html += `
+                    <div class="bg-white rounded-lg border overflow-hidden">
+                        <div onclick="toggleLog(${i})" class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50">
+                            <div class="flex items-center gap-2">
+                                <i class="fas ${log.sucesso ? 'fa-check-circle text-green-500' : 'fa-times-circle text-red-500'}"></i>
+                                <span class="font-medium text-sm">${etapaLabel}</span>
+                                ${log.tempo_ms ? `<span class="text-xs text-gray-400">${log.tempo_ms}ms</span>` : ''}
+                            </div>
+                            <i id="chevron-${i}" class="fas fa-chevron-down text-gray-400 text-xs transition-transform"></i>
+                        </div>
+                        <div id="log-${i}" class="hidden border-t p-4 space-y-4 bg-gray-50">
+                            ${log.erro ? `<div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">${log.erro}</div>` : ''}
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <p class="text-sm text-gray-600 font-medium">Prompt Enviado</p>
+                                    <button onclick="expandirTexto('prompt', ${i}, event)" class="text-xs text-primary-600 hover:text-primary-700">
+                                        <i class="fas fa-expand mr-1"></i>Expandir
+                                    </button>
+                                </div>
+                                <pre id="prompt-${i}" class="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-48 whitespace-pre-wrap">${log.prompt_enviado || 'N/A'}</pre>
+                            </div>
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <p class="text-sm text-gray-600 font-medium">Resposta IA</p>
+                                    <button onclick="expandirTexto('resposta', ${i}, event)" class="text-xs text-primary-600 hover:text-primary-700">
+                                        <i class="fas fa-expand mr-1"></i>Expandir
+                                    </button>
+                                </div>
+                                <pre id="resposta-${i}" class="bg-green-50 text-green-800 p-4 rounded-lg text-sm overflow-auto max-h-48 border border-green-200 whitespace-pre-wrap">${log.resposta_ia || 'N/A'}</pre>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            document.getElementById('logs-container').innerHTML = html;
+        }
+
+        function toggleLog(index) {
+            const el = document.getElementById(`log-${index}`);
+            const chevron = document.getElementById(`chevron-${index}`);
+            el.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-180');
+        }
+
+        function mostrarTab(tab) {
+            document.querySelectorAll('[id^="tab-"]').forEach(el => {
+                el.classList.remove('border-primary-600', 'text-primary-600');
+                el.classList.add('border-transparent', 'text-gray-500');
+            });
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            
+            document.getElementById(`tab-${tab}`).classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById(`tab-${tab}`).classList.add('border-primary-600', 'text-primary-600');
+            document.getElementById(`conteudo-${tab}`).classList.remove('hidden');
+        }
+
+        function fecharModal() {
+            document.getElementById('modal-detalhes').classList.add('hidden');
+        }
+
+        function expandirTexto(tipo, index, event) {
+            event.stopPropagation();
+            const el = document.getElementById(`${tipo}-${index}`);
+            const conteudo = el.textContent;
+            
+            const expandEl = document.getElementById('expand-conteudo');
+            expandEl.textContent = conteudo;
+            
+            if (tipo === 'prompt') {
+                document.getElementById('expand-titulo').textContent = 'Prompt Enviado';
+                expandEl.className = 'text-sm whitespace-pre-wrap p-4 rounded-lg bg-gray-900 text-gray-100';
+            } else {
+                document.getElementById('expand-titulo').textContent = 'Resposta IA';
+                expandEl.className = 'text-sm whitespace-pre-wrap p-4 rounded-lg bg-green-50 text-green-800 border border-green-200';
+            }
+            
+            document.getElementById('modal-expand').classList.remove('hidden');
+        }
+
+        function fecharExpand() {
+            document.getElementById('modal-expand').classList.add('hidden');
+        }
+
+        function copiarExpand() {
+            const texto = document.getElementById('expand-conteudo').textContent;
+            navigator.clipboard.writeText(texto).then(() => {
+                alert('Copiado!');
+            });
+        }
+    </script>
+</body>
+</html>

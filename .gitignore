@@ -41,3 +41,6 @@ node_modules/
 Thumbs.db
 *.ini
 sistemas/gerador_pecas/temp_docs/
+
+# Temporary document files
+**/temp_docs/*.docx

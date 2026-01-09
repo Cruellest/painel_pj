@@ -18,6 +18,7 @@ from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAna
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON, CategoriaResumoJSONHistorico
 from sistemas.gerador_pecas.models_config_pecas import CategoriaDocumento, TipoPeca, tipo_peca_categorias
+from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
 
@@ -519,6 +520,90 @@ def run_migrations():
         except Exception as e:
             db.rollback()
             print(f"⚠️ Migração is_primeiro_documento: {e}")
+
+    # Migração: Criar tabela geracoes_pedido_calculo
+    if not table_exists('geracoes_pedido_calculo'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE geracoes_pedido_calculo (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        numero_cnj VARCHAR(30) NOT NULL,
+                        numero_cnj_formatado VARCHAR(30),
+                        dados_processo JSON,
+                        dados_agente1 JSON,
+                        dados_agente2 JSON,
+                        documentos_baixados JSON,
+                        conteudo_gerado TEXT,
+                        historico_chat JSON,
+                        arquivo_path VARCHAR(500),
+                        modelo_usado VARCHAR(100),
+                        tempo_processamento INTEGER,
+                        usuario_id INTEGER REFERENCES users(id),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS geracoes_pedido_calculo (
+                        id SERIAL PRIMARY KEY,
+                        numero_cnj VARCHAR(30) NOT NULL,
+                        numero_cnj_formatado VARCHAR(30),
+                        dados_processo JSON,
+                        dados_agente1 JSON,
+                        dados_agente2 JSON,
+                        documentos_baixados JSON,
+                        conteudo_gerado TEXT,
+                        historico_chat JSON,
+                        arquivo_path VARCHAR(500),
+                        modelo_usado VARCHAR(100),
+                        tempo_processamento INTEGER,
+                        usuario_id INTEGER REFERENCES users(id),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            db.commit()
+            print("✅ Migração: tabela geracoes_pedido_calculo criada")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração geracoes_pedido_calculo: {e}")
+
+    # Migração: Criar tabela feedbacks_pedido_calculo
+    if not table_exists('feedbacks_pedido_calculo'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE feedbacks_pedido_calculo (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        geracao_id INTEGER NOT NULL REFERENCES geracoes_pedido_calculo(id),
+                        usuario_id INTEGER NOT NULL REFERENCES users(id),
+                        avaliacao VARCHAR(20) NOT NULL,
+                        nota INTEGER,
+                        comentario TEXT,
+                        campos_incorretos JSON,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS feedbacks_pedido_calculo (
+                        id SERIAL PRIMARY KEY,
+                        geracao_id INTEGER NOT NULL REFERENCES geracoes_pedido_calculo(id),
+                        usuario_id INTEGER NOT NULL REFERENCES users(id),
+                        avaliacao VARCHAR(20) NOT NULL,
+                        nota INTEGER,
+                        comentario TEXT,
+                        campos_incorretos JSON,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            db.commit()
+            print("✅ Migração: tabela feedbacks_pedido_calculo criada")
+        except Exception as e:
+            db.rollback()
+            print(f"⚠️ Migração feedbacks_pedido_calculo: {e}")
 
     db.close()
 

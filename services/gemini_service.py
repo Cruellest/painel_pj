@@ -133,20 +133,20 @@ class GeminiService:
         system_prompt: str = "",
         model: str = None,
         task: str = None,
-        max_tokens: int = 8192,
+        max_tokens: int = None,
         temperature: float = 0.3
     ) -> GeminiResponse:
         """
         Gera texto usando o Gemini.
-        
+
         Args:
             prompt: Prompt do usuário
             system_prompt: Instruções do sistema (opcional)
             model: Nome do modelo (opcional, usa padrão se não especificado)
             task: Tipo de tarefa para selecionar modelo automaticamente
-            max_tokens: Limite de tokens na resposta
+            max_tokens: Limite de tokens na resposta (None = sem limite, usa máximo do modelo)
             temperature: Temperatura (0-2)
-            
+
         Returns:
             GeminiResponse com o resultado
         """
@@ -208,12 +208,12 @@ class GeminiService:
         system_prompt: str = "",
         model: str = None,
         task: str = None,
-        max_tokens: int = 8192,
+        max_tokens: int = None,
         temperature: float = 0.3
     ) -> GeminiResponse:
         """
         Gera texto usando uma sessão aiohttp existente.
-        
+
         Útil para chamadas em paralelo.
         """
         if not self._api_key:
@@ -271,7 +271,7 @@ class GeminiService:
         images_base64: List[str],
         system_prompt: str = "",
         model: str = None,
-        max_tokens: int = 8192,
+        max_tokens: int = None,
         temperature: float = 0.3
     ) -> GeminiResponse:
         """
@@ -345,7 +345,7 @@ class GeminiService:
         images_base64: List[str],
         system_prompt: str = "",
         model: str = None,
-        max_tokens: int = 8192,
+        max_tokens: int = None,
         temperature: float = 0.3
     ) -> GeminiResponse:
         """
@@ -403,25 +403,28 @@ class GeminiService:
         self,
         prompt: str,
         system_prompt: str = "",
-        max_tokens: int = 8192,
+        max_tokens: int = None,
         temperature: float = 0.3
     ) -> Dict[str, Any]:
         """Monta o payload para chamada de texto"""
+        generation_config = {"temperature": temperature}
+
+        # Só adiciona maxOutputTokens se especificado (None = usa máximo do modelo)
+        if max_tokens is not None:
+            generation_config["maxOutputTokens"] = max_tokens
+
         payload = {
             "contents": [
                 {"role": "user", "parts": [{"text": prompt}]}
             ],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens
-            }
+            "generationConfig": generation_config
         }
-        
+
         if system_prompt:
             payload["systemInstruction"] = {
                 "parts": [{"text": system_prompt}]
             }
-        
+
         return payload
     
     def _build_payload_with_images(
@@ -429,7 +432,7 @@ class GeminiService:
         prompt: str,
         images_base64: List[str],
         system_prompt: str = "",
-        max_tokens: int = 8192,
+        max_tokens: int = None,
         temperature: float = 0.3
     ) -> Dict[str, Any]:
         """Monta o payload para chamada com imagens"""
@@ -454,20 +457,21 @@ class GeminiService:
         
         # Adiciona prompt
         parts.append({"text": prompt})
-        
+
+        generation_config = {"temperature": temperature}
+        if max_tokens is not None:
+            generation_config["maxOutputTokens"] = max_tokens
+
         payload = {
             "contents": [{"role": "user", "parts": parts}],
-            "generationConfig": {
-                "temperature": temperature,
-                "maxOutputTokens": max_tokens
-            }
+            "generationConfig": generation_config
         }
-        
+
         if system_prompt:
             payload["systemInstruction"] = {
                 "parts": [{"text": system_prompt}]
             }
-        
+
         return payload
     
     def _extract_content(self, data: Dict) -> str:
@@ -498,7 +502,7 @@ async def chamar_gemini(
     prompt: str,
     system_prompt: str = "",
     modelo: str = None,
-    max_tokens: int = 8192,
+    max_tokens: int = None,
     temperature: float = 0.3
 ) -> str:
     """
@@ -525,7 +529,7 @@ async def chamar_gemini_com_imagens(
     imagens_base64: List[str],
     system_prompt: str = "",
     modelo: str = None,
-    max_tokens: int = 8192,
+    max_tokens: int = None,
     temperature: float = 0.3
 ) -> str:
     """

@@ -52,6 +52,7 @@ class ProcessarProcessoRequest(BaseModel):
     numero_cnj: str
     tipo_peca: Optional[str] = None
     resposta_usuario: Optional[str] = None
+    observacao_usuario: Optional[str] = None  # Observações do usuário para incluir no prompt
 
 
 class ExportarDocxRequest(BaseModel):
@@ -280,13 +281,18 @@ async def processar_processo_stream(
                 
                 # Agente 3: Gerador
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peça jurídica com IA...'})}\n\n"
-                
+
+                # Log se há observação do usuário
+                if req.observacao_usuario:
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Observações do usuário serão consideradas na geração'})}\n\n"
+
                 resultado_agente3 = await orq._executar_agente3(
                     resumo_consolidado=resumo_para_geracao,
                     prompt_sistema=resultado_agente2.prompt_sistema,
                     prompt_peca=resultado_agente2.prompt_peca,
                     prompt_conteudo=resultado_agente2.prompt_conteudo,
-                    tipo_peca=tipo_peca
+                    tipo_peca=tipo_peca,
+                    observacao_usuario=req.observacao_usuario
                 )
                 
                 if resultado_agente3.erro:
@@ -457,6 +463,7 @@ def _extrair_texto_pdf(pdf_bytes: bytes) -> str:
 async def processar_pdfs_stream(
     arquivos: List[UploadFile] = File(..., description="Arquivos PDF a serem analisados"),
     tipo_peca: Optional[str] = Form(None, description="Tipo de peça a gerar"),
+    observacao_usuario: Optional[str] = Form(None, description="Observações do usuário para a IA"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -544,18 +551,23 @@ async def processar_pdfs_stream(
                     return
                 
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'concluido', 'mensagem': f'{len(resultado_agente2.modulos_ids)} módulos ativados'})}\n\n"
-                
+
                 # Agente 3: Gerador
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peça jurídica com IA...'})}\n\n"
-                
+
+                # Log se há observação do usuário
+                if observacao_usuario:
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Observações do usuário serão consideradas na geração'})}\n\n"
+
                 resultado_agente3 = await orq._executar_agente3(
                     resumo_consolidado=resumo_consolidado,
                     prompt_sistema=resultado_agente2.prompt_sistema,
                     prompt_peca=resultado_agente2.prompt_peca,
                     prompt_conteudo=resultado_agente2.prompt_conteudo,
-                    tipo_peca=tipo_peca_final
+                    tipo_peca=tipo_peca_final,
+                    observacao_usuario=observacao_usuario
                 )
-                
+
                 if resultado_agente3.erro:
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
@@ -818,19 +830,27 @@ async def excluir_historico(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Remove uma geração do histórico do usuário."""
+    """Remove uma geração do histórico do usuário - PRESERVA feedbacks."""
     try:
         geracao = db.query(GeracaoPeca).filter(
             GeracaoPeca.id == geracao_id,
             GeracaoPeca.usuario_id == current_user.id
         ).first()
-        
+
         if not geracao:
             raise HTTPException(status_code=404, detail="Geração não encontrada")
-        
+
+        # Verifica se tem feedback associado - se tiver, não permite excluir
+        feedback = db.query(FeedbackPeca).filter(FeedbackPeca.geracao_id == geracao_id).first()
+        if feedback:
+            raise HTTPException(
+                status_code=400,
+                detail="Não é possível excluir geração que possui feedback registrado"
+            )
+
         db.delete(geracao)
         db.commit()
-        
+
         return {"success": True, "message": "Geração removida do histórico"}
     except HTTPException:
         raise
@@ -944,22 +964,22 @@ async def enviar_feedback(
         feedback_existente = db.query(FeedbackPeca).filter(
             FeedbackPeca.geracao_id == req.geracao_id
         ).first()
-        
+
         if feedback_existente:
-            feedback_existente.avaliacao = req.avaliacao
-            feedback_existente.nota = req.nota
-            feedback_existente.comentario = req.comentario
-            feedback_existente.campos_incorretos = req.campos_incorretos
-        else:
-            feedback = FeedbackPeca(
-                geracao_id=req.geracao_id,
-                usuario_id=current_user.id,
-                avaliacao=req.avaliacao,
-                nota=req.nota,
-                comentario=req.comentario,
-                campos_incorretos=req.campos_incorretos
+            raise HTTPException(
+                status_code=400,
+                detail="Feedback já foi enviado para esta geração"
             )
-            db.add(feedback)
+
+        feedback = FeedbackPeca(
+            geracao_id=req.geracao_id,
+            usuario_id=current_user.id,
+            avaliacao=req.avaliacao,
+            nota=req.nota,
+            comentario=req.comentario,
+            campos_incorretos=req.campos_incorretos
+        )
+        db.add(feedback)
         
         db.commit()
         

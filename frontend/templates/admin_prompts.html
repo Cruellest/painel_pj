@@ -99,6 +99,7 @@
                 <option value="">Todos os sistemas</option>
                 <option value="matriculas">Matrículas Confrontantes</option>
                 <option value="assistencia_judiciaria">Assistência Judiciária</option>
+                <option value="pedido_calculo">Pedido de Cálculo</option>
             </select>
         </div>
 
@@ -143,6 +144,9 @@
                     </button>
                     <button onclick="showConfigTab('gerador_pecas')" id="tab-gerador_pecas" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
                         <i class="fas fa-file-signature mr-1"></i> Gerador de Peças
+                    </button>
+                    <button onclick="showConfigTab('pedido_calculo')" id="tab-pedido_calculo" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-calculator mr-1"></i> Pedido de Cálculo
                     </button>
                 </nav>
             </div>
@@ -410,6 +414,102 @@
                 </div>
             </div>
             
+            <!-- Config Pedido de Cálculo -->
+            <div id="config-pedido_calculo" class="config-panel hidden">
+                <div class="grid md:grid-cols-2 gap-6">
+                    <!-- Modelo Extração -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-file-pdf text-red-500 mr-1"></i>
+                            Modelo - Extração de PDFs (Agente 2)
+                        </label>
+                        <input 
+                            type="text" 
+                            id="pedido_calculo-modelo_extracao"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            placeholder="gemini-3-flash-preview"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Modelo para extrair informações de sentenças e certidões</p>
+                    </div>
+                    
+                    <!-- Modelo Geração -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-file-alt text-green-500 mr-1"></i>
+                            Modelo - Geração do Pedido (Agente 3)
+                        </label>
+                        <input 
+                            type="text" 
+                            id="pedido_calculo-modelo_geracao"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            placeholder="gemini-3-flash-preview"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Modelo para gerar o documento de pedido de cálculo</p>
+                    </div>
+                    
+                    <!-- Modelo Edição -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-edit text-blue-500 mr-1"></i>
+                            Modelo - Edição via Chat
+                        </label>
+                        <input 
+                            type="text" 
+                            id="pedido_calculo-modelo_edicao"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            placeholder="gemini-3-flash-preview"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Modelo para editar pedido via chat</p>
+                    </div>
+                    
+                    <!-- Temperatura Extração -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-thermometer-half text-orange-500 mr-1"></i>
+                            Temperatura - Extração
+                        </label>
+                        <input 
+                            type="number" 
+                            step="0.1"
+                            min="0"
+                            max="2"
+                            id="pedido_calculo-temperatura_extracao"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            placeholder="0.1"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Baixa temperatura = mais preciso (0.0-0.3 recomendado)</p>
+                    </div>
+                    
+                    <!-- Temperatura Geração -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-thermometer-half text-purple-500 mr-1"></i>
+                            Temperatura - Geração
+                        </label>
+                        <input 
+                            type="number" 
+                            step="0.1"
+                            min="0"
+                            max="2"
+                            id="pedido_calculo-temperatura_geracao"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            placeholder="0.3"
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Temperatura para geração de texto (0.2-0.5 recomendado)</p>
+                    </div>
+                </div>
+                
+                <div class="mt-4 flex justify-end">
+                    <button 
+                        onclick="salvarConfigSistema('pedido_calculo')"
+                        class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
+                    >
+                        <i class="fas fa-save"></i>
+                        Salvar Configurações Pedido de Cálculo
+                    </button>
+                </div>
+            </div>
+            
                 <div class="mt-4 p-3 bg-blue-50 rounded-lg">
                 <p class="text-xs text-blue-700">
                     <i class="fas fa-info-circle mr-1"></i>
@@ -636,7 +736,8 @@
                 'matriculas': 'Matrículas Confrontantes',
                 'assistencia': 'Assistência Judiciária',
                 'assistencia_judiciaria': 'Assistência Judiciária',
-                'gerador_pecas': 'Gerador de Peças Jurídicas'
+                'gerador_pecas': 'Gerador de Peças Jurídicas',
+                'pedido_calculo': 'Pedido de Cálculo'
             };
 
             const tipoLabels = {
