@@ -924,7 +924,7 @@ async def dashboard_feedbacks(
             query_pendentes_gp = db.query(
                 GeracaoPeca.id,
                 GeracaoPeca.tipo_peca,
-                GeracaoPeca.titulo,
+                GeracaoPeca.numero_cnj,
                 GeracaoPeca.criado_em,
                 User.username,
                 User.full_name
@@ -989,11 +989,11 @@ async def dashboard_feedbacks(
                 "usuario": full_name or username,
                 "data": analisado_em.isoformat() if analisado_em else None
             })
-        for id, tipo_peca, titulo, criado_em, username, full_name in geracoes_sem_feedback_gp:
+        for id, tipo_peca, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_gp:
             pendentes_feedback.append({
                 "id": id,
                 "sistema": "gerador_pecas",
-                "identificador": titulo or tipo_peca,
+                "identificador": numero_cnj or tipo_peca,
                 "usuario": full_name or username,
                 "data": criado_em.isoformat() if criado_em else None
             })
@@ -1187,7 +1187,7 @@ async def listar_feedbacks(
             query_gp = db.query(
                 FeedbackPeca,
                 GeracaoPeca.tipo_peca,
-                GeracaoPeca.titulo,
+                GeracaoPeca.numero_cnj,
                 GeracaoPeca.modelo_usado,
                 User.username,
                 User.full_name
@@ -1209,13 +1209,13 @@ async def listar_feedbacks(
             if usuario_id:
                 query_gp = query_gp.filter(FeedbackPeca.usuario_id == usuario_id)
 
-            for fb, tipo_peca, titulo, modelo_usado, username, full_name in query_gp.all():
+            for fb, tipo_peca, numero_cnj, modelo_usado, username, full_name in query_gp.all():
                 feedbacks_combinados.append({
                     "id": fb.id,
                     "consulta_id": fb.geracao_id,
                     "sistema": "gerador_pecas",
-                    "identificador": titulo or tipo_peca,
-                    "cnj": None,
+                    "identificador": numero_cnj or tipo_peca,
+                    "cnj": numero_cnj,
                     "modelo": modelo_usado or "gemini-3-flash-preview",
                     "usuario": full_name or username,
                     "username": username,
@@ -1544,7 +1544,7 @@ async def exportar_feedbacks(
         # Feedbacks de Gerador de Peças
         feedbacks_gp = db.query(
             FeedbackPeca,
-            GeracaoPeca.titulo,
+            GeracaoPeca.numero_cnj,
             GeracaoPeca.tipo_peca,
             User.username,
             User.full_name
@@ -1556,11 +1556,11 @@ async def exportar_feedbacks(
             FeedbackPeca.criado_em.desc()
         ).all()
 
-        for fb, titulo, tipo_peca, username, full_name in feedbacks_gp:
+        for fb, numero_cnj, tipo_peca, username, full_name in feedbacks_gp:
             data.append({
                 "id": fb.id,
                 "sistema": "gerador_pecas",
-                "identificador": titulo or tipo_peca,
+                "identificador": numero_cnj or tipo_peca,
                 "usuario": full_name or username,
                 "avaliacao": fb.avaliacao,
                 "comentario": fb.comentario,
