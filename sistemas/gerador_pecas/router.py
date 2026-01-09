@@ -640,11 +640,7 @@ def _montar_resumo_pdfs(documentos: List[Dict]) -> str:
     
     for doc in documentos:
         partes.append(f"### {doc['ordem']}. {doc['nome']}")
-        # Limita o texto a 50000 caracteres por documento para evitar tokens excessivos
-        texto = doc['texto']
-        if len(texto) > 50000:
-            texto = texto[:50000] + "\n\n[... texto truncado por limite de tamanho ...]"
-        partes.append(f"\n{texto}\n")
+        partes.append(f"\n{doc['texto']}\n")
         partes.append("---\n")
     
     partes.append("\n---")
