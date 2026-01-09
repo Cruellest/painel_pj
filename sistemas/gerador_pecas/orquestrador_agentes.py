@@ -9,6 +9,7 @@ Coordena os 3 agentes do fluxo:
 """
 
 import os
+import json
 import asyncio
 import httpx
 from typing import Dict, List, Optional, Any
@@ -284,12 +285,19 @@ class OrquestradorAgentes:
             print("=" * 60)
             
             inicio = datetime.now()
+
+            # Extrai dados estruturados do processo (se disponíveis)
+            dados_processo_json = None
+            if resultado.agente1.dados_brutos and resultado.agente1.dados_brutos.dados_processo:
+                dados_processo_json = resultado.agente1.dados_brutos.dados_processo.to_json()
+
             resultado.agente3 = await self._executar_agente3(
                 resumo_consolidado=resumo_consolidado,
                 prompt_sistema=resultado.agente2.prompt_sistema,
                 prompt_peca=resultado.agente2.prompt_peca,
                 prompt_conteudo=resultado.agente2.prompt_conteudo,
-                tipo_peca=tipo_peca
+                tipo_peca=tipo_peca,
+                dados_processo=dados_processo_json
             )
             resultado.tempo_agente3 = (datetime.now() - inicio).total_seconds()
             
@@ -464,7 +472,8 @@ class OrquestradorAgentes:
         prompt_peca: str,
         prompt_conteudo: str,
         tipo_peca: str,
-        observacao_usuario: Optional[str] = None
+        observacao_usuario: Optional[str] = None,
+        dados_processo: Optional[Dict[str, Any]] = None
     ) -> ResultadoAgente3:
         """
         Executa o Agente 3 - Gerador de Peça (Gemini 3 Pro)
@@ -500,13 +509,38 @@ O usuário responsável pela peça forneceu as seguintes observações important
 """
                 print(f"📝 Observação do usuário incluída: {len(observacao_usuario)} caracteres")
 
+            # Monta seção de dados estruturados do processo (se disponíveis)
+            secao_dados_processo = ""
+            if dados_processo:
+                dados_json = json.dumps(dados_processo, indent=2, ensure_ascii=False)
+                secao_dados_processo = f"""
+---
+
+## DADOS ESTRUTURADOS DO PROCESSO
+
+Os dados abaixo foram extraídos automaticamente do sistema judicial e são confiáveis:
+
+```json
+{dados_json}
+```
+
+**IMPORTANTE:** Utilize estes dados para:
+- Identificar corretamente as partes (polo ativo e polo passivo)
+- Verificar a data de ajuizamento da demanda
+- Consultar o valor da causa
+- Identificar o órgão julgador
+- Verificar representação processual (advogados, defensoria, etc.)
+
+"""
+                print(f"📝 Dados do processo incluídos: {len(dados_json)} caracteres")
+
             # Monta o prompt final combinando tudo (SEM template JSON)
             prompt_completo = f"""{prompt_sistema}
 
 {prompt_peca}
 
 {prompt_conteudo}
-{secao_observacao}
+{secao_observacao}{secao_dados_processo}
 ---
 
 ## DOCUMENTOS DO PROCESSO PARA ANÁLISE:
