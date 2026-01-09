@@ -316,74 +316,99 @@
             document.getElementById('dados-calculo').innerHTML = calculoHtml || '<p class="text-gray-400">Sem dados</p>';
 
             // Preencher Documentos Encontrados
-            preencherDocumentosEncontrados(docs, geracao.documentos_baixados || []);
+            preencherDocumentosEncontrados(docs, geracao.documentos_baixados || [], geracao);
         }
 
-        function preencherDocumentosEncontrados(docs, documentosBaixados) {
+        // Variável global para armazenar dados da geração atual
+        let geracaoAtual = null;
+
+        function preencherDocumentosEncontrados(docs, documentosBaixados, geracao) {
+            // Salva geração atual para uso na visualização
+            geracaoAtual = geracao;
+
+            // Coleta IDs dos documentos por tipo
+            const docsPorTipo = {
+                sentenca: docs.sentencas || [],
+                acordao: docs.acordaos || [],
+                certidao_citacao: obterIdsCertidoes(docs, 'citacao'),
+                certidao_intimacao: obterIdsCertidoes(docs, 'intimacao'),
+                planilha: obterIdsPlanilhas(documentosBaixados),
+                pedido_cumprimento: obterIdsPedidoCumprimento(docs, documentosBaixados)
+            };
+
             // Documentos esperados e seus status
             const tiposEsperados = [
                 {
                     tipo: 'sentenca',
                     label: 'Sentença',
                     icon: 'fa-gavel',
-                    encontrado: (docs.sentencas && docs.sentencas.length > 0),
-                    quantidade: docs.sentencas ? docs.sentencas.length : 0
+                    encontrado: docsPorTipo.sentenca.length > 0,
+                    quantidade: docsPorTipo.sentenca.length,
+                    ids: docsPorTipo.sentenca
                 },
                 {
                     tipo: 'acordao',
                     label: 'Acórdão',
                     icon: 'fa-balance-scale',
-                    encontrado: (docs.acordaos && docs.acordaos.length > 0),
-                    quantidade: docs.acordaos ? docs.acordaos.length : 0
+                    encontrado: docsPorTipo.acordao.length > 0,
+                    quantidade: docsPorTipo.acordao.length,
+                    ids: docsPorTipo.acordao
                 },
                 {
                     tipo: 'certidao_citacao',
                     label: 'Certidão Citação',
                     icon: 'fa-envelope-open-text',
-                    encontrado: verificarCertidao(docs, 'citacao'),
-                    quantidade: contarCertidoes(docs, 'citacao')
+                    encontrado: docsPorTipo.certidao_citacao.length > 0,
+                    quantidade: docsPorTipo.certidao_citacao.length,
+                    ids: docsPorTipo.certidao_citacao
                 },
                 {
                     tipo: 'certidao_intimacao',
                     label: 'Certidão Intimação',
                     icon: 'fa-bell',
-                    encontrado: verificarCertidao(docs, 'intimacao'),
-                    quantidade: contarCertidoes(docs, 'intimacao')
+                    encontrado: docsPorTipo.certidao_intimacao.length > 0,
+                    quantidade: docsPorTipo.certidao_intimacao.length,
+                    ids: docsPorTipo.certidao_intimacao
                 },
                 {
                     tipo: 'planilha',
                     label: 'Planilha de Cálculo',
                     icon: 'fa-table',
-                    encontrado: verificarPlanilha(documentosBaixados),
-                    quantidade: contarPlanilhas(documentosBaixados)
+                    encontrado: docsPorTipo.planilha.length > 0,
+                    quantidade: docsPorTipo.planilha.length,
+                    ids: docsPorTipo.planilha
                 },
                 {
                     tipo: 'pedido_cumprimento',
                     label: 'Pedido Cumprimento',
                     icon: 'fa-file-invoice',
-                    encontrado: (docs.pedido_cumprimento && docs.pedido_cumprimento.documentos && docs.pedido_cumprimento.documentos.length > 0),
-                    quantidade: docs.pedido_cumprimento && docs.pedido_cumprimento.documentos ? docs.pedido_cumprimento.documentos.length : 0
+                    encontrado: docsPorTipo.pedido_cumprimento.length > 0,
+                    quantidade: docsPorTipo.pedido_cumprimento.length,
+                    ids: docsPorTipo.pedido_cumprimento
                 }
             ];
 
             let html = '';
             tiposEsperados.forEach(doc => {
                 const statusClass = doc.encontrado
-                    ? 'bg-green-100 border-green-300 text-green-800'
+                    ? 'bg-green-100 border-green-300 text-green-800 cursor-pointer hover:bg-green-200'
                     : 'bg-red-50 border-red-200 text-red-600';
                 const statusIcon = doc.encontrado ? 'fa-check-circle text-green-600' : 'fa-times-circle text-red-400';
                 const qtdBadge = doc.encontrado && doc.quantidade > 0
                     ? `<span class="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-green-600 text-white">${doc.quantidade}</span>`
                     : '';
+                const onclick = doc.encontrado ? `onclick="verDocumentos('${doc.tipo}', ${JSON.stringify(doc.ids).replace(/"/g, '&quot;')}, '${doc.label}')"` : '';
+                const title = doc.encontrado ? 'title="Clique para visualizar"' : '';
 
                 html += `
-                    <div class="flex items-center gap-2 p-2 rounded-lg border ${statusClass}">
+                    <div class="flex items-center gap-2 p-2 rounded-lg border ${statusClass}" ${onclick} ${title}>
                         <i class="fas ${doc.icon} text-lg"></i>
                         <div class="flex-1">
                             <span class="text-sm font-medium">${doc.label}</span>
                             ${qtdBadge}
                         </div>
                         <i class="fas ${statusIcon}"></i>
+                        ${doc.encontrado ? '<i class="fas fa-external-link-alt text-xs ml-1 opacity-50"></i>' : ''}
                     </div>
                 `;
             });
@@ -391,30 +416,112 @@
             document.getElementById('docs-encontrados').innerHTML = html;
         }
 
-        function verificarCertidao(docs, tipo) {
-            if (!docs.certidoes_citacao_intimacao) return false;
-            return docs.certidoes_citacao_intimacao.some(c => c.tipo === tipo || c.tipo?.includes(tipo));
+        function obterIdsCertidoes(docs, tipo) {
+            if (!docs.certidoes_citacao_intimacao) return [];
+            return docs.certidoes_citacao_intimacao
+                .filter(c => c.tipo === tipo || c.tipo?.includes(tipo))
+                .map(c => c.id_certidao_9508)
+                .filter(id => id);
         }
 
-        function contarCertidoes(docs, tipo) {
-            if (!docs.certidoes_citacao_intimacao) return 0;
-            return docs.certidoes_citacao_intimacao.filter(c => c.tipo === tipo || c.tipo?.includes(tipo)).length;
+        function obterIdsPlanilhas(documentosBaixados) {
+            if (!documentosBaixados) return [];
+            return documentosBaixados
+                .filter(d => d.tipo?.toLowerCase().includes('planilha') || d.classificacao_ia === 'planilha_calculo')
+                .map(d => d.id)
+                .filter(id => id);
         }
 
-        function verificarPlanilha(documentosBaixados) {
-            if (!documentosBaixados || documentosBaixados.length === 0) return false;
-            return documentosBaixados.some(d =>
-                d.tipo?.toLowerCase().includes('planilha') ||
-                d.classificacao_ia === 'planilha_calculo'
-            );
+        function obterIdsPedidoCumprimento(docs, documentosBaixados) {
+            // Tenta pegar dos documentosBaixados primeiro
+            const doBaixados = (documentosBaixados || [])
+                .filter(d => d.tipo?.toLowerCase().includes('cumprimento') || d.tipo?.toLowerCase().includes('petição') || d.classificacao_ia === 'peticao')
+                .map(d => d.id)
+                .filter(id => id);
+
+            if (doBaixados.length > 0) return doBaixados;
+
+            // Fallback para docs.pedido_cumprimento
+            if (docs.pedido_cumprimento && docs.pedido_cumprimento.documentos) {
+                return docs.pedido_cumprimento.documentos.map(d => d.id).filter(id => id);
+            }
+            return [];
         }
 
-        function contarPlanilhas(documentosBaixados) {
-            if (!documentosBaixados || documentosBaixados.length === 0) return 0;
-            return documentosBaixados.filter(d =>
-                d.tipo?.toLowerCase().includes('planilha') ||
-                d.classificacao_ia === 'planilha_calculo'
-            ).length;
+        async function verDocumentos(tipo, ids, label) {
+            if (!ids || ids.length === 0) {
+                alert('Nenhum documento disponível');
+                return;
+            }
+
+            // Pega o número do processo
+            const numeroProcesso = geracaoAtual?.numero_cnj || geracaoAtual?.numero_cnj_formatado?.replace(/\D/g, '');
+            if (!numeroProcesso) {
+                alert('Número do processo não encontrado');
+                return;
+            }
+
+            // Para múltiplos documentos, mostra lista para seleção
+            if (ids.length > 1) {
+                const escolha = prompt(`Existem ${ids.length} documento(s) de "${label}".\nDigite o número (1-${ids.length}) para visualizar:`, '1');
+                if (!escolha) return;
+                const index = parseInt(escolha) - 1;
+                if (index < 0 || index >= ids.length) {
+                    alert('Número inválido');
+                    return;
+                }
+                abrirDocumento(numeroProcesso, ids[index], label);
+            } else {
+                abrirDocumento(numeroProcesso, ids[0], label);
+            }
+        }
+
+        async function abrirDocumento(numeroProcesso, idDocumento, label) {
+            try {
+                // Mostra loading
+                const loadingDiv = document.createElement('div');
+                loadingDiv.id = 'loading-doc';
+                loadingDiv.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-[100]';
+                loadingDiv.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 text-center">
+                        <i class="fas fa-spinner fa-spin text-3xl text-primary-600 mb-3"></i>
+                        <p class="text-gray-700">Carregando ${label}...</p>
+                    </div>
+                `;
+                document.body.appendChild(loadingDiv);
+
+                const response = await fetch(`/pedido-calculo/documento/${encodeURIComponent(numeroProcesso)}/${encodeURIComponent(idDocumento)}?token=${encodeURIComponent(getToken())}`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+
+                document.getElementById('loading-doc')?.remove();
+
+                if (!response.ok) {
+                    throw new Error('Erro ao carregar documento');
+                }
+
+                const data = await response.json();
+
+                // Abre PDF em nova aba
+                const pdfBlob = base64ToBlob(data.conteudo_base64, 'application/pdf');
+                const pdfUrl = URL.createObjectURL(pdfBlob);
+                window.open(pdfUrl, '_blank');
+
+            } catch (error) {
+                document.getElementById('loading-doc')?.remove();
+                console.error('Erro:', error);
+                alert('Erro ao carregar documento: ' + error.message);
+            }
+        }
+
+        function base64ToBlob(base64, mimeType) {
+            const byteCharacters = atob(base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            return new Blob([byteArray], { type: mimeType });
         }
 
         function preencherLogs(logs) {

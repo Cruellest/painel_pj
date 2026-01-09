@@ -389,12 +389,18 @@
                     ...options.headers
                 }
             });
-            
+
             if (response.status === 401) {
                 window.location.href = '/login';
                 return null;
             }
-            
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('Erro na API:', endpoint, response.status, errorData);
+                throw new Error(errorData.detail || `Erro ${response.status}`);
+            }
+
             return response.json();
         }
 
@@ -579,6 +585,10 @@
 
             } catch (error) {
                 console.error('Erro ao carregar dashboard:', error);
+                // Mostra erro no card de total
+                document.getElementById('stat-total-consultas').innerHTML = '<span class="text-red-500 text-xs">Erro</span>';
+                document.getElementById('stat-total-feedbacks').innerHTML = '<span class="text-red-500 text-xs">Erro</span>';
+                alert('Erro ao carregar dashboard: ' + error.message);
             }
         }
 
