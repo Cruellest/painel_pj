@@ -21,7 +21,7 @@ class User(Base):
     role = Column(String(20), nullable=False, default="user")  # 'admin' ou 'user'
     
     # Sistemas que o usuário pode acessar (lista de strings)
-    # Ex: ["matriculas", "assistencia_judiciaria", "gerador_pecas"]
+    # Ex: ["matriculas", "assistencia_judiciaria", "gerador_pecas", "pedido_calculo"]
     # Se vazio ou None, usuário tem acesso a todos (compatibilidade)
     sistemas_permitidos = Column(JSON, nullable=True, default=None)
     

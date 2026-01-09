@@ -182,6 +182,10 @@
                             <input type="checkbox" id="sistema-gerador" value="gerador_pecas" class="rounded border-gray-300 text-primary-600">
                             <span class="text-sm text-gray-700">Gerador de Peças</span>
                         </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-pedido-calculo" value="pedido_calculo" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Pedido de Cálculo</span>
+                        </label>
                     </div>
                 </div>
                 
@@ -384,6 +388,7 @@
             document.getElementById('sistema-matriculas').checked = false;
             document.getElementById('sistema-assistencia').checked = false;
             document.getElementById('sistema-gerador').checked = false;
+            document.getElementById('sistema-pedido-calculo').checked = false;
             document.getElementById('perm-editar-prompts').checked = false;
             document.getElementById('perm-criar-prompts').checked = false;
             document.getElementById('perm-excluir-prompts').checked = false;
@@ -413,6 +418,7 @@
             document.getElementById('sistema-matriculas').checked = sistemas.includes('matriculas');
             document.getElementById('sistema-assistencia').checked = sistemas.includes('assistencia_judiciaria');
             document.getElementById('sistema-gerador').checked = sistemas.includes('gerador_pecas');
+            document.getElementById('sistema-pedido-calculo').checked = sistemas.includes('pedido_calculo');
             
             // Permissões especiais
             const permissoes = user.permissoes_especiais || [];
@@ -435,6 +441,7 @@
             if (document.getElementById('sistema-matriculas').checked) sistemas.push('matriculas');
             if (document.getElementById('sistema-assistencia').checked) sistemas.push('assistencia_judiciaria');
             if (document.getElementById('sistema-gerador').checked) sistemas.push('gerador_pecas');
+            if (document.getElementById('sistema-pedido-calculo').checked) sistemas.push('pedido_calculo');
             return sistemas.length > 0 ? sistemas : null;
         }
 
