@@ -949,8 +949,8 @@ async def dashboard_feedbacks(
         if incluir_pc:
             query_pendentes_pc = db.query(
                 GeracaoPedidoCalculo.id,
-                GeracaoPedidoCalculo.numero_processo,
-                GeracaoPedidoCalculo.titulo,
+                GeracaoPedidoCalculo.numero_cnj_formatado,
+                GeracaoPedidoCalculo.numero_cnj,
                 GeracaoPedidoCalculo.criado_em,
                 User.username,
                 User.full_name
@@ -960,7 +960,7 @@ async def dashboard_feedbacks(
                 User, GeracaoPedidoCalculo.usuario_id == User.id
             ).filter(
                 FeedbackPedidoCalculo.id == None,
-                GeracaoPedidoCalculo.pedido_gerado.isnot(None)
+                GeracaoPedidoCalculo.conteudo_gerado.isnot(None)
             )
             if ids_excluir:
                 query_pendentes_pc = query_pendentes_pc.filter(~GeracaoPedidoCalculo.usuario_id.in_(ids_excluir))
@@ -997,11 +997,11 @@ async def dashboard_feedbacks(
                 "usuario": full_name or username,
                 "data": criado_em.isoformat() if criado_em else None
             })
-        for id, numero_processo, titulo, criado_em, username, full_name in geracoes_sem_feedback_pc:
+        for id, numero_cnj_fmt, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_pc:
             pendentes_feedback.append({
                 "id": id,
                 "sistema": "pedido_calculo",
-                "identificador": numero_processo or titulo,
+                "identificador": numero_cnj_fmt or numero_cnj,
                 "usuario": full_name or username,
                 "data": criado_em.isoformat() if criado_em else None
             })
@@ -1230,8 +1230,8 @@ async def listar_feedbacks(
         if sistema is None or sistema == 'pedido_calculo':
             query_pc = db.query(
                 FeedbackPedidoCalculo,
-                GeracaoPedidoCalculo.numero_processo,
-                GeracaoPedidoCalculo.titulo,
+                GeracaoPedidoCalculo.numero_cnj_formatado,
+                GeracaoPedidoCalculo.numero_cnj,
                 GeracaoPedidoCalculo.modelo_usado,
                 User.username,
                 User.full_name
@@ -1253,13 +1253,13 @@ async def listar_feedbacks(
             if usuario_id:
                 query_pc = query_pc.filter(FeedbackPedidoCalculo.usuario_id == usuario_id)
 
-            for fb, numero_processo, titulo, modelo_usado, username, full_name in query_pc.all():
+            for fb, numero_cnj_fmt, numero_cnj, modelo_usado, username, full_name in query_pc.all():
                 feedbacks_combinados.append({
                     "id": fb.id,
                     "consulta_id": fb.geracao_id,
                     "sistema": "pedido_calculo",
-                    "identificador": numero_processo or titulo,
-                    "cnj": None,
+                    "identificador": numero_cnj_fmt or numero_cnj,
+                    "cnj": numero_cnj,
                     "modelo": modelo_usado or "gemini-3-flash-preview",
                     "usuario": full_name or username,
                     "username": username,
@@ -1449,11 +1449,11 @@ async def obter_consulta_detalhes(
             return {
                 "id": p.id,
                 "sistema": "pedido_calculo",
-                "identificador": p.numero_processo or p.titulo,
-                "numero_processo": p.numero_processo,
-                "titulo": p.titulo,
-                "dados": p.parametros,
-                "relatorio": p.pedido_gerado,
+                "identificador": p.numero_cnj_formatado or p.numero_cnj,
+                "numero_processo": p.numero_cnj,
+                "titulo": p.numero_cnj_formatado,
+                "dados": p.dados_agente1,
+                "relatorio": p.conteudo_gerado,
                 "modelo": p.modelo_usado,
                 "usuario": full_name or username,
                 "analisado_em": p.criado_em.isoformat() if p.criado_em else None,
@@ -1571,8 +1571,8 @@ async def exportar_feedbacks(
         # Feedbacks de Pedido de Cálculo
         feedbacks_pc = db.query(
             FeedbackPedidoCalculo,
-            GeracaoPedidoCalculo.numero_processo,
-            GeracaoPedidoCalculo.titulo,
+            GeracaoPedidoCalculo.numero_cnj_formatado,
+            GeracaoPedidoCalculo.numero_cnj,
             User.username,
             User.full_name
         ).join(
@@ -1583,11 +1583,11 @@ async def exportar_feedbacks(
             FeedbackPedidoCalculo.criado_em.desc()
         ).all()
 
-        for fb, numero_processo, titulo, username, full_name in feedbacks_pc:
+        for fb, numero_cnj_fmt, numero_cnj, username, full_name in feedbacks_pc:
             data.append({
                 "id": fb.id,
                 "sistema": "pedido_calculo",
-                "identificador": numero_processo or titulo,
+                "identificador": numero_cnj_fmt or numero_cnj,
                 "usuario": full_name or username,
                 "avaliacao": fb.avaliacao,
                 "comentario": fb.comentario,
