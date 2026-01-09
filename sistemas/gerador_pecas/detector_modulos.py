@@ -192,33 +192,31 @@ Sua tarefa é analisar os documentos de um processo judicial e identificar quais
 
 ## MÓDULOS DISPONÍVEIS
 
-A seguir, uma lista de módulos de argumentos/teses disponíveis. O campo "condicao_ativacao" descreve a SITUAÇÃO em que cada módulo deve ser acionado.
+A seguir, uma lista de módulos de argumentos/teses disponíveis. O campo "condicao_ativacao" descreve a SITUAÇÃO FÁTICA em que cada módulo deve ser acionado.
 
 ```json
 {json.dumps(modulos_info, ensure_ascii=False, indent=2)}
 ```
 
-##SUA TAREFA
+## SUA TAREFA
 
-Analise os documentos do processo e identifique quais módulos têm relação clara, provável ou potencialmente útil para este caso.
+Analise os documentos do processo e selecione APENAS os módulos cuja condição de ativação é **claramente atendida** pelos fatos do caso.
 
-###Como avaliar relevância:
+### Critérios de seleção:
 
-A condição de ativação aparece total ou parcialmente no caso?
+1. **Correspondência direta**: A condição de ativação deve estar presente nos fatos do processo
+2. **Evidência concreta**: Deve haver menção explícita ou forte indicação nos documentos
+3. **Relevância prática**: O módulo deve realmente contribuir para a defesa do Estado neste caso específico
 
-O módulo pode ajudar a defender o Estado mesmo que a correspondência não seja perfeita?
+### O que NÃO fazer:
 
-Há elementos, indícios ou temas que sugerem que este módulo possa ser aplicável?
+- NÃO inclua módulos por "precaução" ou "por via das dúvidas"
+- NÃO inclua módulos apenas por semelhança temática genérica
+- NÃO inclua módulos cuja condição não apareça claramente nos fatos
 
-Instruções:
+### Regra de ouro:
 
-Seja flexível: inclua o módulo sempre que houver uma correspondência razoável com os fatos.
-
-NÃO exija aderência literal à “condicao_ativacao”; considere semelhanças temáticas, contexto e finalidade jurídica.
-
-Evite apenas módulos claramente irrelevantes ou totalmente desconectados dos fatos.
-
-Quando em dúvida entre incluir ou excluir, prefira incluir.
+Se a condição de ativação não estiver **evidenciada nos documentos**, NÃO inclua o módulo. É melhor incluir poucos módulos relevantes do que muitos módulos genéricos.
 
 ## FORMATO DE RESPOSTA
 
@@ -226,16 +224,17 @@ Responda APENAS com um objeto JSON no seguinte formato:
 
 ```json
 {{
-  "modulos_relevantes": [0, 3, 7],
-  "justificativa": "Breve explicação de por que estes módulos foram selecionados",
+  "modulos_relevantes": [
+    {{"id": 0, "motivo": "Fato X do processo atende a condição Y"}},
+    {{"id": 3, "motivo": "Documento Z menciona situação W"}}
+  ],
   "confianca": "alta|media|baixa"
 }}
 ```
 
 Onde:
-- `modulos_relevantes`: Array com os IDs (índices) dos módulos relevantes
-- `justificativa`: Explicação breve (2-3 frases) da seleção
-- `confianca`: Nível de confiança na detecção (alta/media/baixa)
+- `modulos_relevantes`: Array de objetos com ID (índice) e motivo curto (máx 15 palavras)
+- `confianca`: Nível de confiança na detecção
 
 Responda SOMENTE com o JSON, sem texto adicional.
 """
@@ -276,27 +275,34 @@ Responda SOMENTE com o JSON, sem texto adicional.
         except json.JSONDecodeError as e:
             print(f"⚠️ Erro ao parsear JSON: {e}")
             print(f"⚠️ Conteúdo recebido: {content[:200]}...")
-            
-            # Tenta extrair array de módulos mesmo de JSON truncado
-            # Procura por "modulos_relevantes": [1, 2, 3, ...]
+
+            # Tenta extrair módulos do novo formato: {"id": X, "motivo": "..."}
+            modulos_obj_match = re.findall(r'\{\s*"id"\s*:\s*(\d+)\s*,\s*"motivo"\s*:\s*"([^"]*)"', content)
+            if modulos_obj_match:
+                modulos = [{"id": int(m[0]), "motivo": m[1]} for m in modulos_obj_match]
+                print(f"🔧 Recuperados {len(modulos)} módulos de JSON truncado (formato novo)")
+                return {
+                    "modulos_relevantes": modulos,
+                    "confianca": "media"
+                }
+
+            # Fallback: tenta formato antigo [1, 2, 3, ...]
             modulos_match = re.search(r'"modulos_relevantes"\s*:\s*\[([\d,\s]+)', content)
             if modulos_match:
                 try:
-                    # Extrai os números que conseguiu
                     nums_str = modulos_match.group(1).rstrip(',').strip()
                     if nums_str:
                         modulos = [int(n.strip()) for n in nums_str.split(',') if n.strip().isdigit()]
-                        print(f"🔧 Recuperados {len(modulos)} módulos de JSON truncado")
+                        print(f"🔧 Recuperados {len(modulos)} módulos de JSON truncado (formato antigo)")
                         return {
                             "modulos_relevantes": modulos,
-                            "justificativa": "Recuperado de JSON truncado",
                             "confianca": "media"
                         }
                 except:
                     pass
-            
+
             # Retorna estrutura vazia para fallback
-            return {"modulos_relevantes": [], "justificativa": "Erro no parsing", "confianca": "baixa"}
+            return {"modulos_relevantes": [], "confianca": "baixa"}
 
     def _processar_resposta_ia(
         self,
@@ -313,19 +319,29 @@ Responda SOMENTE com o JSON, sem texto adicional.
         Returns:
             Lista de IDs reais dos módulos no banco de dados
         """
-        indices = resposta.get('modulos_relevantes', [])
-        justificativa = resposta.get('justificativa', '')
+        modulos_info = resposta.get('modulos_relevantes', [])
         confianca = resposta.get('confianca', 'media')
 
         print(f"📊 Detecção IA - Confiança: {confianca}")
-        print(f"💡 Justificativa: {justificativa}")
 
         # Converter índices temporários para IDs reais
         ids_reais = []
-        for idx in indices:
+
+        for item in modulos_info:
+            # Suporta tanto o formato novo (objeto com id e motivo) quanto o antigo (apenas índice)
+            if isinstance(item, dict):
+                idx = item.get('id', -1)
+                motivo = item.get('motivo', '')
+            else:
+                idx = item
+                motivo = ''
+
             if 0 <= idx < len(modulos):
                 ids_reais.append(modulos[idx].id)
-                print(f"   ✓ {modulos[idx].titulo}")
+                if motivo:
+                    print(f"   ✓ {modulos[idx].titulo}: {motivo}")
+                else:
+                    print(f"   ✓ {modulos[idx].titulo}")
 
         return ids_reais
 
