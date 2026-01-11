@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análise de Prestação de Contas - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        },
+                        pge: {
+                            blue: '#1e3a5f',
+                            orange: '#e67e22'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .markdown-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; line-height: 1.7; color: #374151; }
+        .markdown-body h1 { font-size: 1.5em; font-weight: 700; margin-top: 1.5em; margin-bottom: 0.5em; color: #111827; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; }
+        .markdown-body h2 { font-size: 1.25em; font-weight: 600; margin-top: 1.25em; margin-bottom: 0.5em; color: #1f2937; }
+        .markdown-body h3 { font-size: 1.1em; font-weight: 600; margin-top: 1em; margin-bottom: 0.5em; color: #374151; }
+        .markdown-body p { margin-bottom: 1em; text-align: justify; }
+        .markdown-body ul, .markdown-body ol { margin: 1em 0; padding-left: 1.5em; }
+        .markdown-body li { margin-bottom: 0.5em; }
+        .markdown-body strong { font-weight: 600; color: #111827; }
+
+        .glass-effect { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        .parecer-favoravel { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
+        .parecer-desfavoravel { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+        .parecer-duvida { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+    </style>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-sky-50 via-white to-blue-50">
+
+    <!-- Header -->
+    <header class="glass-effect shadow-sm border-b border-gray-200/50 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-4">
+                    <a href="/dashboard" class="text-gray-500 hover:text-gray-700 transition-colors">
+                        <i class="fas fa-arrow-left"></i>
+                    </a>
+                    <a href="/dashboard" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
+                        <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+                    </a>
+                    <div class="border-l border-gray-300 pl-4">
+                        <h1 class="font-semibold text-gray-800">Análise de Prestação de Contas</h1>
+                        <p class="text-xs text-gray-500">Processos de Medicamentos</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="toggleHistorico()" class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" title="Histórico">
+                        <i class="fas fa-history"></i>
+                    </button>
+                    <a href="/dashboard" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors">
+                        <i class="fas fa-th-large mr-1"></i> Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Formulário Principal -->
+        <div class="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 p-6 mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <div class="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-file-invoice-dollar text-white"></i>
+                </div>
+                Analisar Prestação de Contas
+            </h2>
+
+            <form id="form-processo" class="space-y-4">
+                <div>
+                    <label for="numero-cnj" class="block text-sm font-medium text-gray-700 mb-2">
+                        Número do Processo (CNJ)
+                    </label>
+                    <input type="text" id="numero-cnj" name="numero_cnj" placeholder="0000000-00.2024.8.12.0001"
+                        class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all shadow-sm" />
+                    <p class="text-xs text-gray-500 mt-1">Digite o número completo do processo no formato CNJ</p>
+                </div>
+
+                <button type="submit" id="btn-analisar"
+                    class="w-full bg-gradient-to-r from-primary-600 to-primary-700 text-white py-3 px-6 rounded-xl font-semibold hover:from-primary-700 hover:to-primary-800 transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-500/25">
+                    <i class="fas fa-search-dollar"></i>
+                    Analisar Prestação de Contas
+                </button>
+            </form>
+        </div>
+
+        <!-- Card de Informações -->
+        <div class="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6">
+            <div class="flex items-start gap-3">
+                <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-info-circle text-blue-600"></i>
+                </div>
+                <div>
+                    <h3 class="font-medium text-blue-800 mb-1">Como funciona?</h3>
+                    <ul class="text-sm text-blue-700 space-y-1">
+                        <li><i class="fas fa-check text-blue-500 mr-1"></i> Sistema baixa o extrato da subconta automaticamente</li>
+                        <li><i class="fas fa-check text-blue-500 mr-1"></i> Identifica a petição de prestação de contas no processo</li>
+                        <li><i class="fas fa-check text-blue-500 mr-1"></i> Analisa notas fiscais e comprovantes anexados</li>
+                        <li><i class="fas fa-check text-blue-500 mr-1"></i> Emite parecer: Favorável, Desfavorável ou Dúvida</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Histórico Recente -->
+        <div id="historico-recente" class="bg-white rounded-2xl shadow-lg shadow-gray-200/50 border border-gray-100 p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <div class="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-history text-white text-sm"></i>
+                    </div>
+                    Análises Recentes
+                </h2>
+            </div>
+            <div id="historico-cards" class="grid gap-3">
+                <p class="text-gray-500 text-sm text-center py-4">Carregando histórico...</p>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal de Progresso -->
+    <div id="modal-progresso" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-6 max-w-lg w-full mx-4 shadow-2xl">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                    <div class="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
+                        <i class="fas fa-cog fa-spin text-white"></i>
+                    </div>
+                    Analisando Prestação de Contas
+                </h2>
+            </div>
+
+            <div class="mb-4">
+                <p id="progresso-mensagem" class="text-sm text-gray-600">Iniciando processamento...</p>
+            </div>
+
+            <!-- Etapas do Pipeline -->
+            <div id="etapas-progresso" class="space-y-3">
+                <div id="etapa1-status" class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div id="etapa1-icon" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                        <i class="fas fa-university text-gray-400 text-sm"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-700">Etapa 1: Subconta</p>
+                        <p class="text-xs text-gray-500">Baixando extrato da subconta</p>
+                    </div>
+                    <span id="etapa1-badge" class="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">Aguardando</span>
+                </div>
+
+                <div id="etapa2-status" class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div id="etapa2-icon" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                        <i class="fas fa-file-code text-gray-400 text-sm"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-700">Etapa 2: XML TJ-MS</p>
+                        <p class="text-xs text-gray-500">Consultando dados do processo</p>
+                    </div>
+                    <span id="etapa2-badge" class="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">Aguardando</span>
+                </div>
+
+                <div id="etapa3-status" class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div id="etapa3-icon" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                        <i class="fas fa-search text-gray-400 text-sm"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-700">Etapa 3: Identificar Prestação</p>
+                        <p class="text-xs text-gray-500">Localizando petição de prestação de contas</p>
+                    </div>
+                    <span id="etapa3-badge" class="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">Aguardando</span>
+                </div>
+
+                <div id="etapa4-status" class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div id="etapa4-icon" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                        <i class="fas fa-download text-gray-400 text-sm"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-700">Etapa 4: Documentos</p>
+                        <p class="text-xs text-gray-500">Baixando notas fiscais e comprovantes</p>
+                    </div>
+                    <span id="etapa4-badge" class="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">Aguardando</span>
+                </div>
+
+                <div id="etapa5-status" class="flex items-center gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                    <div id="etapa5-icon" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center">
+                        <i class="fas fa-brain text-gray-400 text-sm"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-700">Etapa 5: Análise IA</p>
+                        <p class="text-xs text-gray-500">Emitindo parecer</p>
+                    </div>
+                    <span id="etapa5-badge" class="text-xs px-3 py-1 rounded-full bg-gray-100 text-gray-500 font-medium">Aguardando</span>
+                </div>
+            </div>
+
+            <!-- Barra de progresso -->
+            <div class="mt-4">
+                <div class="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div id="progresso-barra" class="h-full bg-gradient-to-r from-primary-500 to-primary-600 transition-all duration-500" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Resultado -->
+    <div id="modal-resultado" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 overflow-y-auto">
+        <div class="bg-white rounded-2xl max-w-4xl w-full mx-4 my-8 shadow-2xl">
+            <!-- Header -->
+            <div id="resultado-header" class="px-6 py-4 rounded-t-2xl flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div id="resultado-icon" class="w-12 h-12 rounded-xl flex items-center justify-center bg-white/20">
+                        <i class="fas fa-check text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 id="resultado-titulo" class="text-lg font-bold text-white">Parecer</h2>
+                        <p id="resultado-cnj" class="text-sm text-white/80"></p>
+                    </div>
+                </div>
+                <button onclick="fecharResultado()" class="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Conteúdo -->
+            <div class="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                <!-- Valores Extraídos -->
+                <div id="valores-extraidos" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-gray-50 rounded-xl p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Valor Bloqueado</p>
+                        <p id="valor-bloqueado" class="text-lg font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-xl p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Valor Utilizado</p>
+                        <p id="valor-utilizado" class="text-lg font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-xl p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Valor Devolvido</p>
+                        <p id="valor-devolvido" class="text-lg font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-xl p-4 text-center">
+                        <p class="text-xs text-gray-500 mb-1">Medicamento</p>
+                        <p id="medicamento-info" class="text-sm font-medium text-gray-800 truncate">-</p>
+                    </div>
+                </div>
+
+                <!-- Fundamentação -->
+                <div class="bg-white rounded-xl border border-gray-100 p-6">
+                    <h3 class="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-file-alt text-primary-500"></i>
+                        Fundamentação
+                    </h3>
+                    <div id="fundamentacao-content" class="markdown-body"></div>
+                </div>
+
+                <!-- Irregularidades (se desfavorável) -->
+                <div id="irregularidades-section" class="hidden mt-4 bg-red-50 rounded-xl border border-red-100 p-6">
+                    <h3 class="font-semibold text-red-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-exclamation-triangle text-red-500"></i>
+                        Irregularidades Identificadas
+                    </h3>
+                    <ul id="irregularidades-lista" class="space-y-2"></ul>
+                </div>
+
+                <!-- Perguntas (se dúvida) -->
+                <div id="perguntas-section" class="hidden mt-4 bg-yellow-50 rounded-xl border border-yellow-100 p-6">
+                    <h3 class="font-semibold text-yellow-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-question-circle text-yellow-500"></i>
+                        Esclarecimentos Necessários
+                    </h3>
+                    <div id="perguntas-form" class="space-y-4"></div>
+                    <button id="btn-enviar-respostas" onclick="enviarRespostas()"
+                        class="mt-4 w-full bg-yellow-500 text-white py-2 px-4 rounded-xl font-medium hover:bg-yellow-600 transition-colors">
+                        <i class="fas fa-paper-plane mr-2"></i>
+                        Enviar Respostas
+                    </button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+                <button onclick="abrirModalFeedback()" class="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors text-sm">
+                    <i class="fas fa-comment-alt mr-1"></i>
+                    Avaliar Resultado
+                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="abrirModalDocumentos()" class="px-4 py-2 bg-teal-500 text-white rounded-xl hover:bg-teal-600 transition-colors text-sm font-medium">
+                        <i class="fas fa-folder-open mr-1"></i>
+                        Ver Documentos
+                    </button>
+                    <button onclick="exportarDocx()" class="px-4 py-2 bg-purple-500 text-white rounded-xl hover:bg-purple-600 transition-colors text-sm font-medium">
+                        <i class="fas fa-file-word mr-1"></i>
+                        Exportar DOCX
+                    </button>
+                    <button onclick="fecharResultado()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors text-sm font-medium">
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Documentos -->
+    <div id="modal-documentos" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[60]">
+        <div class="absolute inset-4 md:inset-10 lg:inset-20 bg-white rounded-2xl shadow-2xl flex flex-col">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-teal-50 to-cyan-50 rounded-t-2xl">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">Documentos Analisados</h2>
+                    <p class="text-sm text-gray-500" id="modal-docs-info"></p>
+                </div>
+                <button onclick="fecharModalDocumentos()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="flex-1 flex overflow-hidden">
+                <!-- Lista de documentos -->
+                <div class="w-72 border-r border-gray-200 overflow-y-auto bg-gray-50" id="lista-documentos">
+                    <p class="text-gray-400 text-sm text-center py-8">Nenhum documento</p>
+                </div>
+                <!-- Visualizador -->
+                <div class="flex-1 overflow-hidden flex flex-col" id="visualizador-documento">
+                    <div class="h-full flex items-center justify-center text-gray-400">
+                        <div class="text-center">
+                            <i class="fas fa-file-alt text-4xl mb-3 opacity-50"></i>
+                            <p>Selecione um documento para visualizar</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Feedback -->
+    <div id="modal-feedback" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+        <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">Avaliar Análise</h3>
+            <form id="form-feedback" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">O parecer está correto?</label>
+                    <div class="flex gap-2">
+                        <button type="button" data-avaliacao="correto" class="flex-1 py-2 px-4 border border-gray-200 rounded-xl hover:border-green-500 hover:bg-green-50 transition-colors avaliacao-btn">
+                            <i class="fas fa-check text-green-500 mr-1"></i> Correto
+                        </button>
+                        <button type="button" data-avaliacao="parcial" class="flex-1 py-2 px-4 border border-gray-200 rounded-xl hover:border-yellow-500 hover:bg-yellow-50 transition-colors avaliacao-btn">
+                            <i class="fas fa-minus text-yellow-500 mr-1"></i> Parcial
+                        </button>
+                        <button type="button" data-avaliacao="incorreto" class="flex-1 py-2 px-4 border border-gray-200 rounded-xl hover:border-red-500 hover:bg-red-50 transition-colors avaliacao-btn">
+                            <i class="fas fa-times text-red-500 mr-1"></i> Incorreto
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Comentário (opcional)</label>
+                    <textarea id="feedback-comentario" rows="3" class="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent" placeholder="Descreva o que pode ser melhorado..."></textarea>
+                </div>
+                <div class="flex gap-2">
+                    <button type="button" onclick="fecharFeedback()" class="flex-1 py-2 px-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">Cancelar</button>
+                    <button type="submit" class="flex-1 py-2 px-4 bg-primary-500 text-white rounded-xl hover:bg-primary-600 transition-colors font-medium">Enviar Feedback</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Painel Lateral de Histórico -->
+    <div id="painel-historico" class="hidden fixed inset-y-0 right-0 w-80 bg-white shadow-2xl z-50 transform translate-x-full transition-transform duration-300">
+        <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="font-semibold text-gray-800">Histórico</h3>
+            <button onclick="toggleHistorico()" class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div id="lista-historico" class="p-4 overflow-y-auto custom-scrollbar" style="height: calc(100vh - 60px);">
+            <p class="text-gray-500 text-sm text-center py-8">Carregando...</p>
+        </div>
+    </div>
+
+    <!-- Toast de Erro -->
+    <div id="toast-erro" class="hidden fixed bottom-4 right-4 bg-red-500 text-white px-6 py-4 rounded-xl shadow-2xl z-50 max-w-md">
+        <div class="flex items-start gap-3">
+            <i class="fas fa-exclamation-circle text-xl mt-0.5"></i>
+            <div>
+                <p class="font-semibold">Erro</p>
+                <p id="erro-mensagem" class="text-sm opacity-90 mt-1"></p>
+            </div>
+            <button onclick="document.getElementById('toast-erro').classList.add('hidden')" class="ml-4 opacity-70 hover:opacity-100">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Estado da aplicação
+        let geracaoAtual = null;
+        let avaliacaoSelecionada = null;
+
+        // Função para obter token de autenticação
+        function getToken() {
+            return localStorage.getItem('access_token');
+        }
+
+        // Headers padrão para requisições autenticadas
+        function getAuthHeaders(contentType = true) {
+            const headers = {
+                'Authorization': `Bearer ${getToken()}`
+            };
+            if (contentType) {
+                headers['Content-Type'] = 'application/json';
+            }
+            return headers;
+        }
+
+        // Verificar autenticação
+        async function checkAuth() {
+            const token = getToken();
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+            try {
+                const response = await fetch('/auth/me', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!response.ok) {
+                    window.location.href = '/login';
+                    return false;
+                }
+                return true;
+            } catch (e) {
+                window.location.href = '/login';
+                return false;
+            }
+        }
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!await checkAuth()) return;
+            carregarHistorico();
+
+            // Form submit
+            document.getElementById('form-processo').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const numeroCnj = document.getElementById('numero-cnj').value.trim();
+                if (numeroCnj) {
+                    await iniciarAnalise(numeroCnj);
+                }
+            });
+
+            // Feedback form
+            document.getElementById('form-feedback').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await enviarFeedback();
+            });
+
+            // Botões de avaliação
+            document.querySelectorAll('.avaliacao-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.avaliacao-btn').forEach(b => b.classList.remove('border-primary-500', 'bg-primary-50'));
+                    btn.classList.add('border-primary-500', 'bg-primary-50');
+                    avaliacaoSelecionada = btn.dataset.avaliacao;
+                });
+            });
+        });
+
+        // Carregar histórico
+        async function carregarHistorico() {
+            try {
+                const response = await fetch('/prestacao-contas/api/historico?limit=5', {
+                    headers: getAuthHeaders(false)
+                });
+                const data = await response.json();
+
+                const container = document.getElementById('historico-cards');
+                if (data.geracoes && data.geracoes.length > 0) {
+                    container.innerHTML = data.geracoes.map(g => `
+                        <div onclick="abrirResultado(${g.id})" class="p-4 border border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50/50 cursor-pointer transition-all">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="font-medium text-gray-800">${g.numero_cnj_formatado || g.numero_cnj}</p>
+                                    <p class="text-xs text-gray-500">${new Date(g.criado_em).toLocaleDateString('pt-BR')}</p>
+                                </div>
+                                <span class="px-3 py-1 rounded-full text-xs font-medium ${
+                                    g.parecer === 'favoravel' ? 'bg-green-100 text-green-700' :
+                                    g.parecer === 'desfavoravel' ? 'bg-red-100 text-red-700' :
+                                    g.parecer === 'duvida' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-gray-100 text-gray-700'
+                                }">
+                                    ${g.parecer || g.status}
+                                </span>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    container.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">Nenhuma análise realizada ainda</p>';
+                }
+            } catch (error) {
+                console.error('Erro ao carregar histórico:', error);
+            }
+        }
+
+        // Iniciar análise
+        async function iniciarAnalise(numeroCnj, sobrescreverExistente = false) {
+            console.log('[Analise] Iniciando análise para:', numeroCnj, 'sobrescrever:', sobrescreverExistente);
+
+            // Verifica se já existe no histórico (se não estiver forçando sobrescrita)
+            if (!sobrescreverExistente) {
+                try {
+                    console.log('[Analise] Verificando se já existe...');
+                    const verificacao = await fetch(`/prestacao-contas/api/verificar-existente?numero_cnj=${encodeURIComponent(numeroCnj)}`, {
+                        headers: getAuthHeaders(false)
+                    });
+
+                    console.log('[Analise] Resposta verificação:', verificacao.status);
+                    if (verificacao.ok) {
+                        const dados = await verificacao.json();
+                        console.log('[Analise] Dados verificação:', dados);
+                        if (dados.existe) {
+                            // Mostra confirmação ao usuário
+                            console.log('[Analise] Processo existe, mostrando modal de confirmação');
+                            const confirmar = await mostrarConfirmacaoSobrescrita(dados);
+                            console.log('[Analise] Resposta do modal:', confirmar);
+                            if (confirmar === 'cancelar') {
+                                return; // Usuário cancelou
+                            } else if (confirmar === 'ver') {
+                                // Usuário quer ver o existente
+                                abrirResultado(dados.geracao_id);
+                                return;
+                            }
+                            // Se confirmar === 'refazer', continua com sobrescreverExistente = true
+                            sobrescreverExistente = true;
+                        }
+                    }
+                } catch (error) {
+                    console.warn('[Analise] Erro ao verificar existente:', error);
+                    // Continua o processamento mesmo com erro na verificação
+                }
+            }
+
+            // Mostra modal de progresso
+            document.getElementById('modal-progresso').classList.remove('hidden');
+            resetarProgresso();
+
+            try {
+                const response = await fetch('/prestacao-contas/api/analisar-stream', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        numero_cnj: numeroCnj,
+                        sobrescrever_existente: sobrescreverExistente
+                    })
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                let streamFinalizado = false;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const text = decoder.decode(value);
+                    const lines = text.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const evento = JSON.parse(line.slice(6));
+                                processarEvento(evento);
+                                // Marca como finalizado se recebeu resultado, erro ou fim
+                                if (evento.tipo === 'resultado' || evento.tipo === 'erro' || evento.tipo === 'fim') {
+                                    streamFinalizado = true;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+
+                // Se o stream terminou sem evento final, fecha o modal com erro
+                if (!streamFinalizado) {
+                    document.getElementById('modal-progresso').classList.add('hidden');
+                    mostrarErro('O processamento foi interrompido inesperadamente');
+                }
+
+            } catch (error) {
+                console.error('Erro:', error);
+                document.getElementById('modal-progresso').classList.add('hidden');
+                mostrarErro('Erro ao processar: ' + error.message);
+            }
+        }
+
+        // Processar evento SSE
+        function processarEvento(evento) {
+            console.log('[SSE] Evento recebido:', evento.tipo, evento);
+            document.getElementById('progresso-mensagem').textContent = evento.mensagem || '';
+
+            if (evento.progresso) {
+                document.getElementById('progresso-barra').style.width = evento.progresso + '%';
+            }
+
+            if (evento.etapa) {
+                atualizarEtapa(evento.etapa, evento.tipo);
+            }
+
+            if (evento.tipo === 'erro') {
+                document.getElementById('modal-progresso').classList.add('hidden');
+                mostrarErro(evento.mensagem);
+                return;
+            }
+
+            if (evento.tipo === 'fim') {
+                document.getElementById('modal-progresso').classList.add('hidden');
+                return;
+            }
+
+            // Quando encontra análise existente, carrega ela
+            if (evento.tipo === 'info' && evento.dados && evento.dados.geracao_id) {
+                console.log('[SSE] Análise existente encontrada, carregando ID:', evento.dados.geracao_id);
+                document.getElementById('modal-progresso').classList.add('hidden');
+                abrirResultado(evento.dados.geracao_id);
+                return;
+            }
+
+            if (evento.tipo === 'resultado' && evento.dados) {
+                document.getElementById('modal-progresso').classList.add('hidden');
+                // Busca dados completos (incluindo textos dos documentos) do backend
+                if (evento.dados.geracao_id) {
+                    console.log('[SSE] Resultado recebido, buscando dados completos...');
+                    abrirResultado(evento.dados.geracao_id);
+                } else {
+                    geracaoAtual = evento.dados;
+                    mostrarResultado(evento.dados);
+                }
+                carregarHistorico();
+            }
+        }
+
+        // Atualizar etapa visual
+        function atualizarEtapa(etapa, tipo) {
+            const statusDiv = document.getElementById(`etapa${etapa}-status`);
+            const iconDiv = document.getElementById(`etapa${etapa}-icon`);
+            const badge = document.getElementById(`etapa${etapa}-badge`);
+
+            if (tipo === 'etapa') {
+                statusDiv.classList.add('border-primary-200', 'bg-primary-50');
+                iconDiv.classList.remove('bg-gray-200');
+                iconDiv.classList.add('bg-primary-500');
+                iconDiv.querySelector('i').classList.remove('text-gray-400');
+                iconDiv.querySelector('i').classList.add('text-white');
+                badge.textContent = 'Em andamento';
+                badge.classList.remove('bg-gray-100', 'text-gray-500');
+                badge.classList.add('bg-primary-100', 'text-primary-700');
+            } else if (tipo === 'sucesso' || tipo === 'progresso') {
+                iconDiv.classList.remove('bg-primary-500');
+                iconDiv.classList.add('bg-green-500');
+                badge.textContent = 'Concluído';
+                badge.classList.remove('bg-primary-100', 'text-primary-700');
+                badge.classList.add('bg-green-100', 'text-green-700');
+            }
+        }
+
+        // Resetar progresso
+        function resetarProgresso() {
+            document.getElementById('progresso-barra').style.width = '0%';
+            document.getElementById('progresso-mensagem').textContent = 'Iniciando...';
+
+            for (let i = 1; i <= 5; i++) {
+                const statusDiv = document.getElementById(`etapa${i}-status`);
+                const iconDiv = document.getElementById(`etapa${i}-icon`);
+                const badge = document.getElementById(`etapa${i}-badge`);
+
+                statusDiv.classList.remove('border-primary-200', 'bg-primary-50');
+                iconDiv.classList.remove('bg-primary-500', 'bg-green-500');
+                iconDiv.classList.add('bg-gray-200');
+                iconDiv.querySelector('i').classList.remove('text-white');
+                iconDiv.querySelector('i').classList.add('text-gray-400');
+                badge.textContent = 'Aguardando';
+                badge.classList.remove('bg-primary-100', 'text-primary-700', 'bg-green-100', 'text-green-700');
+                badge.classList.add('bg-gray-100', 'text-gray-500');
+            }
+        }
+
+        // Mostrar resultado
+        function mostrarResultado(dados) {
+            const modal = document.getElementById('modal-resultado');
+            const header = document.getElementById('resultado-header');
+            const icon = document.getElementById('resultado-icon').querySelector('i');
+            const titulo = document.getElementById('resultado-titulo');
+
+            // Header por tipo de parecer
+            if (dados.parecer === 'favoravel') {
+                header.className = 'px-6 py-4 rounded-t-2xl flex items-center justify-between parecer-favoravel';
+                icon.className = 'fas fa-check text-white text-xl';
+                titulo.textContent = 'Parecer Favorável';
+            } else if (dados.parecer === 'desfavoravel') {
+                header.className = 'px-6 py-4 rounded-t-2xl flex items-center justify-between parecer-desfavoravel';
+                icon.className = 'fas fa-times text-white text-xl';
+                titulo.textContent = 'Parecer Desfavorável';
+            } else {
+                header.className = 'px-6 py-4 rounded-t-2xl flex items-center justify-between parecer-duvida';
+                icon.className = 'fas fa-question text-white text-xl';
+                titulo.textContent = 'Pendente de Esclarecimentos';
+            }
+
+            // Valores
+            document.getElementById('valor-bloqueado').textContent = dados.valor_bloqueado ? `R$ ${dados.valor_bloqueado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-';
+            document.getElementById('valor-utilizado').textContent = dados.valor_utilizado ? `R$ ${dados.valor_utilizado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-';
+            document.getElementById('valor-devolvido').textContent = dados.valor_devolvido ? `R$ ${dados.valor_devolvido.toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-';
+            document.getElementById('medicamento-info').textContent = dados.medicamento_pedido || dados.medicamento_comprado || '-';
+
+            // Fundamentação
+            document.getElementById('fundamentacao-content').innerHTML = marked.parse(dados.fundamentacao || '');
+
+            // Irregularidades
+            const irregSection = document.getElementById('irregularidades-section');
+            if (dados.irregularidades && dados.irregularidades.length > 0) {
+                irregSection.classList.remove('hidden');
+                document.getElementById('irregularidades-lista').innerHTML = dados.irregularidades.map(i => `<li class="text-red-700"><i class="fas fa-exclamation-triangle text-red-500 mr-2"></i>${i}</li>`).join('');
+            } else {
+                irregSection.classList.add('hidden');
+            }
+
+            // Perguntas
+            const perguntasSection = document.getElementById('perguntas-section');
+            if (dados.perguntas && dados.perguntas.length > 0) {
+                perguntasSection.classList.remove('hidden');
+                document.getElementById('perguntas-form').innerHTML = dados.perguntas.map((p, i) => `
+                    <div>
+                        <label class="block text-sm font-medium text-yellow-800 mb-1">${p}</label>
+                        <input type="text" data-pergunta="${p}" class="resposta-input w-full px-3 py-2 border border-yellow-200 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent">
+                    </div>
+                `).join('');
+            } else {
+                perguntasSection.classList.add('hidden');
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        // Abrir resultado do histórico
+        async function abrirResultado(geracaoId) {
+            console.log('[Resultado] Abrindo geração:', geracaoId);
+            try {
+                const response = await fetch(`/prestacao-contas/api/historico/${geracaoId}`, {
+                    headers: getAuthHeaders(false)
+                });
+                const dados = await response.json();
+                console.log('[Resultado] Dados recebidos:', dados);
+                console.log('[Resultado] extrato_subconta_texto:', dados.extrato_subconta_texto ? 'presente' : 'ausente');
+                console.log('[Resultado] peticao_inicial_texto:', dados.peticao_inicial_texto ? 'presente' : 'ausente');
+                console.log('[Resultado] peticao_prestacao_texto:', dados.peticao_prestacao_texto ? 'presente' : 'ausente');
+                console.log('[Resultado] documentos_anexos:', dados.documentos_anexos);
+                geracaoAtual = dados;
+                mostrarResultado(dados);
+            } catch (error) {
+                console.error('[Resultado] Erro:', error);
+                mostrarErro('Erro ao carregar análise');
+            }
+        }
+
+        // Fechar resultado
+        function fecharResultado() {
+            document.getElementById('modal-resultado').classList.add('hidden');
+        }
+
+        // Enviar respostas às perguntas
+        async function enviarRespostas() {
+            if (!geracaoAtual) return;
+
+            const respostas = {};
+            document.querySelectorAll('.resposta-input').forEach(input => {
+                if (input.value.trim()) {
+                    respostas[input.dataset.pergunta] = input.value.trim();
+                }
+            });
+
+            try {
+                const response = await fetch('/prestacao-contas/api/responder-duvida', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        geracao_id: geracaoAtual.geracao_id || geracaoAtual.id,
+                        respostas: respostas
+                    })
+                });
+
+                const dados = await response.json();
+                if (dados.sucesso) {
+                    geracaoAtual = { ...geracaoAtual, ...dados };
+                    mostrarResultado(geracaoAtual);
+                }
+            } catch (error) {
+                mostrarErro('Erro ao enviar respostas');
+            }
+        }
+
+        // Exportar DOCX
+        async function exportarDocx() {
+            if (!geracaoAtual) return;
+
+            try {
+                const response = await fetch('/prestacao-contas/api/exportar-parecer', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ geracao_id: geracaoAtual.geracao_id || geracaoAtual.id })
+                });
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `parecer_${geracaoAtual.numero_cnj || 'processo'}.docx`;
+                a.click();
+            } catch (error) {
+                mostrarErro('Erro ao exportar DOCX');
+            }
+        }
+
+        // Feedback
+        function abrirModalFeedback() {
+            document.getElementById('modal-feedback').classList.remove('hidden');
+        }
+
+        function fecharFeedback() {
+            document.getElementById('modal-feedback').classList.add('hidden');
+        }
+
+        async function enviarFeedback() {
+            if (!geracaoAtual || !avaliacaoSelecionada) return;
+
+            try {
+                await fetch('/prestacao-contas/api/feedback', {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                        geracao_id: geracaoAtual.geracao_id || geracaoAtual.id,
+                        avaliacao: avaliacaoSelecionada,
+                        comentario: document.getElementById('feedback-comentario').value
+                    })
+                });
+
+                fecharFeedback();
+                alert('Feedback enviado com sucesso!');
+            } catch (error) {
+                mostrarErro('Erro ao enviar feedback');
+            }
+        }
+
+        // Histórico lateral
+        function toggleHistorico() {
+            const painel = document.getElementById('painel-historico');
+            painel.classList.toggle('hidden');
+            painel.classList.toggle('translate-x-full');
+        }
+
+        // Mostrar erro
+        function mostrarErro(mensagem) {
+            document.getElementById('erro-mensagem').textContent = mensagem;
+            document.getElementById('toast-erro').classList.remove('hidden');
+            setTimeout(() => {
+                document.getElementById('toast-erro').classList.add('hidden');
+            }, 5000);
+        }
+
+        // Modal de documentos
+        function abrirModalDocumentos() {
+            console.log('[Docs] Abrindo modal de documentos');
+            console.log('[Docs] geracaoAtual:', geracaoAtual);
+
+            if (!geracaoAtual) {
+                mostrarErro('Nenhuma análise carregada');
+                return;
+            }
+
+            const docs = [];
+            const numeroCnj = geracaoAtual.numero_cnj;
+
+            // Adiciona petição inicial (com ID para visualizar PDF)
+            if (geracaoAtual.peticao_inicial_id) {
+                docs.push({
+                    id: geracaoAtual.peticao_inicial_id,
+                    tipo: 'Petição Inicial',
+                    temPdf: true,
+                    icone: 'fa-file-alt',
+                    cor: 'text-green-500'
+                });
+            }
+
+            // Adiciona petição de prestação (com ID para visualizar PDF)
+            if (geracaoAtual.peticao_prestacao_id) {
+                docs.push({
+                    id: geracaoAtual.peticao_prestacao_id,
+                    tipo: 'Petição de Prestação de Contas',
+                    temPdf: true,
+                    icone: 'fa-file-invoice-dollar',
+                    cor: 'text-teal-500'
+                });
+            }
+
+            // Adiciona petições relevantes (contexto)
+            if (geracaoAtual.peticoes_relevantes && geracaoAtual.peticoes_relevantes.length > 0) {
+                geracaoAtual.peticoes_relevantes.forEach((doc) => {
+                    docs.push({
+                        id: doc.id,
+                        tipo: doc.tipo || 'Petição Relevante',
+                        temPdf: true,
+                        icone: 'fa-file-contract',
+                        cor: 'text-purple-500'
+                    });
+                });
+            }
+
+            // Adiciona documentos anexos (todos têm ID)
+            if (geracaoAtual.documentos_anexos && geracaoAtual.documentos_anexos.length > 0) {
+                geracaoAtual.documentos_anexos.forEach((doc) => {
+                    docs.push({
+                        id: doc.id,
+                        tipo: doc.tipo || 'Documento Anexo',
+                        temPdf: true,
+                        icone: 'fa-file-pdf',
+                        cor: 'text-red-500'
+                    });
+                });
+            }
+
+            // Adiciona extrato da subconta (PDF se disponível, senão texto)
+            if (geracaoAtual.extrato_subconta_texto || geracaoAtual.extrato_subconta_pdf_base64) {
+                docs.push({
+                    id: 'extrato_subconta',
+                    tipo: 'Extrato da Subconta',
+                    texto: geracaoAtual.extrato_subconta_texto,
+                    temPdf: !!geracaoAtual.extrato_subconta_pdf_base64,
+                    isExtrato: true,  // Flag especial para usar endpoint diferente
+                    geracaoId: geracaoAtual.id,
+                    icone: 'fa-university',
+                    cor: 'text-blue-500'
+                });
+            }
+
+            // Atualiza info
+            const totalDocs = docs.length;
+            document.getElementById('modal-docs-info').textContent =
+                `${totalDocs} documento(s) analisado(s) - Processo ${geracaoAtual.numero_cnj_formatado || numeroCnj || ''}`;
+
+            // Renderiza lista de documentos
+            const lista = document.getElementById('lista-documentos');
+            if (docs.length === 0) {
+                lista.innerHTML = '<p class="text-gray-400 text-sm text-center py-8">Nenhum documento disponível</p>';
+            } else {
+                lista.innerHTML = docs.map((doc, index) => `
+                    <button
+                        onclick="visualizarDocumento(${index})"
+                        class="w-full text-left px-4 py-3 hover:bg-white border-b border-gray-200 transition-colors doc-item"
+                        data-index="${index}"
+                    >
+                        <div class="flex items-center gap-3">
+                            <i class="fas ${doc.icone} ${doc.cor}"></i>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-gray-800 truncate">${doc.tipo}</p>
+                                <p class="text-xs text-gray-500">${doc.temPdf ? 'PDF' : 'Texto'} - ID: ${doc.id}</p>
+                            </div>
+                        </div>
+                    </button>
+                `).join('');
+            }
+
+            // Salva docs e número do processo no escopo global
+            window.documentosAtuais = docs;
+            window.numeroCnjAtual = numeroCnj;
+
+            // Reseta visualizador
+            document.getElementById('visualizador-documento').innerHTML = `
+                <div class="h-full flex items-center justify-center text-gray-400">
+                    <div class="text-center">
+                        <i class="fas fa-file-pdf text-4xl mb-3 opacity-50"></i>
+                        <p>Selecione um documento para visualizar</p>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('modal-documentos').classList.remove('hidden');
+        }
+
+        async function visualizarDocumento(index) {
+            const docs = window.documentosAtuais || [];
+            if (index < 0 || index >= docs.length) return;
+
+            const doc = docs[index];
+            const visualizador = document.getElementById('visualizador-documento');
+
+            // Destaca item selecionado
+            document.querySelectorAll('.doc-item').forEach(el => el.classList.remove('bg-white', 'border-l-4', 'border-l-teal-500'));
+            document.querySelector(`.doc-item[data-index="${index}"]`)?.classList.add('bg-white', 'border-l-4', 'border-l-teal-500');
+
+            // Se não tem PDF, mostra texto
+            if (!doc.temPdf) {
+                visualizador.innerHTML = `
+                    <div class="p-4 border-b border-gray-200 bg-gray-50">
+                        <div class="flex items-center gap-3">
+                            <i class="fas ${doc.icone} ${doc.cor} text-xl"></i>
+                            <div>
+                                <h3 class="font-semibold text-gray-800">${doc.tipo}</h3>
+                                <p class="text-xs text-gray-500">Texto extraído</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex-1 overflow-auto p-4">
+                        <pre class="whitespace-pre-wrap text-sm text-gray-700 font-mono leading-relaxed">${escapeHtml(doc.texto || 'Conteúdo não disponível')}</pre>
+                    </div>
+                `;
+                return;
+            }
+
+            // Mostra loading
+            visualizador.innerHTML = `
+                <div class="h-full flex items-center justify-center text-gray-400">
+                    <div class="text-center">
+                        <i class="fas fa-spinner fa-spin text-4xl mb-3"></i>
+                        <p>Carregando PDF...</p>
+                    </div>
+                </div>
+            `;
+
+            try {
+                let response;
+
+                // Se é extrato da subconta, usa endpoint específico
+                if (doc.isExtrato && doc.geracaoId) {
+                    response = await fetch(`/prestacao-contas/api/extrato-subconta/${doc.geracaoId}`, {
+                        headers: getAuthHeaders(false)
+                    });
+                } else {
+                    // Outros documentos usam o endpoint de documento do TJ-MS
+                    const numeroCnj = window.numeroCnjAtual;
+                    response = await fetch(`/prestacao-contas/api/documento/${numeroCnj}/${doc.id}`, {
+                        headers: getAuthHeaders(false)
+                    });
+                }
+
+                if (!response.ok) {
+                    throw new Error('Erro ao carregar documento');
+                }
+
+                const data = await response.json();
+
+                // Exibe PDF em iframe
+                visualizador.innerHTML = `
+                    <div class="p-2 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <i class="fas ${doc.icone} ${doc.cor}"></i>
+                            <span class="font-medium text-gray-800 text-sm">${doc.tipo}</span>
+                        </div>
+                        <span class="text-xs text-gray-500">ID: ${doc.id}</span>
+                    </div>
+                    <iframe
+                        src="data:application/pdf;base64,${data.conteudo_base64}"
+                        class="w-full flex-1 border-0"
+                        style="min-height: calc(100% - 50px);"
+                        title="Visualização do documento"
+                    ></iframe>
+                `;
+
+            } catch (error) {
+                console.error('[Docs] Erro ao carregar PDF:', error);
+                visualizador.innerHTML = `
+                    <div class="h-full flex items-center justify-center text-red-400">
+                        <div class="text-center">
+                            <i class="fas fa-exclamation-triangle text-4xl mb-3"></i>
+                            <p>Erro ao carregar documento</p>
+                            <p class="text-sm mt-2">${error.message}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function fecharModalDocumentos() {
+            document.getElementById('modal-documentos').classList.add('hidden');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Modal de confirmação de sobrescrita
+        function mostrarConfirmacaoSobrescrita(dados) {
+            return new Promise((resolve) => {
+                // Determina o status para exibição
+                let statusText = '';
+                let statusColor = '';
+                let statusBg = '';
+                if (dados.erro) {
+                    statusText = 'Com erro';
+                    statusColor = 'text-red-600';
+                    statusBg = 'bg-red-50';
+                } else if (dados.parecer === 'favoravel') {
+                    statusText = 'Favorável';
+                    statusColor = 'text-green-600';
+                    statusBg = 'bg-green-50';
+                } else if (dados.parecer === 'desfavoravel') {
+                    statusText = 'Desfavorável';
+                    statusColor = 'text-red-600';
+                    statusBg = 'bg-red-50';
+                } else if (dados.parecer === 'duvida') {
+                    statusText = 'Dúvida';
+                    statusColor = 'text-amber-600';
+                    statusBg = 'bg-amber-50';
+                } else {
+                    statusText = dados.status || 'Processado';
+                    statusColor = 'text-gray-600';
+                    statusBg = 'bg-gray-50';
+                }
+
+                const modal = document.createElement('div');
+                modal.className = 'fixed inset-0 bg-gray-900/30 backdrop-blur-sm flex items-center justify-center z-50';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl border border-gray-200">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+                                <i class="fas fa-exclamation-triangle text-amber-500 text-xl"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-800">Processo já analisado</h3>
+                                <p class="text-sm text-gray-500">Este processo consta no histórico</p>
+                            </div>
+                        </div>
+                        <div class="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-100">
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Processo:</span>
+                                    <span class="text-gray-800 font-medium">${dados.numero_cnj_formatado || 'N/A'}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Analisado em:</span>
+                                    <span class="text-gray-800">${dados.criado_em || 'N/A'}</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-500">Resultado:</span>
+                                    <span class="px-2 py-0.5 rounded-full text-xs font-medium ${statusColor} ${statusBg}">${statusText}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-gray-600 text-sm mb-4">O que deseja fazer?</p>
+                        <div class="flex flex-col gap-2">
+                            <button id="btn-ver-existente" class="w-full px-4 py-2.5 bg-primary-600 hover:bg-primary-700 rounded-xl text-white font-medium transition-colors flex items-center justify-center gap-2 shadow-sm">
+                                <i class="fas fa-eye"></i> Ver análise existente
+                            </button>
+                            <button id="btn-refazer" class="w-full px-4 py-2.5 bg-amber-500 hover:bg-amber-600 rounded-xl text-white font-medium transition-colors flex items-center justify-center gap-2 shadow-sm">
+                                <i class="fas fa-redo"></i> Refazer análise
+                            </button>
+                            <button id="btn-cancelar-sobrescrita" class="w-full px-4 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-700 font-medium transition-colors flex items-center justify-center gap-2">
+                                <i class="fas fa-times"></i> Cancelar
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(modal);
+
+                // Event listeners
+                document.getElementById('btn-ver-existente').addEventListener('click', () => {
+                    modal.remove();
+                    resolve('ver');
+                });
+
+                document.getElementById('btn-refazer').addEventListener('click', () => {
+                    modal.remove();
+                    resolve('refazer');
+                });
+
+                document.getElementById('btn-cancelar-sobrescrita').addEventListener('click', () => {
+                    modal.remove();
+                    resolve('cancelar');
+                });
+
+                // Fechar com ESC
+                const handleEsc = (e) => {
+                    if (e.key === 'Escape') {
+                        modal.remove();
+                        document.removeEventListener('keydown', handleEsc);
+                        resolve('cancelar');
+                    }
+                };
+                document.addEventListener('keydown', handleEsc);
+            });
+        }
+
+        // Expor funções globalmente para os event handlers do HTML
+        window.abrirModalDocumentos = abrirModalDocumentos;
+        window.fecharModalDocumentos = fecharModalDocumentos;
+        window.visualizarDocumento = visualizarDocumento;
+        window.abrirModalFeedback = abrirModalFeedback;
+        window.fecharFeedback = fecharFeedback;
+        window.exportarDocx = exportarDocx;
+        window.fecharResultado = fecharResultado;
+        window.enviarRespostas = enviarRespostas;
+        window.abrirResultado = abrirResultado;
+        window.toggleHistorico = toggleHistorico;
+        window.mostrarConfirmacaoSobrescrita = mostrarConfirmacaoSobrescrita;
+    </script>
+
+</body>
+</html>

@@ -23,6 +23,11 @@ class GeradorPecasApp {
         // Observação do usuário para a IA
         this.observacaoUsuario = null;
 
+        // Dados para histórico de versões
+        this.versoesLista = [];
+        this.versaoSelecionada = null;
+        this.painelVersoesAberto = false;
+
         this.initEventListeners();
         this.checkAuth();
     }
@@ -489,10 +494,10 @@ class GeradorPecasApp {
         this.tipoPeca = data.tipo_peca;
         this.geracaoId = data.geracao_id;
         this.isNovaGeracao = isNova;
-        
+
         // Garante que o markdown é uma string limpa
         let markdown = data.minuta_markdown || '*Conteúdo não disponível*';
-        
+
         // Se vier como string JSON escapada, desescapa
         if (typeof markdown === 'string') {
             // Remove possíveis escapes extras de JSON
@@ -505,9 +510,17 @@ class GeradorPecasApp {
                 // Mantém como está se não for JSON
             }
         }
-        
+
         this.minutaMarkdown = markdown;
         this.historicoChat = [];
+
+        // Reset estado de versões
+        this.versoesLista = [];
+        this.versaoSelecionada = null;
+        this.painelVersoesAberto = false;
+        document.getElementById('painel-versoes').classList.add('hidden');
+        document.getElementById('versao-detalhe').classList.add('hidden');
+        document.getElementById('versoes-count').classList.add('hidden');
 
         // Atualiza título com tipo da peça e CNJ
         document.getElementById('editor-tipo-peca').textContent = this.formatarOpcao(data.tipo_peca);
@@ -521,9 +534,35 @@ class GeradorPecasApp {
 
         // Abre o modal do editor
         this.abrirModal('modal-editor');
-        
+
         // Atualiza histórico recente
         this.carregarHistoricoRecente();
+
+        // Carrega contagem de versões (em background)
+        this.carregarContagemVersoes();
+    }
+
+    async carregarContagemVersoes() {
+        if (!this.geracaoId) return;
+
+        try {
+            const response = await fetch(`${API_URL}/historico/${this.geracaoId}/versoes`, {
+                headers: { 'Authorization': `Bearer ${this.getToken()}` }
+            });
+
+            if (!response.ok) return;
+
+            const data = await response.json();
+
+            // Atualiza contador
+            const countEl = document.getElementById('versoes-count');
+            if (data.total_versoes > 0) {
+                countEl.textContent = data.total_versoes;
+                countEl.classList.remove('hidden');
+            }
+        } catch (error) {
+            console.error('Erro ao carregar contagem de versões:', error);
+        }
     }
 
     renderizarMinuta() {
@@ -1043,7 +1082,7 @@ class GeradorPecasApp {
 
             // Processa o markdown
             let markdown = data.minuta_markdown || '*Conteúdo não disponível*';
-            
+
             // Se vier como string JSON escapada, desescapa
             if (typeof markdown === 'string') {
                 try {
@@ -1054,21 +1093,32 @@ class GeradorPecasApp {
                     // Mantém como está
                 }
             }
-            
+
             this.minutaMarkdown = markdown;
-            
+
             // Carrega histórico de chat se existir
             this.historicoChat = data.historico_chat || [];
+
+            // Reset estado de versões
+            this.versoesLista = [];
+            this.versaoSelecionada = null;
+            this.painelVersoesAberto = false;
+            document.getElementById('painel-versoes').classList.add('hidden');
+            document.getElementById('versao-detalhe').classList.add('hidden');
+            document.getElementById('versoes-count').classList.add('hidden');
 
             // Atualiza UI
             document.getElementById('editor-tipo-peca').textContent = this.formatarOpcao(data.tipo_peca);
             document.getElementById('editor-cnj').textContent = data.cnj ? `• ${data.cnj}` : '';
             this.renderizarMinuta();
-            
+
             // Renderiza chat com histórico
             this.renderizarChatHistorico();
-            
+
             this.abrirModal('modal-editor');
+
+            // Carrega contagem de versões (em background)
+            this.carregarContagemVersoes();
 
             // Fecha painel de histórico (se estiver aberto)
             const painel = document.getElementById('painel-historico');
@@ -1152,6 +1202,17 @@ class GeradorPecasApp {
         if (!this.geracaoId || !this.minutaMarkdown) return;
 
         try {
+            // Obtém a última mensagem do usuário como descrição da alteração
+            let descricaoAlteracao = null;
+            if (this.historicoChat && this.historicoChat.length > 0) {
+                for (let i = this.historicoChat.length - 1; i >= 0; i--) {
+                    if (this.historicoChat[i].role === 'user') {
+                        descricaoAlteracao = this.historicoChat[i].content;
+                        break;
+                    }
+                }
+            }
+
             const response = await fetch(`${API_URL}/historico/${this.geracaoId}`, {
                 method: 'PUT',
                 headers: {
@@ -1160,14 +1221,29 @@ class GeradorPecasApp {
                 },
                 body: JSON.stringify({
                     minuta_markdown: this.minutaMarkdown,
-                    historico_chat: this.historicoChat
+                    historico_chat: this.historicoChat,
+                    descricao_alteracao: descricaoAlteracao
                 })
             });
 
             if (!response.ok) throw new Error('Erro ao salvar');
 
+            const data = await response.json();
+
             // Atualiza status discretamente
             document.getElementById('minuta-status').textContent = 'Salvo automaticamente';
+
+            // Se criou nova versão, atualiza contador e lista
+            if (data.versao) {
+                const countEl = document.getElementById('versoes-count');
+                countEl.textContent = data.versao.numero_versao;
+                countEl.classList.remove('hidden');
+
+                // Se o painel de versões estiver aberto, recarrega a lista
+                if (this.painelVersoesAberto) {
+                    await this.carregarVersoes();
+                }
+            }
 
         } catch (error) {
             console.error('Erro ao salvar automaticamente:', error);
@@ -1394,12 +1470,329 @@ class GeradorPecasApp {
         this.arquivosPdf = [];
         this.atualizarListaArquivos();
 
+        // Reset versões
+        this.versoesLista = [];
+        this.versaoSelecionada = null;
+        this.painelVersoesAberto = false;
+
         // Reset estrelas
         document.querySelectorAll('.estrela').forEach(btn => {
             btn.classList.remove('text-yellow-400');
             btn.classList.add('text-gray-300');
         });
         document.getElementById('btn-enviar-feedback').disabled = true;
+    }
+
+    // ==========================================
+    // Histórico de Versões
+    // ==========================================
+
+    toggleHistoricoVersoes() {
+        const painel = document.getElementById('painel-versoes');
+
+        if (this.painelVersoesAberto) {
+            // Fechar painel
+            painel.classList.add('hidden');
+            this.painelVersoesAberto = false;
+        } else {
+            // Abrir painel e carregar versões
+            painel.classList.remove('hidden');
+            this.painelVersoesAberto = true;
+            this.carregarVersoes();
+        }
+    }
+
+    async carregarVersoes() {
+        if (!this.geracaoId) return;
+
+        const lista = document.getElementById('versoes-lista');
+        lista.innerHTML = `
+            <div class="text-center py-8 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p class="text-sm">Carregando versões...</p>
+            </div>
+        `;
+
+        try {
+            const response = await fetch(`${API_URL}/historico/${this.geracaoId}/versoes`, {
+                headers: { 'Authorization': `Bearer ${this.getToken()}` }
+            });
+
+            if (!response.ok) throw new Error('Erro ao carregar versões');
+
+            const data = await response.json();
+            this.versoesLista = data.versoes;
+
+            // Atualiza contador
+            const countEl = document.getElementById('versoes-count');
+            if (data.total_versoes > 0) {
+                countEl.textContent = data.total_versoes;
+                countEl.classList.remove('hidden');
+            } else {
+                countEl.classList.add('hidden');
+            }
+
+            this.renderizarVersoes();
+
+        } catch (error) {
+            console.error('Erro ao carregar versões:', error);
+            lista.innerHTML = `
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fas fa-exclamation-circle text-2xl mb-2 text-red-400"></i>
+                    <p class="text-sm">Erro ao carregar versões</p>
+                </div>
+            `;
+        }
+    }
+
+    renderizarVersoes() {
+        const lista = document.getElementById('versoes-lista');
+
+        if (this.versoesLista.length === 0) {
+            lista.innerHTML = `
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fas fa-code-branch text-3xl mb-3 opacity-50"></i>
+                    <p class="text-sm font-medium">Nenhuma versão registrada</p>
+                    <p class="text-xs mt-1">As versões aparecerão aqui após edições</p>
+                </div>
+            `;
+            return;
+        }
+
+        lista.innerHTML = this.versoesLista.map((versao, index) => {
+            const isAtual = index === 0;
+            const badgeClass = this.getBadgeClass(versao.origem);
+            const badgeText = this.getBadgeText(versao.origem);
+            const dataFormatada = versao.criado_em
+                ? new Date(versao.criado_em).toLocaleString('pt-BR', {
+                    day: '2-digit', month: '2-digit', year: '2-digit',
+                    hour: '2-digit', minute: '2-digit'
+                })
+                : 'Data desconhecida';
+
+            return `
+                <div class="versao-item p-3 bg-white border ${isAtual ? 'border-indigo-300 bg-indigo-50' : 'border-gray-100'} rounded-xl cursor-pointer hover:border-indigo-300 hover:bg-indigo-50/50"
+                     onclick="app.selecionarVersao(${versao.id})" data-versao-id="${versao.id}">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-semibold text-gray-800">v${versao.numero_versao}</span>
+                            ${isAtual ? '<span class="text-xs text-indigo-600 font-medium">(atual)</span>' : ''}
+                        </div>
+                        <span class="versao-badge ${badgeClass}">${badgeText}</span>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-1">
+                        <i class="fas fa-clock mr-1"></i>${dataFormatada}
+                    </p>
+                    ${versao.descricao_alteracao ? `
+                        <p class="text-xs text-gray-600 truncate mt-1" title="${this.escapeHtml(versao.descricao_alteracao)}">
+                            <i class="fas fa-comment mr-1 text-gray-400"></i>${this.escapeHtml(versao.descricao_alteracao.substring(0, 50))}${versao.descricao_alteracao.length > 50 ? '...' : ''}
+                        </p>
+                    ` : ''}
+                    <p class="text-xs mt-1 ${versao.resumo_diff.includes('+') ? 'text-green-600' : 'text-gray-400'}">
+                        ${versao.resumo_diff}
+                    </p>
+                </div>
+            `;
+        }).join('');
+    }
+
+    getBadgeClass(origem) {
+        switch (origem) {
+            case 'geracao_inicial':
+                return 'versao-badge-inicial';
+            case 'edicao_chat':
+                return 'versao-badge-edicao';
+            case 'edicao_manual':
+                return 'versao-badge-restauracao';
+            default:
+                return 'versao-badge-inicial';
+        }
+    }
+
+    getBadgeText(origem) {
+        switch (origem) {
+            case 'geracao_inicial':
+                return 'Inicial';
+            case 'edicao_chat':
+                return 'Edição';
+            case 'edicao_manual':
+                return 'Restaurado';
+            default:
+                return origem;
+        }
+    }
+
+    async selecionarVersao(versaoId) {
+        this.versaoSelecionada = versaoId;
+
+        // Atualiza visual da seleção
+        document.querySelectorAll('.versao-item').forEach(el => {
+            el.classList.remove('active');
+        });
+        const itemSelecionado = document.querySelector(`[data-versao-id="${versaoId}"]`);
+        if (itemSelecionado) {
+            itemSelecionado.classList.add('active');
+        }
+
+        // Carrega detalhes da versão
+        try {
+            const response = await fetch(`${API_URL}/historico/${this.geracaoId}/versoes/${versaoId}`, {
+                headers: { 'Authorization': `Bearer ${this.getToken()}` }
+            });
+
+            if (!response.ok) throw new Error('Erro ao carregar versão');
+
+            const versao = await response.json();
+            this.mostrarDetalheVersao(versao);
+
+        } catch (error) {
+            console.error('Erro ao carregar detalhes da versão:', error);
+            this.showToast('Erro ao carregar versão', 'error');
+        }
+    }
+
+    mostrarDetalheVersao(versao) {
+        const detalhePanel = document.getElementById('versao-detalhe');
+        const diffContainer = document.getElementById('versao-diff');
+
+        detalhePanel.classList.remove('hidden');
+
+        if (versao.diff_anterior) {
+            const diff = versao.diff_anterior;
+            let diffHtml = '';
+
+            // Mostra linhas adicionadas
+            if (diff.linhas_adicionadas && diff.linhas_adicionadas.length > 0) {
+                diffHtml += `<div class="mb-2"><span class="text-xs text-green-600 font-medium">+ Adicionadas (${diff.total_adicionadas}):</span></div>`;
+                diff.linhas_adicionadas.slice(0, 10).forEach(linha => {
+                    diffHtml += `<div class="diff-line diff-added">+ ${this.escapeHtml(linha.substring(0, 100))}</div>`;
+                });
+                if (diff.linhas_adicionadas.length > 10) {
+                    diffHtml += `<div class="text-xs text-gray-400 mt-1">... e mais ${diff.linhas_adicionadas.length - 10} linha(s)</div>`;
+                }
+            }
+
+            // Mostra linhas removidas
+            if (diff.linhas_removidas && diff.linhas_removidas.length > 0) {
+                diffHtml += `<div class="mt-3 mb-2"><span class="text-xs text-red-600 font-medium">- Removidas (${diff.total_removidas}):</span></div>`;
+                diff.linhas_removidas.slice(0, 10).forEach(linha => {
+                    diffHtml += `<div class="diff-line diff-removed">- ${this.escapeHtml(linha.substring(0, 100))}</div>`;
+                });
+                if (diff.linhas_removidas.length > 10) {
+                    diffHtml += `<div class="text-xs text-gray-400 mt-1">... e mais ${diff.linhas_removidas.length - 10} linha(s)</div>`;
+                }
+            }
+
+            if (!diffHtml) {
+                diffHtml = '<p class="text-gray-400 text-center py-4">Versão inicial - sem alterações anteriores</p>';
+            }
+
+            diffContainer.innerHTML = diffHtml;
+        } else {
+            diffContainer.innerHTML = '<p class="text-gray-400 text-center py-4">Versão inicial - sem alterações anteriores</p>';
+        }
+    }
+
+    fecharDetalheVersao() {
+        document.getElementById('versao-detalhe').classList.add('hidden');
+        this.versaoSelecionada = null;
+
+        // Remove seleção visual
+        document.querySelectorAll('.versao-item').forEach(el => {
+            el.classList.remove('active');
+        });
+    }
+
+    async verConteudoVersao() {
+        if (!this.versaoSelecionada) return;
+
+        try {
+            const response = await fetch(`${API_URL}/historico/${this.geracaoId}/versoes/${this.versaoSelecionada}`, {
+                headers: { 'Authorization': `Bearer ${this.getToken()}` }
+            });
+
+            if (!response.ok) throw new Error('Erro ao carregar versão');
+
+            const versao = await response.json();
+
+            // Preenche modal
+            document.getElementById('modal-versao-titulo').textContent = `Versão ${versao.numero_versao}`;
+            document.getElementById('modal-versao-data').textContent = versao.criado_em
+                ? new Date(versao.criado_em).toLocaleString('pt-BR')
+                : 'Data desconhecida';
+
+            const conteudoEl = document.getElementById('modal-versao-conteudo');
+            if (typeof marked !== 'undefined') {
+                conteudoEl.innerHTML = marked.parse(versao.conteudo || '');
+            } else {
+                conteudoEl.innerHTML = versao.conteudo || '';
+            }
+
+            // Abre modal
+            document.getElementById('modal-versao-completa').classList.remove('hidden');
+
+        } catch (error) {
+            console.error('Erro ao carregar conteúdo:', error);
+            this.showToast('Erro ao carregar conteúdo da versão', 'error');
+        }
+    }
+
+    fecharModalVersao() {
+        document.getElementById('modal-versao-completa').classList.add('hidden');
+    }
+
+    async restaurarVersaoSelecionada() {
+        if (!this.versaoSelecionada) {
+            this.showToast('Selecione uma versão primeiro', 'warning');
+            return;
+        }
+
+        if (!confirm('Tem certeza que deseja restaurar esta versão? O texto atual será salvo como uma nova versão antes da restauração.')) {
+            return;
+        }
+
+        await this.restaurarVersao(this.versaoSelecionada);
+    }
+
+    async restaurarVersaoDoModal() {
+        if (!this.versaoSelecionada) return;
+
+        if (!confirm('Tem certeza que deseja restaurar esta versão? O texto atual será salvo como uma nova versão antes da restauração.')) {
+            return;
+        }
+
+        this.fecharModalVersao();
+        await this.restaurarVersao(this.versaoSelecionada);
+    }
+
+    async restaurarVersao(versaoId) {
+        try {
+            const response = await fetch(`${API_URL}/historico/${this.geracaoId}/versoes/${versaoId}/restaurar`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${this.getToken()}` }
+            });
+
+            if (!response.ok) throw new Error('Erro ao restaurar versão');
+
+            const data = await response.json();
+
+            // Atualiza a minuta com o conteúdo restaurado
+            this.minutaMarkdown = data.conteudo;
+            this.renderizarMinuta();
+
+            // Recarrega lista de versões
+            await this.carregarVersoes();
+
+            // Fecha detalhe
+            this.fecharDetalheVersao();
+
+            this.showToast(`Versão restaurada! Nova versão: v${data.nova_versao.numero_versao}`, 'success');
+            this.destacarMinuta();
+
+        } catch (error) {
+            console.error('Erro ao restaurar versão:', error);
+            this.showToast('Erro ao restaurar versão', 'error');
+        }
     }
 }
 
@@ -1419,6 +1812,16 @@ function toggleHistorico() {
 
 function fecharModalEditor() {
     document.getElementById('modal-editor').classList.add('hidden');
+
+    // Fecha painel de versões se estiver aberto
+    if (app && app.painelVersoesAberto) {
+        document.getElementById('painel-versoes').classList.add('hidden');
+        app.painelVersoesAberto = false;
+    }
+
+    // Fecha detalhe de versão se estiver aberto
+    document.getElementById('versao-detalhe').classList.add('hidden');
+
     // Abrir modal de feedback apenas se for nova geração
     if (app && app.isNovaGeracao) {
         document.getElementById('modal-feedback').classList.remove('hidden');

@@ -56,8 +56,44 @@ class GeracaoPeca(Base):
     # Relacionamento com feedback
     feedback = relationship("FeedbackPeca", back_populates="geracao", uselist=False)
 
+    # Relacionamento com versões
+    versoes = relationship("VersaoPeca", back_populates="geracao", cascade="all, delete-orphan", order_by="VersaoPeca.numero_versao")
+
     def __repr__(self):
         return f"<GeracaoPeca(id={self.id}, cnj='{self.numero_cnj}', tipo='{self.tipo_peca}')>"
+
+
+class VersaoPeca(Base):
+    """Armazena versões do texto gerado para histórico de alterações"""
+    __tablename__ = "versoes_pecas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    geracao_id = Column(Integer, ForeignKey("geracoes_pecas.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Número da versão (1, 2, 3, ...)
+    numero_versao = Column(Integer, nullable=False, default=1)
+
+    # Conteúdo completo do texto nesta versão
+    conteudo = Column(Text, nullable=False)
+
+    # Origem da versão: 'geracao_inicial', 'edicao_chat', 'edicao_manual'
+    origem = Column(String(30), nullable=False, default='geracao_inicial')
+
+    # Mensagem/descrição da alteração (para edições via chat, guarda a mensagem do usuário)
+    descricao_alteracao = Column(Text, nullable=True)
+
+    # Diff em relação à versão anterior (formato JSON ou texto)
+    # Formato: {"adicionadas": [...], "removidas": [...], "modificadas": [...]}
+    diff_anterior = Column(JSON, nullable=True)
+
+    # Timestamps
+    criado_em = Column(DateTime, default=datetime.utcnow)
+
+    # Relacionamentos
+    geracao = relationship("GeracaoPeca", back_populates="versoes")
+
+    def __repr__(self):
+        return f"<VersaoPeca(id={self.id}, geracao={self.geracao_id}, versao={self.numero_versao})>"
 
 
 class FeedbackPeca(Base):

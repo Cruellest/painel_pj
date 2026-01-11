@@ -2,108 +2,185 @@
 """
 Identificador de Petição de Prestação de Contas
 
-Utiliza estratégia em 2 níveis:
-1. Regex (rápido) - Busca padrões conhecidos de prestação de contas
-2. LLM (quando regex inconclusivo) - Usa modelo pequeno para classificar
+Utiliza LLM para classificar petições e documentos.
+O prompt é configurável via painel admin (/admin/prompts-config).
 
 Autor: LAB/PGE-MS
 """
 
-import re
+import json
 import logging
-from dataclasses import dataclass
-from typing import Optional, List, Tuple
-from datetime import datetime
+import re
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional, List
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
 
-# =====================================================
-# PADRÕES REGEX PARA IDENTIFICAÇÃO
-# =====================================================
+class TipoDocumento(str, Enum):
+    """Tipos de documentos identificáveis"""
+    PETICAO_PRESTACAO = "PETICAO_PRESTACAO"
+    PETICAO_RELEVANTE = "PETICAO_RELEVANTE"
+    NOTA_FISCAL = "NOTA_FISCAL"
+    COMPROVANTE = "COMPROVANTE"
+    IRRELEVANTE = "IRRELEVANTE"
 
-# Padrões fortes que indicam prestação de contas
-PADROES_PRESTACAO_FORTE = [
-    r"presta[çc][aã]o\s+de\s+contas?",
-    r"comprova[çc][aã]o\s+d[eo]s?\s+gasto",
-    r"comprova[çc][aã]o\s+d[ao]?\s+utiliza[çc][aã]o",
-    r"comprova[çc][aã]o\s+d[ao]?\s+aquisi[çc][aã]o",
-    r"prestar\s+contas?\s+d[ao]",
-    r"notas?\s+fiscais?\s+em\s+anexo",
-    r"comprovo\s+a\s+aquisi[çc][aã]o",
-    r"demonstra[çc][aã]o\s+d[eo]s?\s+gasto",
-]
 
-# Padrões médios que podem indicar prestação de contas
-PADROES_PRESTACAO_MEDIO = [
-    r"notas?\s+fiscais?",
-    r"comprovantes?\s+de\s+pagamento",
-    r"comprovantes?\s+de\s+aquisi[çc][aã]o",
-    r"medica[çcm]ento\s+(adquirido|comprado|utilizado)",
-    r"valor\s+(bloqueado|levantado|utilizado)",
-    r"tratamento\s+(realizado|efetuado)",
-    r"recibo[s]?\s+d[aeo]",
-    r"cup[oa][mn]\s+fiscal",
-]
+# Prompt padrão (usado se não houver configuração no admin)
+PROMPT_IDENTIFICACAO_PADRAO = """Analise o documento abaixo e classifique-o em relação a um processo de PRESTAÇÃO DE CONTAS de medicamentos judiciais.
 
-# Padrões que indicam que NÃO é prestação de contas
-PADROES_NEGATIVO = [
-    r"peti[çc][aã]o\s+inicial",
-    r"tutela\s+(de\s+urg[êe]ncia|antecipada)",
-    r"requerer?\s+(a\s+)?tutela",
-    r"indefere",
-    r"mandado\s+de\s+cita[çc][aã]o",
-    r"contesta[çc][aã]o",
-    r"replica",
-    r"recurso",
-    r"apela[çc][aã]o",
-    r"agravo",
-    r"embargo",
-]
+REGRA PRINCIPAL: Na dúvida, classifique como PETICAO_RELEVANTE. Só use IRRELEVANTE para documentos claramente não relacionados ao mérito do processo.
+
+TIPOS DE DOCUMENTOS:
+
+1. PETICAO_PRESTACAO - Petição que apresenta PRESTAÇÃO DE CONTAS:
+   - Petição do AUTOR ou TERCEIRO INTERESSADO (farmácia, home care, prestador de serviço)
+   - Menciona expressamente "prestação de contas"
+   - Informa compra do medicamento ou serviço determinado judicialmente
+   - Apresenta ou menciona notas fiscais/recibos de compra
+   - Demonstra como o dinheiro bloqueado foi utilizado
+   - Solicita arquivamento ou devolução de saldo
+
+   IMPORTANTE: Petições do ESTADO, PGE, Fazenda Pública ou advogados públicos NUNCA são PETICAO_PRESTACAO.
+   Petições de FARMÁCIAS, HOME CARE ou prestadores de serviço que prestam contas SÃO PETICAO_PRESTACAO.
+
+2. PETICAO_RELEVANTE - USE ESTA CLASSIFICAÇÃO GENEROSAMENTE para qualquer documento que contenha:
+   - Petição inicial do processo (pedido original do medicamento)
+   - Manifestações do Estado/PGE sobre a prestação de contas
+   - Decisões judiciais sobre bloqueio/liberação de valores
+   - Pedidos de complementação ou esclarecimentos
+   - Petições mencionando valores, medicamentos ou dinheiro
+   - Despachos sobre o andamento do processo
+   - Manifestações sobre cumprimento de obrigação
+   - Qualquer documento que mencione: medicamento, bloqueio, subconta, valor, prestação, comprovante
+   - Petições do Estado/PGE pedindo providências ou informações
+
+3. NOTA_FISCAL - Documento fiscal/comercial:
+   - Notas fiscais de compra de medicamento
+   - Cupons fiscais
+   - Recibos de compra
+   - Orçamentos de farmácia
+
+4. COMPROVANTE - Comprovantes financeiros:
+   - Comprovantes de transferência/PIX
+   - Comprovantes de pagamento
+   - Extratos bancários
+   - Recibos de depósito
+
+5. IRRELEVANTE - SOMENTE documentos claramente não relacionados ao mérito:
+   - Procurações (substabelecimentos, mandatos)
+   - Certidões de publicação/intimação
+   - Comprovantes de distribuição
+   - Documentos pessoais (RG, CPF)
+   - Petições APENAS sobre custas processuais
+   - Petições APENAS sobre honorários advocatícios
+   - ARs e avisos de recebimento
+
+TEXTO DO DOCUMENTO:
+{texto}
+
+Responda APENAS com o JSON abaixo (sem explicações adicionais):
+{{
+  "tipo": "PETICAO_PRESTACAO" | "PETICAO_RELEVANTE" | "NOTA_FISCAL" | "COMPROVANTE" | "IRRELEVANTE",
+  "confianca": 0.0 a 1.0,
+  "resumo": "breve descrição do conteúdo (max 100 caracteres)",
+  "menciona_anexos": true | false,
+  "descricao_anexos": "descrição dos anexos mencionados ou null"
+}}"""
 
 
 @dataclass
 class ResultadoIdentificacao:
-    """Resultado da identificação de petição"""
-    e_prestacao_contas: bool
-    metodo: str  # 'regex_forte', 'regex_medio', 'llm', 'negativo'
+    """Resultado da identificação de petição/documento"""
+    tipo_documento: TipoDocumento
+    metodo: str  # 'llm', 'llm_erro', 'vazio'
     confianca: float  # 0.0 a 1.0
-    padroes_encontrados: List[str] = None
+    resumo: str = ""
+    menciona_anexos: bool = False
+    descricao_anexos: Optional[str] = None
     explicacao: Optional[str] = None
 
-    def __post_init__(self):
-        if self.padroes_encontrados is None:
-            self.padroes_encontrados = []
+    # Compatibilidade retroativa
+    @property
+    def e_prestacao_contas(self) -> bool:
+        return self.tipo_documento == TipoDocumento.PETICAO_PRESTACAO
+
+    @property
+    def e_relevante(self) -> bool:
+        return self.tipo_documento in [
+            TipoDocumento.PETICAO_PRESTACAO,
+            TipoDocumento.PETICAO_RELEVANTE,
+            TipoDocumento.NOTA_FISCAL,
+            TipoDocumento.COMPROVANTE
+        ]
+
+    @property
+    def deve_enviar_como_imagem(self) -> bool:
+        return self.tipo_documento in [
+            TipoDocumento.NOTA_FISCAL,
+            TipoDocumento.COMPROVANTE
+        ]
+
+
+def _buscar_prompt_admin(db: Session = None) -> Optional[str]:
+    """
+    Busca o prompt de identificação configurado no admin.
+    Retorna None se não encontrar.
+    """
+    if not db:
+        return None
+
+    try:
+        from admin.models import PromptConfig
+
+        prompt_config = db.query(PromptConfig).filter(
+            PromptConfig.sistema == "prestacao_contas",
+            PromptConfig.nome == "prompt_identificar_prestacao",
+            PromptConfig.is_active == True
+        ).first()
+
+        if prompt_config and prompt_config.conteudo:
+            return prompt_config.conteudo
+
+    except Exception as e:
+        logger.warning(f"Erro ao buscar prompt do admin: {e}")
+
+    return None
 
 
 class IdentificadorPeticoes:
     """
-    Identificador de petições de prestação de contas.
-    Usa estratégia em 2 níveis: regex primeiro, LLM se inconclusivo.
+    Identificador de petições de prestação de contas usando LLM.
+    O prompt é buscado do painel admin ou usa o padrão.
     """
 
     def __init__(
         self,
-        usar_llm: bool = True,
         modelo_llm: str = "gemini-2.0-flash-lite",
-        temperatura_llm: float = 0.1
+        temperatura_llm: float = 0.1,
+        db: Session = None,
+        usar_llm: bool = True,  # Mantido para compatibilidade, mas sempre usa LLM
     ):
         """
         Args:
-            usar_llm: Se True, usa LLM quando regex for inconclusivo
             modelo_llm: Modelo de IA a usar (configurável via admin)
             temperatura_llm: Temperatura da IA (configurável via admin)
+            db: Sessão do banco para buscar prompt do admin
+            usar_llm: Ignorado (mantido para compatibilidade)
         """
-        self.usar_llm = usar_llm
         self.modelo_llm = modelo_llm
         self.temperatura_llm = temperatura_llm
-        self._padroes_forte = [re.compile(p, re.IGNORECASE) for p in PADROES_PRESTACAO_FORTE]
-        self._padroes_medio = [re.compile(p, re.IGNORECASE) for p in PADROES_PRESTACAO_MEDIO]
-        self._padroes_negativo = [re.compile(p, re.IGNORECASE) for p in PADROES_NEGATIVO]
+        self.db = db
+
+        # Busca prompt do admin ou usa padrão
+        self.prompt_template = _buscar_prompt_admin(db) or PROMPT_IDENTIFICACAO_PADRAO
 
     def identificar(self, texto: str) -> ResultadoIdentificacao:
         """
         Identifica se o texto é uma petição de prestação de contas.
+        Método síncrono que delega para o método async.
 
         Args:
             texto: Texto da petição
@@ -111,166 +188,71 @@ class IdentificadorPeticoes:
         Returns:
             ResultadoIdentificacao
         """
+        import asyncio
+
         if not texto or len(texto.strip()) < 50:
             return ResultadoIdentificacao(
-                e_prestacao_contas=False,
+                tipo_documento=TipoDocumento.IRRELEVANTE,
                 metodo="vazio",
                 confianca=1.0,
                 explicacao="Texto muito curto ou vazio"
             )
 
-        # Limita o texto para análise (primeiras 5000 caracteres geralmente são suficientes)
-        texto_analise = texto[:5000].lower()
+        # Executa identificação com LLM
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Se já estamos em um loop async, retorna um resultado que será
+                # resolvido pelo chamador async
+                return self._identificar_sync_fallback(texto)
+            else:
+                return loop.run_until_complete(self._identificar_com_llm(texto))
+        except RuntimeError:
+            # Não há loop de eventos, cria um novo
+            return asyncio.run(self._identificar_com_llm(texto))
 
-        # Etapa 1: Verifica padrões negativos
-        resultado_negativo = self._verificar_padroes_negativos(texto_analise)
-        if resultado_negativo.e_prestacao_contas == False and resultado_negativo.confianca > 0.8:
-            return resultado_negativo
-
-        # Etapa 2: Verifica padrões fortes
-        resultado_forte = self._verificar_padroes_fortes(texto_analise)
-        if resultado_forte.confianca > 0.7:
-            return resultado_forte
-
-        # Etapa 3: Verifica padrões médios
-        resultado_medio = self._verificar_padroes_medios(texto_analise)
-        if resultado_medio.confianca > 0.6:
-            return resultado_medio
-
-        # Etapa 4: Se inconclusivo e LLM habilitado, usa LLM
-        if self.usar_llm and resultado_medio.confianca < 0.5:
-            return self._identificar_com_llm(texto)
-
-        # Retorna resultado médio se não usar LLM
-        return resultado_medio
-
-    def _verificar_padroes_negativos(self, texto: str) -> ResultadoIdentificacao:
-        """Verifica se há padrões que indicam que NÃO é prestação de contas"""
-        matches = []
-        for padrao in self._padroes_negativo:
-            if padrao.search(texto):
-                matches.append(padrao.pattern)
-
-        if len(matches) >= 2:
-            return ResultadoIdentificacao(
-                e_prestacao_contas=False,
-                metodo="negativo",
-                confianca=0.9,
-                padroes_encontrados=matches,
-                explicacao=f"Encontrados {len(matches)} padrões negativos"
-            )
-        elif len(matches) == 1:
-            return ResultadoIdentificacao(
-                e_prestacao_contas=False,
-                metodo="negativo",
-                confianca=0.6,
-                padroes_encontrados=matches,
-                explicacao="Encontrado padrão negativo"
-            )
-
+    def _identificar_sync_fallback(self, texto: str) -> ResultadoIdentificacao:
+        """Fallback síncrono que sempre retorna incerto para forçar uso async"""
         return ResultadoIdentificacao(
-            e_prestacao_contas=False,
-            metodo="negativo",
-            confianca=0.0
+            tipo_documento=TipoDocumento.IRRELEVANTE,
+            metodo="sync_fallback",
+            confianca=0.0,
+            explicacao="Use o método async identificar_async para identificação com LLM"
         )
 
-    def _verificar_padroes_fortes(self, texto: str) -> ResultadoIdentificacao:
-        """Verifica padrões fortes de prestação de contas"""
-        matches = []
-        for padrao in self._padroes_forte:
-            match = padrao.search(texto)
-            if match:
-                matches.append(match.group())
+    async def identificar_async(self, texto: str) -> ResultadoIdentificacao:
+        """
+        Identifica o tipo do documento (versão async).
 
-        if matches:
-            confianca = min(0.95, 0.7 + (len(matches) * 0.1))
+        Args:
+            texto: Texto do documento
+
+        Returns:
+            ResultadoIdentificacao com tipo, confiança e info sobre anexos
+        """
+        if not texto or len(texto.strip()) < 50:
             return ResultadoIdentificacao(
-                e_prestacao_contas=True,
-                metodo="regex_forte",
-                confianca=confianca,
-                padroes_encontrados=matches,
-                explicacao=f"Encontrados {len(matches)} padrões fortes de prestação de contas"
+                tipo_documento=TipoDocumento.IRRELEVANTE,
+                metodo="vazio",
+                confianca=1.0,
+                explicacao="Texto muito curto ou vazio"
             )
 
-        return ResultadoIdentificacao(
-            e_prestacao_contas=False,
-            metodo="regex_forte",
-            confianca=0.0
-        )
-
-    def _verificar_padroes_medios(self, texto: str) -> ResultadoIdentificacao:
-        """Verifica padrões médios de prestação de contas"""
-        matches = []
-        for padrao in self._padroes_medio:
-            match = padrao.search(texto)
-            if match:
-                matches.append(match.group())
-
-        if len(matches) >= 3:
-            return ResultadoIdentificacao(
-                e_prestacao_contas=True,
-                metodo="regex_medio",
-                confianca=0.75,
-                padroes_encontrados=matches,
-                explicacao=f"Encontrados {len(matches)} padrões médios de prestação de contas"
-            )
-        elif len(matches) >= 2:
-            return ResultadoIdentificacao(
-                e_prestacao_contas=True,
-                metodo="regex_medio",
-                confianca=0.55,
-                padroes_encontrados=matches,
-                explicacao=f"Encontrados {len(matches)} padrões médios"
-            )
-        elif len(matches) == 1:
-            return ResultadoIdentificacao(
-                e_prestacao_contas=False,
-                metodo="regex_medio",
-                confianca=0.3,
-                padroes_encontrados=matches,
-                explicacao="Apenas 1 padrão médio encontrado"
-            )
-
-        return ResultadoIdentificacao(
-            e_prestacao_contas=False,
-            metodo="regex_medio",
-            confianca=0.2,
-            explicacao="Nenhum padrão de prestação de contas encontrado"
-        )
+        return await self._identificar_com_llm(texto)
 
     async def _identificar_com_llm(self, texto: str) -> ResultadoIdentificacao:
         """
-        Usa LLM para identificar se é prestação de contas.
-        Usa modelo e temperatura configurados via admin/prompts-config.
+        Usa LLM para classificar o documento.
+        Retorna tipo, confiança, resumo e se menciona anexos.
         """
         try:
             from services.gemini_service import GeminiService
 
             # Limita texto para não estourar contexto
-            texto_truncado = texto[:3000]
+            texto_truncado = texto[:6000]
 
-            prompt = f"""Analise o texto abaixo e determine se é uma PETIÇÃO DE PRESTAÇÃO DE CONTAS em processo judicial de medicamentos.
-
-Uma petição de prestação de contas tipicamente:
-- Informa que o autor comprou o medicamento determinado judicialmente
-- Apresenta notas fiscais ou recibos como comprovação
-- Demonstra como o dinheiro bloqueado/levantado foi utilizado
-- Solicita arquivamento ou devolução de saldo excedente
-
-IMPORTANTE: NÃO é prestação de contas se for:
-- Petição inicial pedindo medicamento
-- Tutela de urgência
-- Contestação ou réplica
-- Recurso ou agravo
-- Manifestação sobre outra questão
-
-TEXTO:
-{texto_truncado}
-
-Responda APENAS com:
-SIM - se for claramente uma prestação de contas
-NAO - se não for prestação de contas
-INCERTO - se não for possível determinar com certeza"""
+            # Monta o prompt usando o template (do admin ou padrão)
+            prompt = self.prompt_template.format(texto=texto_truncado)
 
             service = GeminiService()
             resposta_obj = await service.generate(
@@ -283,72 +265,160 @@ INCERTO - se não for possível determinar com certeza"""
             if not resposta_obj.success:
                 raise Exception(resposta_obj.error or "Erro na chamada da IA")
 
-            resposta_limpa = resposta_obj.content.strip().upper()
+            resposta = resposta_obj.content
+            if resposta:
+                resposta = resposta.strip()
+            else:
+                raise Exception("Resposta vazia da IA")
 
-            if resposta_limpa.startswith("SIM"):
+            logger.debug(f"Resposta LLM (primeiros 200 chars): {resposta[:200]}")
+
+            # Tenta extrair JSON da resposta
+            dados = self._extrair_json(resposta)
+
+            if dados:
+                tipo_str = dados.get("tipo", "IRRELEVANTE").upper()
+
+                # Valida tipo
+                try:
+                    tipo = TipoDocumento(tipo_str)
+                except ValueError:
+                    tipo = TipoDocumento.IRRELEVANTE
+
                 return ResultadoIdentificacao(
-                    e_prestacao_contas=True,
+                    tipo_documento=tipo,
                     metodo="llm",
-                    confianca=0.85,
-                    explicacao="LLM identificou como prestação de contas"
-                )
-            elif resposta_limpa.startswith("NAO") or resposta_limpa.startswith("NÃO"):
-                return ResultadoIdentificacao(
-                    e_prestacao_contas=False,
-                    metodo="llm",
-                    confianca=0.85,
-                    explicacao="LLM identificou como NÃO sendo prestação de contas"
+                    confianca=float(dados.get("confianca", 0.8)),
+                    resumo=dados.get("resumo", ""),
+                    menciona_anexos=bool(dados.get("menciona_anexos", False)),
+                    descricao_anexos=dados.get("descricao_anexos"),
+                    explicacao=f"Classificado como {tipo.value}"
                 )
             else:
-                return ResultadoIdentificacao(
-                    e_prestacao_contas=False,
-                    metodo="llm",
-                    confianca=0.4,
-                    explicacao="LLM não conseguiu determinar com certeza"
-                )
+                # Fallback para prompt antigo (SIM/NAO/INCERTO)
+                resposta_upper = resposta.upper().strip()
+
+                if resposta_upper.startswith("SIM"):
+                    logger.info("Fallback: LLM retornou SIM (prompt antigo)")
+                    return ResultadoIdentificacao(
+                        tipo_documento=TipoDocumento.PETICAO_PRESTACAO,
+                        metodo="llm_fallback",
+                        confianca=0.85,
+                        resumo="Identificado como prestação de contas (formato antigo)",
+                        explicacao="LLM retornou SIM - identificado como prestação"
+                    )
+                elif resposta_upper.startswith("NAO") or resposta_upper.startswith("NÃO"):
+                    logger.info("Fallback: LLM retornou NAO (prompt antigo)")
+                    return ResultadoIdentificacao(
+                        tipo_documento=TipoDocumento.IRRELEVANTE,
+                        metodo="llm_fallback",
+                        confianca=0.85,
+                        resumo="Não é prestação de contas (formato antigo)",
+                        explicacao="LLM retornou NAO - documento irrelevante"
+                    )
+                else:
+                    logger.warning(f"Não foi possível parsear resposta: {resposta[:100]}")
+                    return ResultadoIdentificacao(
+                        tipo_documento=TipoDocumento.IRRELEVANTE,
+                        metodo="llm_parse_erro",
+                        confianca=0.3,
+                        explicacao="Não foi possível parsear resposta da IA"
+                    )
 
         except Exception as e:
             logger.error(f"Erro ao usar LLM para identificação: {e}")
             return ResultadoIdentificacao(
-                e_prestacao_contas=False,
+                tipo_documento=TipoDocumento.IRRELEVANTE,
                 metodo="llm_erro",
                 confianca=0.0,
                 explicacao=f"Erro ao usar LLM: {str(e)}"
             )
 
+    def _extrair_json(self, texto: str) -> Optional[dict]:
+        """Extrai JSON da resposta da IA"""
+        # Remove blocos de código markdown
+        texto_limpo = re.sub(r'```json\s*', '', texto)
+        texto_limpo = re.sub(r'```\s*', '', texto_limpo)
+        texto_limpo = texto_limpo.strip()
+
+        # Tenta parsear diretamente
+        try:
+            return json.loads(texto_limpo)
+        except json.JSONDecodeError:
+            pass
+
+        # Tenta encontrar JSON completo entre chaves (com suporte a múltiplas linhas)
+        # Encontra a primeira { e a última }
+        inicio = texto.find('{')
+        fim = texto.rfind('}')
+
+        if inicio != -1 and fim != -1 and fim > inicio:
+            json_str = texto[inicio:fim+1]
+            try:
+                return json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logger.debug(f"Erro ao parsear JSON extraído: {e}")
+
+        # Última tentativa: regex mais permissivo
+        match = re.search(r'\{[\s\S]*?\}', texto)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+
+        return None
+
     def identificar_sync(self, texto: str) -> ResultadoIdentificacao:
         """
-        Versão síncrona que não usa LLM.
-        Útil quando não se quer overhead de chamada async.
+        Versão síncrona (para compatibilidade).
+        Retorna inconclusivo se não conseguir executar async.
         """
-        self.usar_llm = False
         return self.identificar(texto)
 
 
-async def identificar_peticao_prestacao(texto: str, usar_llm: bool = True) -> ResultadoIdentificacao:
+async def identificar_documento(
+    texto: str,
+    modelo: str = "gemini-2.0-flash-lite",
+    temperatura: float = 0.1,
+    db: Session = None,
+) -> ResultadoIdentificacao:
     """
-    Função de conveniência para identificar petição de prestação de contas.
+    Classifica um documento em relação a um processo de prestação de contas.
 
     Args:
-        texto: Texto da petição
-        usar_llm: Se True, usa LLM quando regex for inconclusivo
+        texto: Texto do documento
+        modelo: Modelo de IA a usar
+        temperatura: Temperatura da IA
+        db: Sessão do banco para buscar prompt do admin
 
     Returns:
-        ResultadoIdentificacao
+        ResultadoIdentificacao com tipo, confiança, resumo e info sobre anexos
     """
-    identificador = IdentificadorPeticoes(usar_llm=usar_llm)
-    return identificador.identificar(texto)
+    identificador = IdentificadorPeticoes(
+        modelo_llm=modelo,
+        temperatura_llm=temperatura,
+        db=db
+    )
+    return await identificador.identificar_async(texto)
+
+
+# Alias para compatibilidade retroativa
+async def identificar_peticao_prestacao(
+    texto: str,
+    modelo: str = "gemini-2.0-flash-lite",
+    temperatura: float = 0.1,
+    db: Session = None,
+    usar_llm: bool = True,
+) -> ResultadoIdentificacao:
+    """Alias para identificar_documento (compatibilidade retroativa)"""
+    return await identificar_documento(texto, modelo, temperatura, db)
 
 
 def identificar_peticao_prestacao_sync(texto: str) -> ResultadoIdentificacao:
     """
-    Versão síncrona (sem LLM) para identificar petição.
-
-    Args:
-        texto: Texto da petição
-
-    Returns:
-        ResultadoIdentificacao
+    Versão síncrona para identificar petição.
+    Retorna resultado inconclusivo - use a versão async.
     """
-    identificador = IdentificadorPeticoes(usar_llm=False)
+    identificador = IdentificadorPeticoes()
     return identificador.identificar_sync(texto)

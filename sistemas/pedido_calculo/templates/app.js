@@ -1023,31 +1023,44 @@ class PedidoCalculoApp {
             // Cria modal de confirmação
             const modal = document.createElement('div');
             modal.id = 'modal-confirmar-sobrescrita';
-            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.className = 'fixed inset-0 bg-gray-900/30 backdrop-blur-sm flex items-center justify-center z-50';
             modal.innerHTML = `
-                <div class="bg-gray-800 rounded-lg p-6 max-w-md mx-4 shadow-xl border border-gray-700">
-                    <div class="flex items-center mb-4">
-                        <i class="fas fa-exclamation-triangle text-yellow-400 text-2xl mr-3"></i>
-                        <h3 class="text-lg font-bold text-white">Processo já existe no histórico</h3>
-                    </div>
-                    <div class="text-gray-300 mb-4">
-                        <p class="mb-2">Este processo já foi processado anteriormente:</p>
-                        <div class="bg-gray-700 rounded p-3 text-sm">
-                            <p><strong>Processo:</strong> ${dados.numero_cnj_formatado || 'N/A'}</p>
-                            <p><strong>Autor:</strong> ${dados.autor || 'N/A'}</p>
-                            <p><strong>Gerado em:</strong> ${dados.criado_em || 'N/A'}</p>
+                <div class="bg-white rounded-2xl p-6 max-w-md mx-4 shadow-2xl border border-gray-200">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+                            <i class="fas fa-exclamation-triangle text-amber-500 text-xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800">Processo já existe</h3>
+                            <p class="text-sm text-gray-500">Este processo consta no histórico</p>
                         </div>
                     </div>
-                    <p class="text-gray-400 text-sm mb-4">O que deseja fazer?</p>
+                    <div class="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-100">
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-gray-500">Processo:</span>
+                                <span class="text-gray-800 font-medium">${dados.numero_cnj_formatado || 'N/A'}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-500">Autor:</span>
+                                <span class="text-gray-800">${dados.autor || 'N/A'}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-500">Gerado em:</span>
+                                <span class="text-gray-800">${dados.criado_em || 'N/A'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-gray-600 text-sm mb-4">O que deseja fazer?</p>
                     <div class="flex flex-col gap-2">
-                        <button id="btn-ver-existente" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium">
-                            <i class="fas fa-eye mr-2"></i>Ver pedido existente
+                        <button id="btn-ver-existente" class="w-full px-4 py-2.5 bg-primary-600 hover:bg-primary-700 rounded-xl text-white font-medium transition-colors flex items-center justify-center gap-2 shadow-sm">
+                            <i class="fas fa-eye"></i> Ver pedido existente
                         </button>
-                        <button id="btn-refazer" class="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded text-white font-medium">
-                            <i class="fas fa-redo mr-2"></i>Refazer pedido (sobrescrever)
+                        <button id="btn-refazer" class="w-full px-4 py-2.5 bg-amber-500 hover:bg-amber-600 rounded-xl text-white font-medium transition-colors flex items-center justify-center gap-2 shadow-sm">
+                            <i class="fas fa-redo"></i> Refazer pedido
                         </button>
-                        <button id="btn-cancelar-sobrescrita" class="w-full px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded text-white font-medium">
-                            <i class="fas fa-times mr-2"></i>Cancelar
+                        <button id="btn-cancelar-sobrescrita" class="w-full px-4 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-700 font-medium transition-colors flex items-center justify-center gap-2">
+                            <i class="fas fa-times"></i> Cancelar
                         </button>
                     </div>
                 </div>
