@@ -184,8 +184,8 @@
             </a>
 
             <!-- Card Pedido de Cálculo -->
-            <a 
-                href="/pedido-calculo/" 
+            <a
+                href="/pedido-calculo/"
                 id="card-pedido-calculo"
                 class="group bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-amber-300 transition-all"
             >
@@ -201,6 +201,31 @@
                             Geração de pedido de cálculo para cumprimento de sentença.
                         </p>
                         <div class="flex items-center gap-2 mt-4 text-amber-600 text-sm font-medium">
+                            <span>Acessar sistema</span>
+                            <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                        </div>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Card Prestação de Contas -->
+            <a
+                href="/prestacao-contas/"
+                id="card-prestacao-contas"
+                class="group bg-white rounded-2xl shadow-sm border border-gray-200 p-6 hover:shadow-lg hover:border-teal-300 transition-all"
+            >
+                <div class="flex items-start gap-4">
+                    <div class="w-14 h-14 bg-teal-100 rounded-xl flex items-center justify-center group-hover:bg-teal-200 transition-colors">
+                        <i class="fas fa-file-invoice-dollar text-teal-600 text-xl"></i>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-semibold text-gray-800 group-hover:text-teal-600 transition-colors">
+                            Prestação de Contas
+                        </h3>
+                        <p class="text-gray-500 text-sm mt-1">
+                            Análise de prestação de contas em processos de medicamentos.
+                        </p>
+                        <div class="flex items-center gap-2 mt-4 text-teal-600 text-sm font-medium">
                             <span>Acessar sistema</span>
                             <i class="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
                         </div>
@@ -284,6 +309,18 @@
                         </div>
                         <div>
                             <p class="font-medium text-gray-800">Debug Pedido Cálculo</p>
+                            <p class="text-xs text-gray-500">Logs de chamadas IA</p>
+                        </div>
+                    </a>
+                    <a
+                        href="/admin/prestacao-contas/debug"
+                        class="flex items-center gap-3 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                        <div class="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-bug text-teal-600"></i>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800">Debug Prestação Contas</p>
                             <p class="text-xs text-gray-500">Logs de chamadas IA</p>
                         </div>
                     </a>
@@ -414,7 +451,8 @@
                         'assistencia_judiciaria': 'card-assistencia',
                         'matriculas': 'card-matriculas',
                         'gerador_pecas': 'card-gerador',
-                        'pedido_calculo': 'card-pedido-calculo'
+                        'pedido_calculo': 'card-pedido-calculo',
+                        'prestacao_contas': 'card-prestacao-contas'
                     };
                     
                     Object.entries(sistemasMap).forEach(([sistema, cardId]) => {

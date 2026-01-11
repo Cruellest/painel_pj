@@ -40,7 +40,12 @@ PyMuPDF>=1.23.0
 pymupdf4llm>=0.0.10
 Pillow>=10.0.0
 
+# Scrapper de Subconta (Prestação de Contas)
+playwright>=1.40.0
+rich>=13.0.0
+
 # ==================================================
 # Instalação
 # ==================================================
 # pip install -r requirements.txt
+# playwright install chromium  # Após instalar playwright

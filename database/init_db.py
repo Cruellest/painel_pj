@@ -19,6 +19,7 @@ from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON, CategoriaResumoJSONHistorico
 from sistemas.gerador_pecas.models_config_pecas import CategoriaDocumento, TipoPeca, tipo_peca_categorias
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
+from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
 
@@ -30,14 +31,14 @@ def wait_for_db(max_retries=10, delay=3):
             # Tenta conectar
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            print("✅ Conexão com banco de dados estabelecida!")
+            print("[OK] Conexao com banco de dados estabelecida!")
             return True
         except OperationalError as e:
             if attempt < max_retries - 1:
-                print(f"⏳ Aguardando banco de dados... tentativa {attempt + 1}/{max_retries}")
+                print(f"[...] Aguardando banco de dados... tentativa {attempt + 1}/{max_retries}")
                 time.sleep(delay)
             else:
-                print(f"❌ Não foi possível conectar ao banco após {max_retries} tentativas")
+                print(f"[ERRO] Nao foi possivel conectar ao banco apos {max_retries} tentativas")
                 raise e
     return False
 
@@ -45,7 +46,7 @@ def wait_for_db(max_retries=10, delay=3):
 def create_tables():
     """Cria todas as tabelas no banco de dados"""
     Base.metadata.create_all(bind=engine)
-    print("✅ Tabelas criadas com sucesso!")
+    print("[OK] Tabelas criadas com sucesso!")
 
 
 def run_migrations():
@@ -97,40 +98,40 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela grupos_analise criada")
+            print("[OK] Migração: tabela grupos_analise criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração grupos_analise: {e}")
+            print(f"[WARN] Migração grupos_analise: {e}")
     
     # Migração: Adicionar coluna grupo_id na tabela analises
     if table_exists('analises') and not column_exists('analises', 'grupo_id'):
         try:
             db.execute(text("ALTER TABLE analises ADD COLUMN grupo_id INTEGER REFERENCES grupos_analise(id)"))
             db.commit()
-            print("✅ Migração: coluna grupo_id adicionada em analises")
+            print("[OK] Migração: coluna grupo_id adicionada em analises")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração grupo_id: {e}")
+            print(f"[WARN] Migração grupo_id: {e}")
     
     # Migração: Adicionar coluna relatorio_texto na tabela analises
     if table_exists('analises') and not column_exists('analises', 'relatorio_texto'):
         try:
             db.execute(text("ALTER TABLE analises ADD COLUMN relatorio_texto TEXT"))
             db.commit()
-            print("✅ Migração: coluna relatorio_texto adicionada em analises")
+            print("[OK] Migração: coluna relatorio_texto adicionada em analises")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração relatorio_texto: {e}")
+            print(f"[WARN] Migração relatorio_texto: {e}")
     
     # Migração: Adicionar coluna modelo_usado na tabela analises
     if table_exists('analises') and not column_exists('analises', 'modelo_usado'):
         try:
             db.execute(text("ALTER TABLE analises ADD COLUMN modelo_usado VARCHAR(100)"))
             db.commit()
-            print("✅ Migração: coluna modelo_usado adicionada em analises")
+            print("[OK] Migração: coluna modelo_usado adicionada em analises")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração modelo_usado: {e}")
+            print(f"[WARN] Migração modelo_usado: {e}")
     
     # Migração: Criar tabela arquivos_upload
     if not table_exists('arquivos_upload'):
@@ -156,10 +157,10 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela arquivos_upload criada")
+            print("[OK] Migração: tabela arquivos_upload criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração arquivos_upload: {e}")
+            print(f"[WARN] Migração arquivos_upload: {e}")
     
     # Migração: Criar tabelas do novo sistema gerador_pecas
     if not table_exists('geracoes_pecas'):
@@ -207,10 +208,10 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela geracoes_pecas criada")
+            print("[OK] Migração: tabela geracoes_pecas criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração geracoes_pecas: {e}")
+            print(f"[WARN] Migração geracoes_pecas: {e}")
     
     if not table_exists('feedbacks_pecas'):
         try:
@@ -241,10 +242,10 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela feedbacks_pecas criada")
+            print("[OK] Migração: tabela feedbacks_pecas criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração feedbacks_pecas: {e}")
+            print(f"[WARN] Migração feedbacks_pecas: {e}")
     
     # Migração: Criar tabela feedbacks_matricula (sistema de matrículas confrontantes)
     if not table_exists('feedbacks_matricula'):
@@ -274,29 +275,29 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela feedbacks_matricula criada")
+            print("[OK] Migração: tabela feedbacks_matricula criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração feedbacks_matricula: {e}")
+            print(f"[WARN] Migração feedbacks_matricula: {e}")
     
     # Migração: Adicionar colunas de permissões na tabela users
     if table_exists('users') and not column_exists('users', 'sistemas_permitidos'):
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN sistemas_permitidos JSON"))
             db.commit()
-            print("✅ Migração: coluna sistemas_permitidos adicionada em users")
+            print("[OK] Migração: coluna sistemas_permitidos adicionada em users")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração sistemas_permitidos: {e}")
+            print(f"[WARN] Migração sistemas_permitidos: {e}")
     
     if table_exists('users') and not column_exists('users', 'permissoes_especiais'):
         try:
             db.execute(text("ALTER TABLE users ADD COLUMN permissoes_especiais JSON"))
             db.commit()
-            print("✅ Migração: coluna permissoes_especiais adicionada em users")
+            print("[OK] Migração: coluna permissoes_especiais adicionada em users")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração permissoes_especiais: {e}")
+            print(f"[WARN] Migração permissoes_especiais: {e}")
     
     # Migração: Criar tabela prompt_modulos
     if not table_exists('prompt_modulos'):
@@ -346,10 +347,10 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela prompt_modulos criada")
+            print("[OK] Migração: tabela prompt_modulos criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração prompt_modulos: {e}")
+            print(f"[WARN] Migração prompt_modulos: {e}")
     
     # Migração: Criar tabela prompt_modulos_historico
     if not table_exists('prompt_modulos_historico'):
@@ -385,80 +386,80 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela prompt_modulos_historico criada")
+            print("[OK] Migração: tabela prompt_modulos_historico criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração prompt_modulos_historico: {e}")
+            print(f"[WARN] Migração prompt_modulos_historico: {e}")
     
     # Migração: Adicionar coluna documentos_processados na tabela geracoes_pecas
     if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'documentos_processados'):
         try:
             db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN documentos_processados JSON"))
             db.commit()
-            print("✅ Migração: coluna documentos_processados adicionada em geracoes_pecas")
+            print("[OK] Migração: coluna documentos_processados adicionada em geracoes_pecas")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração documentos_processados: {e}")
+            print(f"[WARN] Migração documentos_processados: {e}")
     
     # Migração: Adicionar coluna historico_chat na tabela geracoes_pecas
     if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'historico_chat'):
         try:
             db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN historico_chat JSON"))
             db.commit()
-            print("✅ Migração: coluna historico_chat adicionada em geracoes_pecas")
+            print("[OK] Migração: coluna historico_chat adicionada em geracoes_pecas")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração historico_chat: {e}")
+            print(f"[WARN] Migração historico_chat: {e}")
     
     # Migração: Adicionar coluna prompt_enviado na tabela geracoes_pecas
     if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'prompt_enviado'):
         try:
             db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN prompt_enviado TEXT"))
             db.commit()
-            print("✅ Migração: coluna prompt_enviado adicionada em geracoes_pecas")
+            print("[OK] Migração: coluna prompt_enviado adicionada em geracoes_pecas")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração prompt_enviado: {e}")
+            print(f"[WARN] Migração prompt_enviado: {e}")
     
     # Migração: Adicionar coluna resumo_consolidado na tabela geracoes_pecas
     if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'resumo_consolidado'):
         try:
             db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN resumo_consolidado TEXT"))
             db.commit()
-            print("✅ Migração: coluna resumo_consolidado adicionada em geracoes_pecas")
+            print("[OK] Migração: coluna resumo_consolidado adicionada em geracoes_pecas")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração resumo_consolidado: {e}")
+            print(f"[WARN] Migração resumo_consolidado: {e}")
     
     # Migração: Adicionar coluna tempo_processamento na tabela geracoes_pecas
     if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'tempo_processamento'):
         try:
             db.execute(text("ALTER TABLE geracoes_pecas ADD COLUMN tempo_processamento INTEGER"))
             db.commit()
-            print("✅ Migração: coluna tempo_processamento adicionada em geracoes_pecas")
+            print("[OK] Migração: coluna tempo_processamento adicionada em geracoes_pecas")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração tempo_processamento: {e}")
+            print(f"[WARN] Migração tempo_processamento: {e}")
     
     # Migração: Adicionar coluna condicao_ativacao na tabela prompt_modulos
     if table_exists('prompt_modulos') and not column_exists('prompt_modulos', 'condicao_ativacao'):
         try:
             db.execute(text("ALTER TABLE prompt_modulos ADD COLUMN condicao_ativacao TEXT"))
             db.commit()
-            print("✅ Migração: coluna condicao_ativacao adicionada em prompt_modulos")
+            print("[OK] Migração: coluna condicao_ativacao adicionada em prompt_modulos")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração condicao_ativacao prompt_modulos: {e}")
+            print(f"[WARN] Migração condicao_ativacao prompt_modulos: {e}")
     
     # Migração: Adicionar coluna condicao_ativacao na tabela prompt_modulos_historico
     if table_exists('prompt_modulos_historico') and not column_exists('prompt_modulos_historico', 'condicao_ativacao'):
         try:
             db.execute(text("ALTER TABLE prompt_modulos_historico ADD COLUMN condicao_ativacao TEXT"))
             db.commit()
-            print("✅ Migração: coluna condicao_ativacao adicionada em prompt_modulos_historico")
+            print("[OK] Migração: coluna condicao_ativacao adicionada em prompt_modulos_historico")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração condicao_ativacao prompt_modulos_historico: {e}")
+            print(f"[WARN] Migração condicao_ativacao prompt_modulos_historico: {e}")
 
     # Migração: Alterar tipo da coluna conteudo_gerado de JSON para TEXT
     if table_exists('geracoes_pecas'):
@@ -503,10 +504,10 @@ def run_migrations():
                 try:
                     db.execute(text(f"ALTER TABLE geracoes_pecas ADD COLUMN {coluna} {tipo}"))
                     db.commit()
-                    print(f"✅ Migração: coluna {coluna} adicionada em geracoes_pecas")
+                    print(f"[OK] Migração: coluna {coluna} adicionada em geracoes_pecas")
                 except Exception as e:
                     db.rollback()
-                    print(f"⚠️ Migração {coluna} geracoes_pecas: {e}")
+                    print(f"[WARN] Migração {coluna} geracoes_pecas: {e}")
 
     # Migração: Adicionar coluna is_primeiro_documento na tabela categorias_documento
     if table_exists('categorias_documento') and not column_exists('categorias_documento', 'is_primeiro_documento'):
@@ -516,10 +517,10 @@ def run_migrations():
             else:
                 db.execute(text("ALTER TABLE categorias_documento ADD COLUMN is_primeiro_documento BOOLEAN DEFAULT false"))
             db.commit()
-            print("✅ Migração: coluna is_primeiro_documento adicionada em categorias_documento")
+            print("[OK] Migração: coluna is_primeiro_documento adicionada em categorias_documento")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração is_primeiro_documento: {e}")
+            print(f"[WARN] Migração is_primeiro_documento: {e}")
 
     # Migração: Criar tabela geracoes_pedido_calculo
     if not table_exists('geracoes_pedido_calculo'):
@@ -565,10 +566,10 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela geracoes_pedido_calculo criada")
+            print("[OK] Migração: tabela geracoes_pedido_calculo criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração geracoes_pedido_calculo: {e}")
+            print(f"[WARN] Migração geracoes_pedido_calculo: {e}")
 
     # Migração: Criar tabela feedbacks_pedido_calculo
     if not table_exists('feedbacks_pedido_calculo'):
@@ -600,10 +601,39 @@ def run_migrations():
                     )
                 """))
             db.commit()
-            print("✅ Migração: tabela feedbacks_pedido_calculo criada")
+            print("[OK] Migração: tabela feedbacks_pedido_calculo criada")
         except Exception as e:
             db.rollback()
-            print(f"⚠️ Migração feedbacks_pedido_calculo: {e}")
+            print(f"[WARN] Migração feedbacks_pedido_calculo: {e}")
+
+    # Migração: Adicionar coluna extrato_subconta_pdf_base64 na tabela geracoes_prestacao_contas
+    if table_exists('geracoes_prestacao_contas') and not column_exists('geracoes_prestacao_contas', 'extrato_subconta_pdf_base64'):
+        try:
+            db.execute(text("ALTER TABLE geracoes_prestacao_contas ADD COLUMN extrato_subconta_pdf_base64 TEXT"))
+            db.commit()
+            print("[OK] Migração: coluna extrato_subconta_pdf_base64 adicionada em geracoes_prestacao_contas")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração extrato_subconta_pdf_base64: {e}")
+
+    # Migração: Adicionar outras colunas faltantes em geracoes_prestacao_contas
+    if table_exists('geracoes_prestacao_contas'):
+        colunas_prestacao = [
+            ('irregularidades', 'JSON'),
+            ('documentos_anexos', 'JSON'),
+            ('dados_processo_xml', 'JSON'),
+            ('peticoes_relevantes', 'JSON'),
+        ]
+
+        for coluna, tipo in colunas_prestacao:
+            if not column_exists('geracoes_prestacao_contas', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE geracoes_prestacao_contas ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em geracoes_prestacao_contas")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} geracoes_prestacao_contas: {e}")
 
     db.close()
 
@@ -627,11 +657,11 @@ def seed_admin():
             )
             db.add(admin)
             db.commit()
-            print(f"✅ Usuário admin '{ADMIN_USERNAME}' criado com sucesso!")
+            print(f"[OK] Usuário admin '{ADMIN_USERNAME}' criado com sucesso!")
             print(f"   Senha inicial: {ADMIN_PASSWORD}")
-            print(f"   ⚠️  Altere a senha no primeiro acesso!")
+            print(f"   [WARN]  Altere a senha no primeiro acesso!")
         else:
-            print(f"ℹ️  Usuário admin '{ADMIN_USERNAME}' já existe.")
+            print(f"[INFO]  Usuário admin '{ADMIN_USERNAME}' já existe.")
     finally:
         db.close()
 
@@ -647,9 +677,9 @@ def seed_prompts():
         
         if existing == 0:
             seed_all_defaults(db)
-            print("✅ Prompts e configurações de IA padrão criados!")
+            print("[OK] Prompts e configurações de IA padrão criados!")
         else:
-            print(f"ℹ️  {existing} prompt(s) já existem no banco.")
+            print(f"[INFO]  {existing} prompt(s) já existem no banco.")
     finally:
         db.close()
 
@@ -791,9 +821,9 @@ Seja objetivo e fundamente cada conclusão com base legal."""
                 db.add(modulo)
             
             db.commit()
-            print("✅ Módulos de prompt do gerador de peças criados!")
+            print("[OK] Módulos de prompt do gerador de peças criados!")
         else:
-            print(f"ℹ️  {existing_base} módulo(s) BASE já existem no banco.")
+            print(f"[INFO]  {existing_base} módulo(s) BASE já existem no banco.")
     finally:
         db.close()
 
@@ -1019,16 +1049,16 @@ O campo "irrelevante" deve ser true apenas se o documento for meramente administ
             db.add(categoria_pareceres)
             
             db.commit()
-            print("✅ Categorias de formato de resumo JSON criadas!")
+            print("[OK] Categorias de formato de resumo JSON criadas!")
         else:
-            print(f"ℹ️  {existing} categoria(s) de resumo JSON já existem no banco.")
+            print(f"[INFO]  {existing} categoria(s) de resumo JSON já existem no banco.")
     finally:
         db.close()
 
 
 def init_database():
     """Inicializa o banco de dados completo"""
-    print("🔧 Inicializando banco de dados...")
+    print("[*] Inicializando banco de dados...")
     wait_for_db()  # Aguarda o banco ficar disponível
     create_tables()
     run_migrations()  # Aplica migrações
@@ -1036,7 +1066,7 @@ def init_database():
     seed_prompts()
     seed_prompt_modulos()  # Cria módulos do gerador de peças
     seed_categorias_resumo_json()  # Cria categorias de formato JSON
-    print("✅ Banco de dados inicializado!")
+    print("[OK] Banco de dados inicializado!")
 
 
 if __name__ == "__main__":

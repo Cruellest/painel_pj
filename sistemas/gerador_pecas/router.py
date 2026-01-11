@@ -19,8 +19,16 @@ from sqlalchemy.orm import Session
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
 from auth.models import User
 from database.connection import get_db
-from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
+from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
 from sistemas.gerador_pecas.services import GeradorPecasService
+from sistemas.gerador_pecas.versoes import (
+    criar_versao_inicial,
+    criar_nova_versao,
+    obter_versoes,
+    obter_versao_detalhada,
+    comparar_versoes,
+    restaurar_versao
+)
 from admin.models import ConfiguracaoIA, PromptConfig
 
 router = APIRouter(tags=["Gerador de Peças"])
@@ -334,7 +342,10 @@ async def processar_processo_stream(
                 db.add(geracao)
                 db.commit()
                 db.refresh(geracao)
-                
+
+                # Cria versão inicial no histórico de versões
+                criar_versao_inicial(db, geracao.id, resultado_agente3.conteudo_markdown)
+
                 # Resultado final
                 yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao.id, 'tipo_peca': tipo_peca, 'minuta_markdown': resultado_agente3.conteudo_markdown})}\n\n"
             else:
@@ -596,7 +607,10 @@ async def processar_pdfs_stream(
                 db.add(geracao)
                 db.commit()
                 db.refresh(geracao)
-                
+
+                # Cria versão inicial no histórico de versões
+                criar_versao_inicial(db, geracao.id, resultado_agente3.conteudo_markdown)
+
                 # Resultado final
                 yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao.id, 'tipo_peca': tipo_peca_final, 'minuta_markdown': resultado_agente3.conteudo_markdown})}\n\n"
             else:
@@ -902,36 +916,233 @@ class SalvarMinutaRequest(BaseModel):
     historico_chat: Optional[List[Dict]] = None
 
 
+class SalvarMinutaComVersaoRequest(BaseModel):
+    """Request para salvar alterações na minuta com suporte a versões"""
+    minuta_markdown: str
+    historico_chat: Optional[List[Dict]] = None
+    descricao_alteracao: Optional[str] = None  # Descrição da alteração (mensagem do chat)
+
+
 @router.put("/historico/{geracao_id}")
 async def salvar_geracao(
     geracao_id: int,
-    req: SalvarMinutaRequest,
+    req: SalvarMinutaComVersaoRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     Salva alterações feitas na minuta via chat.
-    Atualiza o conteudo_gerado com o novo markdown e o histórico de chat.
+    Atualiza o conteudo_gerado com o novo markdown, o histórico de chat,
+    e cria uma nova versão no histórico de versões.
     """
     try:
         geracao = db.query(GeracaoPeca).filter(
             GeracaoPeca.id == geracao_id,
             GeracaoPeca.usuario_id == current_user.id
         ).first()
-        
+
         if not geracao:
             raise HTTPException(status_code=404, detail="Geração não encontrada")
-        
+
+        # Verifica se houve alteração no conteúdo
+        conteudo_anterior = geracao.conteudo_gerado or ""
+        conteudo_novo = req.minuta_markdown
+
+        versao_criada = None
+
+        # Se o conteúdo mudou, cria uma nova versão
+        if conteudo_anterior != conteudo_novo:
+            # Obtém a última mensagem do usuário do histórico como descrição
+            descricao = req.descricao_alteracao
+            if not descricao and req.historico_chat:
+                # Pega a última mensagem do usuário
+                for msg in reversed(req.historico_chat):
+                    if msg.get("role") == "user":
+                        descricao = msg.get("content", "")[:200]  # Limita tamanho
+                        break
+
+            # Verifica se já existe alguma versão para esta geração
+            versao_existente = db.query(VersaoPeca).filter(
+                VersaoPeca.geracao_id == geracao_id
+            ).first()
+
+            # Se não existe versão, cria a versão inicial primeiro
+            if not versao_existente:
+                criar_versao_inicial(db, geracao_id, conteudo_anterior)
+
+            # Cria a nova versão
+            nova_versao, diff = criar_nova_versao(
+                db=db,
+                geracao_id=geracao_id,
+                conteudo_novo=conteudo_novo,
+                descricao=descricao,
+                origem='edicao_chat'
+            )
+
+            if nova_versao:
+                versao_criada = {
+                    "id": nova_versao.id,
+                    "numero_versao": nova_versao.numero_versao,
+                    "resumo_diff": diff.get("resumo", "")
+                }
+
         # Atualiza o conteúdo com o novo markdown
         geracao.conteudo_gerado = req.minuta_markdown
-        
+
         # Atualiza o histórico de chat se fornecido
         if req.historico_chat is not None:
             geracao.historico_chat = req.historico_chat
-        
+
         db.commit()
-        
-        return {"success": True, "message": "Minuta salva com sucesso"}
+
+        response = {"success": True, "message": "Minuta salva com sucesso"}
+        if versao_criada:
+            response["versao"] = versao_criada
+
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Endpoints de Versões (Histórico de Alterações)
+# ============================================
+
+@router.get("/historico/{geracao_id}/versoes")
+async def listar_versoes(
+    geracao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todas as versões de uma peça específica.
+    Retorna lista ordenada da mais recente para a mais antiga.
+    """
+    try:
+        # Verifica se a geração pertence ao usuário
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.id == geracao_id,
+            GeracaoPeca.usuario_id == current_user.id
+        ).first()
+
+        if not geracao:
+            raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+        versoes = obter_versoes(db, geracao_id)
+
+        return {
+            "geracao_id": geracao_id,
+            "total_versoes": len(versoes),
+            "versoes": versoes
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/historico/{geracao_id}/versoes/comparar")
+async def comparar_versoes_endpoint(
+    geracao_id: int,
+    v1: int = Query(..., description="ID da primeira versão"),
+    v2: int = Query(..., description="ID da segunda versão"),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Compara duas versões específicas e retorna o diff entre elas.
+    """
+    try:
+        # Verifica se a geração pertence ao usuário
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.id == geracao_id,
+            GeracaoPeca.usuario_id == current_user.id
+        ).first()
+
+        if not geracao:
+            raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+        resultado = comparar_versoes(db, v1, v2)
+
+        if not resultado:
+            raise HTTPException(status_code=404, detail="Uma ou ambas as versões não foram encontradas")
+
+        return resultado
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/historico/{geracao_id}/versoes/{versao_id}")
+async def obter_versao(
+    geracao_id: int,
+    versao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtém detalhes completos de uma versão específica, incluindo diff.
+    """
+    try:
+        # Verifica se a geração pertence ao usuário
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.id == geracao_id,
+            GeracaoPeca.usuario_id == current_user.id
+        ).first()
+
+        if not geracao:
+            raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+        versao = obter_versao_detalhada(db, versao_id)
+
+        if not versao or versao["geracao_id"] != geracao_id:
+            raise HTTPException(status_code=404, detail="Versão não encontrada")
+
+        return versao
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/historico/{geracao_id}/versoes/{versao_id}/restaurar")
+async def restaurar_versao_endpoint(
+    geracao_id: int,
+    versao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Restaura uma versão anterior, criando uma nova versão com o conteúdo antigo.
+    A versão atual não é perdida - fica registrada no histórico.
+    """
+    try:
+        # Verifica se a geração pertence ao usuário
+        geracao = db.query(GeracaoPeca).filter(
+            GeracaoPeca.id == geracao_id,
+            GeracaoPeca.usuario_id == current_user.id
+        ).first()
+
+        if not geracao:
+            raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+        nova_versao = restaurar_versao(db, geracao_id, versao_id)
+
+        if not nova_versao:
+            raise HTTPException(status_code=404, detail="Versão não encontrada ou erro ao restaurar")
+
+        return {
+            "success": True,
+            "message": f"Versão restaurada com sucesso",
+            "nova_versao": {
+                "id": nova_versao.id,
+                "numero_versao": nova_versao.numero_versao
+            },
+            "conteudo": nova_versao.conteudo
+        }
     except HTTPException:
         raise
     except Exception as e:
