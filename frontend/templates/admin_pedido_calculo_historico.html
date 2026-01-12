@@ -490,7 +490,7 @@
                 `;
                 document.body.appendChild(loadingDiv);
 
-                const response = await fetch(`/pedido-calculo/documento/${encodeURIComponent(numeroProcesso)}/${encodeURIComponent(idDocumento)}?token=${encodeURIComponent(getToken())}`, {
+                const response = await fetch(`/pedido-calculo/api/documento/${encodeURIComponent(numeroProcesso)}/${encodeURIComponent(idDocumento)}?token=${encodeURIComponent(getToken())}`, {
                     headers: { 'Authorization': `Bearer ${getToken()}` }
                 });
 
