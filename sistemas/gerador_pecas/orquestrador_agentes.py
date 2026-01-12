@@ -258,8 +258,7 @@ class OrquestradorAgentes:
                 tipo_peca = deteccao_tipo.get("tipo_peca")
                 
                 if tipo_peca:
-                    print(f"�
- Tipo de peça detectado: {tipo_peca}")
+                    print(f"[OK] Tipo de peca detectado: {tipo_peca}")
                     print(f"   Justificativa: {deteccao_tipo.get('justificativa', 'N/A')}")
                     print(f"   Confiança: {deteccao_tipo.get('confianca', 'N/A')}")
                     
@@ -323,8 +322,7 @@ class OrquestradorAgentes:
             resultado.tempo_total = (datetime.now() - inicio_total).total_seconds()
             
             print("\n" + "=" * 60)
-            print(f"�
- ORQUESTRAÇÃO CONCLUÍDA")
+            print("[OK] ORQUESTRACAO CONCLUIDA")
             print(f"⏱️  Tempo Total: {resultado.tempo_total:.1f}s")
             print("=" * 60)
             
@@ -603,9 +601,8 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
                 content_limpo = content_limpo[:-3]
             
             resultado.conteudo_markdown = content_limpo.strip()
-            
-            print(f"�
- Peça gerada com sucesso em Markdown!")
+
+            print("[OK] Peca gerada com sucesso em Markdown!")
             print(f"📄 Tamanho da peça: {len(resultado.conteudo_markdown)} caracteres")
             
             return resultado
