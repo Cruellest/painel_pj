@@ -395,6 +395,10 @@ class OrquestradorPrestacaoContas:
                     if textos_extratos:
                         geracao.extrato_subconta_texto = "## EXTRATOS DA CONTA ÚNICA (FALLBACK DO XML)\n\n" + "\n\n---\n\n".join(textos_extratos)
                         log_sucesso(f"Fallback: {len(textos_extratos)} extratos com texto extraído")
+                    elif extratos_imagens_fallback:
+                        # Se só tem imagens, marca que extrato foi encontrado (será analisado via visão)
+                        geracao.extrato_subconta_texto = f"## EXTRATOS DA CONTA ÚNICA (IMAGENS)\n\n[{len(extratos_imagens_fallback)} extrato(s) convertido(s) para imagem - serão analisados via visão computacional]"
+                        log_sucesso(f"Fallback: {len(extratos_imagens_fallback)} extratos convertidos para imagem")
 
                     # Salva PDF do primeiro extrato para visualização
                     if pdf_bytes_principal:
