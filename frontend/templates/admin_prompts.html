@@ -65,27 +65,20 @@
                 <p class="text-gray-500 mt-1">Configure os prompts utilizados pelos sistemas de análise</p>
             </div>
             <div class="flex gap-2">
-                <a 
+                <a
                     href="/admin/prompts-modulos"
                     class="px-4 py-2 text-sm bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors flex items-center gap-2"
                 >
                     <i class="fas fa-puzzle-piece"></i>
                     Prompts Modulares
                 </a>
-                <a 
+                <a
                     href="/admin/categorias-resumo-json"
                     class="px-4 py-2 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors flex items-center gap-2"
                 >
                     <i class="fas fa-code"></i>
                     Formatos JSON
                 </a>
-                <button 
-                    onclick="resetDefaults()"
-                    class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors flex items-center gap-2"
-                >
-                    <i class="fas fa-undo"></i>
-                    Restaurar Padrões
-                </button>
             </div>
         </div>
 
@@ -800,9 +793,25 @@
                     <div class="text-center py-12 text-gray-400">
                         <i class="fas fa-inbox text-4xl mb-2"></i>
                         <p>Nenhum prompt encontrado</p>
-                        <button onclick="resetDefaults()" class="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
-                            Criar Prompts Padrão
-                        </button>
+                        <p class="text-sm mt-2">Selecione um sistema para criar os prompts:</p>
+                        <div class="flex flex-wrap gap-2 justify-center mt-4">
+                            <button onclick="criarPromptsSistema('pedido_calculo')" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2">
+                                <i class="fas fa-calculator"></i>
+                                Pedido de Cálculo
+                            </button>
+                            <button onclick="criarPromptsSistema('prestacao_contas')" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
+                                <i class="fas fa-file-invoice-dollar"></i>
+                                Prestação de Contas
+                            </button>
+                            <button onclick="criarPromptsSistema('matriculas')" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2">
+                                <i class="fas fa-file-alt"></i>
+                                Matrículas
+                            </button>
+                            <button onclick="criarPromptsSistema('assistencia_judiciaria')" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 flex items-center gap-2">
+                                <i class="fas fa-gavel"></i>
+                                Assistência Judiciária
+                            </button>
+                        </div>
                     </div>
                 `;
                 return;
@@ -975,27 +984,38 @@
             }
         }
 
-        // Restaura padrões
-        async function resetDefaults() {
-            if (!confirm('Isso irá substituir TODOS os prompts pelos valores padrão. Deseja continuar?')) {
+        // Cria prompts para um sistema específico
+        async function criarPromptsSistema(sistema) {
+            const nomesSistemas = {
+                'pedido_calculo': 'Pedido de Cálculo',
+                'prestacao_contas': 'Prestação de Contas',
+                'matriculas': 'Matrículas',
+                'assistencia_judiciaria': 'Assistência Judiciária'
+            };
+
+            if (!confirm(`Criar prompts padrão para o sistema "${nomesSistemas[sistema]}"?`)) {
                 return;
             }
 
             const token = localStorage.getItem('access_token');
 
             try {
-                const response = await fetch(`${API_URL}/admin/prompts/reset-defaults`, {
+                const response = await fetch(`${API_URL}/admin/prompts/criar-sistema/${sistema}`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
-                if (!response.ok) throw new Error('Erro ao restaurar');
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao criar prompts');
+                }
 
-                showToast('Prompts restaurados para os valores padrão!', 'success');
+                const result = await response.json();
+                showToast(result.message || 'Prompts criados com sucesso!', 'success');
                 loadPrompts();
             } catch (error) {
                 console.error('Erro:', error);
-                showToast('Erro ao restaurar prompts', 'error');
+                showToast('Erro ao criar prompts: ' + error.message, 'error');
             }
         }
 

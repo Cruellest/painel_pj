@@ -154,27 +154,78 @@ async def delete_prompt(
     return {"success": True, "message": "Prompt excluído com sucesso"}
 
 
-@router.post("/prompts/reset-defaults")
-async def reset_default_prompts(
-    sistema: Optional[str] = None,
+@router.post("/prompts/criar-sistema/{sistema}")
+async def criar_prompts_sistema(
+    sistema: str,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
-    """Restaura os prompts padrão do sistema"""
-    # Remove prompts existentes do sistema especificado ou todos
-    query = db.query(PromptConfig)
-    if sistema:
-        query = query.filter(PromptConfig.sistema == sistema)
-    
-    count = query.delete()
-    db.commit()
-    
-    # Recria prompts padrão
-    seed_default_prompts(db, sistema)
-    
+    """
+    Cria prompts e configurações para um sistema específico.
+    Não deleta prompts existentes, apenas adiciona os que não existem.
+    """
+    sistemas_validos = ["pedido_calculo", "prestacao_contas", "matriculas", "assistencia_judiciaria"]
+
+    if sistema not in sistemas_validos:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sistema inválido. Sistemas válidos: {', '.join(sistemas_validos)}"
+        )
+
+    prompts_criados = 0
+    configs_criadas = 0
+
+    # Cria prompts e configs com base no sistema
+    if sistema == "pedido_calculo":
+        from sistemas.pedido_calculo.seed_config import seed_prompts, seed_configuracoes
+        # Conta antes
+        prompts_antes = db.query(PromptConfig).filter(PromptConfig.sistema == sistema).count()
+        configs_antes = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        # Executa seed
+        seed_prompts(db)
+        seed_configuracoes(db)
+        # Conta depois
+        prompts_depois = db.query(PromptConfig).filter(PromptConfig.sistema == sistema).count()
+        configs_depois = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        prompts_criados = prompts_depois - prompts_antes
+        configs_criadas = configs_depois - configs_antes
+
+    elif sistema == "prestacao_contas":
+        from sistemas.prestacao_contas.seed_config import seed_configuracoes as seed_prestacao
+        # Conta antes
+        prompts_antes = db.query(PromptConfig).filter(PromptConfig.sistema == sistema).count()
+        configs_antes = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        # Executa seed (este seed inclui tanto prompts quanto configs)
+        seed_prestacao(db)
+        # Conta depois
+        prompts_depois = db.query(PromptConfig).filter(PromptConfig.sistema == sistema).count()
+        configs_depois = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        prompts_criados = prompts_depois - prompts_antes
+        configs_criadas = configs_depois - configs_antes
+
+    elif sistema in ["matriculas", "assistencia_judiciaria"]:
+        from admin.seed_prompts import seed_default_prompts, seed_default_config_ia
+        # Conta antes
+        prompts_antes = db.query(PromptConfig).filter(PromptConfig.sistema == sistema).count()
+        configs_antes = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        # Executa seed
+        seed_default_prompts(db, sistema)
+        seed_default_config_ia(db, sistema)
+        # Conta depois
+        prompts_depois = db.query(PromptConfig).filter(PromptConfig.sistema == sistema).count()
+        configs_depois = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        prompts_criados = prompts_depois - prompts_antes
+        configs_criadas = configs_depois - configs_antes
+
+    if prompts_criados == 0 and configs_criadas == 0:
+        return {
+            "success": True,
+            "message": f"Prompts e configurações do sistema '{sistema}' já existem."
+        }
+
     return {
-        "success": True, 
-        "message": f"{count} prompt(s) removido(s) e padrões restaurados"
+        "success": True,
+        "message": f"Criados {prompts_criados} prompt(s) e {configs_criadas} configuração(ões) para '{sistema}'."
     }
 
 
