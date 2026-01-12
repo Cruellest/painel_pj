@@ -75,7 +75,7 @@
     <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm sticky top-0 z-50">
         <div class="flex items-center justify-between max-w-7xl mx-auto">
             <div class="flex items-center gap-4">
-                <a href="/admin/prompts-config" class="text-gray-500 hover:text-primary-600">
+                <a href="/admin/dashboard" class="text-gray-500 hover:text-primary-600">
                     <i class="fas fa-arrow-left"></i>
                 </a>
                 <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
@@ -85,8 +85,15 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
-                <button onclick="salvarTodas()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
-                    <i class="fas fa-save"></i> Salvar Todas Alterações
+                <div class="flex items-center gap-2">
+                    <label class="text-sm text-gray-600">Grupo:</label>
+                    <select id="select-grupo" onchange="onGrupoChange()" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500">
+                        <option value="">Carregando...</option>
+                    </select>
+                </div>
+                <div class="w-px h-8 bg-gray-200"></div>
+                <button onclick="salvarTodas()" class="px-3 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 flex items-center gap-2 transition-colors">
+                    <i class="fas fa-save"></i> Salvar Alterações
                 </button>
             </div>
         </div>
@@ -178,6 +185,8 @@
         let tiposPeca = [];
         let modulosPorTipo = {};
         let alteracoesPendentes = {};
+        let grupos = [];
+        let selectedGroupId = null;
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {
@@ -190,14 +199,14 @@
                 window.location.href = '/login';
                 return;
             }
-            
+
             try {
                 const response = await fetch('/auth/me', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (!response.ok) throw new Error('Token inválido');
-                
-                await carregarDados();
+
+                await carregarGrupos();
             } catch (error) {
                 localStorage.removeItem('access_token');
                 window.location.href = '/login';
@@ -208,14 +217,56 @@
             return localStorage.getItem('access_token');
         }
 
+        async function carregarGrupos() {
+            try {
+                const response = await fetch(`${API_URL}/grupos`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+                grupos = await response.json();
+
+                const select = document.getElementById('select-grupo');
+                select.innerHTML = grupos.map(g =>
+                    `<option value="${g.id}">${g.name}</option>`
+                ).join('');
+
+                if (grupos.length > 0) {
+                    selectedGroupId = grupos[0].id;
+                    await carregarDados();
+                } else {
+                    document.getElementById('tipos-peca-container').innerHTML = `
+                        <div class="text-center py-12 text-gray-400">
+                            <i class="fas fa-exclamation-circle text-4xl mb-4"></i>
+                            <p>Nenhum grupo configurado</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Erro ao carregar grupos:', error);
+                showToast('Erro ao carregar grupos', 'error');
+            }
+        }
+
+        async function onGrupoChange() {
+            const select = document.getElementById('select-grupo');
+            selectedGroupId = parseInt(select.value);
+
+            // Limpa dados anteriores
+            tiposPeca = [];
+            modulosPorTipo = {};
+            alteracoesPendentes = {};
+
+            await carregarDados();
+        }
+
         async function carregarDados() {
             try {
-                // Carrega resumo e tipos de peça
+                // Carrega resumo e tipos de peça filtrados pelo grupo selecionado
+                const groupParam = selectedGroupId ? `?group_id=${selectedGroupId}` : '';
                 const [resumoRes, tiposRes] = await Promise.all([
-                    fetch(`${API_URL}/resumo-configuracao-tipos-peca`, {
+                    fetch(`${API_URL}/resumo-configuracao-tipos-peca${groupParam}`, {
                         headers: { 'Authorization': `Bearer ${getToken()}` }
                     }),
-                    fetch(`${API_URL}/tipos-peca`, {
+                    fetch(`${API_URL}/tipos-peca${groupParam}`, {
                         headers: { 'Authorization': `Bearer ${getToken()}` }
                     })
                 ]);
@@ -354,15 +405,16 @@
 
         async function carregarModulosTipoPeca(tipoPeca) {
             try {
-                const response = await fetch(`${API_URL}/modulos-por-tipo-peca/${tipoPeca}`, {
+                const groupParam = selectedGroupId ? `?group_id=${selectedGroupId}` : '';
+                const response = await fetch(`${API_URL}/modulos-por-tipo-peca/${tipoPeca}${groupParam}`, {
                     headers: { 'Authorization': `Bearer ${getToken()}` }
                 });
-                
+
                 const data = await response.json();
                 modulosPorTipo[tipoPeca] = data.modulos;
-                
+
                 renderizarModulos(tipoPeca, data.modulos);
-                
+
             } catch (error) {
                 console.error('Erro ao carregar módulos:', error);
                 document.getElementById(`modulos-${tipoPeca}`).innerHTML = `

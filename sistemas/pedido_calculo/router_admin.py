@@ -9,7 +9,7 @@ Router de administração do Pedido de Cálculo
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, case
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
 from datetime import datetime
@@ -99,7 +99,7 @@ async def listar_geracoes(
     log_stats = db.query(
         LogChamadaIA.geracao_id,
         func.count(LogChamadaIA.id).label('total_logs'),
-        func.sum(func.cast(LogChamadaIA.sucesso == False, db.bind.dialect.type_descriptor(type(1)))).label('total_erros')
+        func.sum(case((LogChamadaIA.sucesso == False, 1), else_=0)).label('total_erros')
     ).group_by(LogChamadaIA.geracao_id).subquery()
 
     # Query principal com join na subquery

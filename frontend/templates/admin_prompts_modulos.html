@@ -46,7 +46,7 @@
     <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
         <div class="flex items-center justify-between max-w-7xl mx-auto">
             <div class="flex items-center gap-4">
-                <a href="/admin/prompts-config" class="text-gray-500 hover:text-primary-600">
+                <a href="/admin/dashboard" class="text-gray-500 hover:text-primary-600">
                     <i class="fas fa-arrow-left"></i>
                 </a>
                 <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
@@ -55,21 +55,22 @@
                     <p class="text-sm text-gray-500">Edite e versione prompts do sistema</p>
                 </div>
             </div>
-            <div class="flex items-center gap-3">
-                <a href="/admin/modulos-tipo-peca" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2">
-                    <i class="fas fa-layer-group"></i> Módulos por Tipo de Peça
+            <div class="flex items-center gap-2">
+                <a href="/admin/modulos-tipo-peca" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg flex items-center gap-2 transition-colors">
+                    <i class="fas fa-layer-group text-gray-400"></i> Tipos de Peça
                 </a>
-                <button onclick="abrirModalGrupos()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2">
-                    <i class="fas fa-layer-group"></i> Grupos
+                <button onclick="abrirModalGrupos()" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg flex items-center gap-2 transition-colors">
+                    <i class="fas fa-folder text-gray-400"></i> Grupos
                 </button>
-                <button onclick="criarModulo()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
-                    <i class="fas fa-plus"></i> Criar Módulo
+                <div class="w-px h-6 bg-gray-200 mx-1"></div>
+                <button onclick="criarModulo()" class="px-3 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 flex items-center gap-2 transition-colors">
+                    <i class="fas fa-plus"></i> Novo Módulo
                 </button>
-                <button onclick="abrirModalImportar()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
-                    <i class="fas fa-upload"></i> Importar JSON
+                <button onclick="abrirModalImportar()" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg flex items-center gap-2 transition-colors border border-gray-200">
+                    <i class="fas fa-upload text-gray-400"></i> Importar
                 </button>
-                <button onclick="abrirModalExportar()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2">
-                    <i class="fas fa-download"></i> Exportar
+                <button onclick="abrirModalExportar()" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg flex items-center gap-2 transition-colors border border-gray-200">
+                    <i class="fas fa-download text-gray-400"></i> Exportar
                 </button>
             </div>
         </div>

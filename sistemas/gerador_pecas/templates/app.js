@@ -3,6 +3,19 @@
 
 const API_URL = '/gerador-pecas/api';
 
+// =====================================================
+// FEATURE FLAGS - Configuração de funcionalidades
+// =====================================================
+// Para ativar/desativar funcionalidades temporariamente
+// Script para reativar: FEATURE_FLAGS.SUBGRUPOS_ENABLED = true;
+const FEATURE_FLAGS = {
+    // Subgrupos de Conteúdo - DESATIVADO TEMPORARIAMENTE (2025-01-12)
+    // Para reativar: alterar para true ou executar no console:
+    // FEATURE_FLAGS.SUBGRUPOS_ENABLED = true; app.carregarSubgrupos(app.groupId);
+    SUBGRUPOS_ENABLED: false,
+};
+// =====================================================
+
 class GeradorPecasApp {
     constructor() {
         this.numeroCNJ = null;
@@ -181,6 +194,13 @@ class GeradorPecasApp {
     }
 
     async carregarSubgrupos(groupId) {
+        // Feature flag: Subgrupos desativado temporariamente
+        if (!FEATURE_FLAGS.SUBGRUPOS_ENABLED) {
+            this.subgruposDisponiveis = [];
+            this.renderSubgrupos([]);
+            return;
+        }
+
         if (!groupId) {
             this.subgruposDisponiveis = [];
             this.renderSubgrupos([]);
@@ -214,6 +234,13 @@ class GeradorPecasApp {
         const hint = document.getElementById('subgrupo-hint');
 
         if (!container || !options) {
+            return;
+        }
+
+        // Feature flag: Subgrupos desativado temporariamente
+        if (!FEATURE_FLAGS.SUBGRUPOS_ENABLED) {
+            container.classList.add('hidden');
+            this.subgroupIds = [];
             return;
         }
 

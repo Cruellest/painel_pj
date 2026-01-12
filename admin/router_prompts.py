@@ -259,17 +259,24 @@ async def listar_tipos(
 
 @router.get("/tipos-peca")
 async def listar_tipos_peca(
+    group_id: Optional[int] = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     Lista todos os tipos de peça disponíveis (módulos tipo='peca').
+    Opcionalmente filtra por grupo.
     """
-    modulos_peca = db.query(PromptModulo).filter(
+    query = db.query(PromptModulo).filter(
         PromptModulo.tipo == "peca",
         PromptModulo.ativo == True
-    ).order_by(PromptModulo.ordem).all()
-    
+    )
+
+    if group_id:
+        query = query.filter(PromptModulo.group_id == group_id)
+
+    modulos_peca = query.order_by(PromptModulo.ordem).all()
+
     return [
         {
             "categoria": m.categoria,
@@ -282,25 +289,33 @@ async def listar_tipos_peca(
 
 @router.get("/resumo-configuracao-tipos-peca")
 async def resumo_configuracao_tipos_peca(
+    group_id: Optional[int] = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     Retorna um resumo da configuração de módulos por tipo de peça.
     Mostra quantos módulos estão ativos para cada tipo.
+    Opcionalmente filtra por grupo.
     """
     # Busca tipos de peça
-    tipos_peca = db.query(PromptModulo).filter(
+    query_tipos = db.query(PromptModulo).filter(
         PromptModulo.tipo == "peca",
         PromptModulo.ativo == True
-    ).all()
-    
+    )
+    if group_id:
+        query_tipos = query_tipos.filter(PromptModulo.group_id == group_id)
+    tipos_peca = query_tipos.all()
+
     # Conta total de módulos de conteúdo
-    total_modulos = db.query(PromptModulo).filter(
+    query_conteudo = db.query(PromptModulo).filter(
         PromptModulo.tipo == "conteudo",
         PromptModulo.ativo == True
-    ).count()
-    
+    )
+    if group_id:
+        query_conteudo = query_conteudo.filter(PromptModulo.group_id == group_id)
+    total_modulos = query_conteudo.count()
+
     resultado = []
     for tipo in tipos_peca:
         # Conta associações ativas
@@ -308,16 +323,16 @@ async def resumo_configuracao_tipos_peca(
             ModuloTipoPeca.tipo_peca == tipo.categoria,
             ModuloTipoPeca.ativo == True
         ).count()
-        
+
         # Conta associações inativas
         inativos = db.query(ModuloTipoPeca).filter(
             ModuloTipoPeca.tipo_peca == tipo.categoria,
             ModuloTipoPeca.ativo == False
         ).count()
-        
+
         # Módulos sem associação (considerados ativos por padrão)
         sem_config = total_modulos - ativos - inativos
-        
+
         resultado.append({
             "tipo_peca": tipo.categoria,
             "titulo": tipo.titulo,
@@ -326,7 +341,7 @@ async def resumo_configuracao_tipos_peca(
             "modulos_configurados": ativos + inativos,
             "total_modulos": total_modulos
         })
-    
+
     return {
         "tipos_peca": resultado,
         "total_modulos_conteudo": total_modulos
@@ -509,35 +524,6 @@ async def obter_modulo(
     if not modulo:
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
 
-    new_group_id = modulo_data.group_id if modulo_data.group_id is not None else modulo.group_id
-    new_subgroup_id = modulo_data.subgroup_id if modulo_data.subgroup_id is not None else modulo.subgroup_id
-
-    if modulo.tipo == "conteudo":
-        if not new_group_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Grupo e obrigatorio para modulo de conteudo"
-            )
-        grupo = db.query(PromptGroup).filter(PromptGroup.id == new_group_id).first()
-        if not grupo:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Grupo invalido"
-            )
-        if new_subgroup_id:
-            subgrupo = db.query(PromptSubgroup).filter(
-                PromptSubgroup.id == new_subgroup_id,
-                PromptSubgroup.group_id == new_group_id
-            ).first()
-            if not subgrupo:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Subgrupo invalido para o grupo informado"
-                )
-    else:
-        new_group_id = None
-        new_subgroup_id = None
-    
     return modulo
 
 
@@ -1200,17 +1186,22 @@ class ModuloTipoPecaResponse(BaseModel):
 @router.get("/modulos-por-tipo-peca/{tipo_peca}")
 async def listar_modulos_por_tipo_peca(
     tipo_peca: str,
+    group_id: Optional[int] = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     Lista todos os módulos de conteúdo com status de ativação para um tipo de peça específico.
+    Opcionalmente filtra por grupo.
     """
     # Busca todos os módulos de conteúdo ativos
-    modulos_conteudo = db.query(PromptModulo).filter(
+    query = db.query(PromptModulo).filter(
         PromptModulo.tipo == "conteudo",
         PromptModulo.ativo == True
-    ).order_by(PromptModulo.categoria, PromptModulo.ordem).all()
+    )
+    if group_id:
+        query = query.filter(PromptModulo.group_id == group_id)
+    modulos_conteudo = query.order_by(PromptModulo.categoria, PromptModulo.ordem).all()
     
     # Busca associações existentes para este tipo de peça
     associacoes = db.query(ModuloTipoPeca).filter(
