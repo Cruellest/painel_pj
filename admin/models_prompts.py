@@ -4,9 +4,18 @@ Modelos para gerenciamento de prompts modulares com versionamento
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, ForeignKey, UniqueConstraint, Table
 from sqlalchemy.orm import relationship
 from database.connection import Base
+
+
+# Tabela de associação muitos-para-muitos entre PromptModulo e PromptSubcategoria
+prompt_modulo_subcategorias = Table(
+    "prompt_modulo_subcategorias",
+    Base.metadata,
+    Column("modulo_id", Integer, ForeignKey("prompt_modulos.id"), primary_key=True),
+    Column("subcategoria_id", Integer, ForeignKey("prompt_subcategorias.id"), primary_key=True),
+)
 
 
 class ModuloTipoPeca(Base):
@@ -75,6 +84,7 @@ class PromptModulo(Base):
     historico = relationship("PromptModuloHistorico", back_populates="modulo", order_by="desc(PromptModuloHistorico.versao)")
     group = relationship("PromptGroup")
     subgroup = relationship("PromptSubgroup")
+    subcategorias = relationship("PromptSubcategoria", secondary=prompt_modulo_subcategorias, backref="modulos")
     
     # Constraint de unicidade
     __table_args__ = (

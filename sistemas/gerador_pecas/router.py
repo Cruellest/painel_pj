@@ -68,12 +68,14 @@ def _listar_grupos_permitidos(current_user: User, db: Session) -> List[PromptGro
     return query.filter(PromptGroup.id.in_(group_ids)).order_by(PromptGroup.order, PromptGroup.name).all()
 
 
-def _resolver_grupo_e_subgrupos(
+def _resolver_grupo_e_subcategorias(
     current_user: User,
     db: Session,
     group_id: Optional[int],
-    subgroup_ids: Optional[List[int]]
+    subcategoria_ids: Optional[List[int]]
 ):
+    from admin.models_prompt_groups import PromptSubcategoria
+
     grupos = _listar_grupos_permitidos(current_user, db)
     if not grupos:
         raise HTTPException(status_code=400, detail="Usuario sem grupo de prompts.")
@@ -95,43 +97,43 @@ def _resolver_grupo_e_subgrupos(
             if group_id not in allowed_ids:
                 raise HTTPException(status_code=403, detail="Usuario sem acesso ao grupo selecionado.")
 
-    subgroup_ids_normalized = []
-    if subgroup_ids:
-        for item in subgroup_ids:
+    subcategoria_ids_normalized = []
+    if subcategoria_ids:
+        for item in subcategoria_ids:
             try:
                 value = int(item)
             except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail="Subgrupos invalidos.")
-            if value not in subgroup_ids_normalized:
-                subgroup_ids_normalized.append(value)
+                raise HTTPException(status_code=400, detail="Subcategorias invalidas.")
+            if value not in subcategoria_ids_normalized:
+                subcategoria_ids_normalized.append(value)
 
-        if subgroup_ids_normalized:
-            subgroups = db.query(PromptSubgroup).filter(
-                PromptSubgroup.id.in_(subgroup_ids_normalized),
-                PromptSubgroup.group_id == grupo.id,
-                PromptSubgroup.active == True
+        if subcategoria_ids_normalized:
+            subcategorias = db.query(PromptSubcategoria).filter(
+                PromptSubcategoria.id.in_(subcategoria_ids_normalized),
+                PromptSubcategoria.group_id == grupo.id,
+                PromptSubcategoria.active == True
             ).all()
-            if len(subgroups) != len(subgroup_ids_normalized):
-                raise HTTPException(status_code=400, detail="Subgrupos invalidos para o grupo selecionado.")
+            if len(subcategorias) != len(subcategoria_ids_normalized):
+                raise HTTPException(status_code=400, detail="Subcategorias invalidas para o grupo selecionado.")
 
-    return grupo, subgroup_ids_normalized
+    return grupo, subcategoria_ids_normalized
 
 
-def _parse_subgroup_ids_form(subgroup_ids_raw: Optional[str]) -> Optional[List[int]]:
-    if not subgroup_ids_raw:
+def _parse_subcategoria_ids_form(subcategoria_ids_raw: Optional[str]) -> Optional[List[int]]:
+    if not subcategoria_ids_raw:
         return None
 
     try:
-        payload = json.loads(subgroup_ids_raw)
+        payload = json.loads(subcategoria_ids_raw)
         if isinstance(payload, list):
             return payload
     except Exception:
         pass
 
     try:
-        return [int(value) for value in subgroup_ids_raw.split(",") if value.strip()]
+        return [int(value) for value in subcategoria_ids_raw.split(",") if value.strip()]
     except ValueError:
-        raise HTTPException(status_code=400, detail="Subgrupos invalidos.")
+        raise HTTPException(status_code=400, detail="Subcategorias invalidas.")
 # Armazena estado de processamento em memória (para SSE)
 _processamento_status = {}
 
@@ -142,7 +144,7 @@ class ProcessarProcessoRequest(BaseModel):
     resposta_usuario: Optional[str] = None
     observacao_usuario: Optional[str] = None  # Observações do usuário para incluir no prompt
     group_id: Optional[int] = None
-    subgroup_ids: Optional[List[int]] = None
+    subcategoria_ids: Optional[List[int]] = None
 
 
 class ExportarDocxRequest(BaseModel):
@@ -226,7 +228,7 @@ async def listar_subgrupos_por_grupo(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    grupo, _ = _resolver_grupo_e_subgrupos(current_user, db, group_id, [])
+    grupo, _ = _resolver_grupo_e_subcategorias(current_user, db, group_id, [])
 
     subgrupos = db.query(PromptSubgroup).filter(
         PromptSubgroup.group_id == grupo.id,
@@ -259,11 +261,11 @@ async def processar_processo(
         # Normaliza o CNJ
         cnj_limpo = _limpar_cnj(req.numero_cnj)
 
-        grupo, subgroup_ids = _resolver_grupo_e_subgrupos(
+        grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
             current_user,
             db,
             req.group_id,
-            req.subgroup_ids
+            req.subcategoria_ids
         )
         
         # Busca configurações de IA
@@ -286,7 +288,7 @@ async def processar_processo(
             modelo=modelo,
             db=db,
             group_id=grupo.id,
-            subgroup_ids=subgroup_ids
+            subcategoria_ids=subcategoria_ids
         )
         
         # Processa o processo
@@ -319,11 +321,11 @@ async def processar_processo_stream(
     Se tipo_peca não for especificado, o Agente 2 detecta automaticamente
     qual tipo de peça é mais adequado baseado nos documentos do processo.
     """
-    grupo, subgroup_ids = _resolver_grupo_e_subgrupos(
+    grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
         current_user,
         db,
         req.group_id,
-        req.subgroup_ids
+        req.subcategoria_ids
     )
     group_id = grupo.id
     async def event_generator() -> AsyncGenerator[str, None]:
@@ -345,7 +347,7 @@ async def processar_processo_stream(
                 modelo=modelo,
                 db=db,
                 group_id=group_id,
-                subgroup_ids=subgroup_ids
+                subcategoria_ids=subcategoria_ids
             )
             
             # Se tem orquestrador, processa com eventos
@@ -622,7 +624,7 @@ async def processar_pdfs_stream(
     tipo_peca: Optional[str] = Form(None, description="Tipo de peça a gerar"),
     observacao_usuario: Optional[str] = Form(None, description="Observações do usuário para a IA"),
     group_id: Optional[int] = Form(None, description="Grupo de prompts"),
-    subgroup_ids_json: Optional[str] = Form(None, description="Subgrupos selecionados (JSON)"),
+    subcategoria_ids_json: Optional[str] = Form(None, description="Subcategorias selecionadas (JSON)"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -635,12 +637,12 @@ async def processar_pdfs_stream(
     Returns:
         Stream SSE com progresso da geração
     """
-    subgroup_ids = _parse_subgroup_ids_form(subgroup_ids_json)
-    grupo, subgroup_ids = _resolver_grupo_e_subgrupos(
+    subcategoria_ids = _parse_subcategoria_ids_form(subcategoria_ids_json)
+    grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
         current_user,
         db,
         group_id,
-        subgroup_ids
+        subcategoria_ids
     )
     group_id = grupo.id
 
@@ -692,7 +694,7 @@ async def processar_pdfs_stream(
                 modelo=modelo,
                 db=db,
                 group_id=group_id,
-                subgroup_ids=subgroup_ids
+                subcategoria_ids=subcategoria_ids
             )
             
             # Se tem orquestrador, usa os agentes 2 e 3

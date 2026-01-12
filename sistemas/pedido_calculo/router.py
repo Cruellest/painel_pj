@@ -990,6 +990,15 @@ async def processar_stream(
                         "numero_processo": numero_cumprimento
                     })
 
+            # Certidão de trânsito em julgado
+            if docs.certidao_transito:
+                documentos_baixados.append({
+                    "id": docs.certidao_transito,
+                    "tipo": "Certidão de Trânsito em Julgado",
+                    "processo": "principal",
+                    "numero_processo": numero_cumprimento
+                })
+
             # Pedido de cumprimento e planilha de cálculo
             # IMPORTANTE: Usa metadados da IA para classificar corretamente os documentos
             # Só mostra os documentos que foram efetivamente selecionados pela IA
@@ -1084,6 +1093,15 @@ async def processar_stream(
                             "processo": "origem",
                             "numero_processo": numero_origem
                         })
+
+                # Certidão de trânsito em julgado da origem
+                if docs_origem_para_baixar.certidao_transito:
+                    documentos_baixados.append({
+                        "id": docs_origem_para_baixar.certidao_transito,
+                        "tipo": "Certidão de Trânsito em Julgado",
+                        "processo": "origem",
+                        "numero_processo": numero_origem
+                    })
 
             # Salva no histórico do banco de dados
             from .models import GeracaoPedidoCalculo, LogChamadaIA, FeedbackPedidoCalculo

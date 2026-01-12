@@ -16,6 +16,52 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 
+# Prompt padrão de critérios de relevância (fallback)
+CRITERIOS_RELEVANCIA_PADRAO = """Se o documento for meramente administrativo (procuração, AR de citação, comprovante de pagamento,
+documento pessoal, certidão de publicação, protocolo, etc), retorne apenas:
+```json
+{{"irrelevante": true, "motivo": "breve descrição do motivo"}}
+```
+
+IMPORTANTE: Os seguintes tipos de documento SÃO RELEVANTES e devem ser resumidos normalmente:
+- Emails, ofícios e comunicações que contenham informações sobre o caso
+- Documentos sobre transferência hospitalar, notificações médicas, comunicados sobre tratamento
+- Relatórios, laudos, pareceres técnicos
+- Qualquer documento que contenha informações factuais sobre o processo"""
+
+
+def obter_criterios_relevancia(db: Optional[Session] = None) -> str:
+    """
+    Obtém os critérios de relevância do banco de dados.
+
+    Busca na tabela ConfiguracaoIA com sistema='gerador_pecas' e chave='prompt_criterios_relevancia'.
+    Se não encontrar, retorna o prompt padrão.
+
+    Args:
+        db: Sessão do banco de dados (opcional)
+
+    Returns:
+        String com os critérios de relevância para o prompt
+    """
+    if not db:
+        return CRITERIOS_RELEVANCIA_PADRAO
+
+    try:
+        from admin.models import ConfiguracaoIA
+
+        config = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "prompt_criterios_relevancia"
+        ).first()
+
+        if config and config.valor and config.valor.strip():
+            return config.valor
+    except Exception as e:
+        print(f"[WARN] Erro ao carregar critérios de relevância do banco: {e}")
+
+    return CRITERIOS_RELEVANCIA_PADRAO
+
+
 @dataclass
 class FormatoResumo:
     """Representa o formato de resumo a ser usado"""
@@ -75,15 +121,17 @@ def obter_formato_para_documento(db: Session, codigo_documento: int) -> Optional
 
 def gerar_prompt_extracao_json(
     formato: FormatoResumo,
-    descricao_documento: str = ""
+    descricao_documento: str = "",
+    db: Optional[Session] = None
 ) -> str:
     """
     Gera o prompt para extração de resumo em formato JSON.
-    
+
     Args:
         formato: FormatoResumo com a estrutura esperada
         descricao_documento: Descrição do documento (se conhecida)
-        
+        db: Sessão do banco para carregar critérios de relevância configuráveis
+
     Returns:
         Prompt completo para a IA
     """
@@ -91,7 +139,10 @@ def gerar_prompt_extracao_json(
     formato_json_escaped = formato.formato_json.replace("{", "{{").replace("}", "}}")
     instrucoes_escaped = (formato.instrucoes_extracao or "").replace("{", "{{").replace("}", "}}")
     descricao_escaped = descricao_documento.replace("{", "{{").replace("}", "}}")
-    
+
+    # Obtém critérios de relevância configuráveis
+    criterios_relevancia = obter_criterios_relevancia(db)
+
     prompt = """Analise o documento judicial e extraia as informações no formato JSON especificado abaixo.
 
 ## FORMATO JSON ESPERADO:
@@ -108,11 +159,7 @@ def gerar_prompt_extracao_json(
 6. Para datas, use formato "DD/MM/YYYY" quando possível
 
 ## DOCUMENTOS IRRELEVANTES:
-Se o documento for meramente administrativo (procuração, AR de citação, comprovante de pagamento, 
-documento pessoal, certidão de publicação, protocolo, etc), retorne apenas:
-```json
-{{"irrelevante": true, "motivo": "breve descrição do motivo"}}
-```
+""" + criterios_relevancia + """
 """
 
     if instrucoes_escaped:
@@ -135,15 +182,23 @@ documento pessoal, certidão de publicação, protocolo, etc), retorne apenas:
 
 
 def gerar_prompt_extracao_json_imagem(
-    formato: FormatoResumo
+    formato: FormatoResumo,
+    db: Optional[Session] = None
 ) -> str:
     """
     Gera o prompt para extração de resumo JSON a partir de imagens (PDFs digitalizados).
+
+    Args:
+        formato: FormatoResumo com a estrutura esperada
+        db: Sessão do banco para carregar critérios de relevância configuráveis
     """
     # Escapa chaves do JSON para não conflitar com .format()
     formato_json_escaped = formato.formato_json.replace("{", "{{").replace("}", "}}")
     instrucoes_escaped = (formato.instrucoes_extracao or "").replace("{", "{{").replace("}", "}}")
-    
+
+    # Obtém critérios de relevância configuráveis
+    criterios_relevancia = obter_criterios_relevancia(db)
+
     prompt = """Analise as imagens deste documento judicial e extraia as informações no formato JSON.
 
 ## FORMATO JSON ESPERADO:
@@ -157,10 +212,7 @@ def gerar_prompt_extracao_json_imagem(
 3. Seja fiel ao documento - NÃO invente informações
 
 ## DOCUMENTOS IRRELEVANTES:
-Se for documento administrativo (procuração, RG, CPF, comprovante, AR, etc), retorne:
-```json
-{{"irrelevante": true, "motivo": "breve descrição"}}
-```
+""" + criterios_relevancia + """
 """
 
     if instrucoes_escaped:

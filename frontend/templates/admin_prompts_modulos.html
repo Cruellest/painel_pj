@@ -27,8 +27,7 @@
     <style>
         .editor-container { font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; }
         .tag-pill { @apply px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700; }
-        .keyword-pill { @apply px-2 py-1 text-xs rounded-full bg-purple-100 text-purple-700; }
-        
+
         /* Animações para categorias colapsáveis */
         .categoria-icon {
             transition: transform 0.2s ease-in-out;
@@ -46,7 +45,7 @@
     <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
         <div class="flex items-center justify-between max-w-7xl mx-auto">
             <div class="flex items-center gap-4">
-                <a href="/admin/dashboard" class="text-gray-500 hover:text-primary-600">
+                <a href="/dashboard" class="text-gray-500 hover:text-primary-600">
                     <i class="fas fa-arrow-left"></i>
                 </a>
                 <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
@@ -92,16 +91,20 @@
                     <option value="peca">Peça</option>
                     <option value="conteudo">Conteúdo</option>
                 </select>
-                <select id="filtro-grupo" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="filtrarModulos()">
+                <select id="filtro-grupo" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="onGrupoChange()">
                     <option value="">Todos os grupos</option>
                 </select>
-                <select id="filtro-categoria" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="filtrarModulos()">
+                <select id="filtro-categoria" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="carregarModulos()">
                     <option value="">Todas as categorias</option>
                 </select>
                 <label class="flex items-center gap-2 text-sm text-gray-600">
                     <input type="checkbox" id="apenas-ativos" checked onchange="filtrarModulos()">
                     Apenas ativos
                 </label>
+                <button type="button" onclick="abrirGerenciarSubcategoriasPrincipal()"
+                    class="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm font-medium flex items-center gap-2">
+                    <i class="fas fa-tags"></i> Assuntos
+                </button>
             </div>
         </div>
 
@@ -235,10 +238,19 @@
                             <input type="text" id="modulo-categoria" class="w-full px-3 py-2 border border-gray-300 rounded-lg"
                                 placeholder="Ex: medicamento">
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Subcategoria</label>
-                            <input type="text" id="modulo-subcategoria" class="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                                placeholder="Ex: nao_incorporado_sus">
+                        <div id="subcategorias-field-container" class="hidden">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Assuntos
+                                <button type="button" onclick="abrirGerenciarSubcategorias()" class="ml-2 text-xs text-primary-600 hover:text-primary-700">
+                                    <i class="fas fa-cog"></i> Gerenciar
+                                </button>
+                            </label>
+                            <div id="modulo-subcategorias-container" class="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[42px]">
+                                <div id="modulo-subcategorias-opcoes" class="flex flex-wrap gap-2">
+                                    <span class="text-gray-400 text-sm">Selecione um grupo primeiro</span>
+                                </div>
+                            </div>
+                            <input type="hidden" id="modulo-subcategoria" value="">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Nome (único)</label>
@@ -296,25 +308,6 @@
                             placeholder="Digite o conteúdo do prompt aqui... Este é o texto que será incluído no prompt enviado à IA para gerar a peça."></textarea>
                     </div>
                     
-                    <!-- Palavras-chave -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            <i class="fas fa-tags text-purple-500 mr-1"></i>
-                            Palavras-chave (para detecção automática)
-                        </label>
-                        <div id="keywords-container" class="flex flex-wrap gap-2 p-3 border border-gray-300 rounded-lg min-h-[44px]">
-                            <!-- Keywords renderizadas aqui -->
-                        </div>
-                        <div class="mt-2 flex gap-2">
-                            <input type="text" id="nova-keyword" placeholder="Adicionar palavra-chave" 
-                                class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                                onkeypress="if(event.key==='Enter'){event.preventDefault();adicionarKeyword()}">
-                            <button type="button" onclick="adicionarKeyword()" class="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                        </div>
-                    </div>
-                    
                     <!-- Tags -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -351,9 +344,9 @@
                     <div id="motivo-container" class="hidden">
                         <label class="block text-sm font-medium text-gray-700 mb-1">
                             <i class="fas fa-comment text-orange-500 mr-1"></i>
-                            Motivo da alteração <span class="text-red-500">*</span>
+                            Motivo da alteração <span class="text-gray-400 text-xs">(opcional)</span>
                         </label>
-                        <input type="text" id="modulo-motivo" 
+                        <input type="text" id="modulo-motivo"
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg"
                             placeholder="Ex: Atualização de jurisprudência - Tema 106 STJ">
                     </div>
@@ -507,8 +500,25 @@
                                 <p class="text-xs text-gray-500">Ignorados</p>
                             </div>
                         </div>
+                        <!-- Itens criados automaticamente -->
+                        <div id="itens-criados-auto" class="hidden mt-4 pt-3 border-t border-green-200">
+                            <p class="text-xs text-green-700 font-medium mb-2">
+                                <i class="fas fa-magic mr-1"></i> Criados automaticamente:
+                            </p>
+                            <div class="flex flex-wrap gap-3 text-xs">
+                                <span id="res-grupos-criados" class="hidden px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                                    <i class="fas fa-folder mr-1"></i> <span class="num">0</span> grupo(s)
+                                </span>
+                                <span id="res-subgrupos-criados" class="hidden px-2 py-1 bg-indigo-100 text-indigo-700 rounded">
+                                    <i class="fas fa-folder-open mr-1"></i> <span class="num">0</span> subgrupo(s)
+                                </span>
+                                <span id="res-subcategorias-criadas" class="hidden px-2 py-1 bg-amber-100 text-amber-700 rounded">
+                                    <i class="fas fa-tags mr-1"></i> <span class="num">0</span> assunto(s)
+                                </span>
+                            </div>
+                        </div>
                     </div>
-                    
+
                     <div id="resultado-erros" class="hidden mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
                         <h4 class="font-semibold text-red-800 flex items-center gap-2">
                             <i class="fas fa-exclamation-triangle"></i>
@@ -595,7 +605,7 @@
                                     <th class="px-3 py-2 text-left">Título</th>
                                     <th class="px-3 py-2 text-left">Tipo</th>
                                     <th class="px-3 py-2 text-left">Categoria</th>
-                                    <th class="px-3 py-2 text-left">Subcategoria</th>
+                                    <th class="px-3 py-2 text-left">Assunto</th>
                                 </tr>
                             </thead>
                             <tbody id="lista-modulos-exportar" class="divide-y divide-gray-100">
@@ -621,15 +631,63 @@
         </div>
     </div>
 
+    <!-- Modal Gerenciar Subcategorias -->
+    <div id="modal-subcategorias" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-gray-800">
+                    <i class="fas fa-tags text-primary-500 mr-2"></i>
+                    Assuntos
+                    <span id="subcategorias-grupo-nome" class="text-sm font-normal text-gray-500 ml-2"></span>
+                </h3>
+                <button onclick="fecharGerenciarSubcategorias()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-6">
+                <!-- Form para criar nova subcategoria -->
+                <form id="form-nova-subcategoria" onsubmit="criarSubcategoria(event)" class="mb-6">
+                    <h4 class="text-sm font-medium text-gray-700 mb-3">Novo Assunto</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <input type="text" id="nova-subcategoria-nome" required placeholder="Nome (ex: Servidor Publico)"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" oninput="autoGerarSlugSubcategoria()">
+                        </div>
+                        <div>
+                            <input type="text" id="nova-subcategoria-slug" required placeholder="Slug (ex: servidor_publico)"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono">
+                        </div>
+                        <div>
+                            <input type="text" id="nova-subcategoria-descricao" placeholder="Descricao (opcional)"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                        <button type="submit" class="w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium">
+                            <i class="fas fa-plus mr-1"></i> Criar Assunto
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Lista de subcategorias existentes -->
+                <div>
+                    <h4 class="text-sm font-medium text-gray-700 mb-3">Assuntos Existentes</h4>
+                    <div id="lista-subcategorias-gerenciar" class="space-y-2 max-h-48 overflow-y-auto">
+                        <p class="text-gray-400 text-sm text-center py-4">Carregando...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '/admin/api/prompts-modulos';
         let modulosCache = [];
         let modulosExportCache = [];
-        let keywordsAtuais = [];
         let tagsAtuais = [];
         let moduloAtualId = null;
         let gruposCache = [];
         let subgruposCache = [];
+        let subcategoriasCache = [];
+        let subcategoriasSelecionadas = [];
         let grupoSelecionadoId = null;
 
         // Inicialização
@@ -649,7 +707,7 @@
                 const apenasAtivos = document.getElementById('apenas-ativos').checked;
 
                 if (tipo) params.append('tipo', tipo);
-                if (grupoId && (!tipo || tipo === 'conteudo')) params.append('group_id', grupoId);
+                if (grupoId) params.append('group_id', grupoId);
                 if (categoria) params.append('categoria', categoria);
                 if (busca) params.append('busca', busca);
                 params.append('apenas_ativos', apenasAtivos);
@@ -672,7 +730,7 @@
             }
         }
 
-        async function carregarCategorias() {
+        async function carregarCategorias(preservarSelecao = true) {
             try {
                 const params = new URLSearchParams();
                 const grupoId = document.getElementById('filtro-grupo').value;
@@ -683,6 +741,7 @@
                 });
                 const categorias = await response.json();
                 const select = document.getElementById('filtro-categoria');
+                const valorAnterior = preservarSelecao ? select.value : '';
                 select.innerHTML = '<option value="">Todas as categorias</option>';
                 categorias.forEach(cat => {
                     const option = document.createElement('option');
@@ -690,6 +749,10 @@
                     option.textContent = cat;
                     select.appendChild(option);
                 });
+                // Restaura seleção anterior se ainda existir nas opções
+                if (valorAnterior && categorias.includes(valorAnterior)) {
+                    select.value = valorAnterior;
+                }
             } catch (error) {
                 console.error('Erro ao carregar categorias:', error);
             }
@@ -994,6 +1057,237 @@
             }
         }
 
+        async function carregarSubcategoriasModulo(groupId, selectedIds = []) {
+            const container = document.getElementById('modulo-subcategorias-opcoes');
+            if (!container) return;
+
+            subcategoriasSelecionadas = selectedIds || [];
+
+            if (!groupId) {
+                container.innerHTML = '<span class="text-gray-400 text-sm">Selecione um grupo primeiro</span>';
+                subcategoriasCache = [];
+                return;
+            }
+
+            try {
+                const response = await fetch(`/admin/api/prompts-modulos/grupos/${groupId}/subcategorias`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+
+                if (!response.ok) {
+                    container.innerHTML = '<span class="text-gray-400 text-sm">Erro ao carregar</span>';
+                    return;
+                }
+
+                subcategoriasCache = await response.json();
+                renderizarSubcategoriasCheckboxes();
+            } catch (error) {
+                console.error('Erro ao carregar subcategorias:', error);
+                container.innerHTML = '<span class="text-red-400 text-sm">Erro ao carregar assuntos</span>';
+            }
+        }
+
+        function renderizarSubcategoriasCheckboxes() {
+            const container = document.getElementById('modulo-subcategorias-opcoes');
+            if (!container) return;
+
+            if (subcategoriasCache.length === 0) {
+                container.innerHTML = '<span class="text-gray-400 text-sm">Nenhum assunto cadastrado. <button type="button" onclick="abrirGerenciarSubcategorias()" class="text-primary-600 hover:underline">Criar um</button></span>';
+                return;
+            }
+
+            container.innerHTML = subcategoriasCache.map(sub => {
+                const checked = subcategoriasSelecionadas.includes(sub.id) ? 'checked' : '';
+                return `
+                    <label class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full border ${checked ? 'border-primary-500 bg-primary-50' : 'border-gray-200 bg-white'} text-sm cursor-pointer hover:border-primary-300 transition-colors">
+                        <input type="checkbox" value="${sub.id}" ${checked} onchange="toggleSubcategoria(${sub.id})" class="h-3.5 w-3.5 text-primary-600 rounded border-gray-300">
+                        <span class="${checked ? 'text-primary-700' : 'text-gray-700'}">${sub.nome}</span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        function toggleSubcategoria(id) {
+            const index = subcategoriasSelecionadas.indexOf(id);
+            if (index === -1) {
+                subcategoriasSelecionadas.push(id);
+            } else {
+                subcategoriasSelecionadas.splice(index, 1);
+            }
+            renderizarSubcategoriasCheckboxes();
+        }
+
+        // Funções para gerenciar subcategorias
+        let grupoIdParaSubcategorias = null;
+
+        function abrirGerenciarSubcategorias() {
+            const grupoId = document.getElementById('modulo-grupo').value;
+            if (!grupoId) {
+                alert('Selecione um grupo primeiro');
+                return;
+            }
+            grupoIdParaSubcategorias = grupoId;
+            abrirModalSubcategorias(grupoId);
+        }
+
+        function abrirGerenciarSubcategoriasPrincipal() {
+            const grupoId = document.getElementById('filtro-grupo').value;
+            if (!grupoId) {
+                alert('Selecione um grupo no filtro primeiro para gerenciar seus assuntos');
+                return;
+            }
+            grupoIdParaSubcategorias = grupoId;
+            // Carrega subcategorias do grupo selecionado no filtro
+            carregarSubcategoriasParaGerenciar(grupoId);
+        }
+
+        async function carregarSubcategoriasParaGerenciar(grupoId) {
+            try {
+                const response = await fetch(`/admin/api/prompts-modulos/grupos/${grupoId}/subcategorias`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+                if (response.ok) {
+                    subcategoriasCache = await response.json();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar subcategorias:', error);
+            }
+            abrirModalSubcategorias(grupoId);
+        }
+
+        function abrirModalSubcategorias(grupoId) {
+            grupoIdParaSubcategorias = grupoId;
+            // Mostra o nome do grupo no título
+            const grupo = gruposCache.find(g => g.id == grupoId);
+            const nomeGrupo = grupo ? `(${grupo.name})` : '';
+            document.getElementById('subcategorias-grupo-nome').textContent = nomeGrupo;
+
+            document.getElementById('modal-subcategorias').classList.remove('hidden');
+            document.getElementById('nova-subcategoria-nome').value = '';
+            document.getElementById('nova-subcategoria-slug').value = '';
+            document.getElementById('nova-subcategoria-descricao').value = '';
+            renderizarListaSubcategoriasGerenciar();
+        }
+
+        function fecharGerenciarSubcategorias() {
+            document.getElementById('modal-subcategorias').classList.add('hidden');
+        }
+
+        function autoGerarSlugSubcategoria() {
+            const nome = document.getElementById('nova-subcategoria-nome').value;
+            const slug = nome
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9]+/g, '_')
+                .replace(/^_|_$/g, '');
+            document.getElementById('nova-subcategoria-slug').value = slug;
+        }
+
+        async function criarSubcategoria(event) {
+            event.preventDefault();
+            const grupoId = grupoIdParaSubcategorias;
+            if (!grupoId) {
+                alert('Nenhum grupo selecionado');
+                return;
+            }
+            const nome = document.getElementById('nova-subcategoria-nome').value.trim();
+            const slug = document.getElementById('nova-subcategoria-slug').value.trim();
+            const descricao = document.getElementById('nova-subcategoria-descricao').value.trim();
+
+            if (!nome || !slug) {
+                alert('Nome e slug sao obrigatorios');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/admin/api/prompts-modulos/grupos/${grupoId}/subcategorias`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ nome, slug, descricao: descricao || null })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao criar assunto');
+                }
+
+                document.getElementById('nova-subcategoria-nome').value = '';
+                document.getElementById('nova-subcategoria-slug').value = '';
+                document.getElementById('nova-subcategoria-descricao').value = '';
+
+                // Recarrega subcategorias
+                await carregarSubcategoriasParaGerenciar(grupoId);
+
+                // Se o modal de módulo estiver aberto, atualiza também
+                const moduloGrupoId = document.getElementById('modulo-grupo')?.value;
+                if (moduloGrupoId === grupoId) {
+                    await carregarSubcategoriasModulo(grupoId, subcategoriasSelecionadas);
+                }
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function excluirSubcategoria(id) {
+            if (!confirm('Deseja realmente excluir este assunto?')) return;
+
+            const grupoId = grupoIdParaSubcategorias;
+
+            try {
+                const response = await fetch(`/admin/api/prompts-modulos/subcategorias/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao excluir assunto');
+                }
+
+                // Remove da seleção se estava selecionada
+                subcategoriasSelecionadas = subcategoriasSelecionadas.filter(s => s !== id);
+
+                // Recarrega subcategorias
+                await carregarSubcategoriasParaGerenciar(grupoId);
+
+                // Se o modal de módulo estiver aberto, atualiza também
+                const moduloGrupoId = document.getElementById('modulo-grupo')?.value;
+                if (moduloGrupoId === grupoId) {
+                    await carregarSubcategoriasModulo(grupoId, subcategoriasSelecionadas);
+                }
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        function renderizarListaSubcategoriasGerenciar() {
+            const container = document.getElementById('lista-subcategorias-gerenciar');
+            if (!container) return;
+
+            if (subcategoriasCache.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-sm text-center py-4">Nenhum assunto cadastrado</p>';
+                return;
+            }
+
+            container.innerHTML = subcategoriasCache.map(sub => `
+                <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div>
+                        <span class="text-sm font-medium text-gray-700">${sub.nome}</span>
+                        <span class="text-xs text-gray-400 ml-2 font-mono">${sub.slug}</span>
+                    </div>
+                    <button type="button" onclick="excluirSubcategoria(${sub.id})" class="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded" title="Excluir">
+                        <i class="fas fa-trash-alt text-xs"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
         function renderizarModulos() {
             const container = document.getElementById('lista-modulos');
             
@@ -1169,16 +1463,17 @@
         }
         
         function renderizarItemModulo(m, mostrarCategoria = true) {
-            const statusBadge = m.ativo 
+            const statusBadge = m.ativo
                 ? '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">Ativo</span>'
                 : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">Inativo</span>';
-            
-            const keywords = (m.palavras_chave || []).slice(0, 3).map(k => 
-                `<span class="keyword-pill">${k}</span>`
-            ).join('');
-            
-            const categoriaBadge = mostrarCategoria && m.categoria 
-                ? `<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">${m.categoria}${m.subcategoria ? '/' + m.subcategoria : ''}</span>` 
+
+            const categoriaBadge = mostrarCategoria && m.categoria
+                ? `<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">${m.categoria}</span>`
+                : '';
+
+            // Subcategorias associadas (tags minimalistas em roxo)
+            const subcatsBadges = (m.subcategorias_nomes && m.subcategorias_nomes.length > 0)
+                ? m.subcategorias_nomes.map(n => `<span class="px-1.5 py-0.5 text-[10px] bg-purple-50 text-purple-600 rounded">${n}</span>`).join('')
                 : '';
 
             return `
@@ -1192,7 +1487,7 @@
                         </div>
                         <div class="flex items-center gap-2 text-sm text-gray-500">
                             <span class="font-mono text-xs bg-gray-100 px-1 rounded">${m.nome}</span>
-                            ${keywords ? `<span class="text-gray-300">|</span> ${keywords}` : ''}
+                            ${subcatsBadges}
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
@@ -1242,13 +1537,17 @@
         }
 
         function filtrarModulos() {
-            carregarCategorias();
+            carregarModulos();
+        }
+
+        async function onGrupoChange() {
+            // Quando o grupo muda, recarrega categorias sem preservar seleção
+            await carregarCategorias(false);
             carregarModulos();
         }
 
         function criarModulo() {
             moduloAtualId = null;
-            keywordsAtuais = [];
             tagsAtuais = [];
             
             document.getElementById('modulo-id').value = '';
@@ -1266,12 +1565,14 @@
             const grupoPadrao = gruposCache.length === 1 ? gruposCache[0].id : ''; 
             if (grupoSelect) grupoSelect.value = grupoPadrao;
             if (subgrupoSelect) subgrupoSelect.value = ''; 
-            if (grupoPadrao) { 
+            if (grupoPadrao) {
                 carregarSubgruposModulo(grupoPadrao);
+                carregarSubcategoriasModulo(grupoPadrao, []);
             } else {
                 carregarSubgruposModulo(null);
+                carregarSubcategoriasModulo(null, []);
             }
-            
+
             document.getElementById('modal-titulo').textContent = 'Criar Novo Módulo';
             document.getElementById('modal-subtitulo').textContent = '';
             document.getElementById('motivo-container').classList.add('hidden');
@@ -1280,33 +1581,41 @@
             
             // Mostra/esconde campo de condição baseado no tipo
             toggleCondicaoAtivacao();
-            
-            renderizarKeywords();
+
             renderizarTags();
-            
+
             document.getElementById('modal-editor').classList.remove('hidden');
         }
-        
+
         function toggleCondicaoAtivacao() {
             const tipo = document.getElementById('modulo-tipo').value;
             const container = document.getElementById('condicao-ativacao-container');
             const grupoContainer = document.getElementById('grupo-conteudo-container');
+            const subcategoriasContainer = document.getElementById('subcategorias-field-container');
 
-            // Condição de ativação só faz sentido para tipo 'conteudo'
+            // Condição de ativação, grupo e subcategorias só fazem sentido para tipo 'conteudo'
             if (tipo === 'conteudo') {
                 container.classList.remove('hidden');
                 if (grupoContainer) {
                     grupoContainer.classList.remove('hidden');
+                }
+                if (subcategoriasContainer) {
+                    subcategoriasContainer.classList.remove('hidden');
                 }
             } else {
                 container.classList.add('hidden');
                 if (grupoContainer) {
                     grupoContainer.classList.add('hidden');
                 }
+                if (subcategoriasContainer) {
+                    subcategoriasContainer.classList.add('hidden');
+                }
                 const grupoSelect = document.getElementById('modulo-grupo');
                 const subgrupoSelect = document.getElementById('modulo-subgrupo');
                 if (grupoSelect) grupoSelect.value = '';
                 if (subgrupoSelect) subgrupoSelect.value = '';
+                // Limpa subcategorias selecionadas
+                subcategoriasSelecionadas = [];
             }
         }
         
@@ -1317,6 +1626,7 @@
         if (moduloGrupoSelect) {
             moduloGrupoSelect.addEventListener('change', (e) => {
                 carregarSubgruposModulo(e.target.value);
+                carregarSubcategoriasModulo(e.target.value, []);
             });
         }
 
@@ -1331,7 +1641,6 @@
                 
                 const modulo = await response.json();
                 moduloAtualId = modulo.id;
-                keywordsAtuais = modulo.palavras_chave || [];
                 tagsAtuais = modulo.tags || [];
                 
                 document.getElementById('modulo-id').value = modulo.id;
@@ -1347,10 +1656,11 @@
                 document.getElementById('modulo-motivo').value = '';
                 const grupoSelect = document.getElementById('modulo-grupo');
                 const subgrupoSelect = document.getElementById('modulo-subgrupo');
-                if (grupoSelect) grupoSelect.value = modulo.group_id || ''; 
-                if (subgrupoSelect) subgrupoSelect.value = ''; 
+                if (grupoSelect) grupoSelect.value = modulo.group_id || '';
+                if (subgrupoSelect) subgrupoSelect.value = '';
                 await carregarSubgruposModulo(modulo.group_id, modulo.subgroup_id);
-                
+                await carregarSubcategoriasModulo(modulo.group_id, modulo.subcategoria_ids || []);
+
                 document.getElementById('modal-titulo').textContent = 'Editar Módulo';
                 document.getElementById('modal-subtitulo').textContent = modulo.titulo;
                 document.getElementById('motivo-container').classList.remove('hidden');
@@ -1359,10 +1669,9 @@
                 
                 // Mostra/esconde campo de condição baseado no tipo
                 toggleCondicaoAtivacao();
-                
-                renderizarKeywords();
+
                 renderizarTags();
-                
+
                 document.getElementById('modal-editor').classList.remove('hidden');
             } catch (error) {
                 alert('Erro ao carregar módulo: ' + error.message);
@@ -1384,18 +1693,18 @@
                 tipo: tipo,
                 categoria: document.getElementById('modulo-categoria').value || null,
                 subcategoria: document.getElementById('modulo-subcategoria').value || null,
+                subcategoria_ids: tipo === 'conteudo' ? subcategoriasSelecionadas : [],
                 nome: document.getElementById('modulo-nome').value,
                 titulo: document.getElementById('modulo-titulo').value,
                 condicao_ativacao: tipo === 'conteudo' ? (document.getElementById('modulo-condicao-ativacao').value || null) : null,
                 conteudo: document.getElementById('modulo-conteudo').value,
-                palavras_chave: keywordsAtuais,
                 tags: tagsAtuais,
                 ativo: document.getElementById('modulo-ativo').checked,
                 ordem: parseInt(document.getElementById('modulo-ordem').value) || 0,
                 group_id: tipo === 'conteudo' ? (grupoId ? parseInt(grupoId) : null) : null,
                 subgroup_id: tipo === 'conteudo' ? (subgrupoId ? parseInt(subgrupoId) : null) : null
             };
-            
+
             if (tipo === 'conteudo' && !grupoId) {
                 alert('Selecione o grupo do módulo de conteúdo');
                 document.getElementById('modulo-grupo').focus();
@@ -1403,12 +1712,7 @@
             }
 
             if (!isNovo) {
-                dados.motivo = document.getElementById('modulo-motivo').value;
-                if (!dados.motivo) {
-                    alert('Por favor, informe o motivo da alteração');
-                    document.getElementById('modulo-motivo').focus();
-                    return;
-                }
+                dados.motivo = document.getElementById('modulo-motivo').value || null;
             }
             
             try {
@@ -1466,34 +1770,6 @@
 
         function fecharEditor() {
             document.getElementById('modal-editor').classList.add('hidden');
-        }
-
-        // Keywords
-        function renderizarKeywords() {
-            const container = document.getElementById('keywords-container');
-            container.innerHTML = keywordsAtuais.map((kw, i) => `
-                <span class="keyword-pill flex items-center gap-1">
-                    ${kw}
-                    <button type="button" onclick="removerKeyword(${i})" class="text-purple-500 hover:text-purple-700">
-                        <i class="fas fa-times text-xs"></i>
-                    </button>
-                </span>
-            `).join('');
-        }
-
-        function adicionarKeyword() {
-            const input = document.getElementById('nova-keyword');
-            const valor = input.value.trim().toLowerCase();
-            if (valor && !keywordsAtuais.includes(valor)) {
-                keywordsAtuais.push(valor);
-                renderizarKeywords();
-            }
-            input.value = '';
-        }
-
-        function removerKeyword(index) {
-            keywordsAtuais.splice(index, 1);
-            renderizarKeywords();
         }
 
         // Tags
@@ -1965,7 +2241,43 @@
                 document.getElementById('res-criados').textContent = resultado.criados;
                 document.getElementById('res-atualizados').textContent = resultado.atualizados;
                 document.getElementById('res-ignorados').textContent = resultado.ignorados;
-                
+
+                // Mostra itens criados automaticamente (grupos, subgrupos, subcategorias)
+                const gruposCriados = resultado.grupos_criados || 0;
+                const subgruposCriados = resultado.subgrupos_criados || 0;
+                const subcategoriasCriadas = resultado.subcategorias_criadas || 0;
+
+                if (gruposCriados > 0 || subgruposCriados > 0 || subcategoriasCriadas > 0) {
+                    document.getElementById('itens-criados-auto').classList.remove('hidden');
+
+                    const gruposEl = document.getElementById('res-grupos-criados');
+                    const subgruposEl = document.getElementById('res-subgrupos-criados');
+                    const subcatsEl = document.getElementById('res-subcategorias-criadas');
+
+                    if (gruposCriados > 0) {
+                        gruposEl.classList.remove('hidden');
+                        gruposEl.querySelector('.num').textContent = gruposCriados;
+                    } else {
+                        gruposEl.classList.add('hidden');
+                    }
+
+                    if (subgruposCriados > 0) {
+                        subgruposEl.classList.remove('hidden');
+                        subgruposEl.querySelector('.num').textContent = subgruposCriados;
+                    } else {
+                        subgruposEl.classList.add('hidden');
+                    }
+
+                    if (subcategoriasCriadas > 0) {
+                        subcatsEl.classList.remove('hidden');
+                        subcatsEl.querySelector('.num').textContent = subcategoriasCriadas;
+                    } else {
+                        subcatsEl.classList.add('hidden');
+                    }
+                } else {
+                    document.getElementById('itens-criados-auto').classList.add('hidden');
+                }
+
                 // Mostra erros se houver
                 if (resultado.erros && resultado.erros.length > 0) {
                     document.getElementById('resultado-erros').classList.remove('hidden');

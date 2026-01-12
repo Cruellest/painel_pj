@@ -56,3 +56,27 @@ class PromptSubgroup(Base):
 
     def __repr__(self):
         return f"<PromptSubgroup(id={self.id}, slug='{self.slug}', group_id={self.group_id})>"
+
+
+class PromptSubcategoria(Base):
+    """Subcategorias para filtrar módulos de prompt na geração de peças"""
+    __tablename__ = "prompt_subcategorias"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("prompt_groups.id"), nullable=False, index=True)
+    nome = Column(String(100), nullable=False)  # Nome de exibição
+    slug = Column(String(50), nullable=False)   # Identificador único (usado no campo subcategoria do PromptModulo)
+    descricao = Column(String(255), nullable=True)
+    active = Column(Boolean, default=True, index=True)
+    order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    group = relationship("PromptGroup")
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "slug", name="uq_prompt_subcategoria_group_slug"),
+    )
+
+    def __repr__(self):
+        return f"<PromptSubcategoria(id={self.id}, slug='{self.slug}', group_id={self.group_id})>"

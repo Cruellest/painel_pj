@@ -73,12 +73,12 @@ class GeradorPecasService:
         modelo: str = "gemini-3-pro-preview",
         db: Session = None,
         group_id: Optional[int] = None,
-        subgroup_ids: Optional[List[int]] = None
+        subcategoria_ids: Optional[List[int]] = None
     ):
         self.modelo = modelo
         self.db = db
         self.group_id = group_id
-        self.subgroup_ids = subgroup_ids or []
+        self.subcategoria_ids = subcategoria_ids or []
 
         # Diretório para arquivos temporários
         self.temp_dir = os.path.join(os.path.dirname(__file__), 'temp_docs')
@@ -97,7 +97,7 @@ class GeradorPecasService:
                         db=self.db,
                         modelo_geracao=self.modelo,
                         group_id=self.group_id,
-                        subgroup_ids=self.subgroup_ids
+                        subcategoria_ids=self.subcategoria_ids
                     )
                     print("Orquestrador de agentes inicializado com sucesso")
                 except Exception as e:
@@ -154,82 +154,49 @@ class GeradorPecasService:
     def _carregar_modulos_conteudo(
         self,
         modulos_ids: List[int] = None,
-        palavras_detectadas: List[str] = None,
         group_id: Optional[int] = None,
-        subgroup_ids: Optional[List[int]] = None
+        subcategoria_ids: Optional[List[int]] = None
     ) -> List[PromptModulo]:
         """
         Carrega módulos de CONTEÚDO.
 
-        Prioridade:
-        1. Se modulos_ids fornecidos (detecção por IA) - usa esses IDs
-        2. Se palavras_detectadas fornecidas - filtra por palavras-chave
-        3. Caso contrário - retorna todos os módulos ativos
-
         Args:
-            modulos_ids: IDs dos módulos detectados pela IA
-            palavras_detectadas: Palavras-chave para fallback
+            modulos_ids: IDs dos módulos detectados pela IA (se None, retorna todos)
             group_id: Grupo principal para prompts modulares (opcional)
-            subgroup_ids: Subgrupos selecionados para prompts modulares (opcional)
+            subcategoria_ids: Subcategorias selecionadas para prompts modulares (opcional)
         """
         if not self.db:
             return []
 
         group_id = self.group_id if group_id is None else group_id
-        subgroup_ids = self.subgroup_ids if subgroup_ids is None else subgroup_ids
+        subcategoria_ids = self.subcategoria_ids if subcategoria_ids is None else subcategoria_ids
 
-        # Método 1: Carregar por IDs específicos (resultado da IA)
-        if modulos_ids is not None:
-            query = self.db.query(PromptModulo).filter(
-                PromptModulo.tipo == "conteudo",
-                PromptModulo.ativo == True,
-                PromptModulo.id.in_(modulos_ids)
-            )
-
-            if group_id is not None:
-                query = query.filter(PromptModulo.group_id == group_id)
-
-            if subgroup_ids:
-                query = query.filter(PromptModulo.subgroup_id.in_(subgroup_ids))
-
-            modulos = query.order_by(PromptModulo.ordem).all()
-            return modulos
-
-        # Método 2: Filtrar por palavras-chave (fallback)
         query = self.db.query(PromptModulo).filter(
             PromptModulo.tipo == "conteudo",
             PromptModulo.ativo == True
         )
 
+        # Se IDs específicos fornecidos, filtra por eles
+        if modulos_ids is not None:
+            query = query.filter(PromptModulo.id.in_(modulos_ids))
+
         if group_id is not None:
             query = query.filter(PromptModulo.group_id == group_id)
 
-        if subgroup_ids:
-            query = query.filter(PromptModulo.subgroup_id.in_(subgroup_ids))
+        if subcategoria_ids:
+            from admin.models_prompt_groups import PromptSubcategoria
+            query = query.filter(
+                PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(subcategoria_ids))
+            )
 
-        modulos = query.order_by(PromptModulo.ordem).all()
-
-        if not palavras_detectadas:
-            return modulos
-
-        # Filtra módulos que têm palavras-chave correspondentes
-        modulos_relevantes = []
-        for modulo in modulos:
-            if modulo.palavras_chave:
-                for palavra in modulo.palavras_chave:
-                    if any(palavra.lower() in p.lower() for p in palavras_detectadas):
-                        modulos_relevantes.append(modulo)
-                        break
-
-        return modulos_relevantes
+        return query.order_by(PromptModulo.ordem).all()
     
     def _montar_prompt_sistema(
         self,
         tipo_peca: str = None,
         modulos_ids: List[int] = None,
-        palavras_detectadas: List[str] = None,
         group_id: Optional[int] = None,
-        subgroup_ids: Optional[List[int]] = None
+        subcategoria_ids: Optional[List[int]] = None
     ) -> str:
         """
         Monta o prompt de sistema combinando módulos:
@@ -237,10 +204,9 @@ class GeradorPecasService:
 
         Args:
             tipo_peca: Tipo da peça (contestacao, recurso, etc)
-            modulos_ids: IDs dos módulos detectados pela IA (prioritário)
-            palavras_detectadas: Palavras-chave para fallback
+            modulos_ids: IDs dos módulos detectados pela IA
             group_id: Grupo principal para prompts modulares (opcional)
-            subgroup_ids: Subgrupos selecionados para prompts modulares (opcional)
+            subcategoria_ids: Subcategorias selecionadas para prompts modulares (opcional)
         """
         partes = []
 
@@ -255,12 +221,11 @@ class GeradorPecasService:
             if modulo_peca:
                 partes.append(f"## ESTRUTURA DA PEÇA: {modulo_peca.titulo}\n\n{modulo_peca.conteudo}")
 
-        # 3. Módulos de CONTEÚDO (baseado em detecção por IA ou palavras-chave)
+        # 3. Módulos de CONTEÚDO (baseado em detecção por IA)
         modulos_conteudo = self._carregar_modulos_conteudo(
             modulos_ids,
-            palavras_detectadas,
             group_id=group_id,
-            subgroup_ids=subgroup_ids
+            subcategoria_ids=subcategoria_ids
         )
         if modulos_conteudo:
             partes.append("## ARGUMENTOS E TESES APLICÁVEIS\n")
@@ -334,7 +299,6 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
         usuario_id: int = None,
         documentos_resumo: Optional[str] = None,
         documentos_completos: Optional[str] = None,
-        palavras_detectadas: List[str] = None,
         usar_agentes: bool = True
     ) -> Dict:
         """
@@ -353,20 +317,17 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
             usuario_id: ID do usuário
             documentos_resumo: Resumo dos documentos (bypass do Agente 1)
             documentos_completos: Texto completo dos documentos (opcional)
-            palavras_detectadas: Palavras-chave para fallback
-            group_id: Grupo principal para prompts modulares (opcional)
-            subgroup_ids: Subgrupos selecionados para prompts modulares (opcional)
             usar_agentes: Se True, usa o fluxo completo com 3 agentes
         """
         try:
             # Normaliza o CNJ
             cnj_limpo = re.sub(r'\D', '', numero_cnj)
             cnj_display = numero_cnj_formatado or numero_cnj
-            
+
             # Debug
             orq_disponivel = _carregar_orquestrador()
             print(f"[DEBUG] Debug: usar_agentes={usar_agentes}, orquestrador={self.orquestrador is not None}, ORQUESTRADOR_DISPONIVEL={orq_disponivel}")
-            
+
             # Se tem orquestrador e usar_agentes está ativo, usa o novo fluxo
             if usar_agentes and self.orquestrador and orq_disponivel:
                 return await self._processar_com_agentes(
@@ -375,7 +336,7 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
                     tipo_peca=tipo_peca or resposta_usuario,
                     usuario_id=usuario_id
                 )
-            
+
             # Fallback: modo legado (sem integração TJ-MS)
             return await self._processar_modo_legado(
                 numero_cnj=cnj_limpo,
@@ -384,8 +345,7 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
                 resposta_usuario=resposta_usuario,
                 usuario_id=usuario_id,
                 documentos_resumo=documentos_resumo,
-                documentos_completos=documentos_completos,
-                palavras_detectadas=palavras_detectadas
+                documentos_completos=documentos_completos
             )
             
         except Exception as e:
@@ -476,8 +436,7 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
         resposta_usuario: Optional[str],
         usuario_id: int,
         documentos_resumo: Optional[str],
-        documentos_completos: Optional[str],
-        palavras_detectadas: List[str]
+        documentos_completos: Optional[str]
     ) -> Dict:
         """
         Modo legado: sem integração com TJ-MS (documento de exemplo em Markdown).
@@ -486,7 +445,7 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
         print("[WARN] Usando modo legado (sem integracao TJ-MS)")
 
         tipo_final = tipo_peca or resposta_usuario
-        
+
         # Se não tem tipo de peça, tenta detectar automaticamente se há documentos
         if not tipo_final and self.detector and documentos_resumo:
             print("[INFO] Detectando tipo de peca automaticamente (modo legado)...")
@@ -497,7 +456,7 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
                     print(f"Tipo detectado: {tipo_final} (confianca: {deteccao.get('confianca', 'N/A')})")
             except Exception as e:
                 print(f"[WARN] Erro na deteccao automatica: {e}")
-        
+
         # Se ainda não tem tipo de peça, pergunta ao usuário
         if not tipo_final:
             return {
@@ -511,9 +470,8 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
         prompt_sistema = self._montar_prompt_sistema(
             tipo_final,
             modulos_ids=None,
-            palavras_detectadas=palavras_detectadas,
             group_id=self.group_id,
-            subgroup_ids=self.subgroup_ids
+            subcategoria_ids=self.subcategoria_ids
         )
         
         # Gera documento de exemplo em Markdown

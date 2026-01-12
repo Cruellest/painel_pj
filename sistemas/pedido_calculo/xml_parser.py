@@ -415,12 +415,20 @@ class XMLParser:
                         resultado.acordaos.append(doc_id)
 
             # Certidão de trânsito em julgado
+            # 1. Primeiro tenta pelo tipo de documento (9644)
             for tipo_cod in TIPOS_DOCUMENTO["CERTIDAO_TRANSITO"]:
                 if tipo_cod in docs_por_tipo:
                     for doc_id, _, _ in docs_por_tipo[tipo_cod]:
                         resultado.certidao_transito = doc_id
-                        print(f"[TRÂNSITO] Certidão de trânsito: {doc_id}")
+                        print(f"[TRÂNSITO] Certidão de trânsito (tipo 9644): {doc_id}")
                         break
+
+            # 2. Se não encontrou, busca pelo documento vinculado ao movimento de trânsito (código 848)
+            if not resultado.certidao_transito:
+                doc_vinculado_transito = self._buscar_documento_vinculado_movimento_transito()
+                if doc_vinculado_transito:
+                    resultado.certidao_transito = doc_vinculado_transito
+                    print(f"[TRÂNSITO] Certidão de trânsito (vinculada ao movimento 848): {doc_vinculado_transito}")
 
             if forcar_busca_sentencas:
                 print(f"[ORIGEM] Sentenças encontradas: {resultado.sentencas}")
@@ -566,6 +574,48 @@ class XMLParser:
                     return True
 
         return False
+
+    def _buscar_documento_vinculado_movimento_transito(self) -> Optional[str]:
+        """
+        Busca o ID do documento vinculado ao movimento de trânsito em julgado.
+
+        O movimento de trânsito em julgado (código nacional 848) pode ter um
+        documento vinculado através da tag <idDocumentoVinculado>. Este documento
+        geralmente é a certidão de trânsito em julgado.
+
+        Exemplo de XML:
+        <ns2:movimento dataHora="20230510104010" nivelSigilo="0">
+            <ns2:complemento>Certifico que transitou em julgado...</ns2:complemento>
+            <ns2:movimentoNacional codigoNacional="848"/>
+            <ns2:idDocumentoVinculado>124419043 - 0</ns2:idDocumentoVinculado>
+        </ns2:movimento>
+
+        Returns:
+            ID do documento vinculado ou None se não encontrado
+        """
+        for mov in self._movimentos:
+            codigo_nacional = ""
+            id_doc_vinculado = None
+            complemento = ""
+
+            for child in mov.iter():
+                tag = _get_tag_name(child)
+                if tag == 'movimentonacional':
+                    codigo_nacional = child.attrib.get('codigoNacional', '')
+                elif tag == 'iddocumentovinculado' and child.text:
+                    # O ID pode vir com sufixo como "124419043 - 0", pegamos só o número principal
+                    id_doc_vinculado = child.text.strip().split(' - ')[0].strip()
+                elif tag == 'complemento' and child.text:
+                    complemento = child.text
+
+            # Verifica se é movimento de trânsito em julgado (código 848)
+            if codigo_nacional in MOVIMENTOS_TRANSITO and id_doc_vinculado:
+                print(f"[TRÂNSITO] Documento vinculado encontrado no movimento 848: {id_doc_vinculado}")
+                if complemento:
+                    print(f"[TRÂNSITO] Complemento: {complemento[:80]}...")
+                return id_doc_vinculado
+
+        return None
 
     def _extrair_numero_processo_origem(self) -> Optional[str]:
         """

@@ -51,7 +51,7 @@ class DetectorModulosIA:
         documentos_completos: Optional[str] = None,
         tipo_peca: Optional[str] = None,
         group_id: Optional[int] = None,
-        subgroup_ids: Optional[List[int]] = None
+        subcategoria_ids: Optional[List[int]] = None
     ) -> List[int]:
         """
         Analisa os documentos e retorna IDs dos módulos de CONTEÚDO relevantes.
@@ -65,15 +65,15 @@ class DetectorModulosIA:
             Lista de IDs dos módulos relevantes
         """
         # Verificar cache (inclui tipo_peca na chave)
-        subgroup_cache = ",".join(str(i) for i in (subgroup_ids or []))
-        cache_key = self._gerar_cache_key(f"{tipo_peca or ''}:{group_id or ''}:{subgroup_cache}:{documentos_resumo}")
+        subcategoria_cache = ",".join(str(i) for i in (subcategoria_ids or []))
+        cache_key = self._gerar_cache_key(f"{tipo_peca or ''}:{group_id or ''}:{subcategoria_cache}:{documentos_resumo}")
         cached = self._verificar_cache(cache_key)
         if cached is not None:
             print(f"✅ Cache hit - módulos detectados anteriormente")
             return cached
 
         # Carregar módulos de CONTEÚDO disponíveis (filtrado por tipo de peça se especificado)
-        modulos = self._carregar_modulos_disponiveis(tipo_peca, group_id, subgroup_ids)
+        modulos = self._carregar_modulos_disponiveis(tipo_peca, group_id, subcategoria_ids)
 
         if not modulos:
             if tipo_peca:
@@ -105,23 +105,24 @@ class DetectorModulosIA:
 
         except Exception as e:
             print(f"❌ Erro na detecção por IA: {e}")
-            # Fallback: usar detecção simples por palavras-chave
-            return self._detectar_por_palavras_chave(documentos_resumo, modulos)
+            # Em caso de erro, retorna lista vazia (sem fallback)
+            return []
 
     def _carregar_modulos_disponiveis(
         self,
         tipo_peca: str = None,
         group_id: Optional[int] = None,
-        subgroup_ids: Optional[List[int]] = None
+        subcategoria_ids: Optional[List[int]] = None
     ) -> List[PromptModulo]:
         """
         Carrega modulos de CONTEUDO ativos do banco.
 
         Se tipo_peca for especificado, filtra apenas modulos ativos para esse tipo.
         Se group_id for informado, restringe aos modulos do grupo.
-        Se subgroup_ids for informado, restringe aos subgrupos selecionados.
+        Se subcategoria_ids for informado, restringe aos modulos que pertencem a essas subcategorias.
         """
         from admin.models_prompts import ModuloTipoPeca
+        from admin.models_prompt_groups import PromptSubcategoria
 
         # Busca todos os modulos de conteudo ativos globalmente
         query = self.db.query(PromptModulo).filter(
@@ -132,8 +133,11 @@ class DetectorModulosIA:
         if group_id is not None:
             query = query.filter(PromptModulo.group_id == group_id)
 
-        if subgroup_ids:
-            query = query.filter(PromptModulo.subgroup_id.in_(subgroup_ids))
+        if subcategoria_ids:
+            # Filtra módulos que pertencem a pelo menos uma das subcategorias selecionadas
+            query = query.filter(
+                PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(subcategoria_ids))
+            )
 
         modulos = query.order_by(PromptModulo.ordem).all()
 
@@ -362,30 +366,6 @@ Responda SOMENTE com o JSON, sem texto adicional.
                     print(f"   ✓ {modulos[idx].titulo}")
 
         return ids_reais
-
-    def _detectar_por_palavras_chave(
-        self,
-        texto: str,
-        modulos: List[PromptModulo]
-    ) -> List[int]:
-        """
-        Fallback: Detecção simples por palavras-chave.
-        Usado quando a IA falha.
-        """
-        print("⚠️ Usando detecção fallback por palavras-chave")
-
-        texto_lower = texto.lower()
-        ids_relevantes = []
-
-        for modulo in modulos:
-            if modulo.palavras_chave:
-                for palavra in modulo.palavras_chave:
-                    if palavra.lower() in texto_lower:
-                        ids_relevantes.append(modulo.id)
-                        print(f"   ✓ {modulo.titulo} (palavra: {palavra})")
-                        break
-
-        return ids_relevantes
 
     def _gerar_cache_key(self, documentos: str) -> str:
         """Gera chave de cache baseada nos documentos"""

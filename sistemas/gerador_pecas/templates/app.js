@@ -2,17 +2,15 @@
 // Frontend JavaScript com Chat Interativo para Edição
 
 const API_URL = '/gerador-pecas/api';
+const ADMIN_API_URL = '/admin/api/prompts-modulos';
 
 // =====================================================
 // FEATURE FLAGS - Configuração de funcionalidades
 // =====================================================
 // Para ativar/desativar funcionalidades temporariamente
-// Script para reativar: FEATURE_FLAGS.SUBGRUPOS_ENABLED = true;
 const FEATURE_FLAGS = {
-    // Subgrupos de Conteúdo - DESATIVADO TEMPORARIAMENTE (2025-01-12)
-    // Para reativar: alterar para true ou executar no console:
-    // FEATURE_FLAGS.SUBGRUPOS_ENABLED = true; app.carregarSubgrupos(app.groupId);
-    SUBGRUPOS_ENABLED: false,
+    // Assuntos (Subcategorias de Conteúdo) - filtro de prompts na geração de peças
+    SUBCATEGORIAS_ENABLED: true,
 };
 // =====================================================
 
@@ -36,12 +34,13 @@ class GeradorPecasApp {
         // Observação do usuário para a IA
         this.observacaoUsuario = null;
 
-        // Grupo e subgrupos de prompts
+        // Grupo e subcategorias de prompts
         this.groupId = null;
-        this.subgroupIds = [];
+        this.subcategoriaIds = [];
         this.gruposDisponiveis = [];
-        this.subgruposDisponiveis = [];
+        this.subcategoriasDisponiveis = [];
         this.requiresGroupSelection = false;
+        this.isAdmin = false;
 
         // Dados para histórico de versões
         this.versoesLista = [];
@@ -68,14 +67,18 @@ class GeradorPecasApp {
             if (!response.ok) {
                 throw new Error('Token inválido');
             }
-            
+
+            // Verifica se é admin
+            const userData = await response.json();
+            this.isAdmin = userData.role === 'admin';
+
             // Carrega histórico recente após autenticação
             this.carregarHistoricoRecente();
-            
+
             // Carrega tipos de peça dinamicamente
             this.carregarTiposPeca();
 
-            // Carrega grupos e subgrupos de prompts
+            // Carrega grupos e subcategorias de prompts
             this.carregarGruposDisponiveis();
         } catch (error) {
             localStorage.removeItem('access_token');
@@ -115,6 +118,7 @@ class GeradorPecasApp {
     async carregarGruposDisponiveis() {
         const select = document.getElementById('grupo-principal');
         const hint = document.getElementById('grupo-hint');
+        const grupoContainer = document.getElementById('grupo-container');
 
         if (!select) {
             return;
@@ -143,13 +147,15 @@ class GeradorPecasApp {
                     hint.textContent = 'Nenhum grupo ativo disponível para o seu usuário.';
                 }
                 this.groupId = null;
-                this.subgroupIds = [];
-                this.subgruposDisponiveis = [];
-                this.renderSubgrupos([]);
+                this.subcategoriaIds = [];
+                this.subcategoriasDisponiveis = [];
+                this.renderSubcategorias([]);
                 return;
             }
 
+            // Mostra seletor de grupo apenas quando há múltiplos grupos
             if (this.requiresGroupSelection) {
+                if (grupoContainer) grupoContainer.classList.remove('hidden');
                 const option = document.createElement('option');
                 option.value = '';
                 option.textContent = 'Selecione o grupo...';
@@ -165,10 +171,9 @@ class GeradorPecasApp {
                         : 'Selecione o grupo de conteúdo antes de gerar a peça.';
                 }
             } else {
+                // Esconde o seletor quando há apenas 1 grupo
+                if (grupoContainer) grupoContainer.classList.add('hidden');
                 select.disabled = true;
-                if (hint) {
-                    hint.textContent = 'Grupo definido automaticamente para o seu usuário.';
-                }
             }
 
             this.gruposDisponiveis.forEach((grupo) => {
@@ -181,66 +186,66 @@ class GeradorPecasApp {
             if (!this.requiresGroupSelection && this.gruposDisponiveis.length === 1) {
                 this.groupId = this.gruposDisponiveis[0].id;
                 select.value = this.groupId;
-                await this.carregarSubgrupos(this.groupId);
+                await this.carregarSubcategorias(this.groupId);
             } else {
                 this.groupId = null;
-                this.subgroupIds = [];
-                this.subgruposDisponiveis = [];
-                this.renderSubgrupos([]);
+                this.subcategoriaIds = [];
+                this.subcategoriasDisponiveis = [];
+                this.renderSubcategorias([]);
             }
         } catch (error) {
             console.error('Erro ao carregar grupos:', error);
         }
     }
 
-    async carregarSubgrupos(groupId) {
-        // Feature flag: Subgrupos desativado temporariamente
-        if (!FEATURE_FLAGS.SUBGRUPOS_ENABLED) {
-            this.subgruposDisponiveis = [];
-            this.renderSubgrupos([]);
+    async carregarSubcategorias(groupId) {
+        // Feature flag: Subcategorias
+        if (!FEATURE_FLAGS.SUBCATEGORIAS_ENABLED) {
+            this.subcategoriasDisponiveis = [];
+            this.renderSubcategorias([]);
             return;
         }
 
         if (!groupId) {
-            this.subgruposDisponiveis = [];
-            this.renderSubgrupos([]);
+            this.subcategoriasDisponiveis = [];
+            this.renderSubcategorias([]);
             return;
         }
 
         try {
-            const response = await fetch(`${API_URL}/grupos/${groupId}/subgrupos`, {
+            const response = await fetch(`${ADMIN_API_URL}/grupos/${groupId}/subcategorias`, {
                 headers: { 'Authorization': `Bearer ${this.getToken()}` }
             });
 
             if (!response.ok) {
-                this.subgruposDisponiveis = [];
-                this.renderSubgrupos([]);
+                this.subcategoriasDisponiveis = [];
+                this.renderSubcategorias([]);
                 return;
             }
 
             const data = await response.json();
-            this.subgruposDisponiveis = data.subgrupos || [];
-            this.renderSubgrupos(this.subgruposDisponiveis);
+            this.subcategoriasDisponiveis = data || [];
+            this.renderSubcategorias(this.subcategoriasDisponiveis);
         } catch (error) {
-            console.error('Erro ao carregar subgrupos:', error);
-            this.subgruposDisponiveis = [];
-            this.renderSubgrupos([]);
+            console.error('Erro ao carregar subcategorias:', error);
+            this.subcategoriasDisponiveis = [];
+            this.renderSubcategorias([]);
         }
     }
 
-    renderSubgrupos(subgrupos) {
-        const container = document.getElementById('subgrupo-container');
-        const options = document.getElementById('subgrupo-opcoes');
-        const hint = document.getElementById('subgrupo-hint');
+    renderSubcategorias(subcategorias) {
+        const container = document.getElementById('subcategoria-container');
+        const options = document.getElementById('subcategoria-opcoes');
+        const hint = document.getElementById('subcategoria-hint');
 
         if (!container || !options) {
             return;
         }
 
-        // Feature flag: Subgrupos desativado temporariamente
-        if (!FEATURE_FLAGS.SUBGRUPOS_ENABLED) {
+        // Feature flag: Subcategorias (apenas para admin)
+        if (!FEATURE_FLAGS.SUBCATEGORIAS_ENABLED || !this.isAdmin) {
             container.classList.add('hidden');
-            this.subgroupIds = [];
+            this.subcategoriaIds = [];
             return;
         }
 
@@ -251,35 +256,35 @@ class GeradorPecasApp {
 
         container.classList.remove('hidden');
         options.innerHTML = '';
-        this.subgroupIds = [];
+        this.subcategoriaIds = [];
 
-        options.appendChild(this.criarOpcaoSubgrupo('all', 'Geral / Todos', true));
+        options.appendChild(this.criarOpcaoSubcategoria('all', 'Geral / Todos', true));
 
-        if (subgrupos && subgrupos.length > 0) {
+        if (subcategorias && subcategorias.length > 0) {
             if (hint) {
-                hint.textContent = 'Selecione um ou mais subgrupos para filtrar os prompts de conteúdo.';
+                hint.textContent = 'Selecione um ou mais assuntos para filtrar os prompts de conteúdo.';
             }
-            subgrupos.forEach((subgrupo) => {
+            subcategorias.forEach((subcategoria) => {
                 options.appendChild(
-                    this.criarOpcaoSubgrupo(subgrupo.id, subgrupo.nome, false)
+                    this.criarOpcaoSubcategoria(subcategoria.id, subcategoria.nome, false)
                 );
             });
         } else if (hint) {
-            hint.textContent = 'Sem subgrupos cadastrados. Usando Geral/Todos.';
+            hint.textContent = 'Sem assuntos cadastrados. Usando Geral/Todos.';
         }
 
-        options.querySelectorAll('input[name="subgrupo"]').forEach((input) => {
-            input.addEventListener('change', (event) => this.handleSubgrupoChange(event));
+        options.querySelectorAll('input[name="subcategoria"]').forEach((input) => {
+            input.addEventListener('change', (event) => this.handleSubcategoriaChange(event));
         });
     }
 
-    criarOpcaoSubgrupo(valor, label, checked) {
+    criarOpcaoSubcategoria(valor, label, checked) {
         const wrapper = document.createElement('label');
         wrapper.className = 'inline-flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-sm text-gray-700 bg-white hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-all';
 
         const input = document.createElement('input');
         input.type = 'checkbox';
-        input.name = 'subgrupo';
+        input.name = 'subcategoria';
         input.value = String(valor);
         input.checked = checked;
         input.className = 'h-4 w-4 text-primary-600 rounded border-gray-300';
@@ -297,29 +302,29 @@ class GeradorPecasApp {
         const value = event.target.value;
         if (!value) {
             this.groupId = null;
-            this.subgroupIds = [];
-            this.subgruposDisponiveis = [];
-            this.renderSubgrupos([]);
+            this.subcategoriaIds = [];
+            this.subcategoriasDisponiveis = [];
+            this.renderSubcategorias([]);
             return;
         }
 
         const parsed = parseInt(value, 10);
         this.groupId = Number.isNaN(parsed) ? null : parsed;
-        this.subgroupIds = [];
-        this.carregarSubgrupos(this.groupId);
+        this.subcategoriaIds = [];
+        this.carregarSubcategorias(this.groupId);
     }
 
-    handleSubgrupoChange(event) {
+    handleSubcategoriaChange(event) {
         const input = event.target;
         const value = input.value;
-        const container = document.getElementById('subgrupo-opcoes');
+        const container = document.getElementById('subcategoria-opcoes');
         const allInput = container ? container.querySelector('input[value="all"]') : null;
 
         if (value === 'all') {
             if (input.checked) {
-                this.subgroupIds = [];
+                this.subcategoriaIds = [];
                 if (container) {
-                    container.querySelectorAll('input[name="subgrupo"]').forEach((checkbox) => {
+                    container.querySelectorAll('input[name="subcategoria"]').forEach((checkbox) => {
                         if (checkbox.value !== 'all') {
                             checkbox.checked = false;
                         }
@@ -339,15 +344,159 @@ class GeradorPecasApp {
         }
 
         if (input.checked) {
-            if (!this.subgroupIds.includes(parsed)) {
-                this.subgroupIds.push(parsed);
+            if (!this.subcategoriaIds.includes(parsed)) {
+                this.subcategoriaIds.push(parsed);
             }
         } else {
-            this.subgroupIds = this.subgroupIds.filter((id) => id !== parsed);
-            if (this.subgroupIds.length === 0 && allInput) {
+            this.subcategoriaIds = this.subcategoriaIds.filter((id) => id !== parsed);
+            if (this.subcategoriaIds.length === 0 && allInput) {
                 allInput.checked = true;
             }
         }
+    }
+
+    // ==========================================
+    // CRUD Subcategorias
+    // ==========================================
+
+    abrirModalNovaSubcategoria() {
+        if (!this.groupId) {
+            this.showToast('Selecione um grupo primeiro', 'warning');
+            return;
+        }
+
+        const modal = document.getElementById('modal-subcategoria');
+        const form = document.getElementById('form-subcategoria');
+
+        // Limpa o form
+        document.getElementById('subcategoria-nome').value = '';
+        document.getElementById('subcategoria-slug').value = '';
+        document.getElementById('subcategoria-descricao').value = '';
+
+        // Auto-gerar slug ao digitar nome
+        const nomeInput = document.getElementById('subcategoria-nome');
+        const slugInput = document.getElementById('subcategoria-slug');
+        nomeInput.oninput = () => {
+            slugInput.value = this.slugify(nomeInput.value);
+        };
+
+        // Handler do form
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            await this.criarSubcategoria();
+        };
+
+        // Renderiza lista de subcategorias existentes
+        this.renderListaSubcategoriasModal();
+
+        modal.classList.remove('hidden');
+    }
+
+    fecharModalSubcategoria() {
+        document.getElementById('modal-subcategoria').classList.add('hidden');
+    }
+
+    slugify(texto) {
+        return texto
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '_')
+            .replace(/^_|_$/g, '');
+    }
+
+    async criarSubcategoria() {
+        const nome = document.getElementById('subcategoria-nome').value.trim();
+        const slug = document.getElementById('subcategoria-slug').value.trim();
+        const descricao = document.getElementById('subcategoria-descricao').value.trim();
+
+        if (!nome || !slug) {
+            this.showToast('Nome e slug sao obrigatorios', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${ADMIN_API_URL}/grupos/${this.groupId}/subcategorias`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.getToken()}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ nome, slug, descricao: descricao || null })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Erro ao criar subcategoria');
+            }
+
+            this.showToast('Assunto criado com sucesso', 'success');
+
+            // Limpa o form
+            document.getElementById('subcategoria-nome').value = '';
+            document.getElementById('subcategoria-slug').value = '';
+            document.getElementById('subcategoria-descricao').value = '';
+
+            // Atualiza as listas
+            await this.carregarSubcategorias(this.groupId);
+            this.renderListaSubcategoriasModal();
+        } catch (error) {
+            console.error('Erro ao criar subcategoria:', error);
+            this.showToast(error.message, 'error');
+        }
+    }
+
+    async deletarSubcategoria(id) {
+        if (!confirm('Deseja realmente excluir este assunto?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${ADMIN_API_URL}/subcategorias/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${this.getToken()}`
+                }
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Erro ao excluir subcategoria');
+            }
+
+            this.showToast('Assunto excluído', 'success');
+
+            // Atualiza as listas
+            await this.carregarSubcategorias(this.groupId);
+            this.renderListaSubcategoriasModal();
+        } catch (error) {
+            console.error('Erro ao excluir subcategoria:', error);
+            this.showToast(error.message, 'error');
+        }
+    }
+
+    renderListaSubcategoriasModal() {
+        const container = document.getElementById('lista-subcategorias-modal');
+        if (!container) return;
+
+        if (!this.subcategoriasDisponiveis || this.subcategoriasDisponiveis.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-sm">Nenhum assunto cadastrado.</p>';
+            return;
+        }
+
+        container.innerHTML = this.subcategoriasDisponiveis.map(sub => `
+            <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                <div>
+                    <span class="text-sm font-medium text-gray-700">${sub.nome}</span>
+                    <span class="text-xs text-gray-400 ml-2">(${sub.slug})</span>
+                </div>
+                <button type="button" onclick="app.deletarSubcategoria(${sub.id})"
+                    class="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                    title="Excluir">
+                    <i class="fas fa-trash-alt text-xs"></i>
+                </button>
+            </div>
+        `).join('');
     }
 
     // ==========================================
@@ -549,8 +698,8 @@ class GeradorPecasApp {
                 if (this.groupId) {
                     formData.append('group_id', this.groupId);
                 }
-                if (this.subgroupIds && this.subgroupIds.length) {
-                    formData.append('subgroup_ids_json', JSON.stringify(this.subgroupIds));
+                if (this.subcategoriaIds && this.subcategoriaIds.length) {
+                    formData.append('subcategoria_ids_json', JSON.stringify(this.subcategoriaIds));
                 }
 
                 response = await fetch(`${API_URL}/processar-pdfs-stream`, {
@@ -579,7 +728,7 @@ class GeradorPecasApp {
                         tipo_peca: this.tipoPeca,
                         observacao_usuario: this.observacaoUsuario,
                         group_id: this.groupId,
-                        subgroup_ids: this.subgroupIds.length ? this.subgroupIds : null
+                        subgroup_ids: this.subcategoriaIds.length ? this.subcategoriaIds : null
                     })
                 });
             }
@@ -1760,11 +1909,11 @@ class GeradorPecasApp {
         } else {
             this.groupId = null;
         }
-        this.subgroupIds = [];
+        this.subcategoriaIds = [];
         if (this.groupId) {
-            this.renderSubgrupos(this.subgruposDisponiveis);
+            this.renderSubcategorias(this.subcategoriasDisponiveis);
         } else {
-            this.renderSubgrupos([]);
+            this.renderSubcategorias([]);
         }
 
         // Reset arquivos PDF

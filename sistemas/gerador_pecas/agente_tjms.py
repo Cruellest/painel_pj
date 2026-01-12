@@ -1605,7 +1605,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
             return None
         
         from sistemas.gerador_pecas.extrator_resumo_json import gerar_prompt_extracao_json
-        return gerar_prompt_extracao_json(formato, doc.descricao or "")
+        return gerar_prompt_extracao_json(formato, doc.descricao or "", db=self.db_session)
 
     def _obter_prompt_json_imagem(self, doc: DocumentoTJMS) -> Optional[str]:
         """
@@ -1625,7 +1625,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
             return None
         
         from sistemas.gerador_pecas.extrator_resumo_json import gerar_prompt_extracao_json_imagem
-        return gerar_prompt_extracao_json_imagem(formato)
+        return gerar_prompt_extracao_json_imagem(formato, db=self.db_session)
 
     def _processar_resposta_resumo(self, doc: DocumentoTJMS, resposta: str):
         """

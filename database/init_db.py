@@ -22,7 +22,7 @@ from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoC
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
-from admin.models_prompt_groups import PromptGroup, PromptSubgroup
+from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
 
 
 def wait_for_db(max_retries=10, delay=3):
@@ -486,6 +486,61 @@ def run_migrations():
         except Exception as e:
             db.rollback()
             print(f"[WARN] Migracao user_prompt_groups: {e}")
+
+    # Migracao: Criar tabela prompt_subcategorias
+    if not table_exists('prompt_subcategorias'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE prompt_subcategorias (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        group_id INTEGER NOT NULL REFERENCES prompt_groups(id),
+                        nome VARCHAR(100) NOT NULL,
+                        slug VARCHAR(50) NOT NULL,
+                        descricao VARCHAR(255),
+                        active BOOLEAN DEFAULT 1,
+                        "order" INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(group_id, slug)
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS prompt_subcategorias (
+                        id SERIAL PRIMARY KEY,
+                        group_id INTEGER NOT NULL REFERENCES prompt_groups(id),
+                        nome VARCHAR(100) NOT NULL,
+                        slug VARCHAR(50) NOT NULL,
+                        descricao VARCHAR(255),
+                        active BOOLEAN DEFAULT true,
+                        "order" INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(group_id, slug)
+                    )
+                """))
+            db.commit()
+            print("[OK] Migracao: tabela prompt_subcategorias criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao prompt_subcategorias: {e}")
+
+    # Migracao: Criar tabela prompt_modulo_subcategorias (muitos-para-muitos)
+    if not table_exists('prompt_modulo_subcategorias'):
+        try:
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS prompt_modulo_subcategorias (
+                    modulo_id INTEGER NOT NULL REFERENCES prompt_modulos(id),
+                    subcategoria_id INTEGER NOT NULL REFERENCES prompt_subcategorias(id),
+                    PRIMARY KEY (modulo_id, subcategoria_id)
+                )
+            """))
+            db.commit()
+            print("[OK] Migracao: tabela prompt_modulo_subcategorias criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao prompt_modulo_subcategorias: {e}")
 
     # Migracao: Adicionar coluna default_group_id na tabela users
     if table_exists('users') and not column_exists('users', 'default_group_id'):
@@ -1068,6 +1123,40 @@ Seja objetivo e fundamente cada conclusão com base legal."""
             print("[OK] Módulos de prompt do gerador de peças criados!")
         else:
             print(f"[INFO]  {existing_base} módulo(s) BASE já existem no banco.")
+
+        # Verifica se já existe a configuração de critérios de relevância
+        from admin.models import ConfiguracaoIA
+        existing_criterios = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "prompt_criterios_relevancia"
+        ).first()
+
+        if not existing_criterios:
+            # Cria a configuração de critérios de relevância para extração de resumos
+            criterios_relevancia_conteudo = """Se o documento for meramente administrativo (procuração, AR de citação, comprovante de pagamento,
+documento pessoal, certidão de publicação, protocolo, etc), retorne apenas:
+```json
+{"irrelevante": true, "motivo": "breve descrição do motivo"}
+```
+
+IMPORTANTE: Os seguintes tipos de documento SÃO RELEVANTES e devem ser resumidos normalmente:
+- Emails, ofícios e comunicações que contenham informações sobre o caso
+- Documentos sobre transferência hospitalar, notificações médicas, comunicados sobre tratamento
+- Relatórios, laudos, pareceres técnicos
+- Qualquer documento que contenha informações factuais sobre o processo"""
+
+            config_criterios = ConfiguracaoIA(
+                sistema="gerador_pecas",
+                chave="prompt_criterios_relevancia",
+                valor=criterios_relevancia_conteudo,
+                tipo_valor="string",
+                descricao="Critérios para determinar se um documento é relevante ou não na extração de resumos"
+            )
+            db.add(config_criterios)
+            db.commit()
+            print("[OK] Configuração de critérios de relevância criada!")
+        else:
+            print("[INFO] Configuração de critérios de relevância já existe.")
     finally:
         db.close()
 

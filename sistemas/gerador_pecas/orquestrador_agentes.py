@@ -98,7 +98,7 @@ class OrquestradorAgentes:
         modelo_geracao: str = None,
         tipo_peca: str = None,  # Tipo de peça para filtrar categorias
         group_id: Optional[int] = None,
-        subgroup_ids: Optional[List[int]] = None
+        subcategoria_ids: Optional[List[int]] = None
     ):
         """
         Args:
@@ -106,12 +106,12 @@ class OrquestradorAgentes:
             modelo_geracao: Modelo para o Agente 3 (override manual, opcional)
             tipo_peca: Tipo de peça para filtrar categorias de documentos (opcional)
             group_id: Grupo principal de prompts modulares (opcional)
-            subgroup_ids: Subgrupos selecionados para filtrar prompts modulares (opcional)
+            subcategoria_ids: Subgrupos selecionados para filtrar prompts modulares (opcional)
         """
         self.db = db
         self.tipo_peca_inicial = tipo_peca
         self.group_id = group_id
-        self.subgroup_ids = subgroup_ids or []
+        self.subcategoria_ids = subcategoria_ids or []
         
         # Carrega configurações do banco (tabela configuracoes_ia) ou usa padrões
         def get_config(chave: str, padrao: str) -> str:
@@ -407,7 +407,7 @@ class OrquestradorAgentes:
                 documentos_resumo=resumo_consolidado,
                 tipo_peca=tipo_peca,
                 group_id=self.group_id,
-                subgroup_ids=self.subgroup_ids
+                subcategoria_ids=self.subcategoria_ids
             )
             resultado.modulos_ids = modulos_ids
             
@@ -445,8 +445,11 @@ class OrquestradorAgentes:
                 if self.group_id is not None:
                     modulos_query = modulos_query.filter(PromptModulo.group_id == self.group_id)
 
-                if self.subgroup_ids:
-                    modulos_query = modulos_query.filter(PromptModulo.subgroup_id.in_(self.subgroup_ids))
+                if self.subcategoria_ids:
+                    from admin.models_prompt_groups import PromptSubcategoria
+                    modulos_query = modulos_query.filter(
+                        PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(self.subcategoria_ids))
+                    )
 
                 modulos_conteudo = modulos_query.order_by(PromptModulo.categoria, PromptModulo.ordem).all()
                 
