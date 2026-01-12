@@ -15,10 +15,11 @@ Autor: LAB/PGE-MS
 
 import json
 import logging
+import base64
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, File, UploadFile, Form
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -219,6 +220,165 @@ async def exportar_parecer(
     except Exception as e:
         logger.exception(f"Erro ao exportar DOCX: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================
+# UPLOAD DE DOCUMENTOS FALTANTES
+# =====================================================
+
+@router.post("/upload-documentos-faltantes")
+async def upload_documentos_faltantes(
+    geracao_id: int = Form(...),
+    numero_cnj: str = Form(...),
+    extrato_subconta: Optional[UploadFile] = File(None),
+    notas_fiscais: Optional[List[UploadFile]] = File(None),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Recebe documentos enviados manualmente pelo usuário quando o sistema
+    não conseguiu encontrá-los automaticamente.
+    """
+    from sistemas.pedido_calculo.document_downloader import extrair_texto_pdf
+    from sistemas.prestacao_contas.services import converter_pdf_para_imagens
+
+    geracao = db.query(GeracaoAnalise).filter(
+        GeracaoAnalise.id == geracao_id
+    ).first()
+
+    if not geracao:
+        raise HTTPException(status_code=404, detail="Análise não encontrada")
+
+    # Verifica permissão
+    if geracao.usuario_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    try:
+        # Processa extrato da subconta
+        if extrato_subconta:
+            logger.info(f"Processando extrato da subconta enviado pelo usuário")
+            pdf_bytes = await extrato_subconta.read()
+
+            # Extrai texto
+            texto_extrato = extrair_texto_pdf(pdf_bytes)
+
+            # Se texto muito curto, converte para imagem
+            if len(texto_extrato) < 500:
+                logger.info("Extrato com pouco texto, convertendo para imagem...")
+                imagens = converter_pdf_para_imagens(pdf_bytes)
+                # Armazena imagens no campo de documentos anexos
+                docs_anexos = geracao.documentos_anexos or []
+                docs_anexos.insert(0, {
+                    "id": "extrato_manual",
+                    "tipo": "Extrato da Subconta (enviado manualmente)",
+                    "imagens": imagens
+                })
+                geracao.documentos_anexos = docs_anexos
+                geracao.extrato_subconta_texto = f"[EXTRATO ENVIADO MANUALMENTE - {len(imagens)} páginas como imagem]"
+            else:
+                geracao.extrato_subconta_texto = f"## EXTRATO DA SUBCONTA (ENVIADO MANUALMENTE)\n\n{texto_extrato}"
+
+            # Salva PDF para visualização
+            geracao.extrato_subconta_pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+
+        # Processa notas fiscais
+        if notas_fiscais:
+            logger.info(f"Processando {len(notas_fiscais)} nota(s) fiscal(is) enviada(s) pelo usuário")
+            docs_anexos = geracao.documentos_anexos or []
+
+            for i, nota in enumerate(notas_fiscais):
+                pdf_bytes = await nota.read()
+
+                # Converte para imagem
+                imagens = converter_pdf_para_imagens(pdf_bytes)
+
+                if imagens:
+                    docs_anexos.append({
+                        "id": f"nota_manual_{i+1}",
+                        "tipo": f"Nota Fiscal (enviada manualmente) - {nota.filename}",
+                        "imagens": imagens
+                    })
+                    logger.info(f"Nota fiscal {nota.filename} convertida ({len(imagens)} páginas)")
+
+            geracao.documentos_anexos = docs_anexos
+
+        # Atualiza status para permitir reprocessamento
+        geracao.status = "documentos_recebidos"
+        geracao.erro = None
+        db.commit()
+
+        logger.info(f"Documentos recebidos com sucesso para geração {geracao_id}")
+
+        # Continua a análise com os novos documentos
+        async def continuar_analise():
+            orquestrador = OrquestradorPrestacaoContas(
+                db=db,
+                usuario_id=current_user.id
+            )
+
+            async for evento in orquestrador.continuar_com_documentos_manuais(geracao_id):
+                evento_json = evento.model_dump_json()
+                yield f"data: {evento_json}\n\n"
+
+        return StreamingResponse(
+            continuar_analise(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            }
+        )
+
+    except Exception as e:
+        logger.exception(f"Erro ao processar documentos: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =====================================================
+# CANCELAR POR FALTA DE DOCUMENTOS
+# =====================================================
+
+class CancelarPorFaltaRequest(BaseModel):
+    geracao_id: int
+    motivo: str
+
+
+@router.post("/cancelar-por-falta-documentos")
+async def cancelar_por_falta_documentos(
+    request: CancelarPorFaltaRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Cancela análise quando o usuário informa que não possui os documentos necessários.
+    A análise é salva no histórico com status de erro.
+    """
+    geracao = db.query(GeracaoAnalise).filter(
+        GeracaoAnalise.id == request.geracao_id
+    ).first()
+
+    if not geracao:
+        raise HTTPException(status_code=404, detail="Análise não encontrada")
+
+    # Verifica permissão
+    if geracao.usuario_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    # Atualiza status para erro
+    geracao.status = "erro"
+    geracao.erro = f"Análise cancelada: {request.motivo}"
+    geracao.parecer = None
+    geracao.fundamentacao = None
+
+    db.commit()
+
+    logger.info(f"Análise {request.geracao_id} cancelada por falta de documentos: {request.motivo}")
+
+    return {
+        "sucesso": True,
+        "mensagem": "Análise cancelada e salva no histórico com status de erro"
+    }
 
 
 # =====================================================

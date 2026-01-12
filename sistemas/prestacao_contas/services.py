@@ -677,35 +677,49 @@ class OrquestradorPrestacaoContas:
                         peticao_prestacao_doc = notas_fiscais[0]  # Usa a primeira NF como referência
                         log_sucesso(f"Fallback: {len(textos_notas)} notas fiscais serão usadas para análise")
                     else:
-                        log_erro("Nenhuma nota fiscal pôde ser processada")
-                        geracao.status = "erro"
-                        geracao.erro = "Petição de prestação de contas não encontrada e notas fiscais não puderam ser processadas"
+                        # SOLICITA UPLOAD: Notas fiscais não puderam ser processadas
+                        log_aviso("Solicitando upload manual de documentos ao usuário")
+                        geracao.status = "aguardando_documentos"
                         self.db.commit()
 
+                        # Verifica se também falta extrato
+                        docs_faltantes = ["notas_fiscais"]
+                        if not geracao.extrato_subconta_texto or len(geracao.extrato_subconta_texto or '') < 100:
+                            docs_faltantes.append("extrato_subconta")
+
                         yield EventoSSE(
-                            tipo="erro",
+                            tipo="solicitar_documentos",
                             etapa=3,
-                            mensagem="Não foi possível encontrar documentos para análise"
-                        )
-                        yield EventoSSE(
-                            tipo="fim",
-                            mensagem="Processamento finalizado com erro"
+                            mensagem="Documentos não encontrados. Por favor, anexe manualmente.",
+                            dados={
+                                "geracao_id": geracao.id,
+                                "numero_cnj": numero_cnj,
+                                "documentos_faltantes": docs_faltantes,
+                                "mensagem": "O sistema não encontrou as notas fiscais e comprovantes de pagamento no processo. Por favor, anexe os documentos manualmente para continuar a análise."
+                            }
                         )
                         return
                 else:
-                    log_erro("Nenhuma nota fiscal encontrada nos últimos 30 documentos")
-                    geracao.status = "erro"
-                    geracao.erro = "Petição de prestação de contas não encontrada e nenhuma nota fiscal disponível"
+                    # SOLICITA UPLOAD: Nenhuma nota fiscal encontrada
+                    log_aviso("Solicitando upload manual de documentos ao usuário")
+                    geracao.status = "aguardando_documentos"
                     self.db.commit()
 
+                    # Verifica se também falta extrato
+                    docs_faltantes = ["notas_fiscais"]
+                    if not geracao.extrato_subconta_texto or len(geracao.extrato_subconta_texto or '') < 100:
+                        docs_faltantes.append("extrato_subconta")
+
                     yield EventoSSE(
-                        tipo="erro",
+                        tipo="solicitar_documentos",
                         etapa=3,
-                        mensagem="Petição de prestação não encontrada e nenhuma nota fiscal disponível"
-                    )
-                    yield EventoSSE(
-                        tipo="fim",
-                        mensagem="Processamento finalizado com erro"
+                        mensagem="Documentos não encontrados. Por favor, anexe manualmente.",
+                        dados={
+                            "geracao_id": geracao.id,
+                            "numero_cnj": numero_cnj,
+                            "documentos_faltantes": docs_faltantes,
+                            "mensagem": "O sistema não encontrou a petição de prestação de contas nem as notas fiscais no processo. Por favor, anexe os documentos manualmente para continuar a análise."
+                        }
                     )
                     return
 
@@ -953,6 +967,36 @@ class OrquestradorPrestacaoContas:
             )
 
             # =====================================================
+            # VERIFICAÇÃO: Documentos suficientes para análise?
+            # =====================================================
+            tem_extrato = bool(geracao.extrato_subconta_texto and len(geracao.extrato_subconta_texto) > 100)
+            tem_notas = len(documentos_anexos) > 0
+
+            # Se não tem extrato E não tem notas, solicita upload
+            if not tem_extrato and not tem_notas:
+                log_aviso("Documentos insuficientes para análise - solicitando upload manual")
+                geracao.status = "aguardando_documentos"
+                self.db.commit()
+
+                yield EventoSSE(
+                    tipo="solicitar_documentos",
+                    etapa=4,
+                    mensagem="Documentos insuficientes. Por favor, anexe manualmente.",
+                    dados={
+                        "geracao_id": geracao.id,
+                        "numero_cnj": numero_cnj,
+                        "documentos_faltantes": ["extrato_subconta", "notas_fiscais"],
+                        "mensagem": "O sistema não encontrou o extrato da subconta nem as notas fiscais/comprovantes necessários para a análise. Por favor, anexe os documentos manualmente."
+                    }
+                )
+                return
+
+            # Se tem extrato mas não tem notas, pode ser ok (depende do caso)
+            # Mas se não tem extrato e tem poucas notas, avisa mas continua
+            if not tem_extrato and tem_notas:
+                log_aviso("Extrato da subconta não encontrado - análise continuará apenas com notas fiscais")
+
+            # =====================================================
             # ETAPA 5: ANÁLISE POR IA
             # =====================================================
             log_etapa(5, "ANÁLISE FINAL (LLM)")
@@ -1144,3 +1188,140 @@ class OrquestradorPrestacaoContas:
         self.ia_logger.salvar_logs(self.db, geracao.id)
 
         return resultado
+
+    async def continuar_com_documentos_manuais(
+        self,
+        geracao_id: int
+    ) -> AsyncGenerator[EventoSSE, None]:
+        """
+        Continua a análise após o usuário enviar documentos manualmente.
+
+        Args:
+            geracao_id: ID da geração com documentos recebidos
+
+        Yields:
+            EventoSSE com progresso do processamento
+        """
+        from datetime import datetime
+
+        geracao = self.db.query(GeracaoAnalise).filter(
+            GeracaoAnalise.id == geracao_id
+        ).first()
+
+        if not geracao:
+            yield EventoSSE(
+                tipo="erro",
+                mensagem="Análise não encontrada"
+            )
+            return
+
+        inicio = datetime.utcnow()
+
+        try:
+            logger.info(f"\n{'#'*60}")
+            logger.info(f"# CONTINUANDO ANÁLISE COM DOCUMENTOS MANUAIS - {geracao.numero_cnj}")
+            logger.info(f"{'#'*60}")
+
+            yield EventoSSE(
+                tipo="etapa",
+                etapa=5,
+                etapa_nome="Análise IA",
+                mensagem="Analisando documentos enviados...",
+                progresso=80
+            )
+
+            # Prepara dados para análise
+            dados_analise = DadosAnalise(
+                extrato_subconta=geracao.extrato_subconta_texto or "",
+                peticao_inicial=geracao.peticao_inicial_texto or "",
+                peticao_prestacao=geracao.peticao_prestacao_texto or "",
+                documentos_anexos=geracao.documentos_anexos or [],
+                peticoes_contexto=[],
+            )
+
+            # Log dos dados
+            log_ia(f"Dados para análise (documentos manuais):")
+            log_ia(f"  - Extrato subconta: {len(geracao.extrato_subconta_texto or '')} caracteres")
+            log_ia(f"  - Documentos anexos: {len(geracao.documentos_anexos or [])} docs")
+
+            agente = AgenteAnalise(
+                modelo=self.modelo_analise,
+                temperatura=self.temperatura_analise,
+                ia_logger=self.ia_logger,
+                db=self.db,
+            )
+
+            log_ia("Enviando para análise...")
+            resultado = await agente.analisar(dados_analise)
+
+            # Log do resultado
+            log_sucesso(f"Análise concluída!")
+            log_ia(f"  📋 PARECER: {resultado.parecer.upper()}")
+
+            # Salva resultado
+            geracao.parecer = resultado.parecer
+            geracao.fundamentacao = resultado.fundamentacao
+            geracao.irregularidades = resultado.irregularidades
+            geracao.perguntas_usuario = resultado.perguntas
+            geracao.valor_bloqueado = resultado.valor_bloqueado
+            geracao.valor_utilizado = resultado.valor_utilizado
+            geracao.valor_devolvido = resultado.valor_devolvido
+            geracao.medicamento_pedido = resultado.medicamento_pedido
+            geracao.medicamento_comprado = resultado.medicamento_comprado
+            geracao.modelo_usado = resultado.modelo_usado
+            geracao.prompt_analise = self.ia_logger.logs[-1].prompt_enviado if self.ia_logger.logs else None
+            geracao.resposta_ia_bruta = self.ia_logger.logs[-1].resposta_ia if self.ia_logger.logs else None
+
+            # Calcula tempo de processamento
+            fim = datetime.utcnow()
+            geracao.tempo_processamento_ms = int((fim - inicio).total_seconds() * 1000)
+            geracao.status = "concluido"
+
+            self.db.commit()
+
+            # Salva logs de IA
+            self.ia_logger.salvar_logs(self.db, geracao.id)
+
+            log_info(f"Tempo de análise: {geracao.tempo_processamento_ms/1000:.1f}s")
+            logger.info(f"\n{'#'*60}")
+            logger.info(f"# FIM - PARECER: {resultado.parecer.upper()}")
+            logger.info(f"{'#'*60}\n")
+
+            yield EventoSSE(
+                tipo="sucesso",
+                etapa=5,
+                mensagem="Análise concluída!",
+                progresso=100
+            )
+
+            yield EventoSSE(
+                tipo="resultado",
+                mensagem="Processamento finalizado",
+                dados={
+                    "geracao_id": geracao.id,
+                    "parecer": resultado.parecer,
+                    "fundamentacao": resultado.fundamentacao,
+                    "valor_bloqueado": resultado.valor_bloqueado,
+                    "valor_utilizado": resultado.valor_utilizado,
+                    "valor_devolvido": resultado.valor_devolvido,
+                    "medicamento_pedido": resultado.medicamento_pedido,
+                    "medicamento_comprado": resultado.medicamento_comprado,
+                    "irregularidades": resultado.irregularidades,
+                    "perguntas": resultado.perguntas,
+                }
+            )
+
+        except Exception as e:
+            logger.exception(f"Erro ao continuar análise: {e}")
+            geracao.status = "erro"
+            geracao.erro = str(e)
+            self.db.commit()
+
+            yield EventoSSE(
+                tipo="erro",
+                mensagem=f"Erro ao processar: {str(e)}"
+            )
+            yield EventoSSE(
+                tipo="fim",
+                mensagem="Processamento finalizado com erro"
+            )
