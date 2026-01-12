@@ -44,3 +44,15 @@ sistemas/gerador_pecas/temp_docs/
 
 # Temporary document files
 **/temp_docs/*.docx
+
+# Claude Code temporary files
+tmpclaude-*
+
+# Test coverage
+htmlcov/
+.coverage
+*.cover
+
+# IDE/Editor
+*.sublime-*
+*.code-workspace
