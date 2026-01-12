@@ -10,6 +10,7 @@ from typing import Tuple, List, Dict, Any
 from requests.adapters import HTTPAdapter, Retry
 import xml.etree.ElementTree as ET
 
+from utils.security import safe_parse_xml
 from config import (
     TJ_WSDL_URL, TJ_WS_USER, TJ_WS_PASS,
     DEFAULT_MODEL, STRICT_CNJ_CHECK, CLASSES_CUMPRIMENTO, NS
@@ -160,7 +161,8 @@ def _all_texts(elem: ET.Element, name_endswith: str) -> List[str]:
     return out
 
 def parse_xml_processo(xml_text: str) -> Dict[str, Any]:
-    root = ET.fromstring(xml_text)
+    # SECURITY: Usa parsing seguro para prevenir XXE
+    root = safe_parse_xml(xml_text)
     data: Dict[str, Any] = {
         "classeProcessual": None,
         "cumprimento": False,

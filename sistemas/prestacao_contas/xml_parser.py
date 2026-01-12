@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Any
 
+from utils.security import safe_parse_xml
+
 
 # Códigos de petições que podem conter prestação de contas
 # Lista ampliada para capturar todos os tipos de petição possíveis
@@ -176,7 +178,8 @@ class XMLParserPrestacao:
             xml_text: XML completo do processo
         """
         self.xml_text = xml_text
-        self.root = ET.fromstring(xml_text)
+        # SECURITY: Usa parsing seguro para prevenir XXE
+        self.root = safe_parse_xml(xml_text)
         self._dados_basicos_elem = None
         self._movimentos = []
         self._documentos: List[DocumentoProcesso] = []
