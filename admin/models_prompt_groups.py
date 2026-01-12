@@ -1,0 +1,58 @@
+# admin/models_prompt_groups.py
+"""
+Modelos de grupos e subgrupos para prompts modulares.
+"""
+
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, UniqueConstraint, Table
+from sqlalchemy.orm import relationship
+
+from database.connection import Base
+
+
+user_prompt_groups = Table(
+    "user_prompt_groups",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id"), primary_key=True),
+    Column("group_id", Integer, ForeignKey("prompt_groups.id"), primary_key=True),
+)
+
+
+class PromptGroup(Base):
+    __tablename__ = "prompt_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    slug = Column(String(50), nullable=False, unique=True, index=True)
+    active = Column(Boolean, default=True, index=True)
+    order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    subgroups = relationship("PromptSubgroup", back_populates="group", order_by="PromptSubgroup.order")
+    users = relationship("User", secondary=user_prompt_groups, back_populates="allowed_groups")
+
+    def __repr__(self):
+        return f"<PromptGroup(id={self.id}, slug='{self.slug}')>"
+
+
+class PromptSubgroup(Base):
+    __tablename__ = "prompt_subgroups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("prompt_groups.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    slug = Column(String(50), nullable=False)
+    active = Column(Boolean, default=True, index=True)
+    order = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    group = relationship("PromptGroup", back_populates="subgroups")
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "slug", name="uq_prompt_subgroup_group_slug"),
+    )
+
+    def __repr__(self):
+        return f"<PromptSubgroup(id={self.id}, slug='{self.slug}', group_id={self.group_id})>"

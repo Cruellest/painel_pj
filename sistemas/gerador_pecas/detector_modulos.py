@@ -49,7 +49,9 @@ class DetectorModulosIA:
         self,
         documentos_resumo: str,
         documentos_completos: Optional[str] = None,
-        tipo_peca: Optional[str] = None
+        tipo_peca: Optional[str] = None,
+        group_id: Optional[int] = None,
+        subgroup_ids: Optional[List[int]] = None
     ) -> List[int]:
         """
         Analisa os documentos e retorna IDs dos módulos de CONTEÚDO relevantes.
@@ -63,14 +65,15 @@ class DetectorModulosIA:
             Lista de IDs dos módulos relevantes
         """
         # Verificar cache (inclui tipo_peca na chave)
-        cache_key = self._gerar_cache_key(f"{tipo_peca or ''}:{documentos_resumo}")
+        subgroup_cache = ",".join(str(i) for i in (subgroup_ids or []))
+        cache_key = self._gerar_cache_key(f"{tipo_peca or ''}:{group_id or ''}:{subgroup_cache}:{documentos_resumo}")
         cached = self._verificar_cache(cache_key)
         if cached is not None:
             print(f"✅ Cache hit - módulos detectados anteriormente")
             return cached
 
         # Carregar módulos de CONTEÚDO disponíveis (filtrado por tipo de peça se especificado)
-        modulos = self._carregar_modulos_disponiveis(tipo_peca)
+        modulos = self._carregar_modulos_disponiveis(tipo_peca, group_id, subgroup_ids)
 
         if not modulos:
             if tipo_peca:
@@ -105,44 +108,59 @@ class DetectorModulosIA:
             # Fallback: usar detecção simples por palavras-chave
             return self._detectar_por_palavras_chave(documentos_resumo, modulos)
 
-    def _carregar_modulos_disponiveis(self, tipo_peca: str = None) -> List[PromptModulo]:
+    def _carregar_modulos_disponiveis(
+        self,
+        tipo_peca: str = None,
+        group_id: Optional[int] = None,
+        subgroup_ids: Optional[List[int]] = None
+    ) -> List[PromptModulo]:
         """
-        Carrega módulos de CONTEÚDO ativos do banco.
-        
-        Se tipo_peca for especificado, filtra apenas módulos ativos para esse tipo.
+        Carrega modulos de CONTEUDO ativos do banco.
+
+        Se tipo_peca for especificado, filtra apenas modulos ativos para esse tipo.
+        Se group_id for informado, restringe aos modulos do grupo.
+        Se subgroup_ids for informado, restringe aos subgrupos selecionados.
         """
         from admin.models_prompts import ModuloTipoPeca
-        
-        # Busca todos os módulos de conteúdo ativos globalmente
-        modulos = self.db.query(PromptModulo).filter(
+
+        # Busca todos os modulos de conteudo ativos globalmente
+        query = self.db.query(PromptModulo).filter(
             PromptModulo.tipo == "conteudo",
             PromptModulo.ativo == True
-        ).order_by(PromptModulo.ordem).all()
-        
-        # Se não há tipo de peça especificado, retorna todos
+        )
+
+        if group_id is not None:
+            query = query.filter(PromptModulo.group_id == group_id)
+
+        if subgroup_ids:
+            query = query.filter(PromptModulo.subgroup_id.in_(subgroup_ids))
+
+        modulos = query.order_by(PromptModulo.ordem).all()
+
+        # Se nao ha tipo de peca especificado, retorna todos
         if not tipo_peca:
             return modulos
-        
-        # Busca associações para este tipo de peça
+
+        # Busca associacoes para este tipo de peca
         associacoes = self.db.query(ModuloTipoPeca).filter(
             ModuloTipoPeca.tipo_peca == tipo_peca
         ).all()
-        
-        # Se não há associações configuradas, retorna todos (retrocompatibilidade)
+
+        # Se nao ha associacoes configuradas, retorna todos (retrocompatibilidade)
         if not associacoes:
             return modulos
-        
+
         # Cria mapa: modulo_id -> ativo
         mapa_ativo = {a.modulo_id: a.ativo for a in associacoes}
-        
-        # Filtra módulos
+
+        # Filtra modulos
         modulos_filtrados = []
         for modulo in modulos:
-            # Se não tem associação configurada, considera ativo (retrocompatibilidade)
+            # Se nao tem associacao configurada, considera ativo (retrocompatibilidade)
             ativo_para_tipo = mapa_ativo.get(modulo.id, True)
             if ativo_para_tipo:
                 modulos_filtrados.append(modulo)
-        
+
         return modulos_filtrados
 
     def _montar_prompt_deteccao(

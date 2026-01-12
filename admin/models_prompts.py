@@ -43,6 +43,8 @@ class PromptModulo(Base):
     tipo = Column(String(20), nullable=False, index=True)  # 'base', 'peca', 'conteudo'
     categoria = Column(String(50), nullable=True, index=True)  # Para conteúdo: 'medicamento', 'laudo', etc.
     subcategoria = Column(String(50), nullable=True)  # 'nao_incorporado_sus', 'experimental', etc.
+    group_id = Column(Integer, ForeignKey("prompt_groups.id"), nullable=True, index=True)
+    subgroup_id = Column(Integer, ForeignKey("prompt_subgroups.id"), nullable=True, index=True)
     
     # Identificação
     nome = Column(String(100), nullable=False)
@@ -71,6 +73,8 @@ class PromptModulo(Base):
     
     # Relacionamentos
     historico = relationship("PromptModuloHistorico", back_populates="modulo", order_by="desc(PromptModuloHistorico.versao)")
+    group = relationship("PromptGroup")
+    subgroup = relationship("PromptSubgroup")
     
     # Constraint de unicidade
     __table_args__ = (
@@ -88,6 +92,8 @@ class PromptModuloHistorico(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     modulo_id = Column(Integer, ForeignKey("prompt_modulos.id"), nullable=False, index=True)
+    group_id = Column(Integer, ForeignKey("prompt_groups.id"), nullable=True, index=True)
+    subgroup_id = Column(Integer, ForeignKey("prompt_subgroups.id"), nullable=True, index=True)
     
     # Dados da versão
     versao = Column(Integer, nullable=False)

@@ -14,6 +14,7 @@ from database.connection import get_db
 from auth.models import User
 from auth.dependencies import get_current_active_user, require_admin
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
+from admin.models_prompt_groups import PromptGroup, PromptSubgroup
 
 router = APIRouter(prefix="/prompts-modulos", tags=["Prompts Modulares"])
 
@@ -26,6 +27,8 @@ class PromptModuloBase(BaseModel):
     tipo: str  # 'base', 'peca', 'conteudo'
     categoria: Optional[str] = None
     subcategoria: Optional[str] = None
+    group_id: Optional[int] = None
+    subgroup_id: Optional[int] = None
     nome: str
     titulo: str
     condicao_ativacao: Optional[str] = None  # Situação em que o prompt deve ser ativado (para Agente 2)
@@ -42,6 +45,8 @@ class PromptModuloCreate(PromptModuloBase):
 
 class PromptModuloUpdate(BaseModel):
     titulo: Optional[str] = None
+    group_id: Optional[int] = None
+    subgroup_id: Optional[int] = None
     condicao_ativacao: Optional[str] = None  # Atualiza condição de ativação
     conteudo: Optional[str] = None
     palavras_chave: Optional[List[str]] = None
@@ -66,6 +71,8 @@ class PromptModuloResponse(PromptModuloBase):
 class PromptHistoricoResponse(BaseModel):
     id: int
     modulo_id: int
+    group_id: Optional[int] = None
+    subgroup_id: Optional[int] = None
     versao: int
     condicao_ativacao: Optional[str]
     conteudo: str
@@ -85,6 +92,61 @@ class DiffResponse(BaseModel):
     v2: int
     diff_html: str
     alteracoes: int
+
+
+class PromptGroupBase(BaseModel):
+    name: str
+    slug: str
+    active: bool = True
+    order: int = 0
+
+
+class PromptGroupCreate(PromptGroupBase):
+    pass
+
+
+class PromptGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    active: Optional[bool] = None
+    order: Optional[int] = None
+
+
+class PromptGroupResponse(PromptGroupBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PromptSubgroupBase(BaseModel):
+    group_id: int
+    name: str
+    slug: str
+    active: bool = True
+    order: int = 0
+
+
+class PromptSubgroupCreate(PromptSubgroupBase):
+    pass
+
+
+class PromptSubgroupUpdate(BaseModel):
+    name: Optional[str] = None
+    slug: Optional[str] = None
+    active: Optional[bool] = None
+    order: Optional[int] = None
+
+
+class PromptSubgroupResponse(PromptSubgroupBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 # ==========================================
@@ -133,6 +195,8 @@ def verificar_permissao_prompts(user: User, acao: str = "editar"):
 async def listar_modulos(
     tipo: Optional[str] = None,
     categoria: Optional[str] = None,
+    group_id: Optional[int] = None,
+    subgroup_id: Optional[int] = None,
     busca: Optional[str] = None,
     apenas_ativos: bool = True,
     current_user: User = Depends(get_current_active_user),
@@ -149,6 +213,12 @@ async def listar_modulos(
     
     if categoria:
         query = query.filter(PromptModulo.categoria == categoria)
+
+    if group_id:
+        query = query.filter(PromptModulo.group_id == group_id)
+
+    if subgroup_id:
+        query = query.filter(PromptModulo.subgroup_id == subgroup_id)
     
     if busca:
         busca_like = f"%{busca}%"
@@ -164,13 +234,17 @@ async def listar_modulos(
 
 @router.get("/categorias")
 async def listar_categorias(
+    group_id: Optional[int] = None,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Lista todas as categorias disponíveis"""
-    categorias = db.query(PromptModulo.categoria).distinct().filter(
+    query = db.query(PromptModulo.categoria).distinct().filter(
         PromptModulo.categoria.isnot(None)
-    ).all()
+    )
+    if group_id:
+        query = query.filter(PromptModulo.group_id == group_id)
+    categorias = query.all()
     return [c[0] for c in categorias if c[0]]
 
 
@@ -263,6 +337,166 @@ async def resumo_configuracao_tipos_peca(
 # Endpoints CRUD
 # ==========================================
 
+# ==========================================
+# Endpoints Grupos/Subgrupos
+# ==========================================
+
+@router.get("/grupos", response_model=List[PromptGroupResponse])
+async def listar_grupos(
+    apenas_ativos: bool = True,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(PromptGroup)
+    if apenas_ativos:
+        query = query.filter(PromptGroup.active == True)
+    grupos = query.order_by(PromptGroup.order, PromptGroup.name).all()
+    return grupos
+
+
+@router.post("/grupos", response_model=PromptGroupResponse, status_code=status.HTTP_201_CREATED)
+async def criar_grupo(
+    grupo_data: PromptGroupCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    verificar_permissao_prompts(current_user, "criar")
+
+    slug = grupo_data.slug.strip().lower()
+    if not slug:
+        raise HTTPException(status_code=400, detail="Slug do grupo e obrigatorio")
+
+    existente = db.query(PromptGroup).filter(PromptGroup.slug == slug).first()
+    if existente:
+        raise HTTPException(status_code=400, detail="Slug de grupo ja existe")
+
+    grupo = PromptGroup(
+        name=grupo_data.name.strip(),
+        slug=slug,
+        active=grupo_data.active,
+        order=grupo_data.order
+    )
+    db.add(grupo)
+    db.commit()
+    db.refresh(grupo)
+    return grupo
+
+
+@router.put("/grupos/{group_id}", response_model=PromptGroupResponse)
+async def atualizar_grupo(
+    group_id: int,
+    grupo_data: PromptGroupUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    verificar_permissao_prompts(current_user, "editar")
+
+    grupo = db.query(PromptGroup).filter(PromptGroup.id == group_id).first()
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo nao encontrado")
+
+    if grupo_data.slug:
+        slug = grupo_data.slug.strip().lower()
+        existente = db.query(PromptGroup).filter(
+            PromptGroup.slug == slug,
+            PromptGroup.id != group_id
+        ).first()
+        if existente:
+            raise HTTPException(status_code=400, detail="Slug de grupo ja existe")
+        grupo.slug = slug
+
+    update_data = grupo_data.model_dump(exclude_unset=True, exclude={"slug"})
+    for field, value in update_data.items():
+        setattr(grupo, field, value)
+
+    db.commit()
+    db.refresh(grupo)
+    return grupo
+
+
+@router.get("/grupos/{group_id}/subgrupos", response_model=List[PromptSubgroupResponse])
+async def listar_subgrupos(
+    group_id: int,
+    apenas_ativos: bool = True,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(PromptSubgroup).filter(PromptSubgroup.group_id == group_id)
+    if apenas_ativos:
+        query = query.filter(PromptSubgroup.active == True)
+    subgrupos = query.order_by(PromptSubgroup.order, PromptSubgroup.name).all()
+    return subgrupos
+
+
+@router.post("/grupos/{group_id}/subgrupos", response_model=PromptSubgroupResponse, status_code=status.HTTP_201_CREATED)
+async def criar_subgrupo(
+    group_id: int,
+    subgrupo_data: PromptSubgroupCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    verificar_permissao_prompts(current_user, "criar")
+
+    grupo = db.query(PromptGroup).filter(PromptGroup.id == group_id).first()
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo nao encontrado")
+
+    slug = subgrupo_data.slug.strip().lower()
+    if not slug:
+        raise HTTPException(status_code=400, detail="Slug do subgrupo e obrigatorio")
+
+    existente = db.query(PromptSubgroup).filter(
+        PromptSubgroup.group_id == group_id,
+        PromptSubgroup.slug == slug
+    ).first()
+    if existente:
+        raise HTTPException(status_code=400, detail="Slug de subgrupo ja existe no grupo")
+
+    subgrupo = PromptSubgroup(
+        group_id=group_id,
+        name=subgrupo_data.name.strip(),
+        slug=slug,
+        active=subgrupo_data.active,
+        order=subgrupo_data.order
+    )
+    db.add(subgrupo)
+    db.commit()
+    db.refresh(subgrupo)
+    return subgrupo
+
+
+@router.put("/subgrupos/{subgroup_id}", response_model=PromptSubgroupResponse)
+async def atualizar_subgrupo(
+    subgroup_id: int,
+    subgrupo_data: PromptSubgroupUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    verificar_permissao_prompts(current_user, "editar")
+
+    subgrupo = db.query(PromptSubgroup).filter(PromptSubgroup.id == subgroup_id).first()
+    if not subgrupo:
+        raise HTTPException(status_code=404, detail="Subgrupo nao encontrado")
+
+    if subgrupo_data.slug:
+        slug = subgrupo_data.slug.strip().lower()
+        existente = db.query(PromptSubgroup).filter(
+            PromptSubgroup.group_id == subgrupo.group_id,
+            PromptSubgroup.slug == slug,
+            PromptSubgroup.id != subgroup_id
+        ).first()
+        if existente:
+            raise HTTPException(status_code=400, detail="Slug de subgrupo ja existe no grupo")
+        subgrupo.slug = slug
+
+    update_data = subgrupo_data.model_dump(exclude_unset=True, exclude={"slug"})
+    for field, value in update_data.items():
+        setattr(subgrupo, field, value)
+
+    db.commit()
+    db.refresh(subgrupo)
+    return subgrupo
+
 @router.get("/{modulo_id}", response_model=PromptModuloResponse)
 async def obter_modulo(
     modulo_id: int,
@@ -274,6 +508,35 @@ async def obter_modulo(
     
     if not modulo:
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    new_group_id = modulo_data.group_id if modulo_data.group_id is not None else modulo.group_id
+    new_subgroup_id = modulo_data.subgroup_id if modulo_data.subgroup_id is not None else modulo.subgroup_id
+
+    if modulo.tipo == "conteudo":
+        if not new_group_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Grupo e obrigatorio para modulo de conteudo"
+            )
+        grupo = db.query(PromptGroup).filter(PromptGroup.id == new_group_id).first()
+        if not grupo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Grupo invalido"
+            )
+        if new_subgroup_id:
+            subgrupo = db.query(PromptSubgroup).filter(
+                PromptSubgroup.id == new_subgroup_id,
+                PromptSubgroup.group_id == new_group_id
+            ).first()
+            if not subgrupo:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Subgrupo invalido para o grupo informado"
+                )
+    else:
+        new_group_id = None
+        new_subgroup_id = None
     
     return modulo
 
@@ -300,6 +563,34 @@ async def criar_modulo(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Já existe um módulo com esta combinação tipo/categoria/subcategoria/nome"
         )
+
+    group_id = modulo_data.group_id
+    subgroup_id = modulo_data.subgroup_id
+    if modulo_data.tipo == "conteudo":
+        if not group_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Grupo e obrigatorio para modulo de conteudo"
+            )
+        grupo = db.query(PromptGroup).filter(PromptGroup.id == group_id).first()
+        if not grupo:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Grupo invalido"
+            )
+        if subgroup_id:
+            subgrupo = db.query(PromptSubgroup).filter(
+                PromptSubgroup.id == subgroup_id,
+                PromptSubgroup.group_id == group_id
+            ).first()
+            if not subgrupo:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Subgrupo invalido para o grupo informado"
+                )
+    else:
+        group_id = None
+        subgroup_id = None
     
     # Para tipo "peca" e "base": se ativo, desativa outros da mesma categoria
     if modulo_data.ativo and modulo_data.tipo in ("peca", "base"):
@@ -313,8 +604,12 @@ async def criar_modulo(
             outro.ativo = False
             outro.atualizado_por = current_user.id
     
+    modulo_payload = modulo_data.model_dump()
+    modulo_payload["group_id"] = group_id
+    modulo_payload["subgroup_id"] = subgroup_id
+
     modulo = PromptModulo(
-        **modulo_data.model_dump(),
+        **modulo_payload,
         versao=1,
         criado_por=current_user.id,
         atualizado_por=current_user.id
@@ -363,6 +658,8 @@ async def atualizar_modulo(
     historico = PromptModuloHistorico(
         modulo_id=modulo.id,
         versao=modulo.versao,
+        group_id=modulo.group_id,
+        subgroup_id=modulo.subgroup_id,
         condicao_ativacao=modulo.condicao_ativacao,
         conteudo=modulo.conteudo,
         palavras_chave=modulo.palavras_chave,
@@ -375,6 +672,14 @@ async def atualizar_modulo(
     
     # Atualiza módulo
     update_data = modulo_data.model_dump(exclude_unset=True, exclude={"motivo"})
+    if modulo.tipo != "conteudo":
+        if "group_id" in update_data:
+            update_data["group_id"] = None
+        if "subgroup_id" in update_data:
+            update_data["subgroup_id"] = None
+    else:
+        if modulo_data.group_id is not None and modulo_data.subgroup_id is None and modulo.group_id != new_group_id:
+            update_data["subgroup_id"] = None
     for field, value in update_data.items():
         setattr(modulo, field, value)
     
@@ -506,6 +811,8 @@ async def restaurar_versao(
     novo_historico = PromptModuloHistorico(
         modulo_id=modulo.id,
         versao=modulo.versao,
+        group_id=modulo.group_id,
+        subgroup_id=modulo.subgroup_id,
         condicao_ativacao=modulo.condicao_ativacao,
         conteudo=modulo.conteudo,
         palavras_chave=modulo.palavras_chave,
@@ -517,6 +824,8 @@ async def restaurar_versao(
     db.add(novo_historico)
     
     # Restaura conteúdo
+    modulo.group_id = historico.group_id
+    modulo.subgroup_id = historico.subgroup_id
     modulo.condicao_ativacao = historico.condicao_ativacao
     modulo.conteudo = historico.conteudo
     modulo.palavras_chave = historico.palavras_chave
@@ -602,6 +911,10 @@ async def exportar_todos(
             "tipo": modulo.tipo,
             "categoria": modulo.categoria,
             "subcategoria": modulo.subcategoria,
+            "group_id": modulo.group_id,
+            "group_slug": modulo.group.slug if modulo.group else None,
+            "subgroup_id": modulo.subgroup_id,
+            "subgroup_slug": modulo.subgroup.slug if modulo.subgroup else None,
             "nome": modulo.nome,
             "titulo": modulo.titulo,
             "condicao_ativacao": modulo.condicao_ativacao or "",
@@ -644,6 +957,10 @@ async def exportar_selecionados(
             "tipo": modulo.tipo,
             "categoria": modulo.categoria,
             "subcategoria": modulo.subcategoria,
+            "group_id": modulo.group_id,
+            "group_slug": modulo.group.slug if modulo.group else None,
+            "subgroup_id": modulo.subgroup_id,
+            "subgroup_slug": modulo.subgroup.slug if modulo.subgroup else None,
             "nome": modulo.nome,
             "titulo": modulo.titulo,
             "condicao_ativacao": modulo.condicao_ativacao or "",
@@ -735,6 +1052,42 @@ async def importar_modulos(
             palavras_chave = item.get("palavras_chave", [])
             tags = item.get("tags", [])
             ordem = item.get("ordem", 0)
+
+            grupo_id = item.get("group_id")
+            grupo_slug = item.get("group_slug") or item.get("grupo_slug")
+            subgrupo_id = item.get("subgroup_id")
+            subgrupo_slug = item.get("subgroup_slug")
+
+            grupo = None
+            if tipo == "conteudo":
+                if grupo_id:
+                    grupo = db.query(PromptGroup).filter(PromptGroup.id == grupo_id).first()
+                elif grupo_slug:
+                    grupo = db.query(PromptGroup).filter(PromptGroup.slug == str(grupo_slug).lower()).first()
+                else:
+                    grupo = db.query(PromptGroup).filter(PromptGroup.slug == "ps").first()
+
+                if not grupo:
+                    erros.append(f"Modulo {i+1} ({nome}): grupo invalido ou nao informado")
+                    continue
+
+            subgrupo = None
+            if tipo == "conteudo":
+                if subgrupo_id:
+                    subgrupo = db.query(PromptSubgroup).filter(
+                        PromptSubgroup.id == subgrupo_id
+                    ).first()
+                    if subgrupo and grupo and subgrupo.group_id != grupo.id:
+                        subgrupo = None
+                elif subgrupo_slug and grupo:
+                    subgrupo = db.query(PromptSubgroup).filter(
+                        PromptSubgroup.group_id == grupo.id,
+                        PromptSubgroup.slug == str(subgrupo_slug).lower()
+                    ).first()
+
+                if (subgrupo_id or subgrupo_slug) and not subgrupo:
+                    erros.append(f"Modulo {i+1} ({nome}): subgrupo invalido para o grupo informado")
+                    continue
             
             # Verifica se já existe
             existente = db.query(PromptModulo).filter(
@@ -751,6 +1104,8 @@ async def importar_modulos(
                     historico = PromptModuloHistorico(
                         modulo_id=existente.id,
                         versao=existente.versao,
+                        group_id=existente.group_id,
+                        subgroup_id=existente.subgroup_id,
                         condicao_ativacao=existente.condicao_ativacao,
                         conteudo=existente.conteudo,
                         palavras_chave=existente.palavras_chave,
@@ -768,6 +1123,8 @@ async def importar_modulos(
                     existente.palavras_chave = palavras_chave
                     existente.tags = tags
                     existente.ordem = ordem
+                    existente.group_id = grupo.id if grupo else None
+                    existente.subgroup_id = subgrupo.id if subgrupo else None
                     existente.versao += 1
                     existente.atualizado_por = current_user.id
                     existente.atualizado_em = datetime.utcnow()
@@ -789,6 +1146,8 @@ async def importar_modulos(
                     palavras_chave=palavras_chave,
                     tags=tags,
                     ordem=ordem,
+                    group_id=grupo.id if grupo else None,
+                    subgroup_id=subgrupo.id if subgrupo else None,
                     ativo=True,
                     versao=1,
                     criado_por=current_user.id,

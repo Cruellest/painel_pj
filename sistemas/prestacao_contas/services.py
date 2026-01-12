@@ -448,6 +448,11 @@ class OrquestradorPrestacaoContas:
                             etapa=3,
                             mensagem=f"Petição de prestação encontrada! (confiança: {resultado_id.confianca:.0%})"
                         )
+                        # SEMPRE busca anexos de petição de prestação (notas fiscais, comprovantes)
+                        # independente do LLM detectar menciona_anexos - prestações sempre têm anexos
+                        if peticao.data_juntada:
+                            docs_para_baixar_anexos.append(peticao)
+                            log_info(f"📎 Marcada para buscar anexos (prestação de contas sempre tem anexos)")
                     else:
                         # Se já tem uma prestação, adiciona como relevante para não perder
                         peticoes_relevantes.append(doc_class)
@@ -592,6 +597,15 @@ class OrquestradorPrestacaoContas:
             # Coleta IDs de documentos já processados (para não duplicar)
             ids_ja_processados = {d["doc"].id for d in documentos_classificados}
 
+            # DEBUG: Log do estado inicial da busca de anexos
+            logger.warning(f"{'='*60}")
+            logger.warning(f"DEBUG ETAPA 4: BUSCA DE ANEXOS")
+            logger.warning(f"  docs_para_baixar_anexos: {len(docs_para_baixar_anexos)} itens")
+            for idx, p in enumerate(docs_para_baixar_anexos):
+                logger.warning(f"    {idx+1}. ID={p.id} | Data={p.data_juntada}")
+            logger.warning(f"  ids_ja_processados: {len(ids_ja_processados)} IDs")
+            logger.warning(f"{'='*60}")
+
             # Baixa documentos anexos das petições que mencionam anexos
             # Usa intervalo de 2 minutos para encontrar anexos juntados junto com a petição
             for peticao_com_anexos in docs_para_baixar_anexos:
@@ -603,8 +617,15 @@ class OrquestradorPrestacaoContas:
                         intervalo_minutos=2
                     )
 
+                    # DEBUG: Log dos documentos encontrados próximos
+                    logger.warning(f"DEBUG: Petição {peticao_com_anexos.id} @ {peticao_com_anexos.data_juntada}")
+                    logger.warning(f"  docs_proximos encontrados: {len(docs_proximos)}")
+                    for dp in docs_proximos:
+                        logger.warning(f"    -> ID={dp.id} | Tipo={dp.tipo_descricao} | Data={dp.data_juntada}")
+
                     # Filtra apenas documentos não processados
                     docs_novos = [d for d in docs_proximos if d.id not in ids_ja_processados]
+                    logger.warning(f"  docs_novos (após filtro): {len(docs_novos)}")
 
                     if docs_novos:
                         hora_ref = peticao_com_anexos.data_juntada.strftime('%d/%m/%Y %H:%M')
@@ -636,8 +657,13 @@ class OrquestradorPrestacaoContas:
                                                 except:
                                                     pass
 
+                                # DEBUG: Log do mapeamento de documentos baixados
+                                logger.warning(f"DEBUG: doc_bytes_map keys: {list(doc_bytes_map.keys())}")
+                                logger.warning(f"DEBUG: docs_novos IDs: {[d.id for d in docs_novos]}")
+
                                 # Todos os anexos são enviados como imagem (sem classificação)
                                 for doc in docs_novos:
+                                    logger.warning(f"DEBUG: Verificando doc.id='{doc.id}' in doc_bytes_map: {doc.id in doc_bytes_map}")
                                     if doc.id in doc_bytes_map:
                                         doc_bytes = doc_bytes_map[doc.id]
                                         ids_ja_processados.add(doc.id)
@@ -659,6 +685,11 @@ class OrquestradorPrestacaoContas:
 
                         except Exception as e:
                             log_erro(f"Erro ao baixar documentos anexos: {e}")
+
+            # DEBUG: Log final do estado de documentos_anexos
+            logger.warning(f"DEBUG: SALVANDO documentos_anexos - {len(documentos_anexos)} itens")
+            for da in documentos_anexos:
+                logger.warning(f"  -> ID={da.get('id')} | Tipo={da.get('tipo')} | Imagens={len(da.get('imagens', []))}")
 
             geracao.documentos_anexos = documentos_anexos
 

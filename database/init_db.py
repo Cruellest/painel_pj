@@ -22,6 +22,7 @@ from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoC
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
+from admin.models_prompt_groups import PromptGroup, PromptSubgroup
 
 
 def wait_for_db(max_retries=10, delay=3):
@@ -391,6 +392,149 @@ def run_migrations():
             db.rollback()
             print(f"[WARN] Migração prompt_modulos_historico: {e}")
     
+    # Migracao: Criar tabela prompt_groups
+    if not table_exists('prompt_groups'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE prompt_groups (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name VARCHAR(100) NOT NULL,
+                        slug VARCHAR(50) UNIQUE NOT NULL,
+                        active BOOLEAN DEFAULT 1,
+                        "order" INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS prompt_groups (
+                        id SERIAL PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        slug VARCHAR(50) UNIQUE NOT NULL,
+                        active BOOLEAN DEFAULT true,
+                        "order" INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            db.commit()
+            print("[OK] Migracao: tabela prompt_groups criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao prompt_groups: {e}")
+
+    # Migracao: Criar tabela prompt_subgroups
+    if not table_exists('prompt_subgroups'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE prompt_subgroups (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        group_id INTEGER NOT NULL REFERENCES prompt_groups(id),
+                        name VARCHAR(100) NOT NULL,
+                        slug VARCHAR(50) NOT NULL,
+                        active BOOLEAN DEFAULT 1,
+                        "order" INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(group_id, slug)
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS prompt_subgroups (
+                        id SERIAL PRIMARY KEY,
+                        group_id INTEGER NOT NULL REFERENCES prompt_groups(id),
+                        name VARCHAR(100) NOT NULL,
+                        slug VARCHAR(50) NOT NULL,
+                        active BOOLEAN DEFAULT true,
+                        "order" INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(group_id, slug)
+                    )
+                """))
+            db.commit()
+            print("[OK] Migracao: tabela prompt_subgroups criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao prompt_subgroups: {e}")
+
+    # Migracao: Criar tabela user_prompt_groups
+    if not table_exists('user_prompt_groups'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE user_prompt_groups (
+                        user_id INTEGER NOT NULL REFERENCES users(id),
+                        group_id INTEGER NOT NULL REFERENCES prompt_groups(id),
+                        PRIMARY KEY (user_id, group_id)
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS user_prompt_groups (
+                        user_id INTEGER NOT NULL REFERENCES users(id),
+                        group_id INTEGER NOT NULL REFERENCES prompt_groups(id),
+                        PRIMARY KEY (user_id, group_id)
+                    )
+                """))
+            db.commit()
+            print("[OK] Migracao: tabela user_prompt_groups criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao user_prompt_groups: {e}")
+
+    # Migracao: Adicionar coluna default_group_id na tabela users
+    if table_exists('users') and not column_exists('users', 'default_group_id'):
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN default_group_id INTEGER REFERENCES prompt_groups(id)"))
+            db.commit()
+            print("[OK] Migracao: coluna default_group_id adicionada em users")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao default_group_id users: {e}")
+
+    # Migracao: Adicionar colunas group_id e subgroup_id na tabela prompt_modulos
+    if table_exists('prompt_modulos') and not column_exists('prompt_modulos', 'group_id'):
+        try:
+            db.execute(text("ALTER TABLE prompt_modulos ADD COLUMN group_id INTEGER REFERENCES prompt_groups(id)"))
+            db.commit()
+            print("[OK] Migracao: coluna group_id adicionada em prompt_modulos")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao group_id prompt_modulos: {e}")
+
+    if table_exists('prompt_modulos') and not column_exists('prompt_modulos', 'subgroup_id'):
+        try:
+            db.execute(text("ALTER TABLE prompt_modulos ADD COLUMN subgroup_id INTEGER REFERENCES prompt_subgroups(id)"))
+            db.commit()
+            print("[OK] Migracao: coluna subgroup_id adicionada em prompt_modulos")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao subgroup_id prompt_modulos: {e}")
+
+    # Migracao: Adicionar colunas group_id e subgroup_id na tabela prompt_modulos_historico
+    if table_exists('prompt_modulos_historico') and not column_exists('prompt_modulos_historico', 'group_id'):
+        try:
+            db.execute(text("ALTER TABLE prompt_modulos_historico ADD COLUMN group_id INTEGER REFERENCES prompt_groups(id)"))
+            db.commit()
+            print("[OK] Migracao: coluna group_id adicionada em prompt_modulos_historico")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao group_id prompt_modulos_historico: {e}")
+
+    if table_exists('prompt_modulos_historico') and not column_exists('prompt_modulos_historico', 'subgroup_id'):
+        try:
+            db.execute(text("ALTER TABLE prompt_modulos_historico ADD COLUMN subgroup_id INTEGER REFERENCES prompt_subgroups(id)"))
+            db.commit()
+            print("[OK] Migracao: coluna subgroup_id adicionada em prompt_modulos_historico")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao subgroup_id prompt_modulos_historico: {e}")
+
     # Migração: Adicionar coluna documentos_processados na tabela geracoes_pecas
     if table_exists('geracoes_pecas') and not column_exists('geracoes_pecas', 'documentos_processados'):
         try:
@@ -635,6 +779,9 @@ def run_migrations():
                     db.rollback()
                     print(f"[WARN] Migração {coluna} geracoes_prestacao_contas: {e}")
 
+    seed_prompt_groups(db)
+
+
     db.close()
 
 
@@ -682,6 +829,100 @@ def seed_prompts():
             print(f"[INFO]  {existing} prompt(s) já existem no banco.")
     finally:
         db.close()
+
+
+def seed_prompt_groups(db: Session):
+    """Cria grupos padrao e garante vinculacoes basicas."""
+    import re
+
+    def slugify(valor: str) -> str:
+        if not valor:
+            return ""
+        slug = re.sub(r"[^a-z0-9]+", "_", valor.strip().lower())
+        slug = slug.strip("_")
+        return slug or "geral"
+
+    grupos_padrao = [
+        {"name": "PS", "slug": "ps", "order": 1},
+        {"name": "PP", "slug": "pp", "order": 2},
+        {"name": "DETRAN", "slug": "detran", "order": 3},
+    ]
+
+    grupos = {}
+    for info in grupos_padrao:
+        grupo = db.query(PromptGroup).filter(PromptGroup.slug == info["slug"]).first()
+        if not grupo:
+            grupo = PromptGroup(
+                name=info["name"],
+                slug=info["slug"],
+                active=True,
+                order=info["order"]
+            )
+            db.add(grupo)
+            db.flush()
+        grupos[info["slug"]] = grupo
+
+    db.commit()
+
+    grupo_ps = grupos.get("ps")
+    if not grupo_ps:
+        return
+
+    # Vincula prompts de conteudo existentes ao grupo PS
+    modulos_sem_grupo = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.group_id.is_(None)
+    ).all()
+    for modulo in modulos_sem_grupo:
+        modulo.group_id = grupo_ps.id
+
+    # Garante grupo nos historicos antigos
+    db.query(PromptModuloHistorico).filter(
+        PromptModuloHistorico.group_id.is_(None)
+    ).update({PromptModuloHistorico.group_id: grupo_ps.id}, synchronize_session=False)
+
+    # Cria subgrupos a partir das categorias existentes (PS)
+    categorias = db.query(PromptModulo.categoria).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.categoria.isnot(None),
+        PromptModulo.group_id == grupo_ps.id
+    ).distinct().all()
+
+    for (categoria,) in categorias:
+        slug = slugify(categoria)
+        if not slug:
+            continue
+        subgrupo = db.query(PromptSubgroup).filter(
+            PromptSubgroup.group_id == grupo_ps.id,
+            PromptSubgroup.slug == slug
+        ).first()
+        if not subgrupo:
+            subgrupo = PromptSubgroup(
+                group_id=grupo_ps.id,
+                name=categoria,
+                slug=slug,
+                active=True,
+                order=0
+            )
+            db.add(subgrupo)
+            db.flush()
+
+        db.query(PromptModulo).filter(
+            PromptModulo.tipo == "conteudo",
+            PromptModulo.group_id == grupo_ps.id,
+            PromptModulo.subgroup_id.is_(None),
+            PromptModulo.categoria == categoria
+        ).update({PromptModulo.subgroup_id: subgrupo.id}, synchronize_session=False)
+
+    # Garante grupos permitidos e grupo padrao para usuarios
+    usuarios = db.query(User).all()
+    for usuario in usuarios:
+        if not usuario.default_group_id:
+            usuario.default_group_id = grupo_ps.id
+        if grupo_ps not in usuario.allowed_groups:
+            usuario.allowed_groups.append(grupo_ps)
+
+    db.commit()
 
 
 def seed_prompt_modulos():

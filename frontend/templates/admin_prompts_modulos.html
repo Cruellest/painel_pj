@@ -1291,7 +1291,7 @@
             const container = document.getElementById('condicao-ativacao-container');
             const grupoContainer = document.getElementById('grupo-conteudo-container');
 
-            // CondiÁ„o de ativaÁ„o sÛ faz sentido para tipo 'conteudo'
+            // Condi√ß√£o de ativa√ß√£o s√≥ faz sentido para tipo 'conteudo'
             if (tipo === 'conteudo') {
                 container.classList.remove('hidden');
                 if (grupoContainer) {
@@ -1354,7 +1354,7 @@
                 document.getElementById('modal-subtitulo').textContent = modulo.titulo;
                 document.getElementById('motivo-container').classList.remove('hidden');
                 document.getElementById('btn-historico').classList.remove('hidden');
-                document.getElementById('versao-info').textContent = `Vers√£o ${modulo.versao} ‚Ä¢ Atualizado em ${new Date(modulo.atualizado_em).toLocaleString('pt-BR')}`;
+                document.getElementById('versao-info').textContent = `Vers√£o ${modulo.versao} - Atualizado em ${new Date(modulo.atualizado_em).toLocaleString('pt-BR')}`;
                 
                 // Mostra/esconde campo de condi√ß√£o baseado no tipo
                 toggleCondicaoAtivacao();
@@ -1396,7 +1396,7 @@
             };
             
             if (tipo === 'conteudo' && !grupoId) {
-                alert('Selecione o grupo do m¢dulo de conte£do');
+                alert('Selecione o grupo do m√≥dulo de conte√∫do');
                 document.getElementById('modulo-grupo').focus();
                 return;
             }

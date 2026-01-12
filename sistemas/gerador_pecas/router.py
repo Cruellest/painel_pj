@@ -30,6 +30,7 @@ from sistemas.gerador_pecas.versoes import (
     restaurar_versao
 )
 from admin.models import ConfiguracaoIA, PromptConfig
+from admin.models_prompt_groups import PromptGroup, PromptSubgroup
 
 router = APIRouter(tags=["Gerador de Peças"])
 
@@ -52,6 +53,85 @@ def _limpar_cnj(numero_cnj: str) -> str:
     # Remove caracteres não-dígitos
     return re.sub(r'\D', '', numero_cnj)
 
+def _listar_grupos_permitidos(current_user: User, db: Session) -> List[PromptGroup]:
+    query = db.query(PromptGroup).filter(PromptGroup.active == True)
+    if current_user.role == "admin":
+        return query.order_by(PromptGroup.order, PromptGroup.name).all()
+
+    group_ids = set(current_user.allowed_group_ids or [])
+    if current_user.default_group_id:
+        group_ids.add(current_user.default_group_id)
+
+    if not group_ids:
+        return []
+
+    return query.filter(PromptGroup.id.in_(group_ids)).order_by(PromptGroup.order, PromptGroup.name).all()
+
+
+def _resolver_grupo_e_subgrupos(
+    current_user: User,
+    db: Session,
+    group_id: Optional[int],
+    subgroup_ids: Optional[List[int]]
+):
+    grupos = _listar_grupos_permitidos(current_user, db)
+    if not grupos:
+        raise HTTPException(status_code=400, detail="Usuario sem grupo de prompts.")
+
+    if group_id is None:
+        if len(grupos) == 1:
+            grupo = grupos[0]
+        else:
+            raise HTTPException(status_code=400, detail="Selecione o grupo de prompts.")
+    else:
+        grupo = db.query(PromptGroup).filter(
+            PromptGroup.id == group_id,
+            PromptGroup.active == True
+        ).first()
+        if not grupo:
+            raise HTTPException(status_code=400, detail="Grupo invalido ou inativo.")
+        if current_user.role != "admin":
+            allowed_ids = {g.id for g in grupos}
+            if group_id not in allowed_ids:
+                raise HTTPException(status_code=403, detail="Usuario sem acesso ao grupo selecionado.")
+
+    subgroup_ids_normalized = []
+    if subgroup_ids:
+        for item in subgroup_ids:
+            try:
+                value = int(item)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="Subgrupos invalidos.")
+            if value not in subgroup_ids_normalized:
+                subgroup_ids_normalized.append(value)
+
+        if subgroup_ids_normalized:
+            subgroups = db.query(PromptSubgroup).filter(
+                PromptSubgroup.id.in_(subgroup_ids_normalized),
+                PromptSubgroup.group_id == grupo.id,
+                PromptSubgroup.active == True
+            ).all()
+            if len(subgroups) != len(subgroup_ids_normalized):
+                raise HTTPException(status_code=400, detail="Subgrupos invalidos para o grupo selecionado.")
+
+    return grupo, subgroup_ids_normalized
+
+
+def _parse_subgroup_ids_form(subgroup_ids_raw: Optional[str]) -> Optional[List[int]]:
+    if not subgroup_ids_raw:
+        return None
+
+    try:
+        payload = json.loads(subgroup_ids_raw)
+        if isinstance(payload, list):
+            return payload
+    except Exception:
+        pass
+
+    try:
+        return [int(value) for value in subgroup_ids_raw.split(",") if value.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Subgrupos invalidos.")
 # Armazena estado de processamento em memória (para SSE)
 _processamento_status = {}
 
@@ -61,6 +141,8 @@ class ProcessarProcessoRequest(BaseModel):
     tipo_peca: Optional[str] = None
     resposta_usuario: Optional[str] = None
     observacao_usuario: Optional[str] = None  # Observações do usuário para incluir no prompt
+    group_id: Optional[int] = None
+    subgroup_ids: Optional[List[int]] = None
 
 
 class ExportarDocxRequest(BaseModel):
@@ -116,6 +198,49 @@ async def listar_tipos_peca(
     }
 
 
+
+
+@router.get("/grupos-disponiveis")
+async def listar_grupos_disponiveis(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    grupos = _listar_grupos_permitidos(current_user, db)
+    default_group_id = current_user.default_group_id
+    if default_group_id and not any(g.id == default_group_id for g in grupos):
+        default_group_id = grupos[0].id if len(grupos) == 1 else None
+
+    return {
+        "grupos": [
+            {"id": grupo.id, "nome": grupo.name, "slug": grupo.slug}
+            for grupo in grupos
+        ],
+        "default_group_id": default_group_id,
+        "requires_selection": len(grupos) > 1
+    }
+
+
+@router.get("/grupos/{group_id}/subgrupos")
+async def listar_subgrupos_por_grupo(
+    group_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    grupo, _ = _resolver_grupo_e_subgrupos(current_user, db, group_id, [])
+
+    subgrupos = db.query(PromptSubgroup).filter(
+        PromptSubgroup.group_id == grupo.id,
+        PromptSubgroup.active == True
+    ).order_by(PromptSubgroup.order, PromptSubgroup.name).all()
+
+    return {
+        "subgrupos": [
+            {"id": subgrupo.id, "nome": subgrupo.name, "slug": subgrupo.slug}
+            for subgrupo in subgrupos
+        ]
+    }
+
+
 @router.post("/processar")
 async def processar_processo(
     req: ProcessarProcessoRequest,
@@ -133,6 +258,13 @@ async def processar_processo(
     try:
         # Normaliza o CNJ
         cnj_limpo = _limpar_cnj(req.numero_cnj)
+
+        grupo, subgroup_ids = _resolver_grupo_e_subgrupos(
+            current_user,
+            db,
+            req.group_id,
+            req.subgroup_ids
+        )
         
         # Busca configurações de IA
         config_modelo = db.query(ConfiguracaoIA).filter(
@@ -152,7 +284,9 @@ async def processar_processo(
         # Inicializa o serviço
         service = GeradorPecasService(
             modelo=modelo,
-            db=db
+            db=db,
+            group_id=grupo.id,
+            subgroup_ids=subgroup_ids
         )
         
         # Processa o processo
@@ -185,6 +319,13 @@ async def processar_processo_stream(
     Se tipo_peca não for especificado, o Agente 2 detecta automaticamente
     qual tipo de peça é mais adequado baseado nos documentos do processo.
     """
+    grupo, subgroup_ids = _resolver_grupo_e_subgrupos(
+        current_user,
+        db,
+        req.group_id,
+        req.subgroup_ids
+    )
+    group_id = grupo.id
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
             cnj_limpo = _limpar_cnj(req.numero_cnj)
@@ -200,7 +341,12 @@ async def processar_processo_stream(
             modelo = config_modelo.valor if config_modelo else "google/gemini-2.5-pro-preview-05-06"
             
             # Inicializa o serviço
-            service = GeradorPecasService(modelo=modelo, db=db)
+            service = GeradorPecasService(
+                modelo=modelo,
+                db=db,
+                group_id=group_id,
+                subgroup_ids=subgroup_ids
+            )
             
             # Se tem orquestrador, processa com eventos
             if service.orquestrador:
@@ -475,6 +621,8 @@ async def processar_pdfs_stream(
     arquivos: List[UploadFile] = File(..., description="Arquivos PDF a serem analisados"),
     tipo_peca: Optional[str] = Form(None, description="Tipo de peça a gerar"),
     observacao_usuario: Optional[str] = Form(None, description="Observações do usuário para a IA"),
+    group_id: Optional[int] = Form(None, description="Grupo de prompts"),
+    subgroup_ids_json: Optional[str] = Form(None, description="Subgrupos selecionados (JSON)"),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -487,6 +635,15 @@ async def processar_pdfs_stream(
     Returns:
         Stream SSE com progresso da geração
     """
+    subgroup_ids = _parse_subgroup_ids_form(subgroup_ids_json)
+    grupo, subgroup_ids = _resolver_grupo_e_subgrupos(
+        current_user,
+        db,
+        group_id,
+        subgroup_ids
+    )
+    group_id = grupo.id
+
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
             # Evento inicial
@@ -531,7 +688,12 @@ async def processar_pdfs_stream(
             modelo = config_modelo.valor if config_modelo else "google/gemini-2.5-pro-preview-05-06"
             
             # Inicializa o serviço
-            service = GeradorPecasService(modelo=modelo, db=db)
+            service = GeradorPecasService(
+                modelo=modelo,
+                db=db,
+                group_id=group_id,
+                subgroup_ids=subgroup_ids
+            )
             
             # Se tem orquestrador, usa os agentes 2 e 3
             if service.orquestrador:
