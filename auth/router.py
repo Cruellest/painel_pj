@@ -4,7 +4,7 @@ Endpoints de autenticação: login, logout, troca de senha
 """
 
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -17,11 +17,16 @@ from auth.security import verify_password, get_password_hash, create_access_toke
 from auth.dependencies import get_current_active_user
 from config import ACCESS_TOKEN_EXPIRE_MINUTES
 
+# SECURITY: Rate Limiting
+from utils.rate_limit import limiter, LIMITS
+
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit(LIMITS["login"])  # SECURITY: 5 tentativas/minuto por IP
 async def login(
+    request: Request,  # Necessário para rate limiting
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -82,8 +87,10 @@ async def get_me(current_user: User = Depends(get_current_active_user)):
 
 
 @router.post("/change-password")
+@limiter.limit(LIMITS["login"])  # SECURITY: 5 tentativas/minuto por IP
 async def change_password(
-    request: ChangePasswordRequest,
+    request: Request,  # Necessário para rate limiting
+    password_request: ChangePasswordRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -94,21 +101,21 @@ async def change_password(
     - **new_password**: Nova senha (mínimo 4 caracteres)
     """
     # Verifica senha atual
-    if not verify_password(request.current_password, current_user.hashed_password):
+    if not verify_password(password_request.current_password, current_user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Senha atual incorreta"
         )
-    
+
     # Verifica se nova senha é diferente da atual
-    if request.current_password == request.new_password:
+    if password_request.current_password == password_request.new_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Nova senha deve ser diferente da atual"
         )
-    
+
     # Atualiza senha
-    current_user.hashed_password = get_password_hash(request.new_password)
+    current_user.hashed_password = get_password_hash(password_request.new_password)
     current_user.must_change_password = False
     db.commit()
     

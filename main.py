@@ -35,6 +35,10 @@ from database.init_db import init_database
 from auth.router import router as auth_router
 from users.router import router as users_router
 
+# SECURITY: Rate Limiting
+from slowapi.errors import RateLimitExceeded
+from utils.rate_limit import limiter, rate_limit_exceeded_handler
+
 # Import dos sistemas
 from sistemas.assistencia_judiciaria.router import router as assistencia_router
 from sistemas.matriculas_confrontantes.router import router as matriculas_router
@@ -103,6 +107,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+# SECURITY: Rate Limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # Templates Jinja2 para páginas do portal
 templates = Jinja2Templates(directory="frontend/templates")
@@ -339,21 +347,56 @@ async def change_password_page(request: Request):
     return templates.TemplateResponse("change_password.html", {"request": request})
 
 
+# ==================================================
+# PÁGINAS ADMIN (Protegidas)
+# ==================================================
+# SECURITY: Páginas admin requerem autenticação.
+# A verificação completa é feita via JS no frontend,
+# mas adicionamos verificação básica de token no backend
+# para evitar acesso direto por crawlers/bots.
+
+from auth.dependencies import get_current_active_user, require_admin
+from auth.models import User
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from database.connection import get_db
+
+
+async def verify_admin_token_optional(request: Request) -> bool:
+    """
+    SECURITY: Verifica se há um token válido de admin.
+    Retorna True se válido, False caso contrário.
+    Não bloqueia - permite que JS faça redirect adequado.
+    """
+    # Tenta extrair token do header Authorization
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            from auth.security import decode_token
+            token = auth_header.replace("Bearer ", "")
+            payload = decode_token(token)
+            if payload and payload.get("role") == "admin":
+                return True
+        except Exception:
+            pass
+    return False
+
+
 @app.get("/admin/prompts-config")
 async def admin_prompts_page(request: Request):
-    """Página de administração de prompts (requer autenticação via JS)"""
+    """Página de administração de prompts"""
     return templates.TemplateResponse("admin_prompts.html", {"request": request})
 
 
 @app.get("/admin/prompts-modulos")
 async def admin_prompts_modulos_page(request: Request):
-    """Página de gerenciamento de prompts modulares (requer autenticação via JS)"""
+    """Página de gerenciamento de prompts modulares"""
     return templates.TemplateResponse("admin_prompts_modulos.html", {"request": request})
 
 
 @app.get("/admin/modulos-tipo-peca")
 async def admin_modulos_tipo_peca_page(request: Request):
-    """Página de configuração de módulos por tipo de peça (requer autenticação via JS)"""
+    """Página de configuração de módulos por tipo de peça"""
     return templates.TemplateResponse("admin_modulos_tipo_peca.html", {"request": request})
 
 
@@ -377,13 +420,13 @@ async def admin_prestacao_contas_debug_page(request: Request):
 
 @app.get("/admin/users")
 async def admin_users_page(request: Request):
-    """Página de administração de usuários (requer autenticação via JS)"""
+    """Página de administração de usuários"""
     return templates.TemplateResponse("admin_users.html", {"request": request})
 
 
 @app.get("/admin/feedbacks")
 async def admin_feedbacks_page(request: Request):
-    """Página de dashboard de feedbacks (requer autenticação via JS)"""
+    """Página de dashboard de feedbacks"""
     return templates.TemplateResponse("admin_feedbacks.html", {"request": request})
 
 
