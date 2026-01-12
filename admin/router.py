@@ -1598,3 +1598,59 @@ async def exportar_feedbacks(
         return {"feedbacks": data, "total": len(data)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Importar Prompts de Produção (TEMPORÁRIO)
+# ============================================
+
+@router.post("/importar-prompts-producao")
+async def importar_prompts_producao(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Importa os prompts de pedido_calculo e prestacao_contas do arquivo SQL.
+
+    ENDPOINT TEMPORÁRIO - Deve ser removido após uso.
+    Apenas para administradores.
+    """
+    import os
+    import sqlite3
+
+    script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scripts', 'prompts_producao.sql')
+
+    if not os.path.exists(script_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Arquivo de prompts não encontrado: {script_path}"
+        )
+
+    try:
+        # Lê o conteúdo do script SQL
+        with open(script_path, 'r', encoding='utf-8') as f:
+            sql_content = f.read()
+
+        # Obtém o caminho do banco de dados da conexão atual
+        db_path = db.bind.url.database
+
+        # Executa o script SQL diretamente
+        conn = sqlite3.connect(db_path)
+        conn.executescript(sql_content)
+        conn.commit()
+        conn.close()
+
+        # Remove o arquivo SQL após execução bem-sucedida
+        os.remove(script_path)
+
+        return {
+            "success": True,
+            "message": "Prompts importados com sucesso! Arquivo SQL removido.",
+            "arquivo_removido": script_path
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao importar prompts: {str(e)}"
+        )
