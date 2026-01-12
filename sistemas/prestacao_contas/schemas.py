@@ -197,7 +197,7 @@ class FeedbackResponse(BaseModel):
 
 class EventoSSE(BaseModel):
     """Evento para streaming SSE"""
-    tipo: Literal["inicio", "etapa", "progresso", "info", "aviso", "erro", "sucesso", "resultado", "fim"]
+    tipo: Literal["inicio", "etapa", "progresso", "info", "aviso", "erro", "sucesso", "resultado", "fim", "solicitar_documentos"]
     etapa: Optional[int] = None  # 1-5
     etapa_nome: Optional[str] = None
     mensagem: Optional[str] = None
