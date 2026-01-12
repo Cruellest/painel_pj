@@ -474,6 +474,195 @@ class GeminiService:
 
         return payload
     
+    async def generate_with_search(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        model: str = None,
+        max_tokens: int = None,
+        temperature: float = 0.3,
+        search_threshold: float = 0.3
+    ) -> GeminiResponse:
+        """
+        Gera texto com Google Search Grounding habilitado.
+
+        Permite que o modelo busque informações na internet quando necessário.
+        Útil para verificar informações factuais como medicamentos, leis, etc.
+
+        Args:
+            prompt: Prompt do usuário
+            system_prompt: Instruções do sistema (opcional)
+            model: Nome do modelo (opcional)
+            max_tokens: Limite de tokens na resposta
+            temperature: Temperatura (0-2)
+            search_threshold: Limiar para ativar busca (0-1, menor = mais buscas)
+
+        Returns:
+            GeminiResponse com o resultado
+        """
+        if not self._api_key:
+            return GeminiResponse(
+                success=False,
+                error="GEMINI_KEY não configurada"
+            )
+
+        # Determina o modelo
+        if model:
+            model = self.normalize_model(model)
+        else:
+            model = self.DEFAULT_MODELS["analise"]
+
+        # Monta URL
+        url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}"
+
+        # Monta payload base
+        generation_config = {"temperature": temperature}
+        if max_tokens is not None:
+            generation_config["maxOutputTokens"] = max_tokens
+
+        payload = {
+            "contents": [
+                {"role": "user", "parts": [{"text": prompt}]}
+            ],
+            "generationConfig": generation_config,
+            "tools": [
+                {
+                    "google_search": {}
+                }
+            ]
+        }
+
+        if system_prompt:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_prompt}]
+            }
+
+        try:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+                content = self._extract_content(data)
+                tokens = self._extract_tokens(data)
+
+                # Extrai informações de grounding se disponíveis
+                grounding_metadata = self._extract_grounding_metadata(data)
+                if grounding_metadata:
+                    content += f"\n\n---\n**Fontes consultadas:** {grounding_metadata}"
+
+                return GeminiResponse(
+                    success=True,
+                    content=content,
+                    tokens_used=tokens
+                )
+
+        except httpx.HTTPStatusError as e:
+            return GeminiResponse(
+                success=False,
+                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
+            )
+        except Exception as e:
+            return GeminiResponse(
+                success=False,
+                error=f"Erro: {str(e)}"
+            )
+
+    async def generate_with_images_and_search(
+        self,
+        prompt: str,
+        images_base64: List[str],
+        system_prompt: str = "",
+        model: str = None,
+        max_tokens: int = None,
+        temperature: float = 0.3,
+        search_threshold: float = 0.3
+    ) -> GeminiResponse:
+        """
+        Gera texto analisando imagens COM Google Search Grounding.
+
+        Combina análise de imagens com busca na internet.
+        Ideal para verificar informações em notas fiscais, medicamentos, etc.
+        """
+        if not self._api_key:
+            return GeminiResponse(
+                success=False,
+                error="GEMINI_KEY não configurada"
+            )
+
+        # Modelo padrão para visão
+        if model:
+            model = self.normalize_model(model)
+        else:
+            model = self.DEFAULT_MODELS["visao"]
+
+        # Monta URL
+        url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}"
+
+        # Monta partes com imagens
+        parts = []
+        for img_base64 in images_base64:
+            if img_base64.startswith("data:"):
+                header, data = img_base64.split(",", 1)
+                mime_type = header.split(":")[1].split(";")[0]
+            else:
+                mime_type = "image/png"
+                data = img_base64
+
+            parts.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": data
+                }
+            })
+
+        parts.append({"text": prompt})
+
+        generation_config = {"temperature": temperature}
+        if max_tokens is not None:
+            generation_config["maxOutputTokens"] = max_tokens
+
+        payload = {
+            "contents": [{"role": "user", "parts": parts}],
+            "generationConfig": generation_config,
+            "tools": [
+                {
+                    "google_search": {}
+                }
+            ]
+        }
+
+        if system_prompt:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_prompt}]
+            }
+
+        try:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                response = await client.post(url, json=payload)
+                response.raise_for_status()
+                data = response.json()
+
+                content = self._extract_content(data)
+                tokens = self._extract_tokens(data)
+
+                return GeminiResponse(
+                    success=True,
+                    content=content,
+                    tokens_used=tokens
+                )
+
+        except httpx.HTTPStatusError as e:
+            return GeminiResponse(
+                success=False,
+                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
+            )
+        except Exception as e:
+            return GeminiResponse(
+                success=False,
+                error=f"Erro: {str(e)}"
+            )
+
     def _extract_content(self, data: Dict) -> str:
         """Extrai conteúdo da resposta do Gemini"""
         candidates = data.get("candidates", [])
@@ -483,11 +672,38 @@ class GeminiService:
             if parts:
                 return parts[0].get("text", "")
         return ""
-    
+
     def _extract_tokens(self, data: Dict) -> int:
         """Extrai contagem de tokens da resposta"""
         usage = data.get("usageMetadata", {})
         return usage.get("totalTokenCount", 0)
+
+    def _extract_grounding_metadata(self, data: Dict) -> str:
+        """Extrai metadados de grounding (fontes consultadas)"""
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return ""
+
+        grounding = candidates[0].get("groundingMetadata", {})
+        if not grounding:
+            return ""
+
+        # Extrai URLs das fontes
+        sources = grounding.get("webSearchQueries", [])
+        chunks = grounding.get("groundingChunks", [])
+
+        urls = []
+        for chunk in chunks:
+            web = chunk.get("web", {})
+            if web.get("uri"):
+                urls.append(web.get("uri"))
+
+        if urls:
+            return ", ".join(urls[:3])  # Máximo 3 URLs
+        elif sources:
+            return f"Buscas: {', '.join(sources[:3])}"
+
+        return ""
 
 
 # Instância global do serviço (singleton)

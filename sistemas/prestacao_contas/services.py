@@ -221,6 +221,8 @@ class OrquestradorPrestacaoContas:
 
             resultado_subconta = await extrair_extrato_subconta(numero_cnj)
 
+            extrato_encontrado_scrapper = False
+
             if resultado_subconta.status == StatusProcessamento.OK:
                 geracao.extrato_subconta_texto = resultado_subconta.texto_extraido
                 # Salva PDF em base64 para visualização
@@ -228,6 +230,7 @@ class OrquestradorPrestacaoContas:
                     import base64 as b64
                     geracao.extrato_subconta_pdf_base64 = b64.b64encode(resultado_subconta.pdf_bytes).decode('utf-8')
                 log_sucesso(f"Extrato baixado ({len(resultado_subconta.texto_extraido or '')} caracteres)")
+                extrato_encontrado_scrapper = True
                 yield EventoSSE(
                     tipo="progresso",
                     etapa=1,
@@ -235,19 +238,23 @@ class OrquestradorPrestacaoContas:
                     progresso=20
                 )
             elif resultado_subconta.status == StatusProcessamento.SEM_SUBCONTA:
-                log_aviso("Processo não possui subconta registrada")
+                log_aviso("Processo não possui subconta registrada no sistema TJ-MS")
                 yield EventoSSE(
                     tipo="aviso",
                     etapa=1,
-                    mensagem="Processo não possui subconta registrada"
+                    mensagem="Subconta não encontrada no sistema TJ-MS, buscando nos documentos do processo..."
                 )
             else:
                 log_erro(f"Erro ao baixar subconta: {resultado_subconta.erro}")
                 yield EventoSSE(
                     tipo="aviso",
                     etapa=1,
-                    mensagem=f"Erro ao baixar subconta: {resultado_subconta.erro}"
+                    mensagem=f"Erro ao baixar subconta: {resultado_subconta.erro}. Buscando nos documentos..."
                 )
+
+            # FALLBACK: Se não encontrou via scrapper, busca código 71 (Extrato da Conta Única) no XML
+            # Este bloco será executado após a consulta do XML (Etapa 2), então definimos uma flag
+            buscar_extrato_xml = not extrato_encontrado_scrapper
 
             # =====================================================
             # ETAPA 2: XML DO PROCESSO
@@ -302,6 +309,122 @@ class OrquestradorPrestacaoContas:
                 progresso=35,
                 dados={"autor": resultado_xml.dados_basicos.autor}
             )
+
+            # =====================================================
+            # FALLBACK: BUSCAR EXTRATO DA CONTA ÚNICA (CÓDIGO 71)
+            # =====================================================
+            # Lista para armazenar imagens dos extratos (caso sejam PDFs de imagem)
+            extratos_imagens_fallback = []
+
+            if buscar_extrato_xml:
+                log_info("Buscando 'Extrato da Conta Única' (código 71) nos documentos do processo...")
+                yield EventoSSE(
+                    tipo="info",
+                    etapa=2,
+                    mensagem="Buscando Extrato da Conta Única nos documentos..."
+                )
+
+                # Busca TODOS os documentos com código 71
+                CODIGO_EXTRATO_CONTA = "71"
+                extratos_conta_unica = [
+                    d for d in resultado_xml.documentos
+                    if str(d.tipo_codigo) == CODIGO_EXTRATO_CONTA
+                ]
+
+                if extratos_conta_unica:
+                    log_info(f"Encontrados {len(extratos_conta_unica)} documentos 'Extrato da Conta Única'")
+                    yield EventoSSE(
+                        tipo="info",
+                        etapa=2,
+                        mensagem=f"Encontrados {len(extratos_conta_unica)} extratos da conta única"
+                    )
+
+                    # Baixa e processa todos os extratos
+                    textos_extratos = []
+                    pdf_bytes_principal = None
+                    MIN_TEXTO_UTIL = 500  # Se texto < 500 chars, considera PDF de imagem
+
+                    async with aiohttp.ClientSession() as session:
+                        for i, extrato in enumerate(extratos_conta_unica):
+                            try:
+                                yield EventoSSE(
+                                    tipo="info",
+                                    etapa=2,
+                                    mensagem=f"Baixando extrato {i+1}/{len(extratos_conta_unica)}..."
+                                )
+
+                                xml_docs = await baixar_documentos_async(session, numero_cnj, [extrato.id])
+
+                                import base64
+                                import xml.etree.ElementTree as ET
+                                root = ET.fromstring(xml_docs)
+                                conteudo_bytes = None
+                                for elem in root.iter():
+                                    if 'conteudo' in elem.tag.lower() and elem.text:
+                                        conteudo_bytes = base64.b64decode(elem.text)
+                                        break
+
+                                if conteudo_bytes:
+                                    texto_extrato = extrair_texto_pdf(conteudo_bytes)
+                                    data_extrato = extrato.data_juntada.strftime('%d/%m/%Y') if extrato.data_juntada else 'Data desconhecida'
+
+                                    # Se texto extraído é muito curto, converte para imagem
+                                    if len(texto_extrato) < MIN_TEXTO_UTIL:
+                                        log_info(f"Extrato {extrato.id}: texto curto ({len(texto_extrato)} chars), convertendo para imagem...")
+                                        imagens = converter_pdf_para_imagens(conteudo_bytes)
+                                        if imagens:
+                                            extratos_imagens_fallback.append({
+                                                "id": extrato.id,
+                                                "tipo": f"Extrato da Conta Única - {data_extrato}",
+                                                "imagens": imagens
+                                            })
+                                            log_sucesso(f"Extrato {extrato.id} convertido para imagem ({len(imagens)} páginas)")
+                                    else:
+                                        textos_extratos.append(f"### Extrato da Conta Única {i+1} (ID: {extrato.id}, Data: {data_extrato})\n{texto_extrato}")
+                                        log_info(f"Extrato {extrato.id} baixado ({len(texto_extrato)} caracteres)")
+
+                                    # Guarda o PDF do primeiro extrato para visualização
+                                    if pdf_bytes_principal is None:
+                                        pdf_bytes_principal = conteudo_bytes
+
+                            except Exception as e:
+                                log_erro(f"Erro ao baixar extrato {extrato.id}: {e}")
+                                continue
+
+                    # Salva textos (se houver)
+                    if textos_extratos:
+                        geracao.extrato_subconta_texto = "## EXTRATOS DA CONTA ÚNICA (FALLBACK DO XML)\n\n" + "\n\n---\n\n".join(textos_extratos)
+                        log_sucesso(f"Fallback: {len(textos_extratos)} extratos com texto extraído")
+
+                    # Salva PDF do primeiro extrato para visualização
+                    if pdf_bytes_principal:
+                        import base64 as b64
+                        geracao.extrato_subconta_pdf_base64 = b64.b64encode(pdf_bytes_principal).decode('utf-8')
+
+                    # Log do resultado
+                    total_processados = len(textos_extratos) + len(extratos_imagens_fallback)
+                    if total_processados > 0:
+                        log_sucesso(f"Fallback: {len(textos_extratos)} extratos texto + {len(extratos_imagens_fallback)} extratos imagem")
+                        yield EventoSSE(
+                            tipo="progresso",
+                            etapa=2,
+                            mensagem=f"{total_processados} extratos da conta única obtidos ({len(extratos_imagens_fallback)} como imagem)",
+                            progresso=38
+                        )
+                    else:
+                        log_aviso("Nenhum extrato da conta única pôde ser processado")
+                        yield EventoSSE(
+                            tipo="aviso",
+                            etapa=2,
+                            mensagem="Nenhum extrato da conta única pôde ser processado"
+                        )
+                else:
+                    log_aviso("Nenhum documento 'Extrato da Conta Única' (código 71) encontrado no processo")
+                    yield EventoSSE(
+                        tipo="aviso",
+                        etapa=2,
+                        mensagem="Nenhum extrato da conta única encontrado nos documentos"
+                    )
 
             # =====================================================
             # ETAPA 3: CLASSIFICAR DOCUMENTOS DO PROCESSO
@@ -477,25 +600,132 @@ class OrquestradorPrestacaoContas:
 
             # Verifica se encontrou prestação de contas
             if not peticao_prestacao:
-                log_aviso("Petição de prestação de contas não encontrada")
-                geracao.status = "erro"
-                geracao.erro = "Petição de prestação de contas não encontrada no processo"
-                self.db.commit()
+                log_aviso("Petição de prestação de contas não encontrada - buscando notas fiscais como fallback")
 
                 yield EventoSSE(
-                    tipo="erro",
+                    tipo="info",
                     etapa=3,
-                    mensagem="Petição de prestação de contas não encontrada no processo"
+                    mensagem="Petição de prestação não encontrada. Buscando notas fiscais..."
                 )
-                yield EventoSSE(
-                    tipo="fim",
-                    mensagem="Processamento finalizado com erro"
-                )
-                return
 
-            # Salva dados da prestação encontrada
-            geracao.peticao_prestacao_id = peticao_prestacao_doc.id
-            geracao.peticao_prestacao_data = peticao_prestacao_doc.data_juntada
+                # FALLBACK: Buscar notas fiscais (código 9870) nos ÚLTIMOS 30 documentos do processo
+                CODIGO_NOTA_FISCAL = "9870"
+                MAX_DOCS_FALLBACK = 30
+
+                # Pega os últimos 30 documentos (mais recentes)
+                todos_documentos = resultado_xml.documentos
+                ultimos_30_docs = todos_documentos[-MAX_DOCS_FALLBACK:] if len(todos_documentos) > MAX_DOCS_FALLBACK else todos_documentos
+
+                # Busca notas fiscais apenas nos últimos 30
+                notas_fiscais = [p for p in ultimos_30_docs if str(p.tipo_codigo) == CODIGO_NOTA_FISCAL]
+                log_info(f"Busca nos últimos {len(ultimos_30_docs)} documentos - encontradas {len(notas_fiscais)} notas fiscais")
+
+                # Limpa listas para usar APENAS as notas fiscais (evita pegar docs não relacionados)
+                docs_para_baixar_anexos.clear()
+                documentos_classificados.clear()
+                peticoes_relevantes.clear()
+
+                if notas_fiscais:
+                    log_info(f"Encontradas {len(notas_fiscais)} notas fiscais para análise")
+
+                    # Baixar e concatenar texto das notas fiscais
+                    textos_notas = []
+                    async with aiohttp.ClientSession() as session:
+                        for i, nf in enumerate(notas_fiscais):
+                            try:
+                                yield EventoSSE(
+                                    tipo="info",
+                                    etapa=3,
+                                    mensagem=f"Baixando nota fiscal {i+1}/{len(notas_fiscais)}..."
+                                )
+
+                                xml_docs = await baixar_documentos_async(session, numero_cnj, [nf.id])
+                                import base64
+                                import xml.etree.ElementTree as ET
+                                root = ET.fromstring(xml_docs)
+                                conteudo_bytes = None
+                                for elem in root.iter():
+                                    if 'conteudo' in elem.tag.lower() and elem.text:
+                                        conteudo_bytes = base64.b64decode(elem.text)
+                                        break
+
+                                if conteudo_bytes:
+                                    texto_nf = extrair_texto_pdf(conteudo_bytes)
+                                    textos_notas.append(f"### Nota Fiscal {i+1} (ID: {nf.id})\n{texto_nf}")
+                                    log_info(f"Nota fiscal {nf.id} baixada ({len(texto_nf)} caracteres)")
+
+                                    # Adiciona aos documentos classificados para contexto
+                                    documentos_classificados.append({
+                                        "doc": nf,
+                                        "texto": texto_nf,
+                                        "bytes": conteudo_bytes,
+                                        "resultado": ResultadoIdentificacao(
+                                            tipo_documento=TipoDocumento.NOTA_FISCAL,
+                                            metodo="fallback",
+                                            confianca=1.0,
+                                            resumo=f"Nota fiscal - {nf.tipo_descricao or 'Comprovante'}",
+                                            menciona_anexos=False
+                                        ),
+                                        "fallback_nf": True  # Marca como nota fiscal do fallback
+                                    })
+                            except Exception as e:
+                                log_erro(f"Erro ao baixar nota fiscal {nf.id}: {e}")
+                                continue
+
+                    if textos_notas:
+                        peticao_prestacao = "## NOTAS FISCAIS ENCONTRADAS (FALLBACK)\n\n" + "\n\n---\n\n".join(textos_notas)
+                        peticao_prestacao_doc = notas_fiscais[0]  # Usa a primeira NF como referência
+                        log_sucesso(f"Fallback: {len(textos_notas)} notas fiscais serão usadas para análise")
+                    else:
+                        # SOLICITA UPLOAD: Notas fiscais não puderam ser processadas
+                        log_aviso("Solicitando upload manual de documentos ao usuário")
+                        geracao.status = "aguardando_documentos"
+                        self.db.commit()
+
+                        # Verifica se também falta extrato
+                        docs_faltantes = ["notas_fiscais"]
+                        if not geracao.extrato_subconta_texto or len(geracao.extrato_subconta_texto or '') < 100:
+                            docs_faltantes.append("extrato_subconta")
+
+                        yield EventoSSE(
+                            tipo="solicitar_documentos",
+                            etapa=3,
+                            mensagem="Documentos não encontrados. Por favor, anexe manualmente.",
+                            dados={
+                                "geracao_id": geracao.id,
+                                "numero_cnj": numero_cnj,
+                                "documentos_faltantes": docs_faltantes,
+                                "mensagem": "O sistema não encontrou as notas fiscais e comprovantes de pagamento no processo. Por favor, anexe os documentos manualmente para continuar a análise."
+                            }
+                        )
+                        return
+                else:
+                    # SOLICITA UPLOAD: Nenhuma nota fiscal encontrada
+                    log_aviso("Solicitando upload manual de documentos ao usuário")
+                    geracao.status = "aguardando_documentos"
+                    self.db.commit()
+
+                    # Verifica se também falta extrato
+                    docs_faltantes = ["notas_fiscais"]
+                    if not geracao.extrato_subconta_texto or len(geracao.extrato_subconta_texto or '') < 100:
+                        docs_faltantes.append("extrato_subconta")
+
+                    yield EventoSSE(
+                        tipo="solicitar_documentos",
+                        etapa=3,
+                        mensagem="Documentos não encontrados. Por favor, anexe manualmente.",
+                        dados={
+                            "geracao_id": geracao.id,
+                            "numero_cnj": numero_cnj,
+                            "documentos_faltantes": docs_faltantes,
+                            "mensagem": "O sistema não encontrou a petição de prestação de contas nem as notas fiscais no processo. Por favor, anexe os documentos manualmente para continuar a análise."
+                        }
+                    )
+                    return
+
+            # Salva dados da prestação encontrada (ou fallback)
+            geracao.peticao_prestacao_id = peticao_prestacao_doc.id if peticao_prestacao_doc else None
+            geracao.peticao_prestacao_data = peticao_prestacao_doc.data_juntada if peticao_prestacao_doc else None
             geracao.peticao_prestacao_texto = peticao_prestacao
 
             # Log resumo da classificação
@@ -537,6 +767,11 @@ class OrquestradorPrestacaoContas:
 
             documentos_anexos = []  # Imagens (notas fiscais, comprovantes)
             peticoes_contexto = []  # Textos de petições relevantes para contexto
+
+            # Adiciona extratos da conta única (fallback) como imagens para análise da IA
+            if extratos_imagens_fallback:
+                log_info(f"Adicionando {len(extratos_imagens_fallback)} extratos da conta única como imagens")
+                documentos_anexos.extend(extratos_imagens_fallback)
 
             # Baixa petição inicial
             if resultado_xml.peticao_inicial:
@@ -686,6 +921,21 @@ class OrquestradorPrestacaoContas:
                         except Exception as e:
                             log_erro(f"Erro ao baixar documentos anexos: {e}")
 
+            # Converte notas fiscais do fallback para imagens (se houver)
+            for doc_class in documentos_classificados:
+                if doc_class.get("fallback_nf") and doc_class.get("bytes"):
+                    try:
+                        imagens = converter_pdf_para_imagens(doc_class["bytes"])
+                        if imagens:
+                            documentos_anexos.append({
+                                "id": doc_class["doc"].id,
+                                "tipo": f"Nota Fiscal - {doc_class['doc'].tipo_descricao or 'Comprovante'}",
+                                "imagens": imagens
+                            })
+                            log_info(f"Nota fiscal {doc_class['doc'].id} convertida para imagem ({len(imagens)} páginas)")
+                    except Exception as e:
+                        log_erro(f"Erro ao converter nota fiscal para imagem: {e}")
+
             # DEBUG: Log final do estado de documentos_anexos
             logger.warning(f"DEBUG: SALVANDO documentos_anexos - {len(documentos_anexos)} itens")
             for da in documentos_anexos:
@@ -715,6 +965,36 @@ class OrquestradorPrestacaoContas:
                 mensagem=f"{len(documentos_anexos)} documentos como imagem, {len(peticoes_contexto)} como texto",
                 progresso=75
             )
+
+            # =====================================================
+            # VERIFICAÇÃO: Documentos suficientes para análise?
+            # =====================================================
+            tem_extrato = bool(geracao.extrato_subconta_texto and len(geracao.extrato_subconta_texto) > 100)
+            tem_notas = len(documentos_anexos) > 0
+
+            # Se não tem extrato E não tem notas, solicita upload
+            if not tem_extrato and not tem_notas:
+                log_aviso("Documentos insuficientes para análise - solicitando upload manual")
+                geracao.status = "aguardando_documentos"
+                self.db.commit()
+
+                yield EventoSSE(
+                    tipo="solicitar_documentos",
+                    etapa=4,
+                    mensagem="Documentos insuficientes. Por favor, anexe manualmente.",
+                    dados={
+                        "geracao_id": geracao.id,
+                        "numero_cnj": numero_cnj,
+                        "documentos_faltantes": ["extrato_subconta", "notas_fiscais"],
+                        "mensagem": "O sistema não encontrou o extrato da subconta nem as notas fiscais/comprovantes necessários para a análise. Por favor, anexe os documentos manualmente."
+                    }
+                )
+                return
+
+            # Se tem extrato mas não tem notas, pode ser ok (depende do caso)
+            # Mas se não tem extrato e tem poucas notas, avisa mas continua
+            if not tem_extrato and tem_notas:
+                log_aviso("Extrato da subconta não encontrado - análise continuará apenas com notas fiscais")
 
             # =====================================================
             # ETAPA 5: ANÁLISE POR IA
@@ -758,12 +1038,23 @@ class OrquestradorPrestacaoContas:
             # Log do resultado
             log_sucesso(f"Análise concluída!")
             log_ia(f"  📋 PARECER: {resultado.parecer.upper()}")
+
+            def formatar_valor(v):
+                """Formata valor para exibição, tratando diferentes tipos"""
+                if v is None:
+                    return None
+                if isinstance(v, (int, float)):
+                    return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                if isinstance(v, str):
+                    return f"R$ {v}"
+                return str(v)
+
             if resultado.valor_bloqueado:
-                log_ia(f"  💰 Valor bloqueado: R$ {resultado.valor_bloqueado:,.2f}")
+                log_ia(f"  💰 Valor bloqueado: {formatar_valor(resultado.valor_bloqueado)}")
             if resultado.valor_utilizado:
-                log_ia(f"  💸 Valor utilizado: R$ {resultado.valor_utilizado:,.2f}")
+                log_ia(f"  💸 Valor utilizado: {formatar_valor(resultado.valor_utilizado)}")
             if resultado.valor_devolvido:
-                log_ia(f"  🔄 Valor devolvido: R$ {resultado.valor_devolvido:,.2f}")
+                log_ia(f"  🔄 Valor devolvido: {formatar_valor(resultado.valor_devolvido)}")
             if resultado.medicamento_pedido:
                 log_ia(f"  💊 Medicamento pedido: {resultado.medicamento_pedido}")
             if resultado.medicamento_comprado:
@@ -897,3 +1188,140 @@ class OrquestradorPrestacaoContas:
         self.ia_logger.salvar_logs(self.db, geracao.id)
 
         return resultado
+
+    async def continuar_com_documentos_manuais(
+        self,
+        geracao_id: int
+    ) -> AsyncGenerator[EventoSSE, None]:
+        """
+        Continua a análise após o usuário enviar documentos manualmente.
+
+        Args:
+            geracao_id: ID da geração com documentos recebidos
+
+        Yields:
+            EventoSSE com progresso do processamento
+        """
+        from datetime import datetime
+
+        geracao = self.db.query(GeracaoAnalise).filter(
+            GeracaoAnalise.id == geracao_id
+        ).first()
+
+        if not geracao:
+            yield EventoSSE(
+                tipo="erro",
+                mensagem="Análise não encontrada"
+            )
+            return
+
+        inicio = datetime.utcnow()
+
+        try:
+            logger.info(f"\n{'#'*60}")
+            logger.info(f"# CONTINUANDO ANÁLISE COM DOCUMENTOS MANUAIS - {geracao.numero_cnj}")
+            logger.info(f"{'#'*60}")
+
+            yield EventoSSE(
+                tipo="etapa",
+                etapa=5,
+                etapa_nome="Análise IA",
+                mensagem="Analisando documentos enviados...",
+                progresso=80
+            )
+
+            # Prepara dados para análise
+            dados_analise = DadosAnalise(
+                extrato_subconta=geracao.extrato_subconta_texto or "",
+                peticao_inicial=geracao.peticao_inicial_texto or "",
+                peticao_prestacao=geracao.peticao_prestacao_texto or "",
+                documentos_anexos=geracao.documentos_anexos or [],
+                peticoes_contexto=[],
+            )
+
+            # Log dos dados
+            log_ia(f"Dados para análise (documentos manuais):")
+            log_ia(f"  - Extrato subconta: {len(geracao.extrato_subconta_texto or '')} caracteres")
+            log_ia(f"  - Documentos anexos: {len(geracao.documentos_anexos or [])} docs")
+
+            agente = AgenteAnalise(
+                modelo=self.modelo_analise,
+                temperatura=self.temperatura_analise,
+                ia_logger=self.ia_logger,
+                db=self.db,
+            )
+
+            log_ia("Enviando para análise...")
+            resultado = await agente.analisar(dados_analise)
+
+            # Log do resultado
+            log_sucesso(f"Análise concluída!")
+            log_ia(f"  📋 PARECER: {resultado.parecer.upper()}")
+
+            # Salva resultado
+            geracao.parecer = resultado.parecer
+            geracao.fundamentacao = resultado.fundamentacao
+            geracao.irregularidades = resultado.irregularidades
+            geracao.perguntas_usuario = resultado.perguntas
+            geracao.valor_bloqueado = resultado.valor_bloqueado
+            geracao.valor_utilizado = resultado.valor_utilizado
+            geracao.valor_devolvido = resultado.valor_devolvido
+            geracao.medicamento_pedido = resultado.medicamento_pedido
+            geracao.medicamento_comprado = resultado.medicamento_comprado
+            geracao.modelo_usado = resultado.modelo_usado
+            geracao.prompt_analise = self.ia_logger.logs[-1].prompt_enviado if self.ia_logger.logs else None
+            geracao.resposta_ia_bruta = self.ia_logger.logs[-1].resposta_ia if self.ia_logger.logs else None
+
+            # Calcula tempo de processamento
+            fim = datetime.utcnow()
+            geracao.tempo_processamento_ms = int((fim - inicio).total_seconds() * 1000)
+            geracao.status = "concluido"
+
+            self.db.commit()
+
+            # Salva logs de IA
+            self.ia_logger.salvar_logs(self.db, geracao.id)
+
+            log_info(f"Tempo de análise: {geracao.tempo_processamento_ms/1000:.1f}s")
+            logger.info(f"\n{'#'*60}")
+            logger.info(f"# FIM - PARECER: {resultado.parecer.upper()}")
+            logger.info(f"{'#'*60}\n")
+
+            yield EventoSSE(
+                tipo="sucesso",
+                etapa=5,
+                mensagem="Análise concluída!",
+                progresso=100
+            )
+
+            yield EventoSSE(
+                tipo="resultado",
+                mensagem="Processamento finalizado",
+                dados={
+                    "geracao_id": geracao.id,
+                    "parecer": resultado.parecer,
+                    "fundamentacao": resultado.fundamentacao,
+                    "valor_bloqueado": resultado.valor_bloqueado,
+                    "valor_utilizado": resultado.valor_utilizado,
+                    "valor_devolvido": resultado.valor_devolvido,
+                    "medicamento_pedido": resultado.medicamento_pedido,
+                    "medicamento_comprado": resultado.medicamento_comprado,
+                    "irregularidades": resultado.irregularidades,
+                    "perguntas": resultado.perguntas,
+                }
+            )
+
+        except Exception as e:
+            logger.exception(f"Erro ao continuar análise: {e}")
+            geracao.status = "erro"
+            geracao.erro = str(e)
+            self.db.commit()
+
+            yield EventoSSE(
+                tipo="erro",
+                mensagem=f"Erro ao processar: {str(e)}"
+            )
+            yield EventoSSE(
+                tipo="fim",
+                mensagem="Processamento finalizado com erro"
+            )

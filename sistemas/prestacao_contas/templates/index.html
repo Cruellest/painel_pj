@@ -255,6 +255,13 @@
 
             <!-- Conteúdo -->
             <div class="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                <!-- Dados Extraídos (valores, medicamentos, etc.) -->
+                <div id="dados-extraidos-section" class="hidden mb-4">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3" id="dados-extraidos-grid">
+                        <!-- Preenchido dinamicamente -->
+                    </div>
+                </div>
+
                 <!-- Fundamentação -->
                 <div class="bg-white rounded-xl border border-gray-100 p-6">
                     <h3 class="font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -382,6 +389,82 @@
         </div>
         <div id="lista-historico" class="p-4 overflow-y-auto custom-scrollbar" style="height: calc(100vh - 60px);">
             <p class="text-gray-500 text-sm text-center py-8">Carregando...</p>
+        </div>
+    </div>
+
+    <!-- Modal de Upload de Documentos Faltantes -->
+    <div id="modal-upload-docs" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[70]">
+        <div class="bg-white rounded-2xl p-6 max-w-lg w-full mx-4 shadow-2xl">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-file-upload text-amber-500 text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-800">Documentos Não Encontrados</h3>
+                    <p class="text-sm text-gray-500">Anexe os documentos manualmente para continuar</p>
+                </div>
+            </div>
+
+            <div id="upload-docs-mensagem" class="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-4">
+                <p class="text-sm text-amber-800">
+                    <i class="fas fa-exclamation-circle mr-2"></i>
+                    <span id="upload-docs-texto">O sistema não conseguiu localizar alguns documentos necessários para a análise.</span>
+                </p>
+            </div>
+
+            <!-- Lista de documentos faltantes -->
+            <div id="upload-docs-lista" class="space-y-3 mb-4">
+                <!-- Preenchido dinamicamente -->
+            </div>
+
+            <!-- Área de upload -->
+            <div class="space-y-3">
+                <div id="upload-extrato-container" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-university text-blue-500 mr-1"></i>
+                        Extrato da Subconta (PDF)
+                    </label>
+                    <div class="relative">
+                        <input type="file" id="upload-extrato" accept=".pdf" class="hidden" onchange="handleFileUpload('extrato', this)">
+                        <label for="upload-extrato" class="flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors">
+                            <i class="fas fa-cloud-upload-alt text-gray-400"></i>
+                            <span id="upload-extrato-label" class="text-sm text-gray-500">Clique para selecionar o PDF do extrato</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="upload-notas-container" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-file-invoice text-green-500 mr-1"></i>
+                        Notas Fiscais / Comprovantes (PDF)
+                    </label>
+                    <div class="relative">
+                        <input type="file" id="upload-notas" accept=".pdf" multiple class="hidden" onchange="handleFileUpload('notas', this)">
+                        <label for="upload-notas" class="flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-primary-400 hover:bg-primary-50 transition-colors">
+                            <i class="fas fa-cloud-upload-alt text-gray-400"></i>
+                            <span id="upload-notas-label" class="text-sm text-gray-500">Clique para selecionar as notas fiscais (múltiplos arquivos)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arquivos selecionados -->
+            <div id="arquivos-selecionados" class="hidden mt-4 bg-gray-50 rounded-xl p-3">
+                <p class="text-xs font-medium text-gray-500 uppercase mb-2">Arquivos Selecionados</p>
+                <div id="lista-arquivos-selecionados" class="space-y-1 text-sm"></div>
+            </div>
+
+            <!-- Botões -->
+            <div class="flex gap-3 mt-6">
+                <button onclick="cancelarUploadDocs()" class="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-700 font-medium transition-colors">
+                    <i class="fas fa-times mr-1"></i>
+                    Não tenho os documentos
+                </button>
+                <button onclick="confirmarUploadDocs()" id="btn-confirmar-upload" disabled class="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed rounded-xl text-white font-medium transition-colors">
+                    <i class="fas fa-check mr-1"></i>
+                    Continuar Análise
+                </button>
+            </div>
         </div>
     </div>
 
@@ -600,7 +683,7 @@
         }
 
         // Processar evento SSE
-        function processarEvento(evento) {
+        async function processarEvento(evento) {
             console.log('[SSE] Evento recebido:', evento.tipo, evento);
             document.getElementById('progresso-mensagem').textContent = evento.mensagem || '';
 
@@ -615,11 +698,38 @@
             if (evento.tipo === 'erro') {
                 document.getElementById('modal-progresso').classList.add('hidden');
                 mostrarErro(evento.mensagem);
+                carregarHistorico(); // Atualiza histórico para mostrar erro
                 return;
             }
 
             if (evento.tipo === 'fim') {
                 document.getElementById('modal-progresso').classList.add('hidden');
+                return;
+            }
+
+            // NOVO: Evento de documentos faltantes - solicita upload ao usuário
+            if (evento.tipo === 'solicitar_documentos' && evento.dados) {
+                console.log('[SSE] Documentos faltantes, solicitando upload:', evento.dados);
+
+                try {
+                    const resultado = await mostrarModalUploadDocs(evento.dados);
+
+                    if (resultado.cancelado) {
+                        console.log('[SSE] Usuário cancelou upload');
+                        // O modal já tratou o cancelamento
+                        return;
+                    }
+
+                    if (resultado.sucesso) {
+                        console.log('[SSE] Upload realizado, continuando análise...');
+                        // O backend vai continuar o processamento automaticamente
+                        // O novo stream será iniciado pelo endpoint de upload
+                    }
+                } catch (error) {
+                    console.error('[SSE] Erro no upload:', error);
+                    document.getElementById('modal-progresso').classList.add('hidden');
+                    mostrarErro('Erro ao processar upload de documentos');
+                }
                 return;
             }
 
@@ -710,6 +820,103 @@
                 header.className = 'px-6 py-4 rounded-t-2xl flex items-center justify-between parecer-duvida';
                 icon.className = 'fas fa-question text-white text-xl';
                 titulo.textContent = 'Pendente de Esclarecimentos';
+            }
+
+            // Dados Extraídos (valores, medicamentos, etc.)
+            const dadosExtraidosSection = document.getElementById('dados-extraidos-section');
+            const dadosExtraidosGrid = document.getElementById('dados-extraidos-grid');
+            const dadosCards = [];
+
+            // Valor bloqueado
+            if (dados.valor_bloqueado) {
+                dadosCards.push({
+                    icone: 'fa-lock',
+                    cor: 'text-blue-500',
+                    bg: 'bg-blue-50',
+                    border: 'border-blue-100',
+                    label: 'Valor Bloqueado',
+                    valor: formatarMoeda(dados.valor_bloqueado)
+                });
+            }
+
+            // Valor utilizado
+            if (dados.valor_utilizado) {
+                dadosCards.push({
+                    icone: 'fa-shopping-cart',
+                    cor: 'text-green-500',
+                    bg: 'bg-green-50',
+                    border: 'border-green-100',
+                    label: 'Valor Utilizado',
+                    valor: formatarMoeda(dados.valor_utilizado)
+                });
+            }
+
+            // Valor devolvido
+            if (dados.valor_devolvido) {
+                dadosCards.push({
+                    icone: 'fa-undo',
+                    cor: 'text-purple-500',
+                    bg: 'bg-purple-50',
+                    border: 'border-purple-100',
+                    label: 'Valor Devolvido',
+                    valor: formatarMoeda(dados.valor_devolvido)
+                });
+            }
+
+            // Medicamento pedido
+            if (dados.medicamento_pedido) {
+                dadosCards.push({
+                    icone: 'fa-pills',
+                    cor: 'text-teal-500',
+                    bg: 'bg-teal-50',
+                    border: 'border-teal-100',
+                    label: 'Medicamento Pedido',
+                    valor: dados.medicamento_pedido,
+                    isTexto: true
+                });
+            }
+
+            // Medicamento comprado
+            if (dados.medicamento_comprado) {
+                dadosCards.push({
+                    icone: 'fa-prescription-bottle',
+                    cor: 'text-orange-500',
+                    bg: 'bg-orange-50',
+                    border: 'border-orange-100',
+                    label: 'Medicamento Comprado',
+                    valor: dados.medicamento_comprado,
+                    isTexto: true
+                });
+            }
+
+            // Modelo usado (metadado)
+            if (dados.modelo_usado) {
+                dadosCards.push({
+                    icone: 'fa-robot',
+                    cor: 'text-gray-500',
+                    bg: 'bg-gray-50',
+                    border: 'border-gray-100',
+                    label: 'Modelo IA',
+                    valor: dados.modelo_usado,
+                    isTexto: true,
+                    small: true
+                });
+            }
+
+            // Exibe seção se houver dados
+            if (dadosCards.length > 0) {
+                dadosExtraidosSection.classList.remove('hidden');
+                dadosExtraidosGrid.innerHTML = dadosCards.map(card => `
+                    <div class="p-3 rounded-xl ${card.bg} border ${card.border} ${card.isTexto && !card.small ? 'col-span-2 md:col-span-3' : ''}">
+                        <div class="flex items-center gap-2 mb-1">
+                            <i class="fas ${card.icone} ${card.cor} ${card.small ? 'text-xs' : 'text-sm'}"></i>
+                            <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">${card.label}</span>
+                        </div>
+                        <p class="${card.small ? 'text-sm text-gray-600' : 'text-lg font-semibold text-gray-800'} ${card.isTexto ? 'line-clamp-2' : ''}">${card.valor}</p>
+                    </div>
+                `).join('');
+            } else {
+                dadosExtraidosSection.classList.add('hidden');
             }
 
             // Fundamentação
@@ -1093,6 +1300,19 @@
             return div.innerHTML;
         }
 
+        // Formatar valor monetário
+        function formatarMoeda(valor) {
+            if (typeof valor === 'string') {
+                // Tenta extrair número de string
+                valor = parseFloat(valor.replace(/[^\d,.-]/g, '').replace(',', '.'));
+            }
+            if (isNaN(valor)) return valor;
+            return new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }).format(valor);
+        }
+
         // Modal de confirmação de sobrescrita
         function mostrarConfirmacaoSobrescrita(dados) {
             return new Promise((resolve) => {
@@ -1196,6 +1416,243 @@
             });
         }
 
+        // =====================================================
+        // UPLOAD DE DOCUMENTOS FALTANTES
+        // =====================================================
+
+        // Estado do upload
+        let uploadState = {
+            geracaoId: null,
+            numeroCnj: null,
+            documentosFaltantes: [],
+            arquivosExtrato: null,
+            arquivosNotas: [],
+            resolvePromise: null,
+            rejectPromise: null
+        };
+
+        // Mostra modal solicitando upload de documentos
+        function mostrarModalUploadDocs(dados) {
+            return new Promise((resolve, reject) => {
+                uploadState = {
+                    geracaoId: dados.geracao_id,
+                    numeroCnj: dados.numero_cnj,
+                    documentosFaltantes: dados.documentos_faltantes || [],
+                    arquivosExtrato: null,
+                    arquivosNotas: [],
+                    resolvePromise: resolve,
+                    rejectPromise: reject
+                };
+
+                // Configura mensagem
+                const texto = document.getElementById('upload-docs-texto');
+                texto.textContent = dados.mensagem || 'O sistema não conseguiu localizar alguns documentos necessários para a análise.';
+
+                // Mostra campos de upload conforme documentos faltantes
+                const extratoContainer = document.getElementById('upload-extrato-container');
+                const notasContainer = document.getElementById('upload-notas-container');
+
+                extratoContainer.classList.add('hidden');
+                notasContainer.classList.add('hidden');
+
+                const listaFaltantes = document.getElementById('upload-docs-lista');
+                listaFaltantes.innerHTML = '';
+
+                dados.documentos_faltantes.forEach(doc => {
+                    if (doc === 'extrato_subconta') {
+                        extratoContainer.classList.remove('hidden');
+                        listaFaltantes.innerHTML += `
+                            <div class="flex items-center gap-2 text-sm text-gray-600">
+                                <i class="fas fa-times-circle text-red-400"></i>
+                                <span>Extrato da Subconta não encontrado</span>
+                            </div>
+                        `;
+                    } else if (doc === 'notas_fiscais') {
+                        notasContainer.classList.remove('hidden');
+                        listaFaltantes.innerHTML += `
+                            <div class="flex items-center gap-2 text-sm text-gray-600">
+                                <i class="fas fa-times-circle text-red-400"></i>
+                                <span>Notas Fiscais / Comprovantes não encontrados</span>
+                            </div>
+                        `;
+                    }
+                });
+
+                // Reseta labels e arquivos
+                document.getElementById('upload-extrato-label').textContent = 'Clique para selecionar o PDF do extrato';
+                document.getElementById('upload-notas-label').textContent = 'Clique para selecionar as notas fiscais (múltiplos arquivos)';
+                document.getElementById('upload-extrato').value = '';
+                document.getElementById('upload-notas').value = '';
+                document.getElementById('arquivos-selecionados').classList.add('hidden');
+                document.getElementById('btn-confirmar-upload').disabled = true;
+
+                // Mostra modal
+                document.getElementById('modal-upload-docs').classList.remove('hidden');
+            });
+        }
+
+        // Handler para seleção de arquivo
+        function handleFileUpload(tipo, input) {
+            const files = input.files;
+
+            if (tipo === 'extrato' && files.length > 0) {
+                uploadState.arquivosExtrato = files[0];
+                document.getElementById('upload-extrato-label').innerHTML = `
+                    <i class="fas fa-check-circle text-green-500 mr-1"></i>
+                    ${files[0].name}
+                `;
+            } else if (tipo === 'notas' && files.length > 0) {
+                uploadState.arquivosNotas = Array.from(files);
+                document.getElementById('upload-notas-label').innerHTML = `
+                    <i class="fas fa-check-circle text-green-500 mr-1"></i>
+                    ${files.length} arquivo(s) selecionado(s)
+                `;
+            }
+
+            // Atualiza lista de arquivos selecionados
+            atualizarListaArquivos();
+
+            // Habilita botão se tem pelo menos um arquivo
+            const temArquivos = uploadState.arquivosExtrato || uploadState.arquivosNotas.length > 0;
+            document.getElementById('btn-confirmar-upload').disabled = !temArquivos;
+        }
+
+        function atualizarListaArquivos() {
+            const container = document.getElementById('arquivos-selecionados');
+            const lista = document.getElementById('lista-arquivos-selecionados');
+
+            const arquivos = [];
+            if (uploadState.arquivosExtrato) {
+                arquivos.push({ nome: uploadState.arquivosExtrato.name, tipo: 'Extrato', icone: 'fa-university', cor: 'text-blue-500' });
+            }
+            uploadState.arquivosNotas.forEach(f => {
+                arquivos.push({ nome: f.name, tipo: 'Nota Fiscal', icone: 'fa-file-invoice', cor: 'text-green-500' });
+            });
+
+            if (arquivos.length > 0) {
+                container.classList.remove('hidden');
+                lista.innerHTML = arquivos.map(a => `
+                    <div class="flex items-center gap-2 text-gray-600">
+                        <i class="fas ${a.icone} ${a.cor}"></i>
+                        <span class="truncate flex-1">${a.nome}</span>
+                        <span class="text-xs text-gray-400">${a.tipo}</span>
+                    </div>
+                `).join('');
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+
+        // Cancela upload - usuário não tem os documentos
+        async function cancelarUploadDocs() {
+            document.getElementById('modal-upload-docs').classList.add('hidden');
+
+            // Notifica backend que usuário cancelou
+            if (uploadState.geracaoId) {
+                try {
+                    await fetch('/prestacao-contas/api/cancelar-por-falta-documentos', {
+                        method: 'POST',
+                        headers: getAuthHeaders(),
+                        body: JSON.stringify({
+                            geracao_id: uploadState.geracaoId,
+                            motivo: 'Usuario informou que nao possui os documentos necessarios'
+                        })
+                    });
+                } catch (e) {
+                    console.error('Erro ao cancelar:', e);
+                }
+            }
+
+            // Fecha modal de progresso se estiver aberto
+            document.getElementById('modal-progresso').classList.add('hidden');
+
+            // Recarrega histórico para mostrar o erro
+            carregarHistorico();
+
+            // Mostra mensagem
+            mostrarErro('Análise cancelada por falta de documentos. O processo foi salvo no histórico com status de erro.');
+
+            // Resolve promise com cancelamento
+            if (uploadState.resolvePromise) {
+                uploadState.resolvePromise({ cancelado: true });
+            }
+        }
+
+        // Confirma upload e envia documentos
+        async function confirmarUploadDocs() {
+            const btn = document.getElementById('btn-confirmar-upload');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Enviando...';
+
+            try {
+                const formData = new FormData();
+                formData.append('geracao_id', uploadState.geracaoId);
+                formData.append('numero_cnj', uploadState.numeroCnj);
+
+                if (uploadState.arquivosExtrato) {
+                    formData.append('extrato_subconta', uploadState.arquivosExtrato);
+                }
+
+                uploadState.arquivosNotas.forEach((file, index) => {
+                    formData.append('notas_fiscais', file);
+                });
+
+                const response = await fetch('/prestacao-contas/api/upload-documentos-faltantes', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Erro ao enviar documentos');
+                }
+
+                // Fecha modal de upload
+                document.getElementById('modal-upload-docs').classList.add('hidden');
+
+                // Mostra modal de progresso novamente
+                document.getElementById('modal-progresso').classList.remove('hidden');
+                document.getElementById('progresso-mensagem').textContent = 'Analisando documentos enviados...';
+
+                // Processa stream SSE da continuação da análise
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const text = decoder.decode(value);
+                    const lines = text.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const evento = JSON.parse(line.slice(6));
+                                await processarEvento(evento);
+                            } catch (e) {
+                                console.warn('Erro ao parsear evento SSE:', e);
+                            }
+                        }
+                    }
+                }
+
+                // Resolve promise com sucesso
+                if (uploadState.resolvePromise) {
+                    uploadState.resolvePromise({ sucesso: true });
+                }
+
+            } catch (error) {
+                console.error('Erro ao enviar documentos:', error);
+                document.getElementById('modal-progresso').classList.add('hidden');
+                mostrarErro('Erro ao enviar documentos: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check mr-1"></i> Continuar Análise';
+            }
+        }
+
         // Expor funções globalmente para os event handlers do HTML
         window.abrirModalDocumentos = abrirModalDocumentos;
         window.fecharModalDocumentos = fecharModalDocumentos;
@@ -1208,6 +1665,10 @@
         window.abrirResultado = abrirResultado;
         window.toggleHistorico = toggleHistorico;
         window.mostrarConfirmacaoSobrescrita = mostrarConfirmacaoSobrescrita;
+        window.handleFileUpload = handleFileUpload;
+        window.cancelarUploadDocs = cancelarUploadDocs;
+        window.confirmarUploadDocs = confirmarUploadDocs;
+        window.mostrarModalUploadDocs = mostrarModalUploadDocs;
     </script>
 
 </body>

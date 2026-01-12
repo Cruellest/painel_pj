@@ -8,8 +8,8 @@ Router de administração do Pedido de Cálculo
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import HTMLResponse
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import desc, func, case
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
 from datetime import datetime
@@ -91,16 +91,30 @@ async def listar_geracoes(
     db: Session = Depends(get_db)
 ):
     """Lista histórico de gerações com resumo"""
-    geracoes = db.query(GeracaoPedidoCalculo).order_by(
+    # PERFORMANCE: Usa subquery para contar logs e verificar erros em uma única query
+    # Evita N+1 queries (antes: 1 + N queries, agora: 1 query)
+    from sqlalchemy.orm import aliased
+
+    # Subquery para contar logs por geração
+    log_stats = db.query(
+        LogChamadaIA.geracao_id,
+        func.count(LogChamadaIA.id).label('total_logs'),
+        func.sum(case((LogChamadaIA.sucesso == False, 1), else_=0)).label('total_erros')
+    ).group_by(LogChamadaIA.geracao_id).subquery()
+
+    # Query principal com join na subquery
+    geracoes = db.query(
+        GeracaoPedidoCalculo,
+        func.coalesce(log_stats.c.total_logs, 0).label('total_logs'),
+        func.coalesce(log_stats.c.total_erros, 0).label('total_erros')
+    ).outerjoin(
+        log_stats, GeracaoPedidoCalculo.id == log_stats.c.geracao_id
+    ).order_by(
         desc(GeracaoPedidoCalculo.criado_em)
     ).offset(offset).limit(limit).all()
 
     resultado = []
-    for g in geracoes:
-        # Conta logs e verifica erros
-        logs = db.query(LogChamadaIA).filter(LogChamadaIA.geracao_id == g.id).all()
-        tem_erro = any(not log.sucesso for log in logs)
-
+    for g, total_logs, total_erros in geracoes:
         resultado.append(GeracaoResumoResponse(
             id=g.id,
             numero_cnj=g.numero_cnj,
@@ -108,8 +122,8 @@ async def listar_geracoes(
             modelo_usado=g.modelo_usado,
             tempo_processamento=g.tempo_processamento,
             criado_em=g.criado_em,
-            total_logs=len(logs),
-            tem_erro=tem_erro
+            total_logs=total_logs or 0,
+            tem_erro=(total_erros or 0) > 0
         ))
 
     return resultado

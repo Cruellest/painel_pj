@@ -120,18 +120,29 @@ async def update_settings(
 
 
 @router.get("/test-tjms")
-async def test_tjms_connection():
-    """Testa conexão com o TJ-MS (endpoint de debug - sem auth)"""
+async def test_tjms_connection(current_user: User = Depends(get_current_active_user)):
+    """
+    Testa conexão com o TJ-MS (endpoint de debug - REQUER ADMIN).
+    SECURITY: Endpoint protegido por autenticação e role admin.
+    """
+    # SECURITY: Apenas admins podem acessar endpoints de debug
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Acesso restrito a administradores"
+        )
+
     import requests
     from config import TJ_WSDL_URL, TJ_WS_USER, TJ_WS_PASS
-    
+
     # URL direta do TJ-MS para teste
     TJ_DIRECT_URL = "https://esaj.tjms.jus.br/mniws/servico-intercomunicacao-2.2.2/intercomunicacao"
-    
+
+    # SECURITY: Não expõe credenciais completas
     result = {
         "proxy_url": TJ_WSDL_URL,
         "direct_url": TJ_DIRECT_URL,
-        "user": TJ_WS_USER,
+        "user_configured": bool(TJ_WS_USER),
         "pass_configured": bool(TJ_WS_PASS),
     }
     

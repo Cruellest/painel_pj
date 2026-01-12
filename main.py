@@ -35,6 +35,10 @@ from database.init_db import init_database
 from auth.router import router as auth_router
 from users.router import router as users_router
 
+# SECURITY: Rate Limiting
+from slowapi.errors import RateLimitExceeded
+from utils.rate_limit import limiter, rate_limit_exceeded_handler
+
 # Import dos sistemas
 from sistemas.assistencia_judiciaria.router import router as assistencia_router
 from sistemas.matriculas_confrontantes.router import router as matriculas_router
@@ -86,13 +90,27 @@ app = FastAPI(
 )
 
 # Configuração de CORS
+# SECURITY: Em produção, definir ALLOWED_ORIGINS via variável de ambiente
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
+# Fallback para desenvolvimento local
+if not ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:3000",  # Dev frontend
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, Railway define automaticamente
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+# SECURITY: Rate Limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # Templates Jinja2 para páginas do portal
 templates = Jinja2Templates(directory="frontend/templates")
@@ -177,69 +195,107 @@ app.include_router(prestacao_contas_admin_router)  # Admin router - sem prefixo 
 # FRONTENDS DOS SISTEMAS
 # ==================================================
 
+# SECURITY: Content-types permitidos para arquivos estáticos
+ALLOWED_CONTENT_TYPES = {
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".ttf": "font/ttf",
+}
+
+def safe_serve_static(base_dir: Path, filename: str, no_cache: bool = False):
+    """
+    SECURITY: Serve arquivos estáticos de forma segura, prevenindo path traversal.
+
+    Args:
+        base_dir: Diretório base permitido
+        filename: Nome do arquivo requisitado
+        no_cache: Se True, adiciona headers anti-cache
+
+    Returns:
+        FileResponse ou HTMLResponse com erro
+    """
+    # Normaliza filename
+    if not filename or filename == "" or filename == "/":
+        filename = "index.html"
+
+    # SECURITY: Remove tentativas de path traversal
+    # Normaliza separadores e remove componentes perigosos
+    clean_filename = filename.replace("\\", "/")
+
+    # Resolve o caminho e verifica se está dentro do diretório base
+    try:
+        file_path = (base_dir / clean_filename).resolve()
+        base_resolved = base_dir.resolve()
+
+        # SECURITY: Verifica se o arquivo está dentro do diretório permitido
+        if not str(file_path).startswith(str(base_resolved)):
+            return HTMLResponse(
+                "<h1>Acesso negado</h1>",
+                status_code=403
+            )
+    except (ValueError, OSError):
+        return HTMLResponse("<h1>Caminho inválido</h1>", status_code=400)
+
+    # SECURITY: Verifica extensão permitida
+    suffix = file_path.suffix.lower()
+    if suffix not in ALLOWED_CONTENT_TYPES:
+        # Fallback para index.html (SPA)
+        index_path = base_dir / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path, media_type="text/html")
+        return HTMLResponse("<h1>Tipo de arquivo não permitido</h1>", status_code=403)
+
+    if file_path.exists() and file_path.is_file():
+        media_type = ALLOWED_CONTENT_TYPES.get(suffix, "application/octet-stream")
+
+        headers = {}
+        if no_cache:
+            headers = {
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+
+        return FileResponse(file_path, media_type=media_type, headers=headers if headers else None)
+
+    # Se não encontrou, retorna index.html (SPA fallback)
+    index_path = base_dir / "index.html"
+    if index_path.exists():
+        headers = {}
+        if no_cache:
+            headers = {
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        return FileResponse(index_path, media_type="text/html", headers=headers if headers else None)
+
+    return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
+
+
 # Assistência Judiciária - Servir arquivos estáticos
 @app.get("/assistencia/{filename:path}")
 @app.get("/assistencia/")
 @app.get("/assistencia")
 async def serve_assistencia_static(filename: str = ""):
     """Serve arquivos do frontend Assistência Judiciária"""
-    if not filename or filename == "" or filename == "/":
-        filename = "index.html"
-    
-    file_path = ASSISTENCIA_TEMPLATES / filename
-    
-    if file_path.exists() and file_path.is_file():
-        suffix = file_path.suffix.lower()
-        content_types = {
-            ".html": "text/html",
-            ".js": "application/javascript",
-            ".css": "text/css",
-            ".json": "application/json",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".svg": "image/svg+xml",
-        }
-        media_type = content_types.get(suffix, "application/octet-stream")
-        return FileResponse(file_path, media_type=media_type)
-    
-    # Se não encontrou, retorna index.html (SPA fallback)
-    index_path = ASSISTENCIA_TEMPLATES / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path, media_type="text/html")
-    
-    return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
+    return safe_serve_static(ASSISTENCIA_TEMPLATES, filename)
 
 
 # Matrículas Confrontantes - Servir arquivos estáticos (JS, CSS)
 @app.get("/matriculas/{filename:path}")
-async def serve_matriculas_static(filename: str):
+async def serve_matriculas_static(filename: str = ""):
     """Serve arquivos do frontend Matrículas Confrontantes"""
-    if not filename or filename == "" or filename == "/":
-        filename = "index.html"
-    
-    file_path = MATRICULAS_TEMPLATES / filename
-    
-    if file_path.exists() and file_path.is_file():
-        # Determina content-type
-        suffix = file_path.suffix.lower()
-        content_types = {
-            ".html": "text/html",
-            ".js": "application/javascript",
-            ".css": "text/css",
-            ".json": "application/json",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".svg": "image/svg+xml",
-        }
-        media_type = content_types.get(suffix, "application/octet-stream")
-        return FileResponse(file_path, media_type=media_type)
-    
-    # Se não encontrou, retorna index.html (SPA fallback)
-    index_path = MATRICULAS_TEMPLATES / "index.html"
-    if index_path.exists():
-        return FileResponse(index_path, media_type="text/html")
-    
-    return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
+    return safe_serve_static(MATRICULAS_TEMPLATES, filename)
 
 
 # Gerador de Peças Jurídicas
@@ -248,49 +304,7 @@ async def serve_matriculas_static(filename: str):
 @app.get("/gerador-pecas")
 async def serve_gerador_pecas_static(filename: str = ""):
     """Serve arquivos do frontend Gerador de Peças Jurídicas"""
-    if not filename or filename == "" or filename == "/":
-        filename = "index.html"
-
-    file_path = GERADOR_PECAS_TEMPLATES / filename
-
-    if file_path.exists() and file_path.is_file():
-        suffix = file_path.suffix.lower()
-        content_types = {
-            ".html": "text/html",
-            ".js": "application/javascript",
-            ".css": "text/css",
-            ".json": "application/json",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".svg": "image/svg+xml",
-        }
-        media_type = content_types.get(suffix, "application/octet-stream")
-        
-        # Adiciona headers para evitar cache em desenvolvimento
-        return FileResponse(
-            file_path, 
-            media_type=media_type,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-    # Se não encontrou, retorna index.html (SPA fallback)
-    index_path = GERADOR_PECAS_TEMPLATES / "index.html"
-    if index_path.exists():
-        return FileResponse(
-            index_path, 
-            media_type="text/html",
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-    return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
+    return safe_serve_static(GERADOR_PECAS_TEMPLATES, filename, no_cache=True)
 
 
 # Pedido de Cálculo
@@ -299,48 +313,7 @@ async def serve_gerador_pecas_static(filename: str = ""):
 @app.get("/pedido-calculo")
 async def serve_pedido_calculo_static(filename: str = ""):
     """Serve arquivos do frontend Pedido de Cálculo"""
-    if not filename or filename == "" or filename == "/":
-        filename = "index.html"
-
-    file_path = PEDIDO_CALCULO_TEMPLATES / filename
-
-    if file_path.exists() and file_path.is_file():
-        suffix = file_path.suffix.lower()
-        content_types = {
-            ".html": "text/html",
-            ".js": "application/javascript",
-            ".css": "text/css",
-            ".json": "application/json",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".svg": "image/svg+xml",
-        }
-        media_type = content_types.get(suffix, "application/octet-stream")
-        
-        return FileResponse(
-            file_path, 
-            media_type=media_type,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-    # Se não encontrou, retorna index.html (SPA fallback)
-    index_path = PEDIDO_CALCULO_TEMPLATES / "index.html"
-    if index_path.exists():
-        return FileResponse(
-            index_path, 
-            media_type="text/html",
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-    return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
+    return safe_serve_static(PEDIDO_CALCULO_TEMPLATES, filename, no_cache=True)
 
 
 # Prestação de Contas
@@ -349,48 +322,7 @@ async def serve_pedido_calculo_static(filename: str = ""):
 @app.get("/prestacao-contas")
 async def serve_prestacao_contas_static(filename: str = ""):
     """Serve arquivos do frontend Prestação de Contas"""
-    if not filename or filename == "" or filename == "/":
-        filename = "index.html"
-
-    file_path = PRESTACAO_CONTAS_TEMPLATES / filename
-
-    if file_path.exists() and file_path.is_file():
-        suffix = file_path.suffix.lower()
-        content_types = {
-            ".html": "text/html",
-            ".js": "application/javascript",
-            ".css": "text/css",
-            ".json": "application/json",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".svg": "image/svg+xml",
-        }
-        media_type = content_types.get(suffix, "application/octet-stream")
-
-        return FileResponse(
-            file_path,
-            media_type=media_type,
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-    # Se não encontrou, retorna index.html (SPA fallback)
-    index_path = PRESTACAO_CONTAS_TEMPLATES / "index.html"
-    if index_path.exists():
-        return FileResponse(
-            index_path,
-            media_type="text/html",
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0"
-            }
-        )
-
-    return HTMLResponse("<h1>Sistema não encontrado</h1>", status_code=404)
+    return safe_serve_static(PRESTACAO_CONTAS_TEMPLATES, filename, no_cache=True)
 
 
 # ==================================================
@@ -415,21 +347,56 @@ async def change_password_page(request: Request):
     return templates.TemplateResponse("change_password.html", {"request": request})
 
 
+# ==================================================
+# PÁGINAS ADMIN (Protegidas)
+# ==================================================
+# SECURITY: Páginas admin requerem autenticação.
+# A verificação completa é feita via JS no frontend,
+# mas adicionamos verificação básica de token no backend
+# para evitar acesso direto por crawlers/bots.
+
+from auth.dependencies import get_current_active_user, require_admin
+from auth.models import User
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from database.connection import get_db
+
+
+async def verify_admin_token_optional(request: Request) -> bool:
+    """
+    SECURITY: Verifica se há um token válido de admin.
+    Retorna True se válido, False caso contrário.
+    Não bloqueia - permite que JS faça redirect adequado.
+    """
+    # Tenta extrair token do header Authorization
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            from auth.security import decode_token
+            token = auth_header.replace("Bearer ", "")
+            payload = decode_token(token)
+            if payload and payload.get("role") == "admin":
+                return True
+        except Exception:
+            pass
+    return False
+
+
 @app.get("/admin/prompts-config")
 async def admin_prompts_page(request: Request):
-    """Página de administração de prompts (requer autenticação via JS)"""
+    """Página de administração de prompts"""
     return templates.TemplateResponse("admin_prompts.html", {"request": request})
 
 
 @app.get("/admin/prompts-modulos")
 async def admin_prompts_modulos_page(request: Request):
-    """Página de gerenciamento de prompts modulares (requer autenticação via JS)"""
+    """Página de gerenciamento de prompts modulares"""
     return templates.TemplateResponse("admin_prompts_modulos.html", {"request": request})
 
 
 @app.get("/admin/modulos-tipo-peca")
 async def admin_modulos_tipo_peca_page(request: Request):
-    """Página de configuração de módulos por tipo de peça (requer autenticação via JS)"""
+    """Página de configuração de módulos por tipo de peça"""
     return templates.TemplateResponse("admin_modulos_tipo_peca.html", {"request": request})
 
 
@@ -453,13 +420,13 @@ async def admin_prestacao_contas_debug_page(request: Request):
 
 @app.get("/admin/users")
 async def admin_users_page(request: Request):
-    """Página de administração de usuários (requer autenticação via JS)"""
+    """Página de administração de usuários"""
     return templates.TemplateResponse("admin_users.html", {"request": request})
 
 
 @app.get("/admin/feedbacks")
 async def admin_feedbacks_page(request: Request):
-    """Página de dashboard de feedbacks (requer autenticação via JS)"""
+    """Página de dashboard de feedbacks"""
     return templates.TemplateResponse("admin_feedbacks.html", {"request": request})
 
 

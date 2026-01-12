@@ -23,25 +23,48 @@ if DATABASE_URL.startswith("postgres://"):
 # ==================================================
 # CONFIGURAÇÕES DE AUTENTICAÇÃO JWT
 # ==================================================
-# ATENÇÃO: Em produção, SEMPRE defina SECRET_KEY via variável de ambiente
+
+# SECURITY: Detecta ambiente de produção
+IS_PRODUCTION = os.getenv("RAILWAY_ENVIRONMENT") == "production" or os.getenv("ENV") == "production"
+
+# SECURITY: SECRET_KEY é OBRIGATÓRIA em produção
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
+    if IS_PRODUCTION:
+        raise RuntimeError(
+            "ERRO FATAL: SECRET_KEY não definida em ambiente de produção! "
+            "Defina a variável de ambiente SECRET_KEY com um valor seguro. "
+            "Gere com: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
     import warnings
-    warnings.warn("SECRET_KEY não definida! Usando chave temporária. DEFINA EM PRODUÇÃO!", RuntimeWarning)
-    SECRET_KEY = "INSECURE-DEV-KEY-CHANGE-IN-PRODUCTION"
+    warnings.warn(
+        "SECRET_KEY não definida! Usando chave temporária APENAS para desenvolvimento local. "
+        "NUNCA use em produção!",
+        RuntimeWarning
+    )
+    SECRET_KEY = "DEV-ONLY-INSECURE-KEY-" + "x" * 32
 
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # 8 horas
 
-# Credenciais do admin inicial (DEVEM ser definidas via variáveis de ambiente em produção)
+# SECURITY: Credenciais do admin inicial
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 if not ADMIN_PASSWORD:
+    if IS_PRODUCTION:
+        raise RuntimeError(
+            "ERRO FATAL: ADMIN_PASSWORD não definida em ambiente de produção! "
+            "Defina a variável de ambiente ADMIN_PASSWORD com uma senha forte."
+        )
     import warnings
-    warnings.warn("ADMIN_PASSWORD não definida! Usando senha padrão insegura.", RuntimeWarning)
+    warnings.warn(
+        "ADMIN_PASSWORD não definida! Usando senha padrão APENAS para desenvolvimento local.",
+        RuntimeWarning
+    )
     ADMIN_PASSWORD = "admin"
 
-DEFAULT_USER_PASSWORD = os.getenv("DEFAULT_USER_PASSWORD", "mudar123")  # Senha padrão para novos usuários
+# SECURITY: Senha padrão para novos usuários (devem trocar no primeiro login)
+DEFAULT_USER_PASSWORD = os.getenv("DEFAULT_USER_PASSWORD", "mudar123")
 
 # ==================================================
 # CONFIGURAÇÕES DO TJ-MS (Assistência Judiciária)

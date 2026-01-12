@@ -16,6 +16,8 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, date, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 
+from utils.security import safe_parse_xml
+
 from .models import (
     DadosBasicos,
     DocumentosParaDownload,
@@ -172,7 +174,8 @@ class XMLParser:
             xml_text: XML completo do processo
         """
         self.xml_text = xml_text
-        self.root = ET.fromstring(xml_text)
+        # SECURITY: Usa parsing seguro para prevenir XXE
+        self.root = safe_parse_xml(xml_text)
         self._dados_basicos = None
         self._movimentos = []
         self._documentos = []
