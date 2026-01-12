@@ -684,6 +684,12 @@ class OrquestradorPrestacaoContas:
                         # SOLICITA UPLOAD: Notas fiscais não puderam ser processadas
                         log_aviso("Solicitando upload manual de documentos ao usuário")
                         geracao.status = "aguardando_documentos"
+
+                        # Salva extratos de imagem já capturados para não perder quando continuar
+                        if extratos_imagens_fallback:
+                            geracao.documentos_anexos = extratos_imagens_fallback
+                            log_info(f"Salvando {len(extratos_imagens_fallback)} extratos de imagem para continuação")
+
                         self.db.commit()
 
                         # Verifica se também falta extrato
@@ -707,6 +713,12 @@ class OrquestradorPrestacaoContas:
                     # SOLICITA UPLOAD: Nenhuma nota fiscal encontrada
                     log_aviso("Solicitando upload manual de documentos ao usuário")
                     geracao.status = "aguardando_documentos"
+
+                    # Salva extratos de imagem já capturados para não perder quando continuar
+                    if extratos_imagens_fallback:
+                        geracao.documentos_anexos = extratos_imagens_fallback
+                        log_info(f"Salvando {len(extratos_imagens_fallback)} extratos de imagem para continuação")
+
                     self.db.commit()
 
                     # Verifica se também falta extrato
@@ -980,6 +992,12 @@ class OrquestradorPrestacaoContas:
             if not tem_extrato and not tem_notas:
                 log_aviso("Documentos insuficientes para análise - solicitando upload manual")
                 geracao.status = "aguardando_documentos"
+
+                # Salva documentos já capturados para não perder quando continuar
+                if documentos_anexos:
+                    geracao.documentos_anexos = documentos_anexos
+                    log_info(f"Salvando {len(documentos_anexos)} documentos para continuação")
+
                 self.db.commit()
 
                 yield EventoSSE(
