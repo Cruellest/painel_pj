@@ -430,6 +430,89 @@ class OrquestradorPrestacaoContas:
                         mensagem="Nenhum extrato da conta única encontrado nos documentos"
                     )
 
+                # =====================================================
+                # FALLBACK ADICIONAL: BUSCAR ALVARÁS (CÓDIGO 3)
+                # =====================================================
+                # Busca Alvarás nos últimos 30 documentos do processo
+                log_info("Buscando 'Alvará' (código 3) nos últimos 30 documentos...")
+                yield EventoSSE(
+                    tipo="info",
+                    etapa=2,
+                    mensagem="Buscando Alvarás nos documentos recentes..."
+                )
+
+                CODIGO_ALVARA = "3"
+                MAX_DOCS_ALVARA = 30
+
+                # Ordena documentos por data (mais recente primeiro) e pega os últimos 30
+                docs_ordenados = sorted(
+                    resultado_xml.documentos,
+                    key=lambda d: d.data_juntada or datetime.min,
+                    reverse=True
+                )[:MAX_DOCS_ALVARA]
+
+                alvaras = [
+                    d for d in docs_ordenados
+                    if str(d.tipo_codigo) == CODIGO_ALVARA
+                ]
+
+                if alvaras:
+                    log_info(f"Encontrados {len(alvaras)} Alvarás nos últimos {MAX_DOCS_ALVARA} documentos")
+                    yield EventoSSE(
+                        tipo="info",
+                        etapa=2,
+                        mensagem=f"Encontrados {len(alvaras)} Alvarás"
+                    )
+
+                    async with aiohttp.ClientSession() as session:
+                        for i, alvara in enumerate(alvaras):
+                            try:
+                                yield EventoSSE(
+                                    tipo="info",
+                                    etapa=2,
+                                    mensagem=f"Baixando Alvará {i+1}/{len(alvaras)}..."
+                                )
+
+                                xml_docs = await baixar_documentos_async(session, numero_cnj, [alvara.id])
+
+                                import base64
+                                import xml.etree.ElementTree as ET
+                                root = ET.fromstring(xml_docs)
+                                conteudo_bytes = None
+                                for elem in root.iter():
+                                    if 'conteudo' in elem.tag.lower() and elem.text:
+                                        conteudo_bytes = base64.b64decode(elem.text)
+                                        break
+
+                                if conteudo_bytes:
+                                    data_alvara = alvara.data_juntada.strftime('%d/%m/%Y') if alvara.data_juntada else 'Data desconhecida'
+
+                                    # Converte para imagem (alvarás geralmente são documentos escaneados)
+                                    imagens = converter_pdf_para_imagens(conteudo_bytes)
+                                    if imagens:
+                                        extratos_imagens_fallback.append({
+                                            "id": alvara.id,
+                                            "tipo": f"Alvará - {data_alvara}",
+                                            "imagens": imagens
+                                        })
+                                        log_sucesso(f"Alvará {alvara.id} convertido para imagem ({len(imagens)} páginas)")
+
+                            except Exception as e:
+                                log_erro(f"Erro ao baixar Alvará {alvara.id}: {e}")
+                                continue
+
+                    if any(d.get("tipo", "").startswith("Alvará") for d in extratos_imagens_fallback):
+                        total_alvaras = sum(1 for d in extratos_imagens_fallback if d.get("tipo", "").startswith("Alvará"))
+                        log_sucesso(f"Fallback: {total_alvaras} Alvarás obtidos como imagem")
+                        yield EventoSSE(
+                            tipo="progresso",
+                            etapa=2,
+                            mensagem=f"{total_alvaras} Alvarás obtidos como imagem",
+                            progresso=39
+                        )
+                else:
+                    log_info("Nenhum Alvará encontrado nos últimos 30 documentos")
+
             # =====================================================
             # ETAPA 3: CLASSIFICAR DOCUMENTOS DO PROCESSO
             # =====================================================
