@@ -69,19 +69,18 @@ class ResultadoAnalise:
     parecer: Literal["favoravel", "desfavoravel", "duvida"]
     fundamentacao: str  # Markdown
 
-    # Valores extraídos
-    valor_bloqueado: Optional[float] = None
-    valor_utilizado: Optional[float] = None
-    valor_devolvido: Optional[float] = None
-    medicamento_pedido: Optional[str] = None
-    medicamento_comprado: Optional[str] = None
-
     # Se desfavorável
     irregularidades: Optional[List[str]] = None
 
     # Se dúvida
     perguntas: Optional[List[str]] = None
     contexto_duvida: Optional[str] = None
+    valor_bloqueado: Optional[float] = None
+    valor_utilizado: Optional[float] = None
+    valor_devolvido: Optional[float] = None
+    medicamento_pedido: Optional[str] = None
+    medicamento_comprado: Optional[str] = None
+
 
     # Metadados
     modelo_usado: Optional[str] = None
@@ -91,14 +90,14 @@ class ResultadoAnalise:
         return {
             "parecer": self.parecer,
             "fundamentacao": self.fundamentacao,
+            "irregularidades": self.irregularidades,
+            "perguntas": self.perguntas,
+            "contexto_duvida": self.contexto_duvida,
             "valor_bloqueado": self.valor_bloqueado,
             "valor_utilizado": self.valor_utilizado,
             "valor_devolvido": self.valor_devolvido,
             "medicamento_pedido": self.medicamento_pedido,
             "medicamento_comprado": self.medicamento_comprado,
-            "irregularidades": self.irregularidades,
-            "perguntas": self.perguntas,
-            "contexto_duvida": self.contexto_duvida,
             "modelo_usado": self.modelo_usado,
             "tokens_usados": self.tokens_usados,
         }
@@ -161,28 +160,27 @@ PROMPT_ANALISE = """Analise a prestação de contas abaixo e emita um parecer.
 
 ---
 
-Com base nos documentos acima, responda em formato JSON:
+Com base nos documentos acima, responda EXATAMENTE neste formato:
 
-```json
-{{
-  "parecer": "favoravel" | "desfavoravel" | "duvida",
-  "fundamentacao": "Texto em markdown explicando a análise e conclusão",
-  "valor_bloqueado": número ou null,
-  "valor_utilizado": número ou null,
-  "valor_devolvido": número ou null,
-  "medicamento_pedido": "nome do medicamento pedido" ou null,
-  "medicamento_comprado": "nome do medicamento comprado" ou null,
-  "irregularidades": ["lista de irregularidades"] ou null (se desfavorável),
-  "perguntas": ["lista de perguntas ao usuário"] ou null (se dúvida),
-  "contexto_duvida": "explicação do que precisa ser esclarecido" ou null (se dúvida)
-}}
-```
+PARECER: [FAVORAVEL ou DESFAVORAVEL ou DUVIDA]
+
+---FUNDAMENTACAO---
+[Escreva aqui sua análise completa em Markdown, incluindo:
+- Resumo dos valores identificados (bloqueado, utilizado, devolvido)
+- Medicamento solicitado vs adquirido
+- Análise da documentação comprobatória
+- Conclusão fundamentada]
+
+---IRREGULARIDADES---
+[Se DESFAVORAVEL, liste as irregularidades uma por linha. Se não houver, escreva "Nenhuma"]
+
+---PERGUNTAS---
+[Se DUVIDA, liste as perguntas que precisam ser respondidas uma por linha. Se não houver, escreva "Nenhuma"]
 
 IMPORTANTE:
-- Seja objetivo e fundamentado
-- Extraia os valores monetários quando possível
-- Se não conseguir determinar algo, use null
-- A fundamentação deve ser clara e em markdown"""
+- Use o formato acima EXATAMENTE como especificado
+- A fundamentação deve ser detalhada e em Markdown
+- Seja objetivo e fundamentado na análise"""
 
 
 class AgenteAnalise:
@@ -322,7 +320,7 @@ class AgenteAnalise:
             if log_entry:
                 log_entry.set_resposta(resposta)
 
-            # Parse do JSON da resposta
+            # Parse da resposta (Markdown ou JSON)
             resultado = self._parse_resposta(resposta)
             resultado.modelo_usado = self.modelo
             resultado.tokens_usados = resposta_obj.tokens_used
@@ -343,13 +341,69 @@ class AgenteAnalise:
             )
 
     def _parse_resposta(self, resposta: str) -> ResultadoAnalise:
-        """Parse da resposta JSON da IA - suporta estrutura aninhada ou flat"""
+        """
+        Parse da resposta da IA.
+        Suporta formato Markdown estruturado ou JSON (fallback).
+        """
         import unicodedata
 
-        def normalizar_parecer(p: str) -> str:
-            p = p.lower()
-            return ''.join(c for c in unicodedata.normalize('NFD', p) if unicodedata.category(c) != 'Mn')
+        def normalizar_parecer(p) -> str:
+            """Normaliza o parecer para formato padrão"""
+            # Se for dict, tenta extrair valor
+            if isinstance(p, dict):
+                p = p.get('valor') or p.get('parecer') or p.get('resultado') or 'duvida'
 
+            # Garante que é string
+            p = str(p).lower().strip()
+
+            # Remove acentos
+            p = ''.join(c for c in unicodedata.normalize('NFD', p) if unicodedata.category(c) != 'Mn')
+
+            # Mapeia para valores válidos
+            if 'favoravel' in p or 'regular' in p:
+                return 'favoravel'
+            elif 'desfavoravel' in p or 'irregular' in p:
+                return 'desfavoravel'
+            else:
+                return 'duvida'
+
+        def extrair_lista(texto: str) -> Optional[List[str]]:
+            """Extrai lista de itens de um texto"""
+            if not texto or texto.strip().lower() == 'nenhuma':
+                return None
+
+            linhas = [l.strip() for l in texto.strip().split('\n') if l.strip()]
+            # Remove marcadores de lista
+            itens = []
+            for linha in linhas:
+                linha = re.sub(r'^[-*•]\s*', '', linha)
+                linha = re.sub(r'^\d+[.)]\s*', '', linha)
+                if linha and linha.lower() != 'nenhuma':
+                    itens.append(linha)
+
+            return itens if itens else None
+
+        # Tenta extrair formato Markdown estruturado
+        parecer_match = re.search(r'PARECER:\s*\[?([^\]\n]+)\]?', resposta, re.IGNORECASE)
+        fund_match = re.search(r'---FUNDAMENTACAO---\s*(.*?)(?=---IRREGULARIDADES---|---PERGUNTAS---|$)', resposta, re.DOTALL | re.IGNORECASE)
+        irreg_match = re.search(r'---IRREGULARIDADES---\s*(.*?)(?=---PERGUNTAS---|$)', resposta, re.DOTALL | re.IGNORECASE)
+        perg_match = re.search(r'---PERGUNTAS---\s*(.*?)$', resposta, re.DOTALL | re.IGNORECASE)
+
+        if parecer_match and fund_match:
+            # Formato Markdown encontrado
+            parecer = normalizar_parecer(parecer_match.group(1))
+            fundamentacao = fund_match.group(1).strip()
+            irregularidades = extrair_lista(irreg_match.group(1)) if irreg_match else None
+            perguntas = extrair_lista(perg_match.group(1)) if perg_match else None
+
+            return ResultadoAnalise(
+                parecer=parecer,
+                fundamentacao=fundamentacao,
+                irregularidades=irregularidades,
+                perguntas=perguntas,
+            )
+
+        # Fallback: tenta JSON
         try:
             json_match = re.search(r'```json\s*(.*?)\s*```', resposta, re.DOTALL)
             if json_match:
@@ -359,54 +413,38 @@ class AgenteAnalise:
                 if json_match:
                     json_str = json_match.group(0)
                 else:
-                    raise ValueError("JSON nao encontrado na resposta")
+                    # Nenhum formato reconhecido - usa resposta como fundamentação
+                    return ResultadoAnalise(
+                        parecer="duvida",
+                        fundamentacao=resposta,
+                        perguntas=["Formato de resposta não reconhecido. Revise manualmente."],
+                    )
 
             dados = json.loads(json_str)
 
-            if "analise_juridica" in dados:
-                analise = dados["analise_juridica"]
-                parecer_raw = analise.get("parecer_final") or analise.get("parecer") or "duvida"
-                parecer = normalizar_parecer(parecer_raw)
+            # Extrai parecer com tratamento robusto
+            parecer_raw = dados.get("parecer_final") or dados.get("parecer") or "duvida"
+            parecer = normalizar_parecer(parecer_raw)
 
-                bloqueio = analise.get("identificacao_bloqueio", {})
-                utilizacao = analise.get("utilizacao_recursos", {})
-                aderencia = analise.get("aderencia_pedido", {})
-
-                return ResultadoAnalise(
-                    parecer=parecer,
-                    fundamentacao=analise.get("fundamentacao", "Analise nao disponivel"),
-                    valor_bloqueado=bloqueio.get("valor_total_bloqueado"),
-                    valor_utilizado=utilizacao.get("valor_comprovado_gasto"),
-                    valor_devolvido=utilizacao.get("valor_remanescente_subconta"),
-                    medicamento_pedido=aderencia.get("compatibilidade_tratamento"),
-                    medicamento_comprado=aderencia.get("correspondencia_medicamento_servico"),
-                    irregularidades=analise.get("irregularidades"),
-                    perguntas=analise.get("perguntas"),
-                    contexto_duvida=analise.get("contexto_duvida"),
-                )
-            else:
-                parecer_raw = dados.get("parecer_final") or dados.get("parecer") or "duvida"
-                parecer = normalizar_parecer(parecer_raw)
-
-                return ResultadoAnalise(
-                    parecer=parecer,
-                    fundamentacao=dados.get("fundamentacao", "Analise nao disponivel"),
-                    valor_bloqueado=dados.get("valor_bloqueado"),
-                    valor_utilizado=dados.get("valor_utilizado"),
-                    valor_devolvido=dados.get("valor_devolvido"),
-                    medicamento_pedido=dados.get("medicamento_pedido"),
-                    medicamento_comprado=dados.get("medicamento_comprado"),
-                    irregularidades=dados.get("irregularidades"),
-                    perguntas=dados.get("perguntas"),
-                    contexto_duvida=dados.get("contexto_duvida"),
-                )
+            return ResultadoAnalise(
+                parecer=parecer,
+                fundamentacao=dados.get("fundamentacao", "Análise não disponível"),
+                irregularidades=dados.get("irregularidades"),
+                perguntas=dados.get("perguntas"),
+                contexto_duvida=dados.get("contexto_duvida"),
+                valor_bloqueado=dados.get("valor_bloqueado"),
+                valor_utilizado=dados.get("valor_utilizado"),
+                valor_devolvido=dados.get("valor_devolvido"),
+                medicamento_pedido=dados.get("medicamento_pedido"),
+                medicamento_comprado=dados.get("medicamento_comprado"),
+            )
 
         except json.JSONDecodeError as e:
             logger.error(f"Erro ao fazer parse do JSON: {e}")
             return ResultadoAnalise(
                 parecer="duvida",
                 fundamentacao=resposta,
-                perguntas=["A resposta da IA nao pode ser processada. Revise manualmente."],
+                perguntas=["A resposta da IA não pode ser processada. Revise manualmente."],
             )
 
     async def reanalisar_com_respostas(
@@ -450,7 +488,20 @@ class AgenteAnalise:
 
 ---
 
-Com base nas respostas do usuário, emita um parecer final. Responda no mesmo formato JSON anterior."""
+Com base nas respostas do usuário, emita um parecer final.
+
+Responda EXATAMENTE neste formato:
+
+PARECER: [FAVORAVEL ou DESFAVORAVEL ou DUVIDA]
+
+---FUNDAMENTACAO---
+[Sua análise em Markdown]
+
+---IRREGULARIDADES---
+[Lista ou "Nenhuma"]
+
+---PERGUNTAS---
+[Lista ou "Nenhuma"]"""
 
         log_entry = None
         if self.ia_logger:

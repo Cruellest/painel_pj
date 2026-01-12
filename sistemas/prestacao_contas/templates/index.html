@@ -255,26 +255,6 @@
 
             <!-- Conteúdo -->
             <div class="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                <!-- Valores Extraídos -->
-                <div id="valores-extraidos" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div class="bg-gray-50 rounded-xl p-4 text-center">
-                        <p class="text-xs text-gray-500 mb-1">Valor Bloqueado</p>
-                        <p id="valor-bloqueado" class="text-lg font-bold text-gray-800">-</p>
-                    </div>
-                    <div class="bg-gray-50 rounded-xl p-4 text-center">
-                        <p class="text-xs text-gray-500 mb-1">Valor Utilizado</p>
-                        <p id="valor-utilizado" class="text-lg font-bold text-gray-800">-</p>
-                    </div>
-                    <div class="bg-gray-50 rounded-xl p-4 text-center">
-                        <p class="text-xs text-gray-500 mb-1">Valor Devolvido</p>
-                        <p id="valor-devolvido" class="text-lg font-bold text-gray-800">-</p>
-                    </div>
-                    <div class="bg-gray-50 rounded-xl p-4 text-center">
-                        <p class="text-xs text-gray-500 mb-1">Medicamento</p>
-                        <p id="medicamento-info" class="text-sm font-medium text-gray-800 truncate">-</p>
-                    </div>
-                </div>
-
                 <!-- Fundamentação -->
                 <div class="bg-white rounded-xl border border-gray-100 p-6">
                     <h3 class="font-semibold text-gray-800 mb-4 flex items-center gap-2">
@@ -732,12 +712,6 @@
                 titulo.textContent = 'Pendente de Esclarecimentos';
             }
 
-            // Valores
-            document.getElementById('valor-bloqueado').textContent = dados.valor_bloqueado ? `R$ ${dados.valor_bloqueado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-';
-            document.getElementById('valor-utilizado').textContent = dados.valor_utilizado ? `R$ ${dados.valor_utilizado.toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-';
-            document.getElementById('valor-devolvido').textContent = dados.valor_devolvido ? `R$ ${dados.valor_devolvido.toLocaleString('pt-BR', {minimumFractionDigits: 2})}` : '-';
-            document.getElementById('medicamento-info').textContent = dados.medicamento_pedido || dados.medicamento_comprado || '-';
-
             // Fundamentação
             document.getElementById('fundamentacao-content').innerHTML = marked.parse(dados.fundamentacao || '');
 
@@ -941,8 +915,11 @@
             }
 
             // Adiciona documentos anexos (todos têm ID)
+            console.log('[Docs] documentos_anexos:', geracaoAtual.documentos_anexos);
             if (geracaoAtual.documentos_anexos && geracaoAtual.documentos_anexos.length > 0) {
+                console.log('[Docs] Adicionando', geracaoAtual.documentos_anexos.length, 'documentos anexos');
                 geracaoAtual.documentos_anexos.forEach((doc) => {
+                    console.log('[Docs] Anexo:', doc.id, doc.tipo);
                     docs.push({
                         id: doc.id,
                         tipo: doc.tipo || 'Documento Anexo',
@@ -951,6 +928,8 @@
                         cor: 'text-red-500'
                     });
                 });
+            } else {
+                console.log('[Docs] Nenhum documento anexo encontrado');
             }
 
             // Adiciona extrato da subconta (PDF se disponível, senão texto)

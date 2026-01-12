@@ -96,16 +96,22 @@ class OrquestradorAgentes:
         self,
         db: Session,
         modelo_geracao: str = None,
-        tipo_peca: str = None  # Tipo de peça para filtrar categorias
+        tipo_peca: str = None,  # Tipo de peça para filtrar categorias
+        group_id: Optional[int] = None,
+        subgroup_ids: Optional[List[int]] = None
     ):
         """
         Args:
             db: Sessão do banco de dados
             modelo_geracao: Modelo para o Agente 3 (override manual, opcional)
             tipo_peca: Tipo de peça para filtrar categorias de documentos (opcional)
+            group_id: Grupo principal de prompts modulares (opcional)
+            subgroup_ids: Subgrupos selecionados para filtrar prompts modulares (opcional)
         """
         self.db = db
         self.tipo_peca_inicial = tipo_peca
+        self.group_id = group_id
+        self.subgroup_ids = subgroup_ids or []
         
         # Carrega configurações do banco (tabela configuracoes_ia) ou usa padrões
         def get_config(chave: str, padrao: str) -> str:
@@ -252,7 +258,8 @@ class OrquestradorAgentes:
                 tipo_peca = deteccao_tipo.get("tipo_peca")
                 
                 if tipo_peca:
-                    print(f"✅ Tipo de peça detectado: {tipo_peca}")
+                    print(f"�
+ Tipo de peça detectado: {tipo_peca}")
                     print(f"   Justificativa: {deteccao_tipo.get('justificativa', 'N/A')}")
                     print(f"   Confiança: {deteccao_tipo.get('confianca', 'N/A')}")
                     
@@ -316,7 +323,8 @@ class OrquestradorAgentes:
             resultado.tempo_total = (datetime.now() - inicio_total).total_seconds()
             
             print("\n" + "=" * 60)
-            print(f"✅ ORQUESTRAÇÃO CONCLUÍDA")
+            print(f"�
+ ORQUESTRAÇÃO CONCLUÍDA")
             print(f"⏱️  Tempo Total: {resultado.tempo_total:.1f}s")
             print("=" * 60)
             
@@ -399,7 +407,9 @@ class OrquestradorAgentes:
             # Passa tipo_peca para filtrar módulos disponíveis
             modulos_ids = await self.agente2.detectar_modulos_relevantes(
                 documentos_resumo=resumo_consolidado,
-                tipo_peca=tipo_peca
+                tipo_peca=tipo_peca,
+                group_id=self.group_id,
+                subgroup_ids=self.subgroup_ids
             )
             resultado.modulos_ids = modulos_ids
             
@@ -428,11 +438,19 @@ class OrquestradorAgentes:
             
             # Carrega módulos de CONTEÚDO detectados
             if modulos_ids:
-                modulos_conteudo = self.db.query(PromptModulo).filter(
+                modulos_query = self.db.query(PromptModulo).filter(
                     PromptModulo.tipo == "conteudo",
                     PromptModulo.ativo == True,
                     PromptModulo.id.in_(modulos_ids)
-                ).order_by(PromptModulo.categoria, PromptModulo.ordem).all()
+                )
+
+                if self.group_id is not None:
+                    modulos_query = modulos_query.filter(PromptModulo.group_id == self.group_id)
+
+                if self.subgroup_ids:
+                    modulos_query = modulos_query.filter(PromptModulo.subgroup_id.in_(self.subgroup_ids))
+
+                modulos_conteudo = modulos_query.order_by(PromptModulo.categoria, PromptModulo.ordem).all()
                 
                 if modulos_conteudo:
                     partes_conteudo = ["## ARGUMENTOS E TESES APLICÁVEIS\n"]
@@ -586,7 +604,8 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
             
             resultado.conteudo_markdown = content_limpo.strip()
             
-            print(f"✅ Peça gerada com sucesso em Markdown!")
+            print(f"�
+ Peça gerada com sucesso em Markdown!")
             print(f"📄 Tamanho da peça: {len(resultado.conteudo_markdown)} caracteres")
             
             return resultado

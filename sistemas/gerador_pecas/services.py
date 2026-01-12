@@ -43,10 +43,10 @@ def _carregar_orquestrador():
         from sistemas.gerador_pecas.orquestrador_agentes import OrquestradorAgentes
         _OrquestradorAgentes = OrquestradorAgentes
         ORQUESTRADOR_DISPONIVEL = True
-        print("✅ Orquestrador de agentes carregado com sucesso")
+        print("Orquestrador de agentes carregado com sucesso")
     except Exception as e:
         ORQUESTRADOR_DISPONIVEL = False
-        print(f"⚠️ Orquestrador de agentes não disponível - modo legado ativo. Erro: {e}")
+        print(f"[WARN] Orquestrador de agentes nao disponivel - modo legado ativo. Erro: {e}")
         import traceback
         traceback.print_exc()
     
@@ -71,10 +71,14 @@ class GeradorPecasService:
     def __init__(
         self,
         modelo: str = "gemini-3-pro-preview",
-        db: Session = None
+        db: Session = None,
+        group_id: Optional[int] = None,
+        subgroup_ids: Optional[List[int]] = None
     ):
         self.modelo = modelo
         self.db = db
+        self.group_id = group_id
+        self.subgroup_ids = subgroup_ids or []
 
         # Diretório para arquivos temporários
         self.temp_dir = os.path.join(os.path.dirname(__file__), 'temp_docs')
@@ -89,10 +93,15 @@ class GeradorPecasService:
             # Inicializa orquestrador se disponível (carregamento lazy)
             if _carregar_orquestrador():
                 try:
-                    self.orquestrador = _OrquestradorAgentes(db=self.db, modelo_geracao=self.modelo)
-                    print(f"✅ Orquestrador de agentes inicializado com sucesso")
+                    self.orquestrador = _OrquestradorAgentes(
+                        db=self.db,
+                        modelo_geracao=self.modelo,
+                        group_id=self.group_id,
+                        subgroup_ids=self.subgroup_ids
+                    )
+                    print("Orquestrador de agentes inicializado com sucesso")
                 except Exception as e:
-                    print(f"❌ Erro ao inicializar orquestrador: {e}")
+                    print(f"[ERRO] Erro ao inicializar orquestrador: {e}")
                     import traceback
                     traceback.print_exc()
                     self.orquestrador = None
@@ -120,7 +129,7 @@ class GeradorPecasService:
                 cache_ttl_minutes=cache_ttl
             )
         except Exception as e:
-            print(f"⚠️ Erro ao inicializar detector de módulos: {e}")
+            print(f"[ERRO] Erro ao inicializar detector de modulos: {e}")
             return None
 
     def _carregar_modulos_base(self) -> List[PromptModulo]:
@@ -145,7 +154,9 @@ class GeradorPecasService:
     def _carregar_modulos_conteudo(
         self,
         modulos_ids: List[int] = None,
-        palavras_detectadas: List[str] = None
+        palavras_detectadas: List[str] = None,
+        group_id: Optional[int] = None,
+        subgroup_ids: Optional[List[int]] = None
     ) -> List[PromptModulo]:
         """
         Carrega módulos de CONTEÚDO.
@@ -158,17 +169,30 @@ class GeradorPecasService:
         Args:
             modulos_ids: IDs dos módulos detectados pela IA
             palavras_detectadas: Palavras-chave para fallback
+            group_id: Grupo principal para prompts modulares (opcional)
+            subgroup_ids: Subgrupos selecionados para prompts modulares (opcional)
         """
         if not self.db:
             return []
 
+        group_id = self.group_id if group_id is None else group_id
+        subgroup_ids = self.subgroup_ids if subgroup_ids is None else subgroup_ids
+
         # Método 1: Carregar por IDs específicos (resultado da IA)
         if modulos_ids is not None:
-            modulos = self.db.query(PromptModulo).filter(
+            query = self.db.query(PromptModulo).filter(
                 PromptModulo.tipo == "conteudo",
                 PromptModulo.ativo == True,
                 PromptModulo.id.in_(modulos_ids)
-            ).order_by(PromptModulo.ordem).all()
+            )
+
+            if group_id is not None:
+                query = query.filter(PromptModulo.group_id == group_id)
+
+            if subgroup_ids:
+                query = query.filter(PromptModulo.subgroup_id.in_(subgroup_ids))
+
+            modulos = query.order_by(PromptModulo.ordem).all()
             return modulos
 
         # Método 2: Filtrar por palavras-chave (fallback)
@@ -176,6 +200,12 @@ class GeradorPecasService:
             PromptModulo.tipo == "conteudo",
             PromptModulo.ativo == True
         )
+
+        if group_id is not None:
+            query = query.filter(PromptModulo.group_id == group_id)
+
+        if subgroup_ids:
+            query = query.filter(PromptModulo.subgroup_id.in_(subgroup_ids))
 
         modulos = query.order_by(PromptModulo.ordem).all()
 
@@ -197,7 +227,9 @@ class GeradorPecasService:
         self,
         tipo_peca: str = None,
         modulos_ids: List[int] = None,
-        palavras_detectadas: List[str] = None
+        palavras_detectadas: List[str] = None,
+        group_id: Optional[int] = None,
+        subgroup_ids: Optional[List[int]] = None
     ) -> str:
         """
         Monta o prompt de sistema combinando módulos:
@@ -207,6 +239,8 @@ class GeradorPecasService:
             tipo_peca: Tipo da peça (contestacao, recurso, etc)
             modulos_ids: IDs dos módulos detectados pela IA (prioritário)
             palavras_detectadas: Palavras-chave para fallback
+            group_id: Grupo principal para prompts modulares (opcional)
+            subgroup_ids: Subgrupos selecionados para prompts modulares (opcional)
         """
         partes = []
 
@@ -222,7 +256,12 @@ class GeradorPecasService:
                 partes.append(f"## ESTRUTURA DA PEÇA: {modulo_peca.titulo}\n\n{modulo_peca.conteudo}")
 
         # 3. Módulos de CONTEÚDO (baseado em detecção por IA ou palavras-chave)
-        modulos_conteudo = self._carregar_modulos_conteudo(modulos_ids, palavras_detectadas)
+        modulos_conteudo = self._carregar_modulos_conteudo(
+            modulos_ids,
+            palavras_detectadas,
+            group_id=group_id,
+            subgroup_ids=subgroup_ids
+        )
         if modulos_conteudo:
             partes.append("## ARGUMENTOS E TESES APLICÁVEIS\n")
             for modulo in modulos_conteudo:
@@ -315,6 +354,8 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
             documentos_resumo: Resumo dos documentos (bypass do Agente 1)
             documentos_completos: Texto completo dos documentos (opcional)
             palavras_detectadas: Palavras-chave para fallback
+            group_id: Grupo principal para prompts modulares (opcional)
+            subgroup_ids: Subgrupos selecionados para prompts modulares (opcional)
             usar_agentes: Se True, usa o fluxo completo com 3 agentes
         """
         try:
@@ -324,7 +365,7 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
             
             # Debug
             orq_disponivel = _carregar_orquestrador()
-            print(f"🔍 Debug: usar_agentes={usar_agentes}, orquestrador={self.orquestrador is not None}, ORQUESTRADOR_DISPONIVEL={orq_disponivel}")
+            print(f"[DEBUG] Debug: usar_agentes={usar_agentes}, orquestrador={self.orquestrador is not None}, ORQUESTRADOR_DISPONIVEL={orq_disponivel}")
             
             # Se tem orquestrador e usar_agentes está ativo, usa o novo fluxo
             if usar_agentes and self.orquestrador and orq_disponivel:
@@ -365,7 +406,7 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
         """
         Processa usando os 3 agentes integrados.
         """
-        print(f"\n🚀 Iniciando processamento com 3 agentes...")
+        print("\nIniciando processamento com 3 agentes...")
         print(f"   Processo: {numero_cnj_formatado}")
         
         # Executa o orquestrador (passa número limpo, sem formatação)
@@ -442,20 +483,20 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
         Modo legado: sem integração com TJ-MS (documento de exemplo em Markdown).
         Se tipo_peca não for especificado e há documentos_resumo, tenta detectar automaticamente.
         """
-        print("⚠️ Usando modo legado (sem integração TJ-MS)")
+        print("[WARN] Usando modo legado (sem integracao TJ-MS)")
 
         tipo_final = tipo_peca or resposta_usuario
         
         # Se não tem tipo de peça, tenta detectar automaticamente se há documentos
         if not tipo_final and self.detector and documentos_resumo:
-            print("📋 Detectando tipo de peça automaticamente (modo legado)...")
+            print("[INFO] Detectando tipo de peca automaticamente (modo legado)...")
             try:
                 deteccao = await self.detector.detectar_tipo_peca(documentos_resumo)
                 tipo_final = deteccao.get("tipo_peca")
                 if tipo_final:
-                    print(f"✅ Tipo detectado: {tipo_final} (confiança: {deteccao.get('confianca', 'N/A')})")
+                    print(f"Tipo detectado: {tipo_final} (confianca: {deteccao.get('confianca', 'N/A')})")
             except Exception as e:
-                print(f"⚠️ Erro na detecção automática: {e}")
+                print(f"[WARN] Erro na deteccao automatica: {e}")
         
         # Se ainda não tem tipo de peça, pergunta ao usuário
         if not tipo_final:
@@ -470,7 +511,9 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
         prompt_sistema = self._montar_prompt_sistema(
             tipo_final,
             modulos_ids=None,
-            palavras_detectadas=palavras_detectadas
+            palavras_detectadas=palavras_detectadas,
+            group_id=self.group_id,
+            subgroup_ids=self.subgroup_ids
         )
         
         # Gera documento de exemplo em Markdown
@@ -627,7 +670,7 @@ Retorne SOMENTE a minuta editada em markdown."""
             }
                 
         except httpx.HTTPStatusError as e:
-            print(f"❌ Erro HTTP na edição: {e}")
+            print(f"[ERRO] Erro HTTP na edicao: {e}")
             return {
                 "status": "erro",
                 "mensagem": f"Erro na comunicação com a IA: {e.response.status_code}"

@@ -23,6 +23,13 @@ class GeradorPecasApp {
         // Observação do usuário para a IA
         this.observacaoUsuario = null;
 
+        // Grupo e subgrupos de prompts
+        this.groupId = null;
+        this.subgroupIds = [];
+        this.gruposDisponiveis = [];
+        this.subgruposDisponiveis = [];
+        this.requiresGroupSelection = false;
+
         // Dados para histórico de versões
         this.versoesLista = [];
         this.versaoSelecionada = null;
@@ -54,6 +61,9 @@ class GeradorPecasApp {
             
             // Carrega tipos de peça dinamicamente
             this.carregarTiposPeca();
+
+            // Carrega grupos e subgrupos de prompts
+            this.carregarGruposDisponiveis();
         } catch (error) {
             localStorage.removeItem('access_token');
             window.location.href = '/login';
@@ -85,6 +95,231 @@ class GeradorPecasApp {
             });
         } catch (error) {
             console.error('Erro ao carregar tipos de peça:', error);
+        }
+    }
+
+
+    async carregarGruposDisponiveis() {
+        const select = document.getElementById('grupo-principal');
+        const hint = document.getElementById('grupo-hint');
+
+        if (!select) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/grupos-disponiveis`, {
+                headers: { 'Authorization': `Bearer ${this.getToken()}` }
+            });
+
+            if (!response.ok) return;
+
+            const data = await response.json();
+            this.gruposDisponiveis = data.grupos || [];
+            this.requiresGroupSelection = !!data.requires_selection;
+
+            select.innerHTML = '';
+
+            if (this.gruposDisponiveis.length === 0) {
+                select.disabled = true;
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'Nenhum grupo disponível';
+                select.appendChild(option);
+                if (hint) {
+                    hint.textContent = 'Nenhum grupo ativo disponível para o seu usuário.';
+                }
+                this.groupId = null;
+                this.subgroupIds = [];
+                this.subgruposDisponiveis = [];
+                this.renderSubgrupos([]);
+                return;
+            }
+
+            if (this.requiresGroupSelection) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'Selecione o grupo...';
+                select.appendChild(option);
+                select.disabled = false;
+
+                const defaultGroup = this.gruposDisponiveis.find(
+                    (grupo) => grupo.id === data.default_group_id
+                );
+                if (hint) {
+                    hint.textContent = defaultGroup
+                        ? `Grupo padrão: ${defaultGroup.nome}. Selecione o grupo para continuar.`
+                        : 'Selecione o grupo de conteúdo antes de gerar a peça.';
+                }
+            } else {
+                select.disabled = true;
+                if (hint) {
+                    hint.textContent = 'Grupo definido automaticamente para o seu usuário.';
+                }
+            }
+
+            this.gruposDisponiveis.forEach((grupo) => {
+                const option = document.createElement('option');
+                option.value = grupo.id;
+                option.textContent = grupo.nome;
+                select.appendChild(option);
+            });
+
+            if (!this.requiresGroupSelection && this.gruposDisponiveis.length === 1) {
+                this.groupId = this.gruposDisponiveis[0].id;
+                select.value = this.groupId;
+                await this.carregarSubgrupos(this.groupId);
+            } else {
+                this.groupId = null;
+                this.subgroupIds = [];
+                this.subgruposDisponiveis = [];
+                this.renderSubgrupos([]);
+            }
+        } catch (error) {
+            console.error('Erro ao carregar grupos:', error);
+        }
+    }
+
+    async carregarSubgrupos(groupId) {
+        if (!groupId) {
+            this.subgruposDisponiveis = [];
+            this.renderSubgrupos([]);
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/grupos/${groupId}/subgrupos`, {
+                headers: { 'Authorization': `Bearer ${this.getToken()}` }
+            });
+
+            if (!response.ok) {
+                this.subgruposDisponiveis = [];
+                this.renderSubgrupos([]);
+                return;
+            }
+
+            const data = await response.json();
+            this.subgruposDisponiveis = data.subgrupos || [];
+            this.renderSubgrupos(this.subgruposDisponiveis);
+        } catch (error) {
+            console.error('Erro ao carregar subgrupos:', error);
+            this.subgruposDisponiveis = [];
+            this.renderSubgrupos([]);
+        }
+    }
+
+    renderSubgrupos(subgrupos) {
+        const container = document.getElementById('subgrupo-container');
+        const options = document.getElementById('subgrupo-opcoes');
+        const hint = document.getElementById('subgrupo-hint');
+
+        if (!container || !options) {
+            return;
+        }
+
+        if (!this.groupId) {
+            container.classList.add('hidden');
+            return;
+        }
+
+        container.classList.remove('hidden');
+        options.innerHTML = '';
+        this.subgroupIds = [];
+
+        options.appendChild(this.criarOpcaoSubgrupo('all', 'Geral / Todos', true));
+
+        if (subgrupos && subgrupos.length > 0) {
+            if (hint) {
+                hint.textContent = 'Selecione um ou mais subgrupos para filtrar os prompts de conteúdo.';
+            }
+            subgrupos.forEach((subgrupo) => {
+                options.appendChild(
+                    this.criarOpcaoSubgrupo(subgrupo.id, subgrupo.nome, false)
+                );
+            });
+        } else if (hint) {
+            hint.textContent = 'Sem subgrupos cadastrados. Usando Geral/Todos.';
+        }
+
+        options.querySelectorAll('input[name="subgrupo"]').forEach((input) => {
+            input.addEventListener('change', (event) => this.handleSubgrupoChange(event));
+        });
+    }
+
+    criarOpcaoSubgrupo(valor, label, checked) {
+        const wrapper = document.createElement('label');
+        wrapper.className = 'inline-flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-sm text-gray-700 bg-white hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-all';
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.name = 'subgrupo';
+        input.value = String(valor);
+        input.checked = checked;
+        input.className = 'h-4 w-4 text-primary-600 rounded border-gray-300';
+
+        const span = document.createElement('span');
+        span.textContent = label;
+
+        wrapper.appendChild(input);
+        wrapper.appendChild(span);
+
+        return wrapper;
+    }
+
+    handleGrupoChange(event) {
+        const value = event.target.value;
+        if (!value) {
+            this.groupId = null;
+            this.subgroupIds = [];
+            this.subgruposDisponiveis = [];
+            this.renderSubgrupos([]);
+            return;
+        }
+
+        const parsed = parseInt(value, 10);
+        this.groupId = Number.isNaN(parsed) ? null : parsed;
+        this.subgroupIds = [];
+        this.carregarSubgrupos(this.groupId);
+    }
+
+    handleSubgrupoChange(event) {
+        const input = event.target;
+        const value = input.value;
+        const container = document.getElementById('subgrupo-opcoes');
+        const allInput = container ? container.querySelector('input[value="all"]') : null;
+
+        if (value === 'all') {
+            if (input.checked) {
+                this.subgroupIds = [];
+                if (container) {
+                    container.querySelectorAll('input[name="subgrupo"]').forEach((checkbox) => {
+                        if (checkbox.value !== 'all') {
+                            checkbox.checked = false;
+                        }
+                    });
+                }
+            }
+            return;
+        }
+
+        if (allInput) {
+            allInput.checked = false;
+        }
+
+        const parsed = parseInt(value, 10);
+        if (Number.isNaN(parsed)) {
+            return;
+        }
+
+        if (input.checked) {
+            if (!this.subgroupIds.includes(parsed)) {
+                this.subgroupIds.push(parsed);
+            }
+        } else {
+            this.subgroupIds = this.subgroupIds.filter((id) => id !== parsed);
+            if (this.subgroupIds.length === 0 && allInput) {
+                allInput.checked = true;
+            }
         }
     }
 
@@ -195,6 +430,13 @@ class GeradorPecasApp {
             this.iniciarProcessamento();
         });
 
+        const grupoSelect = document.getElementById('grupo-principal');
+        if (grupoSelect) {
+            grupoSelect.addEventListener('change', (e) => {
+                this.handleGrupoChange(e);
+            });
+        }
+
         // Modal pergunta
         document.getElementById('btn-cancelar-pergunta').addEventListener('click', () => {
             this.fecharModal('modal-pergunta');
@@ -242,6 +484,16 @@ class GeradorPecasApp {
         this.tipoPeca = document.getElementById('tipo-peca').value || null;
         this.observacaoUsuario = document.getElementById('observacao-usuario').value.trim() || null;
 
+        if (this.requiresGroupSelection && !this.groupId) {
+            this.mostrarErro('Selecione o grupo de conteúdo antes de gerar a peça.');
+            return;
+        }
+
+        if (!this.groupId) {
+            this.mostrarErro('Nenhum grupo de conteúdo disponível para geração.');
+            return;
+        }
+
         this.esconderErro();
         this.resetarStatusAgentes();
         this.mostrarLoading('Conectando ao servidor...', null);
@@ -266,6 +518,12 @@ class GeradorPecasApp {
                 }
                 if (this.observacaoUsuario) {
                     formData.append('observacao_usuario', this.observacaoUsuario);
+                }
+                if (this.groupId) {
+                    formData.append('group_id', this.groupId);
+                }
+                if (this.subgroupIds && this.subgroupIds.length) {
+                    formData.append('subgroup_ids_json', JSON.stringify(this.subgroupIds));
                 }
 
                 response = await fetch(`${API_URL}/processar-pdfs-stream`, {
@@ -292,7 +550,9 @@ class GeradorPecasApp {
                     body: JSON.stringify({
                         numero_cnj: this.numeroCNJ,
                         tipo_peca: this.tipoPeca,
-                        observacao_usuario: this.observacaoUsuario
+                        observacao_usuario: this.observacaoUsuario,
+                        group_id: this.groupId,
+                        subgroup_ids: this.subgroupIds.length ? this.subgroupIds : null
                     })
                 });
             }
@@ -1465,6 +1725,20 @@ class GeradorPecasApp {
         this.minutaMarkdown = null;
         this.historicoChat = [];
         this.observacaoUsuario = null;
+
+        const grupoSelect = document.getElementById('grupo-principal');
+        if (grupoSelect && grupoSelect.value) {
+            const parsed = parseInt(grupoSelect.value, 10);
+            this.groupId = Number.isNaN(parsed) ? null : parsed;
+        } else {
+            this.groupId = null;
+        }
+        this.subgroupIds = [];
+        if (this.groupId) {
+            this.renderSubgrupos(this.subgruposDisponiveis);
+        } else {
+            this.renderSubgrupos([]);
+        }
 
         // Reset arquivos PDF
         this.arquivosPdf = [];

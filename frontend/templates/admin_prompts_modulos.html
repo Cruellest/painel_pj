@@ -7,6 +7,8 @@
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+
+
     <script>
         tailwind.config = {
             theme: {
@@ -57,6 +59,9 @@
                 <a href="/admin/modulos-tipo-peca" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2">
                     <i class="fas fa-layer-group"></i> Módulos por Tipo de Peça
                 </a>
+                <button onclick="abrirModalGrupos()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2">
+                    <i class="fas fa-layer-group"></i> Grupos
+                </button>
                 <button onclick="criarModulo()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
                     <i class="fas fa-plus"></i> Criar Módulo
                 </button>
@@ -86,6 +91,9 @@
                     <option value="peca">Peça</option>
                     <option value="conteudo">Conteúdo</option>
                 </select>
+                <select id="filtro-grupo" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="filtrarModulos()">
+                    <option value="">Todos os grupos</option>
+                </select>
                 <select id="filtro-categoria" class="px-4 py-2 border border-gray-300 rounded-lg" onchange="filtrarModulos()">
                     <option value="">Todas as categorias</option>
                 </select>
@@ -104,6 +112,93 @@
             </div>
         </div>
     </main>
+
+    <!-- Modal de Grupos -->
+    <div id="modal-grupos" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col m-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">Grupos e Subgrupos de Conteudo</h2>
+                    <p class="text-sm text-gray-500">Gerencie os grupos usados nos prompts de conteudo</p>
+                </div>
+                <button onclick="fecharModalGrupos()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Grupos</h3>
+                        <form id="form-grupo" class="space-y-3">
+                            <input type="hidden" id="grupo-id">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                                <input type="text" id="grupo-nome" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Slug</label>
+                                <input type="text" id="grupo-slug" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Ordem</label>
+                                    <input type="number" id="grupo-ordem" class="w-full px-3 py-2 border border-gray-300 rounded-lg" value="0" min="0">
+                                </div>
+                                <label class="flex items-center gap-2 mt-6 text-sm text-gray-700">
+                                    <input type="checkbox" id="grupo-ativo" checked>
+                                    Ativo
+                                </label>
+                            </div>
+                            <div class="flex gap-2">
+                                <button type="button" onclick="salvarGrupo()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                                    <i class="fas fa-save mr-1"></i> Salvar Grupo
+                                </button>
+                                <button type="button" onclick="limparGrupoForm()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                                    Limpar
+                                </button>
+                            </div>
+                        </form>
+                        <div id="lista-grupos" class="space-y-2"></div>
+                    </div>
+                    <div class="space-y-4">
+                        <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subgrupos</h3>
+                        <div id="subgrupo-grupo-info" class="text-sm text-gray-500">Selecione um grupo para editar subgrupos.</div>
+                        <form id="form-subgrupo" class="space-y-3">
+                            <input type="hidden" id="subgrupo-id">
+                            <input type="hidden" id="subgrupo-grupo-id">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                                <input type="text" id="subgrupo-nome" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Slug</label>
+                                <input type="text" id="subgrupo-slug" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            </div>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Ordem</label>
+                                    <input type="number" id="subgrupo-ordem" class="w-full px-3 py-2 border border-gray-300 rounded-lg" value="0" min="0">
+                                </div>
+                                <label class="flex items-center gap-2 mt-6 text-sm text-gray-700">
+                                    <input type="checkbox" id="subgrupo-ativo" checked>
+                                    Ativo
+                                </label>
+                            </div>
+                            <div class="flex gap-2">
+                                <button type="button" onclick="salvarSubgrupo()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                                    <i class="fas fa-save mr-1"></i> Salvar Subgrupo
+                                </button>
+                                <button type="button" onclick="limparSubgrupoForm()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                                    Limpar
+                                </button>
+                            </div>
+                        </form>
+                        <div id="lista-subgrupos" class="space-y-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Modal de Edição -->
     <div id="modal-editor" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -157,6 +252,21 @@
                             placeholder="Título legível do módulo">
                     </div>
                     
+                    <div id="grupo-conteudo-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Grupo (Conteudo)</label>
+                            <select id="modulo-grupo" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                <option value="">Selecione o grupo</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Subgrupo (Opcional)</label>
+                            <select id="modulo-subgrupo" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                <option value="">Sem subgrupo</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <!-- Condição de Ativação (apenas para tipo conteudo) -->
                     <div id="condicao-ativacao-container">
                         <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -517,22 +627,28 @@
         let keywordsAtuais = [];
         let tagsAtuais = [];
         let moduloAtualId = null;
+        let gruposCache = [];
+        let subgruposCache = [];
+        let grupoSelecionadoId = null;
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {
             carregarModulos();
             carregarCategorias();
+            carregarGrupos();
         });
 
         async function carregarModulos() {
             try {
                 const params = new URLSearchParams();
                 const tipo = document.getElementById('filtro-tipo').value;
+                const grupoId = document.getElementById('filtro-grupo').value;
                 const categoria = document.getElementById('filtro-categoria').value;
                 const busca = document.getElementById('busca').value;
                 const apenasAtivos = document.getElementById('apenas-ativos').checked;
 
                 if (tipo) params.append('tipo', tipo);
+                if (grupoId && (!tipo || tipo === 'conteudo')) params.append('group_id', grupoId);
                 if (categoria) params.append('categoria', categoria);
                 if (busca) params.append('busca', busca);
                 params.append('apenas_ativos', apenasAtivos);
@@ -557,11 +673,16 @@
 
         async function carregarCategorias() {
             try {
-                const response = await fetch(`${API_BASE}/categorias`, {
+                const params = new URLSearchParams();
+                const grupoId = document.getElementById('filtro-grupo').value;
+                if (grupoId) params.append('group_id', grupoId);
+
+                const response = await fetch(`${API_BASE}/categorias?${params}`, {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
                 const categorias = await response.json();
                 const select = document.getElementById('filtro-categoria');
+                select.innerHTML = '<option value="">Todas as categorias</option>';
                 categorias.forEach(cat => {
                     const option = document.createElement('option');
                     option.value = cat;
@@ -570,6 +691,305 @@
                 });
             } catch (error) {
                 console.error('Erro ao carregar categorias:', error);
+            }
+        }
+
+
+        async function carregarGrupos() {
+            try {
+                const response = await fetch(`${API_BASE}/grupos?apenas_ativos=false`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao carregar grupos');
+
+                gruposCache = await response.json();
+                atualizarSelectGrupos();
+                renderizarGruposModal();
+
+                if (grupoSelecionadoId) {
+                    await carregarSubgruposGrupo(grupoSelecionadoId);
+                }
+            } catch (error) {
+                console.error('Erro ao carregar grupos:', error);
+            }
+        }
+
+        function atualizarSelectGrupos() {
+            const filtro = document.getElementById('filtro-grupo');
+            if (filtro) {
+                const valorAtual = filtro.value;
+                filtro.innerHTML = '<option value="">Todos os grupos</option>';
+                gruposCache.forEach((grupo) => {
+                    const option = document.createElement('option');
+                    option.value = grupo.id;
+                    option.textContent = grupo.name || grupo.nome;
+                    filtro.appendChild(option);
+                });
+                if (valorAtual) {
+                    filtro.value = valorAtual;
+                }
+            }
+
+            const selectModulo = document.getElementById('modulo-grupo');
+            if (selectModulo) {
+                const valorAtual = selectModulo.value;
+                selectModulo.innerHTML = '<option value="">Selecione o grupo</option>';
+                gruposCache.forEach((grupo) => {
+                    const option = document.createElement('option');
+                    option.value = grupo.id;
+                    option.textContent = grupo.name || grupo.nome;
+                    selectModulo.appendChild(option);
+                });
+                if (valorAtual) {
+                    selectModulo.value = valorAtual;
+                }
+            }
+        }
+
+        function abrirModalGrupos() {
+            document.getElementById('modal-grupos').classList.remove('hidden');
+            carregarGrupos();
+        }
+
+        function fecharModalGrupos() {
+            document.getElementById('modal-grupos').classList.add('hidden');
+        }
+
+        function limparGrupoForm() {
+            document.getElementById('grupo-id').value = '';
+            document.getElementById('grupo-nome').value = '';
+            document.getElementById('grupo-slug').value = '';
+            document.getElementById('grupo-ordem').value = 0;
+            document.getElementById('grupo-ativo').checked = true;
+        }
+
+        function renderizarGruposModal() {
+            const container = document.getElementById('lista-grupos');
+            if (!container) return;
+
+            if (!gruposCache.length) {
+                container.innerHTML = '<p class="text-sm text-gray-400">Nenhum grupo cadastrado.</p>';
+                return;
+            }
+
+            container.innerHTML = gruposCache.map((grupo) => {
+                const ativo = grupo.active ? 'Ativo' : 'Inativo';
+                const ativoClass = grupo.active ? 'text-green-600' : 'text-gray-400';
+                return `
+                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <div>
+                            <p class="text-sm font-medium text-gray-800">${grupo.name}</p>
+                            <p class="text-xs text-gray-500">${grupo.slug} - <span class="${ativoClass}">${ativo}</span></p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="editarGrupo(${grupo.id})" class="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded">Editar</button>
+                            <button onclick="selecionarGrupoSubgrupos(${grupo.id})" class="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded">Subgrupos</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function editarGrupo(id) {
+            const grupo = gruposCache.find((g) => g.id === id);
+            if (!grupo) return;
+
+            document.getElementById('grupo-id').value = grupo.id;
+            document.getElementById('grupo-nome').value = grupo.name || '';
+            document.getElementById('grupo-slug').value = grupo.slug || '';
+            document.getElementById('grupo-ordem').value = grupo.order || 0;
+            document.getElementById('grupo-ativo').checked = grupo.active !== false;
+        }
+
+        async function salvarGrupo() {
+            const id = document.getElementById('grupo-id').value;
+            const payload = {
+                name: document.getElementById('grupo-nome').value,
+                slug: document.getElementById('grupo-slug').value,
+                active: document.getElementById('grupo-ativo').checked,
+                order: parseInt(document.getElementById('grupo-ordem').value) || 0
+            };
+
+            if (!payload.name || !payload.slug) {
+                alert('Informe nome e slug do grupo');
+                return;
+            }
+
+            try {
+                const response = await fetch(id ? `${API_BASE}/grupos/${id}` : `${API_BASE}/grupos`, {
+                    method: id ? 'PUT' : 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao salvar grupo');
+                }
+
+                limparGrupoForm();
+                carregarGrupos();
+            } catch (error) {
+                alert('Erro: ' + error.message);
+            }
+        }
+
+        async function selecionarGrupoSubgrupos(id) {
+            grupoSelecionadoId = id;
+            document.getElementById('subgrupo-grupo-id').value = id;
+            const grupo = gruposCache.find((g) => g.id === id);
+            const info = document.getElementById('subgrupo-grupo-info');
+            if (info) {
+                info.textContent = grupo ? `Subgrupos de ${grupo.name}` : 'Subgrupos do grupo selecionado';
+            }
+            limparSubgrupoForm();
+            await carregarSubgruposGrupo(id);
+        }
+
+        async function carregarSubgruposGrupo(groupId) {
+            if (!groupId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/grupos/${groupId}/subgrupos`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao carregar subgrupos');
+
+                subgruposCache = await response.json();
+                renderizarSubgruposModal();
+            } catch (error) {
+                console.error('Erro ao carregar subgrupos:', error);
+            }
+        }
+
+        function renderizarSubgruposModal() {
+            const container = document.getElementById('lista-subgrupos');
+            if (!container) return;
+
+            if (!grupoSelecionadoId) {
+                container.innerHTML = '<p class="text-sm text-gray-400">Selecione um grupo.</p>';
+                return;
+            }
+
+            if (!subgruposCache.length) {
+                container.innerHTML = '<p class="text-sm text-gray-400">Nenhum subgrupo cadastrado.</p>';
+                return;
+            }
+
+            container.innerHTML = subgruposCache.map((subgrupo) => {
+                const ativo = subgrupo.active ? 'Ativo' : 'Inativo';
+                const ativoClass = subgrupo.active ? 'text-green-600' : 'text-gray-400';
+                return `
+                    <div class="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <div>
+                            <p class="text-sm font-medium text-gray-800">${subgrupo.name}</p>
+                            <p class="text-xs text-gray-500">${subgrupo.slug} - <span class="${ativoClass}">${ativo}</span></p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="editarSubgrupo(${subgrupo.id})" class="px-2 py-1 text-xs bg-blue-50 text-blue-600 rounded">Editar</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function editarSubgrupo(id) {
+            const subgrupo = subgruposCache.find((s) => s.id === id);
+            if (!subgrupo) return;
+
+            document.getElementById('subgrupo-id').value = subgrupo.id;
+            document.getElementById('subgrupo-nome').value = subgrupo.name || '';
+            document.getElementById('subgrupo-slug').value = subgrupo.slug || '';
+            document.getElementById('subgrupo-ordem').value = subgrupo.order || 0;
+            document.getElementById('subgrupo-ativo').checked = subgrupo.active !== false;
+        }
+
+        async function salvarSubgrupo() {
+            const groupId = document.getElementById('subgrupo-grupo-id').value;
+            if (!groupId) {
+                alert('Selecione um grupo antes de salvar subgrupo');
+                return;
+            }
+
+            const id = document.getElementById('subgrupo-id').value;
+            const payload = {
+                name: document.getElementById('subgrupo-nome').value,
+                slug: document.getElementById('subgrupo-slug').value,
+                active: document.getElementById('subgrupo-ativo').checked,
+                order: parseInt(document.getElementById('subgrupo-ordem').value) || 0
+            };
+
+            if (!payload.name || !payload.slug) {
+                alert('Informe nome e slug do subgrupo');
+                return;
+            }
+
+            try {
+                const response = await fetch(id ? `${API_BASE}/subgrupos/${id}` : `${API_BASE}/grupos/${groupId}/subgrupos`, {
+                    method: id ? 'PUT' : 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao salvar subgrupo');
+                }
+
+                limparSubgrupoForm();
+                await carregarSubgruposGrupo(groupId);
+                carregarGrupos();
+            } catch (error) {
+                alert('Erro: ' + error.message);
+            }
+        }
+
+        function limparSubgrupoForm() {
+            document.getElementById('subgrupo-id').value = '';
+            document.getElementById('subgrupo-nome').value = '';
+            document.getElementById('subgrupo-slug').value = '';
+            document.getElementById('subgrupo-ordem').value = 0;
+            document.getElementById('subgrupo-ativo').checked = true;
+        }
+
+        async function carregarSubgruposModulo(groupId, selectedId = null) {
+            const select = document.getElementById('modulo-subgrupo');
+            if (!select) return;
+
+            select.innerHTML = '<option value="">Sem subgrupo</option>';
+
+            if (!groupId) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/grupos/${groupId}/subgrupos`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+
+                if (!response.ok) return;
+
+                const subgrupos = await response.json();
+                subgrupos.forEach((subgrupo) => {
+                    const option = document.createElement('option');
+                    option.value = subgrupo.id;
+                    option.textContent = subgrupo.name;
+                    select.appendChild(option);
+                });
+
+                if (selectedId) {
+                    select.value = selectedId;
+                }
+            } catch (error) {
+                console.error('Erro ao carregar subgrupos:', error);
             }
         }
 
@@ -821,6 +1241,7 @@
         }
 
         function filtrarModulos() {
+            carregarCategorias();
             carregarModulos();
         }
 
@@ -839,6 +1260,16 @@
             document.getElementById('modulo-conteudo').value = '';
             document.getElementById('modulo-ativo').checked = true;
             document.getElementById('modulo-ordem').value = 0;
+            const grupoSelect = document.getElementById('modulo-grupo');
+            const subgrupoSelect = document.getElementById('modulo-subgrupo');
+            const grupoPadrao = gruposCache.length === 1 ? gruposCache[0].id : ''; 
+            if (grupoSelect) grupoSelect.value = grupoPadrao;
+            if (subgrupoSelect) subgrupoSelect.value = ''; 
+            if (grupoPadrao) { 
+                carregarSubgruposModulo(grupoPadrao);
+            } else {
+                carregarSubgruposModulo(null);
+            }
             
             document.getElementById('modal-titulo').textContent = 'Criar Novo Módulo';
             document.getElementById('modal-subtitulo').textContent = '';
@@ -858,16 +1289,36 @@
         function toggleCondicaoAtivacao() {
             const tipo = document.getElementById('modulo-tipo').value;
             const container = document.getElementById('condicao-ativacao-container');
+            const grupoContainer = document.getElementById('grupo-conteudo-container');
+
             // Condição de ativação só faz sentido para tipo 'conteudo'
             if (tipo === 'conteudo') {
                 container.classList.remove('hidden');
+                if (grupoContainer) {
+                    grupoContainer.classList.remove('hidden');
+                }
             } else {
                 container.classList.add('hidden');
+                if (grupoContainer) {
+                    grupoContainer.classList.add('hidden');
+                }
+                const grupoSelect = document.getElementById('modulo-grupo');
+                const subgrupoSelect = document.getElementById('modulo-subgrupo');
+                if (grupoSelect) grupoSelect.value = '';
+                if (subgrupoSelect) subgrupoSelect.value = '';
             }
         }
         
         // Adiciona listener para mudança de tipo
         document.getElementById('modulo-tipo').addEventListener('change', toggleCondicaoAtivacao);
+
+        const moduloGrupoSelect = document.getElementById('modulo-grupo');
+        if (moduloGrupoSelect) {
+            moduloGrupoSelect.addEventListener('change', (e) => {
+                carregarSubgruposModulo(e.target.value);
+            });
+        }
+
 
         async function editarModulo(id) {
             try {
@@ -893,12 +1344,17 @@
                 document.getElementById('modulo-ativo').checked = modulo.ativo;
                 document.getElementById('modulo-ordem').value = modulo.ordem || 0;
                 document.getElementById('modulo-motivo').value = '';
+                const grupoSelect = document.getElementById('modulo-grupo');
+                const subgrupoSelect = document.getElementById('modulo-subgrupo');
+                if (grupoSelect) grupoSelect.value = modulo.group_id || ''; 
+                if (subgrupoSelect) subgrupoSelect.value = ''; 
+                await carregarSubgruposModulo(modulo.group_id, modulo.subgroup_id);
                 
                 document.getElementById('modal-titulo').textContent = 'Editar Módulo';
                 document.getElementById('modal-subtitulo').textContent = modulo.titulo;
                 document.getElementById('motivo-container').classList.remove('hidden');
                 document.getElementById('btn-historico').classList.remove('hidden');
-                document.getElementById('versao-info').textContent = `Versão ${modulo.versao} • Atualizado em ${new Date(modulo.atualizado_em).toLocaleString('pt-BR')}`;
+                document.getElementById('versao-info').textContent = `Versão ${modulo.versao} - Atualizado em ${new Date(modulo.atualizado_em).toLocaleString('pt-BR')}`;
                 
                 // Mostra/esconde campo de condição baseado no tipo
                 toggleCondicaoAtivacao();
@@ -920,6 +1376,8 @@
             const id = document.getElementById('modulo-id').value;
             const isNovo = !id;
             const tipo = document.getElementById('modulo-tipo').value;
+            const grupoId = document.getElementById('modulo-grupo').value;
+            const subgrupoId = document.getElementById('modulo-subgrupo').value;
             
             const dados = {
                 tipo: tipo,
@@ -932,9 +1390,17 @@
                 palavras_chave: keywordsAtuais,
                 tags: tagsAtuais,
                 ativo: document.getElementById('modulo-ativo').checked,
-                ordem: parseInt(document.getElementById('modulo-ordem').value) || 0
+                ordem: parseInt(document.getElementById('modulo-ordem').value) || 0,
+                group_id: tipo === 'conteudo' ? (grupoId ? parseInt(grupoId) : null) : null,
+                subgroup_id: tipo === 'conteudo' ? (subgrupoId ? parseInt(subgrupoId) : null) : null
             };
             
+            if (tipo === 'conteudo' && !grupoId) {
+                alert('Selecione o grupo do módulo de conteúdo');
+                document.getElementById('modulo-grupo').focus();
+                return;
+            }
+
             if (!isNovo) {
                 dados.motivo = document.getElementById('modulo-motivo').value;
                 if (!dados.motivo) {

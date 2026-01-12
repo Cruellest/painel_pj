@@ -13,6 +13,7 @@ from auth.schemas import UserCreate, UserUpdate, UserResponse
 from auth.security import get_password_hash
 from auth.dependencies import require_admin
 from config import DEFAULT_USER_PASSWORD
+from admin.models_prompt_groups import PromptGroup
 
 router = APIRouter(prefix="/users", tags=["Usuários"])
 
@@ -64,6 +65,33 @@ async def create_user(
                 detail=f"Email '{user_data.email}' já cadastrado"
             )
     
+    # Resolve grupo padrão e grupos permitidos
+    default_group = None
+    if user_data.default_group_id:
+        default_group = db.query(PromptGroup).filter(PromptGroup.id == user_data.default_group_id).first()
+        if not default_group:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Grupo padrao invalido"
+            )
+    else:
+        default_group = db.query(PromptGroup).filter(PromptGroup.slug == "ps").first()
+
+    allowed_ids = user_data.allowed_group_ids or []
+    if not allowed_ids and default_group:
+        allowed_ids = [default_group.id]
+    if default_group and default_group.id not in allowed_ids:
+        allowed_ids.append(default_group.id)
+
+    allowed_groups = []
+    if allowed_ids:
+        allowed_groups = db.query(PromptGroup).filter(PromptGroup.id.in_(allowed_ids)).all()
+        if len(allowed_groups) != len(set(allowed_ids)):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Lista de grupos permitidos contem IDs invalidos"
+            )
+
     # Define senha (padrão ou informada)
     password = user_data.password if user_data.password else DEFAULT_USER_PASSWORD
     
@@ -76,6 +104,8 @@ async def create_user(
         role=user_data.role,
         sistemas_permitidos=user_data.sistemas_permitidos,
         permissoes_especiais=user_data.permissoes_especiais,
+        default_group_id=default_group.id if default_group else None,
+        allowed_groups=allowed_groups,
         must_change_password=True,  # Força troca no primeiro acesso
         is_active=True
     )
@@ -158,8 +188,46 @@ async def update_user(
                 detail=f"Email '{user_data.email}' já cadastrado"
             )
     
+    # Atualiza grupos permitidos e grupo padrão quando informado
+    allowed_ids_provided = user_data.allowed_group_ids is not None
+    default_group_provided = user_data.default_group_id is not None
+
+    if allowed_ids_provided:
+        allowed_ids = user_data.allowed_group_ids
+        allowed_groups = []
+        if allowed_ids:
+            allowed_groups = db.query(PromptGroup).filter(PromptGroup.id.in_(allowed_ids)).all()
+            if len(allowed_groups) != len(set(allowed_ids)):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Lista de grupos permitidos contem IDs invalidos"
+                )
+        user.allowed_groups = allowed_groups
+
+    if default_group_provided:
+        default_group = db.query(PromptGroup).filter(PromptGroup.id == user_data.default_group_id).first()
+        if not default_group:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Grupo padrao invalido"
+            )
+        if allowed_ids_provided and user_data.allowed_group_ids:
+            if default_group.id not in user_data.allowed_group_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Grupo padrao deve estar nos grupos permitidos"
+                )
+        user.default_group_id = default_group.id
+        if not allowed_ids_provided and default_group not in user.allowed_groups:
+            user.allowed_groups.append(default_group)
+
+    # Se mudou os grupos permitidos sem definir grupo padrão, ajusta para o primeiro permitido
+    if allowed_ids_provided and user.allowed_groups and not default_group_provided:
+        if not user.default_group_id or not any(g.id == user.default_group_id for g in user.allowed_groups):
+            user.default_group_id = user.allowed_groups[0].id
+
     # Atualiza campos informados
-    update_data = user_data.model_dump(exclude_unset=True)
+    update_data = user_data.model_dump(exclude_unset=True, exclude={"allowed_group_ids", "default_group_id"})
     for field, value in update_data.items():
         setattr(user, field, value)
     

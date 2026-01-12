@@ -429,6 +429,25 @@
 
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Grupo de Conteudo
+                    </label>
+                    <select id="grupo-principal" name="group_id"
+                        class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 transition-all shadow-sm">
+                        <option value="">Carregando grupos...</option>
+                    </select>
+                    <p id="grupo-hint" class="text-xs text-gray-500 mt-1"></p>
+                </div>
+
+                <div id="subgrupo-container" class="space-y-2 hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Subgrupos de Conteudo <span class="text-gray-400 font-normal">(opcional)</span>
+                    </label>
+                    <div id="subgrupo-opcoes" class="flex flex-wrap gap-2"></div>
+                    <p id="subgrupo-hint" class="text-xs text-gray-500"></p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
                         Tipo de PeÃ§a
                     </label>
                     <select id="tipo-peca" name="tipo_peca"
@@ -837,15 +856,20 @@
             <!-- Estrelas -->
             <div class="flex justify-center gap-2 mb-6">
                 <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors"
-                    data-nota="1">â˜…</button>
+                    data-nota="1">â˜
+</button>
                 <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors"
-                    data-nota="2">â˜…</button>
+                    data-nota="2">â˜
+</button>
                 <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors"
-                    data-nota="3">â˜…</button>
+                    data-nota="3">â˜
+</button>
                 <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors"
-                    data-nota="4">â˜…</button>
+                    data-nota="4">â˜
+</button>
                 <button class="estrela text-4xl text-gray-300 hover:text-yellow-400 transition-colors"
-                    data-nota="5">â˜…</button>
+                    data-nota="5">â˜
+</button>
             </div>
 
             <textarea id="feedback-comentario" placeholder="ComentÃ¡rios adicionais (opcional)"

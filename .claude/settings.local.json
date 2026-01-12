@@ -1,13 +1,1 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python -m flake8:*)",
-      "Bash(python -m py_compile:*)",
-      "Bash(python -m ruff check:*)",
-      "Bash(python:*)",
-      "Bash(ls:*)"
-    ],
-    "deny": [],
-    "ask": []
-  }
-}
+{"permissions":{"allow":["Bash","Edit","Write","Read"],"deny":[]}}
