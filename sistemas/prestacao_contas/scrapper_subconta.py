@@ -34,8 +34,9 @@ logger = logging.getLogger(__name__)
 class ConfigSubconta:
     """Configurações do scrapper de subconta."""
 
-    login_url: str = "https://www5.tjms.jus.br/login/?forwardTo=/contaunica/"
-    listagem_url: str = "https://www.tjms.jus.br/contaunica/subconta_listagem.php"
+    # URLs base - podem ser substituídas por proxy em produção
+    base_url_www: str = "https://www.tjms.jus.br"
+    base_url_www5: str = "https://www5.tjms.jus.br"
 
     delay_min: float = 2.0
     delay_max: float = 5.0
@@ -43,10 +44,33 @@ class ConfigSubconta:
     timeout_navegacao: int = 60_000  # ms - aumentado para ambientes cloud
     headless: bool = True
 
+    @property
+    def login_url(self) -> str:
+        return f"{self.base_url_www5}/login/?forwardTo=/contaunica/"
+
+    @property
+    def listagem_url(self) -> str:
+        return f"{self.base_url_www}/contaunica/subconta_listagem.php"
+
     @classmethod
     def from_env(cls) -> "ConfigSubconta":
         """Cria configuração a partir de variáveis de ambiente."""
+        # Proxy para ambientes cloud (Railway, etc)
+        proxy_url = os.getenv("TJMS_PROXY_URL", "").strip()
+
+        if proxy_url:
+            # Usa proxy para ambas as URLs base
+            base_www = proxy_url.rstrip("/")
+            base_www5 = proxy_url.rstrip("/")
+            logger.info(f"Usando proxy TJ-MS: {proxy_url}")
+        else:
+            # Acesso direto (local)
+            base_www = "https://www.tjms.jus.br"
+            base_www5 = "https://www5.tjms.jus.br"
+
         return cls(
+            base_url_www=base_www,
+            base_url_www5=base_www5,
             delay_min=float(os.getenv("SUBCONTA_DELAY_MIN", 2.0)),
             delay_max=float(os.getenv("SUBCONTA_DELAY_MAX", 5.0)),
             max_tentativas=int(os.getenv("SUBCONTA_MAX_TENTATIVAS", 3)),
