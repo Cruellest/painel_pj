@@ -185,7 +185,7 @@ class ExtratorSubconta:
         logger.debug("Executando login no TJ-MS...")
 
         # Aguarda a página de login carregar
-        self._page.wait_for_selector('button:has-text("ENTRAR")', timeout=10000)
+        self._page.wait_for_selector('button:has-text("ENTRAR")', timeout=30000)
         self._page.wait_for_timeout(1000)
 
         # Preenche usuário
@@ -208,7 +208,7 @@ class ExtratorSubconta:
         # Verifica se foi para o Menu Principal
         if "subconta_listagem" not in self._page.url:
             try:
-                self._page.wait_for_selector('text=Menu Principal', timeout=10000)
+                self._page.wait_for_selector('text=Menu Principal', timeout=30000)
                 self._page.get_by_role("cell", name="4. Listagem de Subcontas", exact=True).click()
                 self._page.wait_for_load_state("load", timeout=self.config.timeout_navegacao)
                 self._page.wait_for_timeout(1000)
@@ -292,7 +292,7 @@ class ExtratorSubconta:
                 self._page.wait_for_timeout(1000)
 
             # Aguarda formulário
-            self._page.wait_for_selector('fieldset', timeout=10000)
+            self._page.wait_for_selector('fieldset', timeout=30000)
             self._page.wait_for_timeout(500)
 
             # Preenche campo processo
@@ -356,9 +356,9 @@ class ExtratorSubconta:
 
             # Aguarda extrato carregar
             try:
-                self._page.wait_for_selector('text=Extrato', timeout=15000)
+                self._page.wait_for_selector('text=Extrato', timeout=30000)
             except:
-                self._page.wait_for_selector('text=INFORMAÇÕES DA SUBCONTA', timeout=15000)
+                self._page.wait_for_selector('text=INFORMAÇÕES DA SUBCONTA', timeout=30000)
 
             # Gera PDF
             pdf_bytes = self._page.pdf(format="A4", print_background=True)
