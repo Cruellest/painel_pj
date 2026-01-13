@@ -34,9 +34,13 @@ logger = logging.getLogger(__name__)
 class ConfigSubconta:
     """Configurações do scrapper de subconta."""
 
-    # URLs base - podem ser substituídas por proxy em produção
+    # URLs base - usadas para acesso direto (local)
     base_url_www: str = "https://www.tjms.jus.br"
     base_url_www5: str = "https://www5.tjms.jus.br"
+
+    # URL do proxy (produção)
+    base_url: str = ""
+    usar_proxy: bool = False
 
     delay_min: float = 2.0
     delay_max: float = 5.0
@@ -46,10 +50,14 @@ class ConfigSubconta:
 
     @property
     def login_url(self) -> str:
+        if self.usar_proxy:
+            return f"{self.base_url}/www5/login/?forwardTo=/contaunica/"
         return f"{self.base_url_www5}/login/?forwardTo=/contaunica/"
 
     @property
     def listagem_url(self) -> str:
+        if self.usar_proxy:
+            return f"{self.base_url}/contaunica/subconta_listagem.php"
         return f"{self.base_url_www}/contaunica/subconta_listagem.php"
 
     @classmethod
@@ -59,23 +67,23 @@ class ConfigSubconta:
         proxy_url = os.getenv("TJMS_PROXY_URL", "").strip()
 
         if proxy_url:
-            # Usa proxy para ambas as URLs base
-            base_www = proxy_url.rstrip("/")
-            base_www5 = proxy_url.rstrip("/")
             logger.info(f"Usando proxy TJ-MS: {proxy_url}")
+            return cls(
+                base_url=proxy_url.rstrip("/"),
+                usar_proxy=True,
+                delay_min=float(os.getenv("SUBCONTA_DELAY_MIN", 2.0)),
+                delay_max=float(os.getenv("SUBCONTA_DELAY_MAX", 5.0)),
+                max_tentativas=int(os.getenv("SUBCONTA_MAX_TENTATIVAS", 3)),
+                headless=os.getenv("SUBCONTA_HEADLESS", "true").lower() == "true",
+            )
         else:
             # Acesso direto (local)
-            base_www = "https://www.tjms.jus.br"
-            base_www5 = "https://www5.tjms.jus.br"
-
-        return cls(
-            base_url_www=base_www,
-            base_url_www5=base_www5,
-            delay_min=float(os.getenv("SUBCONTA_DELAY_MIN", 2.0)),
-            delay_max=float(os.getenv("SUBCONTA_DELAY_MAX", 5.0)),
-            max_tentativas=int(os.getenv("SUBCONTA_MAX_TENTATIVAS", 3)),
-            headless=os.getenv("SUBCONTA_HEADLESS", "true").lower() == "true",
-        )
+            return cls(
+                delay_min=float(os.getenv("SUBCONTA_DELAY_MIN", 2.0)),
+                delay_max=float(os.getenv("SUBCONTA_DELAY_MAX", 5.0)),
+                max_tentativas=int(os.getenv("SUBCONTA_MAX_TENTATIVAS", 3)),
+                headless=os.getenv("SUBCONTA_HEADLESS", "true").lower() == "true",
+            )
 
 
 class StatusProcessamento(str, Enum):
