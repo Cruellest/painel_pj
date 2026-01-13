@@ -304,9 +304,32 @@
         </div>
     </main>
 
+    <!-- Modal de Visualização do Comentário -->
+    <div id="modal-comentario" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" onclick="fecharModalComentario(event)">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-600 to-purple-700 rounded-t-xl">
+                <div class="text-white">
+                    <h3 class="text-lg font-bold">Comentário do Feedback</h3>
+                    <p id="modal-comentario-info" class="text-sm text-purple-100"></p>
+                </div>
+                <button onclick="fecharModalComentario()" class="text-white hover:text-gray-200">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6">
+                <p id="modal-comentario-texto" class="text-gray-700 whitespace-pre-wrap"></p>
+            </div>
+            <div class="p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end">
+                <button onclick="fecharModalComentario()" class="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal de Visualização do Relatório -->
     <div id="modal-relatorio" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" onclick="fecharModal(event)">
-        <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">
+        <div class="bg-white rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">
             <div class="p-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 rounded-t-xl">
                 <div class="text-white">
                     <h3 id="modal-titulo" class="text-lg font-bold">Relatório da Consulta</h3>
@@ -316,7 +339,7 @@
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
-            
+
             <div class="p-4 border-b border-gray-100 bg-gray-50">
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
@@ -337,20 +360,50 @@
                     </div>
                 </div>
             </div>
-            
+
+            <!-- Tabs (apenas para gerador_pecas) -->
+            <div id="modal-tabs" class="hidden border-b border-gray-200 bg-white px-4">
+                <div class="flex gap-1">
+                    <button onclick="mostrarTabRelatorio('relatorio')" id="tab-relatorio" class="px-4 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600">
+                        <i class="fas fa-file-alt mr-1"></i>Relatório
+                    </button>
+                    <button onclick="mostrarTabRelatorio('chat')" id="tab-chat" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-comments mr-1"></i>Edições Chat <span id="chat-badge" class="hidden bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs ml-1">0</span>
+                    </button>
+                    <button onclick="mostrarTabRelatorio('versoes')" id="tab-versoes" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-history mr-1"></i>Versões <span id="versoes-badge" class="hidden bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs ml-1">0</span>
+                    </button>
+                </div>
+            </div>
+
             <div class="flex-1 overflow-y-auto p-6">
                 <div id="modal-loading" class="flex items-center justify-center py-12">
                     <i class="fas fa-spinner fa-spin text-3xl text-blue-500"></i>
                 </div>
-                <div id="modal-conteudo" class="prose prose-sm max-w-none hidden">
-                    <!-- Relatório renderizado aqui -->
+
+                <!-- Tab: Relatório -->
+                <div id="conteudo-relatorio" class="modal-tab-content">
+                    <div id="modal-conteudo" class="prose prose-sm max-w-none hidden">
+                        <!-- Relatório renderizado aqui -->
+                    </div>
                 </div>
+
+                <!-- Tab: Edições Chat -->
+                <div id="conteudo-chat" class="modal-tab-content hidden">
+                    <div id="chat-container" class="space-y-4"></div>
+                </div>
+
+                <!-- Tab: Versões -->
+                <div id="conteudo-versoes" class="modal-tab-content hidden">
+                    <div id="versoes-container" class="space-y-4"></div>
+                </div>
+
                 <div id="modal-erro" class="hidden text-center py-12">
                     <i class="fas fa-exclamation-triangle text-4xl text-red-400 mb-4"></i>
                     <p class="text-gray-600">Erro ao carregar o relatório</p>
                 </div>
             </div>
-            
+
             <div class="p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end gap-2">
                 <button onclick="fecharModal()" class="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
                     Fechar
@@ -653,7 +706,16 @@
                                     ${labels[fb.avaliacao] || fb.avaliacao}
                                 </span>
                             </td>
-                            <td class="px-4 py-3 text-gray-600 max-w-xs truncate" title="${fb.comentario || ''}">${fb.comentario || '-'}</td>
+                            <td class="px-4 py-3 text-gray-600 max-w-xs">
+                                ${fb.comentario ? `
+                                    <div class="flex items-center gap-2">
+                                        <span class="truncate">${escapeHtml(fb.comentario)}</span>
+                                        <button onclick="verComentario(this)" data-usuario="${escapeHtml(fb.usuario)}" data-comentario="${escapeHtml(fb.comentario)}" class="flex-shrink-0 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors" title="Ver comentário completo">
+                                            <i class="fas fa-expand"></i>
+                                        </button>
+                                    </div>
+                                ` : '-'}
+                            </td>
                             <td class="px-4 py-3 text-gray-500">${dataFormatada}</td>
                             <td class="px-4 py-3 text-center">
                                 <button onclick="verRelatorio(${fb.consulta_id}, '${fb.sistema}')" class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors" title="Ver relatório">
@@ -715,26 +777,45 @@
         }
 
         // Funções do Modal de Relatório
+        let consultaAtual = null;
+        let sistemaAtual = null;
+
         async function verRelatorio(consultaId, sistema) {
             const modal = document.getElementById('modal-relatorio');
             const loading = document.getElementById('modal-loading');
             const conteudo = document.getElementById('modal-conteudo');
             const erro = document.getElementById('modal-erro');
-            
+            const tabs = document.getElementById('modal-tabs');
+
+            consultaAtual = consultaId;
+            sistemaAtual = sistema;
+
+            // Reset tabs
+            document.querySelectorAll('.modal-tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('conteudo-relatorio').classList.remove('hidden');
+            resetTabsState();
+
             // Mostra modal com loading
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             loading.classList.remove('hidden');
             conteudo.classList.add('hidden');
             erro.classList.add('hidden');
-            
+
+            // Mostrar tabs apenas para gerador_pecas
+            if (sistema === 'gerador_pecas') {
+                tabs.classList.remove('hidden');
+            } else {
+                tabs.classList.add('hidden');
+            }
+
             try {
                 const data = await api(`/admin/feedbacks/consulta/${consultaId}?sistema=${sistema}`);
-                
+
                 if (!data) {
                     throw new Error('Dados não retornados');
                 }
-                
+
                 // Preenche informações do cabeçalho
                 const sistemaNomes = {
                     'assistencia_judiciaria': 'Assistência Judiciária',
@@ -746,11 +827,11 @@
                 document.getElementById('modal-titulo').textContent = `Relatório - ${sistemaLabel}`;
                 document.getElementById('modal-subtitulo').textContent = data.identificador || data.cnj || '-';
                 document.getElementById('modal-usuario').textContent = data.usuario || '-';
-                
-                const dataConsulta = data.consultado_em || data.analisado_em;
+
+                const dataConsulta = data.consultado_em || data.analisado_em || data.criado_em;
                 document.getElementById('modal-data').textContent = dataConsulta ? new Date(dataConsulta).toLocaleDateString('pt-BR') : '-';
                 document.getElementById('modal-modelo').textContent = data.modelo || 'N/A';
-                
+
                 // Avaliação do feedback
                 const avaliacaoEl = document.getElementById('modal-avaliacao');
                 if (data.feedback && data.feedback.avaliacao) {
@@ -770,21 +851,240 @@
                 } else {
                     avaliacaoEl.innerHTML = '<span class="text-orange-500"><i class="fas fa-clock mr-1"></i>Pendente</span>';
                 }
-                
+
                 // Renderiza o relatório em Markdown
                 if (data.relatorio) {
                     conteudo.innerHTML = marked.parse(data.relatorio);
                 } else {
                     conteudo.innerHTML = '<p class="text-gray-400 italic text-center py-8">Relatório não disponível para esta consulta.</p>';
                 }
-                
+
                 loading.classList.add('hidden');
                 conteudo.classList.remove('hidden');
-                
+
+                // Se for gerador_pecas, carrega chat e versões
+                if (sistema === 'gerador_pecas') {
+                    renderizarHistoricoChat(data.historico_chat || []);
+                    carregarVersoes(consultaId);
+                }
+
             } catch (error) {
                 console.error('Erro ao carregar relatório:', error);
                 loading.classList.add('hidden');
                 erro.classList.remove('hidden');
+            }
+        }
+
+        function resetTabsState() {
+            document.querySelectorAll('#modal-tabs button').forEach(btn => {
+                btn.classList.remove('border-blue-600', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+            document.getElementById('tab-relatorio').classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('tab-relatorio').classList.add('border-blue-600', 'text-blue-600');
+        }
+
+        function mostrarTabRelatorio(tab) {
+            // Remove active de todas as tabs
+            document.querySelectorAll('#modal-tabs button').forEach(btn => {
+                btn.classList.remove('border-blue-600', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+
+            // Esconde todos os conteúdos
+            document.querySelectorAll('.modal-tab-content').forEach(el => el.classList.add('hidden'));
+
+            // Ativa a tab selecionada
+            document.getElementById(`tab-${tab}`).classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById(`tab-${tab}`).classList.add('border-blue-600', 'text-blue-600');
+            document.getElementById(`conteudo-${tab}`).classList.remove('hidden');
+        }
+
+        function renderizarHistoricoChat(historico) {
+            const container = document.getElementById('chat-container');
+            const badge = document.getElementById('chat-badge');
+
+            if (!historico || historico.length === 0) {
+                badge.classList.add('hidden');
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-comments text-4xl mb-4"></i>
+                        <p>Nenhuma edição via chat foi realizada</p>
+                        <p class="text-sm mt-2">O usuário não solicitou alterações após a geração inicial</p>
+                    </div>`;
+                return;
+            }
+
+            badge.textContent = historico.length;
+            badge.classList.remove('hidden');
+
+            let html = `
+                <div class="bg-purple-50 rounded-lg p-4 mb-4 border border-purple-200">
+                    <p class="text-purple-800 font-medium"><i class="fas fa-info-circle mr-2"></i>Histórico de Edições</p>
+                    <p class="text-purple-600 text-sm mt-1">O usuário solicitou ${historico.length} alteração(ões) via chat após a geração inicial.</p>
+                </div>
+            `;
+
+            historico.forEach((msg, index) => {
+                const isUser = msg.role === 'user';
+                const bgClass = isUser ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200';
+                const iconClass = isUser ? 'fa-user text-blue-600' : 'fa-robot text-green-600';
+                const labelClass = isUser ? 'text-blue-700' : 'text-green-700';
+                const label = isUser ? 'Usuário' : 'Assistente IA';
+
+                html += `
+                    <div class="rounded-lg border p-4 ${bgClass}">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fas ${iconClass}"></i>
+                            <span class="font-medium ${labelClass}">${label}</span>
+                            <span class="text-xs text-gray-400 ml-auto">#${index + 1}</span>
+                        </div>
+                        <div class="text-gray-700 text-sm whitespace-pre-wrap">${escapeHtml(msg.content)}</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function carregarVersoes(geracaoId) {
+            const container = document.getElementById('versoes-container');
+            const badge = document.getElementById('versoes-badge');
+
+            container.innerHTML = `
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>Carregando versões...</p>
+                </div>`;
+
+            try {
+                const data = await api(`/admin/api/gerador-pecas-admin/geracoes/${geracaoId}/versoes`);
+
+                if (!data) throw new Error('Sem dados');
+
+                // Atualiza badge
+                if (data.total_versoes > 0) {
+                    badge.textContent = data.total_versoes;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+
+                renderizarVersoes(data.versoes);
+            } catch (error) {
+                console.error('Erro ao carregar versões:', error);
+                badge.classList.add('hidden');
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-history text-4xl mb-4"></i>
+                        <p>Nenhuma versão disponível</p>
+                    </div>`;
+            }
+        }
+
+        function renderizarVersoes(versoes) {
+            const container = document.getElementById('versoes-container');
+
+            if (!versoes || versoes.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-history text-4xl mb-4"></i>
+                        <p>Nenhuma versão salva</p>
+                        <p class="text-sm mt-2">As versões são criadas quando o usuário edita a peça via chat</p>
+                    </div>`;
+                return;
+            }
+
+            let html = `
+                <div class="bg-green-50 rounded-lg p-4 mb-4 border border-green-200">
+                    <p class="text-green-800 font-medium"><i class="fas fa-info-circle mr-2"></i>Histórico de Versões</p>
+                    <p class="text-green-600 text-sm mt-1">Esta geração possui ${versoes.length} versão(ões) salva(s).</p>
+                </div>
+            `;
+
+            const tipoLabels = {
+                'geracao_inicial': 'Versão Inicial',
+                'edicao_chat': 'Edição via Chat',
+                'edicao_manual': 'Edição Manual',
+                'restauracao': 'Restauração'
+            };
+
+            const tipoClasses = {
+                'geracao_inicial': 'bg-green-100 text-green-700',
+                'edicao_chat': 'bg-blue-100 text-blue-700',
+                'edicao_manual': 'bg-amber-100 text-amber-700',
+                'restauracao': 'bg-purple-100 text-purple-700'
+            };
+
+            versoes.forEach((versao) => {
+                const tipoLabel = tipoLabels[versao.tipo_alteracao] || versao.tipo_alteracao;
+                const tipoClass = tipoClasses[versao.tipo_alteracao] || 'bg-gray-100 text-gray-700';
+                const dataFormatada = versao.criado_em
+                    ? new Date(versao.criado_em).toLocaleString('pt-BR')
+                    : 'Data não disponível';
+
+                html += `
+                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                            <div class="flex items-center gap-3">
+                                <span class="text-lg font-semibold text-gray-700">v${versao.numero_versao}</span>
+                                <span class="px-2 py-1 text-xs rounded-full ${tipoClass}">${tipoLabel}</span>
+                            </div>
+                            <div class="text-sm text-gray-500">
+                                <i class="fas fa-clock mr-1"></i>${dataFormatada}
+                            </div>
+                        </div>
+                        ${versao.descricao ? `
+                            <div class="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                                <p class="text-sm text-blue-700"><i class="fas fa-comment mr-1"></i>${escapeHtml(versao.descricao)}</p>
+                            </div>
+                        ` : ''}
+                        <div class="p-4">
+                            <button onclick="verConteudoVersao(${versao.id}, ${versao.numero_versao})"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                                <i class="fas fa-eye mr-1"></i>Ver Conteúdo
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function verConteudoVersao(versaoId, numeroVersao) {
+            try {
+                const data = await api(`/admin/api/gerador-pecas-admin/geracoes/${consultaAtual}/versoes/${versaoId}`);
+
+                if (!data) throw new Error('Sem dados');
+
+                const conteudo = data.conteudo_markdown || 'Conteúdo não disponível';
+
+                // Mostra na tab de relatório
+                const modalConteudo = document.getElementById('modal-conteudo');
+                modalConteudo.innerHTML = `
+                    <div class="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <p class="text-purple-800 font-medium"><i class="fas fa-history mr-2"></i>Visualizando: Versão ${numeroVersao}</p>
+                        <button onclick="voltarParaRelatorioAtual()" class="mt-2 px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700">
+                            <i class="fas fa-arrow-left mr-1"></i>Voltar para versão atual
+                        </button>
+                    </div>
+                ` + marked.parse(conteudo);
+
+                mostrarTabRelatorio('relatorio');
+
+            } catch (error) {
+                console.error('Erro ao ver versão:', error);
+                alert('Erro ao carregar conteúdo da versão');
+            }
+        }
+
+        async function voltarParaRelatorioAtual() {
+            if (consultaAtual && sistemaAtual) {
+                const data = await api(`/admin/feedbacks/consulta/${consultaAtual}?sistema=${sistemaAtual}`);
+                if (data && data.relatorio) {
+                    document.getElementById('modal-conteudo').innerHTML = marked.parse(data.relatorio);
+                }
             }
         }
         
@@ -794,11 +1094,38 @@
             modal.classList.add('hidden');
             modal.classList.remove('flex');
         }
-        
+
+        // Função auxiliar para escapar HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Funções do Modal de Comentário
+        function verComentario(btn) {
+            const usuario = btn.dataset.usuario;
+            const comentario = btn.dataset.comentario;
+            const modal = document.getElementById('modal-comentario');
+            document.getElementById('modal-comentario-info').textContent = `Usuário: ${usuario}`;
+            document.getElementById('modal-comentario-texto').textContent = comentario;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function fecharModalComentario(event) {
+            if (event && event.target !== event.currentTarget) return;
+            const modal = document.getElementById('modal-comentario');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
         // Fecha modal com ESC
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 fecharModal();
+                fecharModalComentario();
             }
         });
 

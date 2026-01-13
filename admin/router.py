@@ -1467,7 +1467,8 @@ async def obter_consulta_detalhes(
                 "relatorio": g.conteudo_gerado,
                 "modelo": g.modelo_usado,
                 "usuario": full_name or username,
-                "analisado_em": g.criado_em.isoformat() if g.criado_em else None,
+                "criado_em": g.criado_em.isoformat() if g.criado_em else None,
+                "historico_chat": g.historico_chat,  # Histórico de edições via chat
                 "feedback": {
                     "avaliacao": feedback.avaliacao if feedback else None,
                     "comentario": feedback.comentario if feedback else None,

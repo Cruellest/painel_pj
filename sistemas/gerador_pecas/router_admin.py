@@ -115,9 +115,9 @@ async def listar_versoes_geracao(
             {
                 "id": v.id,
                 "numero_versao": v.numero_versao,
-                "tipo_alteracao": v.tipo_alteracao,
-                "descricao": v.descricao,
-                "conteudo_markdown": v.conteudo_markdown,
+                "tipo_alteracao": v.origem,  # Campo correto do modelo
+                "descricao": v.descricao_alteracao,  # Campo correto do modelo
+                "conteudo_markdown": v.conteudo,  # Campo correto do modelo
                 "criado_em": v.criado_em.isoformat() if v.criado_em else None
             }
             for v in versoes
@@ -145,8 +145,8 @@ async def obter_versao_geracao(
         "id": versao.id,
         "geracao_id": versao.geracao_id,
         "numero_versao": versao.numero_versao,
-        "tipo_alteracao": versao.tipo_alteracao,
-        "descricao": versao.descricao,
-        "conteudo_markdown": versao.conteudo_markdown,
+        "tipo_alteracao": versao.origem,  # Campo correto do modelo
+        "descricao": versao.descricao_alteracao,  # Campo correto do modelo
+        "conteudo_markdown": versao.conteudo,  # Campo correto do modelo
         "criado_em": versao.criado_em.isoformat() if versao.criado_em else None
     }
