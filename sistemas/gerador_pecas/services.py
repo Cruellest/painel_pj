@@ -147,7 +147,7 @@ class GeradorPecasService:
             return None
         return self.db.query(PromptModulo).filter(
             PromptModulo.tipo == "peca",
-            PromptModulo.categoria == tipo_peca,
+            PromptModulo.nome == tipo_peca,  # Busca por nome (identificador único)
             PromptModulo.ativo == True
         ).first()
     

@@ -484,10 +484,10 @@ Responda SOMENTE com o JSON, sem texto adicional.
             condicao = modulo.condicao_ativacao or ""
             if not condicao:
                 condicao = modulo.conteudo[:300] + "..." if len(modulo.conteudo) > 300 else modulo.conteudo
-            
+
             tipos_info.append({
-                "categoria": modulo.categoria,  # ex: "contestacao", "recurso_apelacao"
-                "titulo": modulo.titulo,        # ex: "Contestação", "Recurso de Apelação"
+                "nome": modulo.nome,      # ex: "contestacao", "recurso_apelacao" (identificador único)
+                "titulo": modulo.titulo,  # ex: "Contestação", "Recurso de Apelação"
                 "quando_usar": condicao
             })
         
@@ -527,13 +527,13 @@ Responda APENAS com um objeto JSON:
 
 ```json
 {{
-  "tipo_peca": "categoria_do_tipo",
+  "tipo_peca": "nome_do_tipo",
   "justificativa": "Breve explicação de por que este tipo de peça é adequado",
   "confianca": "alta|media|baixa"
 }}
 ```
 
-O campo "tipo_peca" deve conter EXATAMENTE uma das categorias disponíveis: {', '.join([t['categoria'] for t in tipos_info])}
+O campo "tipo_peca" deve conter EXATAMENTE um dos nomes disponíveis: {', '.join([t['nome'] for t in tipos_info])}
 
 Responda SOMENTE com o JSON, sem texto adicional.
 """
@@ -556,7 +556,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
             confianca = resultado.get('confianca', 'media')
             
             # Valida se o tipo retornado existe
-            tipos_validos = [t['categoria'] for t in tipos_info]
+            tipos_validos = [t['nome'] for t in tipos_info]
             if tipo_detectado not in tipos_validos:
                 print(f"⚠️ Tipo detectado '{tipo_detectado}' não é válido. Tipos válidos: {tipos_validos}")
                 # Tenta encontrar correspondência parcial
@@ -591,7 +591,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
             print(f"[AGENTE2] ========== FIM detectar_tipo_peca (com erro) ==========\n")
             # Fallback: retorna o primeiro tipo disponível
             return {
-                "tipo_peca": tipos_info[0]['categoria'] if tipos_info else None,
+                "tipo_peca": tipos_info[0]['nome'] if tipos_info else None,
                 "justificativa": f"Erro na detecção automática: {str(e)}. Usando tipo padrão.",
                 "confianca": "baixa"
             }

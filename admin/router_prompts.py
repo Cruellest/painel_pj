@@ -787,17 +787,24 @@ async def criar_modulo(
     verificar_permissao_prompts(current_user, "criar")
     
     # Verifica se já existe com mesmo nome
-    existente = db.query(PromptModulo).filter(
-        PromptModulo.tipo == modulo_data.tipo,
-        PromptModulo.categoria == modulo_data.categoria,
-        PromptModulo.subcategoria == modulo_data.subcategoria,
-        PromptModulo.nome == modulo_data.nome
-    ).first()
-    
+    if modulo_data.tipo == "peca":
+        # Para peça, verifica apenas tipo + nome (categoria/subcategoria são null)
+        existente = db.query(PromptModulo).filter(
+            PromptModulo.tipo == "peca",
+            PromptModulo.nome == modulo_data.nome
+        ).first()
+    else:
+        existente = db.query(PromptModulo).filter(
+            PromptModulo.tipo == modulo_data.tipo,
+            PromptModulo.categoria == modulo_data.categoria,
+            PromptModulo.subcategoria == modulo_data.subcategoria,
+            PromptModulo.nome == modulo_data.nome
+        ).first()
+
     if existente:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Já existe um módulo com esta combinação tipo/categoria/subcategoria/nome"
+            detail="Já existe um módulo com este nome" if modulo_data.tipo == "peca" else "Já existe um módulo com esta combinação tipo/categoria/subcategoria/nome"
         )
 
     group_id = modulo_data.group_id
@@ -828,19 +835,12 @@ async def criar_modulo(
         group_id = None
         subgroup_id = None
     
-    # Para tipo "peca" e "base": se ativo, desativa outros da mesma categoria
-    if modulo_data.ativo and modulo_data.tipo in ("peca", "base"):
-        outros_ativos = db.query(PromptModulo).filter(
-            PromptModulo.tipo == modulo_data.tipo,
-            PromptModulo.categoria == modulo_data.categoria,
-            PromptModulo.ativo == True
-        ).all()
-        
-        for outro in outros_ativos:
-            outro.ativo = False
-            outro.atualizado_por = current_user.id
-    
     modulo_payload = modulo_data.model_dump(exclude={"subcategoria_ids"})
+
+    # Prompts de peça não devem ter categoria (categoria é usada como identificador único)
+    if modulo_data.tipo == "peca":
+        modulo_payload["categoria"] = None
+        modulo_payload["subcategoria"] = None
     modulo_payload["group_id"] = group_id
     modulo_payload["subgroup_id"] = subgroup_id
 
@@ -883,20 +883,7 @@ async def atualizar_modulo(
     
     if not modulo:
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
-    
-    # Para tipo "peca" e "base": se está ativando, desativa outros da mesma categoria
-    if modulo_data.ativo == True and modulo.tipo in ("peca", "base"):
-        outros_ativos = db.query(PromptModulo).filter(
-            PromptModulo.tipo == modulo.tipo,
-            PromptModulo.categoria == modulo.categoria,
-            PromptModulo.ativo == True,
-            PromptModulo.id != modulo_id
-        ).all()
-        
-        for outro in outros_ativos:
-            outro.ativo = False
-            outro.atualizado_por = current_user.id
-    
+
     # Salva versão atual no histórico
     diff_resumo = ""
     if modulo_data.conteudo and modulo_data.conteudo != modulo.conteudo:
@@ -919,7 +906,13 @@ async def atualizar_modulo(
     
     # Atualiza módulo
     update_data = modulo_data.model_dump(exclude_unset=True, exclude={"motivo", "subcategoria_ids"})
-    if modulo.tipo != "conteudo":
+    if modulo.tipo == "peca":
+        # Prompts de peça não devem ter categoria/subcategoria
+        update_data["categoria"] = None
+        update_data["subcategoria"] = None
+        update_data["group_id"] = None
+        update_data["subgroup_id"] = None
+    elif modulo.tipo != "conteudo":
         if "group_id" in update_data:
             update_data["group_id"] = None
         if "subgroup_id" in update_data:

@@ -1106,13 +1106,13 @@ Seja objetivo e fundamente cada conclusão com base legal."""
             for tipo_peca in tipos_peca:
                 modulo = PromptModulo(
                     tipo="peca",
-                    categoria=tipo_peca["categoria"],
+                    categoria=None,  # Prompts de peça não usam categoria
                     subcategoria=None,
-                    nome=tipo_peca["nome"],
+                    nome=tipo_peca["nome"],  # Nome é o identificador único
                     titulo=tipo_peca["titulo"],
                     conteudo=tipo_peca["conteudo"],
-                    palavras_chave=[tipo_peca["categoria"]],
-                    tags=["peca", tipo_peca["categoria"]],
+                    palavras_chave=[tipo_peca["nome"]],
+                    tags=["peca", tipo_peca["nome"]],
                     ativo=True,
                     ordem=0,
                     versao=1

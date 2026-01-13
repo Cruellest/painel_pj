@@ -427,10 +427,10 @@ class OrquestradorAgentes:
             if tipo_peca:
                 modulo_peca = self.db.query(PromptModulo).filter(
                     PromptModulo.tipo == "peca",
-                    PromptModulo.categoria == tipo_peca,
+                    PromptModulo.nome == tipo_peca,  # Busca por nome (identificador único)
                     PromptModulo.ativo == True
                 ).first()
-                
+
                 if modulo_peca:
                     resultado.prompt_peca = f"## ESTRUTURA DA PEÇA: {modulo_peca.titulo}\n\n{modulo_peca.conteudo}"
             

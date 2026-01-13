@@ -252,7 +252,7 @@
                                 <option value="conteudo">Conteúdo</option>
                             </select>
                         </div>
-                        <div>
+                        <div id="categoria-field-container">
                             <label class="block text-sm font-medium text-gray-700 mb-1">
                                 Categoria
                                 <span class="text-xs text-gray-400 ml-1">(agrupa/colapsa no painel)</span>
@@ -1838,30 +1838,32 @@
             const grupoContainer = document.getElementById('grupo-conteudo-container');
             const subcategoriasContainer = document.getElementById('subcategorias-field-container');
             const subcategoriaContainer = document.getElementById('subcategoria-field-container');
+            const categoriaContainer = document.getElementById('categoria-field-container');
 
             // Condição de ativação, grupo, subcategoria e assuntos só fazem sentido para tipo 'conteudo'
             if (tipo === 'conteudo') {
                 container.classList.remove('hidden');
-                if (grupoContainer) {
-                    grupoContainer.classList.remove('hidden');
-                }
-                if (subcategoriasContainer) {
-                    subcategoriasContainer.classList.remove('hidden');
-                }
-                if (subcategoriaContainer) {
-                    subcategoriaContainer.classList.remove('hidden');
-                }
-            } else {
+                if (grupoContainer) grupoContainer.classList.remove('hidden');
+                if (subcategoriasContainer) subcategoriasContainer.classList.remove('hidden');
+                if (subcategoriaContainer) subcategoriaContainer.classList.remove('hidden');
+                if (categoriaContainer) categoriaContainer.classList.remove('hidden');
+            } else if (tipo === 'peca') {
+                // Peça não tem categoria, subcategoria, grupo, condição
                 container.classList.add('hidden');
-                if (grupoContainer) {
-                    grupoContainer.classList.add('hidden');
-                }
-                if (subcategoriasContainer) {
-                    subcategoriasContainer.classList.add('hidden');
-                }
-                if (subcategoriaContainer) {
-                    subcategoriaContainer.classList.add('hidden');
-                }
+                if (grupoContainer) grupoContainer.classList.add('hidden');
+                if (subcategoriasContainer) subcategoriasContainer.classList.add('hidden');
+                if (subcategoriaContainer) subcategoriaContainer.classList.add('hidden');
+                if (categoriaContainer) categoriaContainer.classList.add('hidden');
+                // Limpa os valores
+                document.getElementById('modulo-categoria').value = '';
+                document.getElementById('modulo-subcategoria').value = '';
+            } else {
+                // Base: mostra categoria mas esconde grupo/subcategoria/condição
+                container.classList.add('hidden');
+                if (grupoContainer) grupoContainer.classList.add('hidden');
+                if (subcategoriasContainer) subcategoriasContainer.classList.add('hidden');
+                if (subcategoriaContainer) subcategoriaContainer.classList.add('hidden');
+                if (categoriaContainer) categoriaContainer.classList.remove('hidden');
                 const grupoSelect = document.getElementById('modulo-grupo');
                 const subgrupoSelect = document.getElementById('modulo-subgrupo');
                 if (grupoSelect) grupoSelect.value = '';
