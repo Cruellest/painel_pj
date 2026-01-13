@@ -14,7 +14,7 @@ from datetime import datetime
 from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
-from sistemas.gerador_pecas.models import GeracaoPeca
+from sistemas.gerador_pecas.models import GeracaoPeca, VersaoPeca
 
 router = APIRouter(prefix="/gerador-pecas-admin", tags=["Gerador de Peças - Admin"])
 
@@ -90,4 +90,63 @@ async def obter_prompt_geracao(
         "prompt_enviado": geracao.prompt_enviado,
         "resumo_consolidado": geracao.resumo_consolidado,
         "criado_em": geracao.criado_em.isoformat() if geracao.criado_em else None
+    }
+
+
+@router.get("/geracoes/{geracao_id}/versoes")
+async def listar_versoes_geracao(
+    geracao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Lista todas as versões de uma geração"""
+    geracao = db.query(GeracaoPeca).filter(GeracaoPeca.id == geracao_id).first()
+    if not geracao:
+        raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+    versoes = db.query(VersaoPeca).filter(
+        VersaoPeca.geracao_id == geracao_id
+    ).order_by(VersaoPeca.numero_versao.desc()).all()
+
+    return {
+        "geracao_id": geracao_id,
+        "total_versoes": len(versoes),
+        "versoes": [
+            {
+                "id": v.id,
+                "numero_versao": v.numero_versao,
+                "tipo_alteracao": v.tipo_alteracao,
+                "descricao": v.descricao,
+                "conteudo_markdown": v.conteudo_markdown,
+                "criado_em": v.criado_em.isoformat() if v.criado_em else None
+            }
+            for v in versoes
+        ]
+    }
+
+
+@router.get("/geracoes/{geracao_id}/versoes/{versao_id}")
+async def obter_versao_geracao(
+    geracao_id: int,
+    versao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Obtém detalhes de uma versão específica"""
+    versao = db.query(VersaoPeca).filter(
+        VersaoPeca.id == versao_id,
+        VersaoPeca.geracao_id == geracao_id
+    ).first()
+
+    if not versao:
+        raise HTTPException(status_code=404, detail="Versão não encontrada")
+
+    return {
+        "id": versao.id,
+        "geracao_id": versao.geracao_id,
+        "numero_versao": versao.numero_versao,
+        "tipo_alteracao": versao.tipo_alteracao,
+        "descricao": versao.descricao,
+        "conteudo_markdown": versao.conteudo_markdown,
+        "criado_em": versao.criado_em.isoformat() if versao.criado_em else None
     }

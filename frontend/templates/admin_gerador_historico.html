@@ -79,6 +79,9 @@
                     <button onclick="mostrarTab('chat')" id="tab-chat" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
                         <i class="fas fa-comments mr-1"></i>Edições Chat
                     </button>
+                    <button onclick="mostrarTab('versoes')" id="tab-versoes" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-history mr-1"></i>Versões <span id="versoes-badge" class="hidden bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs ml-1">0</span>
+                    </button>
                     <button onclick="mostrarTab('resultado')" id="tab-resultado" class="px-4 py-2 border-b-2 border-transparent text-gray-500 hover:text-gray-700">
                         Resultado (Raw)
                     </button>
@@ -111,6 +114,10 @@
 
                 <div id="conteudo-chat" class="tab-content hidden">
                     <div id="chat-container" class="space-y-4"></div>
+                </div>
+
+                <div id="conteudo-versoes" class="tab-content hidden">
+                    <div id="versoes-container" class="space-y-4"></div>
                 </div>
             </div>
             
@@ -245,6 +252,9 @@
                     ${isMarkdown ? ' | <span class="text-green-600">Markdown</span>' : ' | <span class="text-amber-600">JSON</span>'}
                     ${geracao.historico_chat && geracao.historico_chat.length > 0 ? ` | <span class="text-purple-600"><i class="fas fa-comments"></i> ${geracao.historico_chat.length} edições</span>` : ''}
                 `;
+
+                // Carrega versões
+                carregarVersoes(id);
 
                 // Mostra a tab de markdown por padrão se for markdown
                 mostrarTab(isMarkdown ? 'markdown' : 'prompt');
@@ -383,6 +393,147 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        async function carregarVersoes(geracaoId) {
+            const container = document.getElementById('versoes-container');
+            const badge = document.getElementById('versoes-badge');
+
+            try {
+                const response = await fetch(`${API_BASE}/geracoes/${geracaoId}/versoes`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao carregar versões');
+
+                const data = await response.json();
+
+                // Atualiza badge
+                if (data.total_versoes > 0) {
+                    badge.textContent = data.total_versoes;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+
+                renderizarVersoes(data.versoes);
+            } catch (error) {
+                console.error('Erro ao carregar versões:', error);
+                container.innerHTML = `
+                    <div class="text-center py-8 text-red-500">
+                        <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                        <p>Erro ao carregar versões</p>
+                    </div>`;
+            }
+        }
+
+        function renderizarVersoes(versoes) {
+            const container = document.getElementById('versoes-container');
+
+            if (!versoes || versoes.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-history text-4xl mb-4"></i>
+                        <p>Nenhuma versão salva</p>
+                        <p class="text-sm mt-2">As versões são criadas quando o usuário edita a peça via chat</p>
+                    </div>`;
+                return;
+            }
+
+            let html = `
+                <div class="bg-purple-50 rounded-lg p-4 mb-4 border border-purple-200">
+                    <p class="text-purple-800 font-medium"><i class="fas fa-info-circle mr-2"></i>Histórico de Versões</p>
+                    <p class="text-purple-600 text-sm mt-1">Esta geração possui ${versoes.length} versão(ões) salva(s).</p>
+                </div>
+            `;
+
+            versoes.forEach((versao, index) => {
+                const tipoLabel = {
+                    'inicial': 'Versão Inicial',
+                    'edicao_chat': 'Edição via Chat',
+                    'edicao_manual': 'Edição Manual',
+                    'restauracao': 'Restauração'
+                }[versao.tipo_alteracao] || versao.tipo_alteracao;
+
+                const tipoClass = {
+                    'inicial': 'bg-green-100 text-green-700',
+                    'edicao_chat': 'bg-blue-100 text-blue-700',
+                    'edicao_manual': 'bg-amber-100 text-amber-700',
+                    'restauracao': 'bg-purple-100 text-purple-700'
+                }[versao.tipo_alteracao] || 'bg-gray-100 text-gray-700';
+
+                const dataFormatada = versao.criado_em
+                    ? new Date(versao.criado_em).toLocaleString('pt-BR')
+                    : 'Data não disponível';
+
+                html += `
+                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                            <div class="flex items-center gap-3">
+                                <span class="text-lg font-semibold text-gray-700">v${versao.numero_versao}</span>
+                                <span class="px-2 py-1 text-xs rounded-full ${tipoClass}">${tipoLabel}</span>
+                            </div>
+                            <div class="text-sm text-gray-500">
+                                <i class="fas fa-clock mr-1"></i>${dataFormatada}
+                            </div>
+                        </div>
+                        ${versao.descricao ? `
+                            <div class="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                                <p class="text-sm text-blue-700"><i class="fas fa-comment mr-1"></i>${escapeHtml(versao.descricao)}</p>
+                            </div>
+                        ` : ''}
+                        <div class="p-4">
+                            <button onclick="verConteudoVersao(${versao.id}, ${versao.numero_versao})"
+                                    class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm">
+                                <i class="fas fa-eye mr-1"></i>Ver Conteúdo
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        let versaoModalAberta = null;
+
+        async function verConteudoVersao(versaoId, numeroVersao) {
+            try {
+                const response = await fetch(`${API_BASE}/geracoes/${geracaoAtual.id}/versoes/${versaoId}`, {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao carregar versão');
+
+                const versao = await response.json();
+
+                // Abre um modal secundário ou substitui o conteúdo
+                const conteudo = versao.conteudo_markdown || 'Conteúdo não disponível';
+
+                // Mostra na tab de markdown temporariamente
+                document.getElementById('texto-markdown').innerHTML = `
+                    <div class="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <p class="text-purple-800 font-medium">Visualizando: Versão ${numeroVersao}</p>
+                        <button onclick="voltarParaVersaoAtual()" class="mt-2 px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700">
+                            <i class="fas fa-arrow-left mr-1"></i>Voltar para versão atual
+                        </button>
+                    </div>
+                ` + marked.parse(conteudo);
+
+                mostrarTab('markdown');
+                versaoModalAberta = versaoId;
+
+            } catch (error) {
+                console.error('Erro ao ver versão:', error);
+                alert('Erro ao carregar conteúdo da versão');
+            }
+        }
+
+        function voltarParaVersaoAtual() {
+            if (geracaoAtual && geracaoAtual.conteudo_gerado) {
+                document.getElementById('texto-markdown').innerHTML = marked.parse(geracaoAtual.conteudo_gerado);
+            }
+            versaoModalAberta = null;
         }
     </script>
 </body>
