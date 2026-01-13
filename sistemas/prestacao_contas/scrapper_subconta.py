@@ -40,7 +40,7 @@ class ConfigSubconta:
     delay_min: float = 2.0
     delay_max: float = 5.0
     max_tentativas: int = 3
-    timeout_navegacao: int = 30_000  # ms
+    timeout_navegacao: int = 60_000  # ms - aumentado para ambientes cloud
     headless: bool = True
 
     @classmethod
@@ -170,14 +170,16 @@ class ExtratorSubconta:
 
         # Clica em ENTRAR
         self._page.click('button:has-text("ENTRAR")')
-        self._page.wait_for_load_state("networkidle", timeout=self.config.timeout_navegacao)
+        self._page.wait_for_load_state("load", timeout=self.config.timeout_navegacao)
+        self._page.wait_for_timeout(2000)  # Aguarda redirecionamento
 
         # Verifica se foi para o Menu Principal
         if "subconta_listagem" not in self._page.url:
             try:
-                self._page.wait_for_selector('text=Menu Principal', timeout=5000)
+                self._page.wait_for_selector('text=Menu Principal', timeout=10000)
                 self._page.get_by_role("cell", name="4. Listagem de Subcontas", exact=True).click()
-                self._page.wait_for_load_state("networkidle", timeout=self.config.timeout_navegacao)
+                self._page.wait_for_load_state("load", timeout=self.config.timeout_navegacao)
+                self._page.wait_for_timeout(1000)
             except:
                 pass
 
@@ -238,12 +240,13 @@ class ExtratorSubconta:
             numero_formatado = self._formatar_cnj(numero_processo)
             logger.debug(f"Processando subconta: {numero_formatado}")
 
-            # Navega para listagem
+            # Navega para listagem (usa 'load' em vez de 'networkidle' para maior tolerância)
             self._page.goto(
                 self.config.listagem_url,
-                wait_until="networkidle",
+                wait_until="load",
                 timeout=self.config.timeout_navegacao,
             )
+            self._page.wait_for_timeout(1000)  # Aguarda estabilização
 
             # Verifica se precisa login
             if self._precisa_fazer_login():
@@ -251,9 +254,10 @@ class ExtratorSubconta:
                 self._fazer_login()
                 self._page.goto(
                     self.config.listagem_url,
-                    wait_until="networkidle",
+                    wait_until="load",
                     timeout=self.config.timeout_navegacao,
                 )
+                self._page.wait_for_timeout(1000)
 
             # Aguarda formulário
             self._page.wait_for_selector('fieldset', timeout=10000)
@@ -270,8 +274,8 @@ class ExtratorSubconta:
                 }
             """)
 
-            self._page.wait_for_load_state("networkidle", timeout=60000)
-            self._page.wait_for_timeout(500)
+            self._page.wait_for_load_state("load", timeout=self.config.timeout_navegacao)
+            self._page.wait_for_timeout(2000)  # Aguarda processamento
 
             # Verifica se não encontrou subconta
             sem_subconta = self._page.locator('text=Nenhuma Subconta encontrada').first.is_visible()
@@ -315,13 +319,14 @@ class ExtratorSubconta:
             if not extrato_clicado:
                 self._page.locator('table img, td img, .acoes img').first.click()
 
-            self._page.wait_for_load_state("networkidle", timeout=30000)
+            self._page.wait_for_load_state("load", timeout=self.config.timeout_navegacao)
+            self._page.wait_for_timeout(2000)
 
             # Aguarda extrato carregar
             try:
-                self._page.wait_for_selector('text=Extrato', timeout=10000)
+                self._page.wait_for_selector('text=Extrato', timeout=15000)
             except:
-                self._page.wait_for_selector('text=INFORMAÇÕES DA SUBCONTA', timeout=10000)
+                self._page.wait_for_selector('text=INFORMAÇÕES DA SUBCONTA', timeout=15000)
 
             # Gera PDF
             pdf_bytes = self._page.pdf(format="A4", print_background=True)
@@ -380,12 +385,13 @@ class ExtratorSubconta:
                 self._page = self._browser.new_page()
 
                 try:
-                    # Faz login inicial
+                    # Faz login inicial (usa 'load' para maior tolerância em ambientes cloud)
                     self._page.goto(
                         self.config.listagem_url,
-                        wait_until="networkidle",
+                        wait_until="load",
                         timeout=self.config.timeout_navegacao,
                     )
+                    self._page.wait_for_timeout(1000)
 
                     if self._precisa_fazer_login():
                         self._fazer_login()
