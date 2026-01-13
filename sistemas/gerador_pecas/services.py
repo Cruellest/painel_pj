@@ -184,9 +184,16 @@ class GeradorPecasService:
             query = query.filter(PromptModulo.group_id == group_id)
 
         if subcategoria_ids:
+            # Filtra módulos que:
+            # 1. Pertencem a pelo menos uma das subcategorias selecionadas, OU
+            # 2. Não têm nenhuma subcategoria associada (são "universais" - sempre elegíveis)
             from admin.models_prompt_groups import PromptSubcategoria
+            from sqlalchemy import or_
             query = query.filter(
-                PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(subcategoria_ids))
+                or_(
+                    PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(subcategoria_ids)),
+                    ~PromptModulo.subcategorias.any()
+                )
             )
 
         return query.order_by(PromptModulo.ordem).all()

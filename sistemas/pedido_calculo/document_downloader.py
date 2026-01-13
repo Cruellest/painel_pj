@@ -309,7 +309,8 @@ class DocumentDownloader:
         ids_cumprimento: List[str],
         docs_info_cumprimento: List[Dict] = None,
         usar_ia_planilha: bool = True,
-        logger = None
+        logger = None,
+        id_certidao_transito: str = None
     ) -> Dict[str, str]:
         """
         Baixa e extrai texto de todos os documentos relevantes EM PARALELO.
@@ -323,12 +324,14 @@ class DocumentDownloader:
             docs_info_cumprimento: Lista com info dos docs (id, tipo, descricao) para ajudar na classificação
             usar_ia_planilha: Se True, usa IA para identificar planilha correta quando há múltiplos candidatos
             logger: Logger opcional para debug das chamadas de IA
+            id_certidao_transito: ID da certidão de trânsito em julgado
 
         Retorna dict categorizado por tipo:
         - sentenca: texto da(s) sentença(s)
         - acordao: texto do(s) acórdão(s)
         - certidao_citacao: texto da certidão de citação
         - certidao_intimacao: texto da certidão de intimação
+        - certidao_transito: texto da certidão de trânsito em julgado
         - pedido_cumprimento: texto da petição de cumprimento
         - planilha_calculo: texto da planilha de cálculos
         """
@@ -349,6 +352,10 @@ class DocumentDownloader:
         if ids_certidoes:
             tasks.append(self.baixar_e_extrair_textos(numero_processo, ids_certidoes))
             tipos.append("certidoes")
+
+        if id_certidao_transito:
+            tasks.append(self.baixar_e_extrair_textos(numero_processo, [id_certidao_transito]))
+            tipos.append("certidao_transito")
 
         # Verifica se já existe planilha óbvia pelo tipo ou descrição antes de baixar tudo
         planilha_obvia_id = None
@@ -504,6 +511,11 @@ class DocumentDownloader:
                     resultado["certidao_citacao"] = certidoes_lista[0]
                 if len(certidoes_lista) >= 2:
                     resultado["certidao_intimacao"] = certidoes_lista[1]
+
+            elif tipo == "certidao_transito" and textos:
+                # Certidão de trânsito em julgado
+                resultado["certidao_transito"] = "\n\n---\n\n".join(textos.values())
+                print(f"[DOWNLOAD] ✓ Certidão de trânsito em julgado baixada")
 
             elif tipo == "cumprimento" and textos:
                 # Se já identificamos planilha óbvia, usa diretamente sem classificação complexa

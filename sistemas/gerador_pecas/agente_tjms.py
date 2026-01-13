@@ -1280,7 +1280,9 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
         """
         resultado = ResultadoAnalise(numero_processo=numero_processo)
 
-        async with aiohttp.ClientSession() as session:
+        # Configura connector com limite de conexões adequado para paralelização
+        connector = aiohttp.TCPConnector(limit=self.max_workers + 10, limit_per_host=self.max_workers + 10)
+        async with aiohttp.ClientSession(connector=connector) as session:
             try:
                 # 1. Consultar processo para obter lista de documentos
                 print(f"[1/4] Consultando processo {numero_processo}...")
@@ -1318,17 +1320,17 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     # Aplica também lógica especial de "primeiro documento" (ex: Petição Inicial)
                     docs_filtrados = []
                     codigos_primeiro_usados = set()  # Rastreia códigos especiais já usados
-                    
+
                     for d in docs_para_analisar:
                         if not d.tipo_documento:
                             continue
-                        
+
                         codigo = int(d.tipo_documento)
-                        
+
                         # Verifica se o documento é permitido
                         if not documento_permitido(codigo, self.codigos_permitidos):
                             continue
-                        
+
                         # Verifica se é código de "primeiro documento" (ex: Petição Inicial)
                         if codigo in self.codigos_primeiro_doc:
                             # Se já pegamos um documento com este código, pula os demais
@@ -1336,18 +1338,18 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                                 continue
                             # Marca como usado
                             codigos_primeiro_usados.add(codigo)
-                        
+
                         docs_filtrados.append(d)
-                    
+
                     docs_para_analisar = docs_filtrados
-                    
+
                     if self.codigos_permitidos:
                         msg_filtro = f"Filtrado para {len(docs_para_analisar)} documentos (categorias configuradas)"
                         if self.codigos_primeiro_doc:
-                            msg_filtro += f" | {len(self.codigos_primeiro_doc)} códigos com filtro 'primeiro documento'"
+                            msg_filtro += f" | {len(self.codigos_primeiro_doc)} codigos com filtro 'primeiro documento'"
                         print(f"      {msg_filtro}")
                     else:
-                        print(f"      Filtrado para {len(docs_para_analisar)} documentos (excluídas categorias administrativas)")
+                        print(f"      Filtrado para {len(docs_para_analisar)} documentos (excluidas categorias administrativas)")
 
                 if not docs_para_analisar:
                     resultado.erro_geral = "Nenhum documento encontrado com os filtros especificados"
@@ -1640,9 +1642,9 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 extrair_tipo_documento_json,
                 extrair_processo_origem_json
             )
-            
+
             json_dict, erro = parsear_resposta_json(resposta)
-            
+
             if erro:
                 # Fallback: usa resposta como texto se não conseguir parsear JSON
                 is_irrelevante, conteudo = _verificar_irrelevante(resposta)
@@ -1653,8 +1655,9 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     doc.resumo = resposta
                     doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
                 return
-            
+
             is_irrelevante, conteudo = verificar_irrelevante_json(json_dict)
+
             if is_irrelevante:
                 doc.irrelevante = True
                 doc.resumo = conteudo
@@ -1704,10 +1707,10 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
         try:
             # Determina se usa formato JSON ou MD
             usar_json = self._deve_usar_json()
-            
+
             # Verifica se é documento que deve ir INTEGRAL (sem resumo)
             enviar_integral = self._deve_enviar_texto_integral(doc)
-            
+
             # Verificar se é documento agrupado (lista de conteúdos) ou único
             if isinstance(doc.conteudo_base64, list):
                 # Documento agrupado - juntar textos de todas as partes
@@ -1718,7 +1721,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 for i, conteudo_b64 in enumerate(doc.conteudo_base64):
                     try:
                         pdf_bytes = base64.b64decode(conteudo_b64)
-                        conteudo_pdf = extrair_conteudo_pdf(pdf_bytes)
+                        # Executa extração em thread separada para não bloquear event loop
+                        conteudo_pdf = await asyncio.to_thread(extrair_conteudo_pdf, pdf_bytes)
 
                         if conteudo_pdf.tipo == 'texto' and conteudo_pdf.conteudo:
                             textos.append(f"--- PARTE {i+1} ---\n{conteudo_pdf.conteudo}")
@@ -1788,7 +1792,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
             else:
                 # Documento único - processamento normal
                 pdf_bytes = base64.b64decode(doc.conteudo_base64)
-                conteudo_pdf = extrair_conteudo_pdf(pdf_bytes)
+                # Executa extração em thread separada para não bloquear event loop
+                conteudo_pdf = await asyncio.to_thread(extrair_conteudo_pdf, pdf_bytes)
 
                 if conteudo_pdf.tipo == 'texto':
                     doc.texto_extraido = conteudo_pdf.conteudo

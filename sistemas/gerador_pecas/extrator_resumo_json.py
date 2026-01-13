@@ -41,7 +41,7 @@ def obter_criterios_relevancia(db: Optional[Session] = None) -> str:
         db: Sessão do banco de dados (opcional)
 
     Returns:
-        String com os critérios de relevância para o prompt
+        String com os critérios de relevância para o prompt (com chaves escapadas para .format())
     """
     if not db:
         return CRITERIOS_RELEVANCIA_PADRAO
@@ -55,7 +55,8 @@ def obter_criterios_relevancia(db: Optional[Session] = None) -> str:
         ).first()
 
         if config and config.valor and config.valor.strip():
-            return config.valor
+            # IMPORTANTE: Escapa chaves para não conflitar com .format()
+            return config.valor.replace("{", "{{").replace("}", "}}")
     except Exception as e:
         print(f"[WARN] Erro ao carregar critérios de relevância do banco: {e}")
 

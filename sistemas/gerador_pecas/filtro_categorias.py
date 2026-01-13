@@ -42,7 +42,7 @@ class FiltroCategoriasDocumento:
     def _carregar_cache(self):
         """Carrega tipos de peça e categorias em cache"""
         tipos = self.db.query(TipoPeca).filter(TipoPeca.ativo == True).all()
-        
+
         for tipo in tipos:
             self._cache_tipos[tipo.nome.lower()] = {
                 "id": tipo.id,
@@ -54,24 +54,24 @@ class FiltroCategoriasDocumento:
     def get_codigos_permitidos(self, tipo_peca: str) -> Set[int]:
         """
         Retorna os códigos de documento permitidos para um tipo de peça.
-        
+
         Args:
             tipo_peca: Nome do tipo de peça (ex: 'contestacao')
-            
+
         Returns:
             Conjunto de códigos de documento permitidos
         """
         tipo_lower = tipo_peca.lower() if tipo_peca else ""
-        
+
         if tipo_lower in self._cache_tipos:
             return self._cache_tipos[tipo_lower]["codigos"]
-        
+
         # Busca no banco se não estiver em cache
         tipo = self.db.query(TipoPeca).filter(
             TipoPeca.nome.ilike(tipo_peca),
             TipoPeca.ativo == True
         ).first()
-        
+
         if tipo:
             codigos = tipo.get_codigos_permitidos()
             self._cache_tipos[tipo_lower] = {
@@ -81,8 +81,7 @@ class FiltroCategoriasDocumento:
                 "codigos_primeiro_doc": tipo.get_codigos_primeiro_documento()
             }
             return codigos
-        
-        # Se não encontrar, retorna conjunto vazio
+
         return set()
     
     def get_codigos_primeiro_documento(self, tipo_peca: str) -> Set[int]:

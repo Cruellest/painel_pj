@@ -446,9 +446,16 @@ class OrquestradorAgentes:
                     modulos_query = modulos_query.filter(PromptModulo.group_id == self.group_id)
 
                 if self.subcategoria_ids:
+                    # Filtra módulos que:
+                    # 1. Pertencem a pelo menos uma das subcategorias selecionadas, OU
+                    # 2. Não têm nenhuma subcategoria associada (são "universais" - sempre elegíveis)
                     from admin.models_prompt_groups import PromptSubcategoria
+                    from sqlalchemy import or_
                     modulos_query = modulos_query.filter(
-                        PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(self.subcategoria_ids))
+                        or_(
+                            PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(self.subcategoria_ids)),
+                            ~PromptModulo.subcategorias.any()
+                        )
                     )
 
                 modulos_conteudo = modulos_query.order_by(PromptModulo.categoria, PromptModulo.ordem).all()

@@ -64,47 +64,69 @@ class DetectorModulosIA:
         Returns:
             Lista de IDs dos módulos relevantes
         """
+        print(f"\n[AGENTE2] ========== INICIO detectar_modulos_relevantes ==========")
+        print(f"[AGENTE2] tipo_peca={tipo_peca}, group_id={group_id}, subcategoria_ids={subcategoria_ids}")
+        print(f"[AGENTE2] Tamanho do resumo: {len(documentos_resumo)} chars")
+
         # Verificar cache (inclui tipo_peca na chave)
         subcategoria_cache = ",".join(str(i) for i in (subcategoria_ids or []))
         cache_key = self._gerar_cache_key(f"{tipo_peca or ''}:{group_id or ''}:{subcategoria_cache}:{documentos_resumo}")
         cached = self._verificar_cache(cache_key)
         if cached is not None:
-            print(f"✅ Cache hit - módulos detectados anteriormente")
+            print(f"[AGENTE2] ✅ Cache hit - módulos detectados anteriormente: {cached}")
             return cached
+
+        print(f"[AGENTE2] Cache miss - carregando módulos do banco...")
 
         # Carregar módulos de CONTEÚDO disponíveis (filtrado por tipo de peça se especificado)
         modulos = self._carregar_modulos_disponiveis(tipo_peca, group_id, subcategoria_ids)
+        print(f"[AGENTE2] Módulos carregados do banco: {len(modulos)}")
 
         if not modulos:
             if tipo_peca:
-                print(f"⚠️ Nenhum módulo de CONTEÚDO disponível para tipo de peça '{tipo_peca}'")
+                print(f"[AGENTE2] ⚠️ Nenhum módulo de CONTEÚDO disponível para tipo de peça '{tipo_peca}'")
             else:
-                print("⚠️ Nenhum módulo de CONTEÚDO disponível no banco")
+                print("[AGENTE2] ⚠️ Nenhum módulo de CONTEÚDO disponível no banco")
             return []
 
         if tipo_peca:
-            print(f"📋 {len(modulos)} módulos disponíveis para tipo '{tipo_peca}'")
+            print(f"[AGENTE2] 📋 {len(modulos)} módulos disponíveis para tipo '{tipo_peca}'")
 
         # Preparar prompt para a IA
+        print(f"[AGENTE2] Montando prompt de detecção...")
         prompt_deteccao = self._montar_prompt_deteccao(
             documentos_resumo,
             documentos_completos,
             modulos
         )
+        print(f"[AGENTE2] Prompt montado - tamanho: {len(prompt_deteccao)} chars")
 
         # Chamar a IA para análise
         try:
+            print(f"[AGENTE2] >>> INICIANDO chamada à IA (modelo: {self.modelo})...")
+            import time
+            inicio_ia = time.time()
+
             resultado = await self._chamar_ia(prompt_deteccao)
+
+            tempo_ia = time.time() - inicio_ia
+            print(f"[AGENTE2] <<< IA respondeu em {tempo_ia:.2f}s")
+            print(f"[AGENTE2] Resultado da IA: {resultado}")
+
             modulos_relevantes = self._processar_resposta_ia(resultado, modulos)
 
             # Salvar no cache
             self._salvar_cache(cache_key, modulos_relevantes)
 
-            print(f"🎯 Detectados {len(modulos_relevantes)} módulos relevantes")
+            print(f"[AGENTE2] 🎯 Detectados {len(modulos_relevantes)} módulos relevantes: {modulos_relevantes}")
+            print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes ==========\n")
             return modulos_relevantes
 
         except Exception as e:
-            print(f"❌ Erro na detecção por IA: {e}")
+            import traceback
+            print(f"[AGENTE2] ❌ Erro na detecção por IA: {e}")
+            print(f"[AGENTE2] Traceback: {traceback.format_exc()}")
+            print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes (com erro) ==========\n")
             # Em caso de erro, retorna lista vazia (sem fallback)
             return []
 
@@ -134,9 +156,15 @@ class DetectorModulosIA:
             query = query.filter(PromptModulo.group_id == group_id)
 
         if subcategoria_ids:
-            # Filtra módulos que pertencem a pelo menos uma das subcategorias selecionadas
+            # Filtra módulos que:
+            # 1. Pertencem a pelo menos uma das subcategorias selecionadas, OU
+            # 2. Não têm nenhuma subcategoria associada (são "universais" - sempre elegíveis)
+            from sqlalchemy import or_
             query = query.filter(
-                PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(subcategoria_ids))
+                or_(
+                    PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(subcategoria_ids)),
+                    ~PromptModulo.subcategorias.any()
+                )
             )
 
         modulos = query.order_by(PromptModulo.ordem).all()
@@ -265,13 +293,23 @@ Responda SOMENTE com o JSON, sem texto adicional.
 
     async def _chamar_ia(self, prompt: str) -> Dict:
         """Chama a API do Gemini diretamente"""
+        print(f"[AGENTE2._chamar_ia] Iniciando chamada ao Gemini...")
+        print(f"[AGENTE2._chamar_ia] Modelo: {self.modelo}")
+        print(f"[AGENTE2._chamar_ia] Tamanho do prompt: {len(prompt)} chars")
 
-        content = await chamar_gemini_async(
-            prompt=prompt,
-            modelo=self.modelo,
-            max_tokens=50000,  # Aumentado para evitar truncamento
-            temperature=0.1  # Baixa temperatura para resposta determinística
-        )
+        try:
+            content = await chamar_gemini_async(
+                prompt=prompt,
+                modelo=self.modelo,
+                max_tokens=50000,  # Aumentado para evitar truncamento
+                temperature=0.1  # Baixa temperatura para resposta determinística
+            )
+            print(f"[AGENTE2._chamar_ia] Resposta recebida - tamanho: {len(content)} chars")
+        except Exception as e:
+            print(f"[AGENTE2._chamar_ia] ERRO na chamada ao Gemini: {e}")
+            import traceback
+            print(f"[AGENTE2._chamar_ia] Traceback: {traceback.format_exc()}")
+            raise
 
         # Extrair JSON da resposta
         content = content.strip()
@@ -400,32 +438,39 @@ Responda SOMENTE com o JSON, sem texto adicional.
         """
         Analisa os documentos e determina automaticamente qual TIPO DE PEÇA
         é mais adequado para o caso.
-        
+
         Args:
             documentos_resumo: Resumo consolidado dos documentos do processo
-            
+
         Returns:
             Dict com tipo_peca detectado, justificativa e confiança
         """
+        print(f"\n[AGENTE2] ========== INICIO detectar_tipo_peca ==========")
+        print(f"[AGENTE2] Tamanho do resumo: {len(documentos_resumo)} chars")
+
         # Verificar cache
         cache_key = self._gerar_cache_key(f"tipo_peca:{documentos_resumo}")
         if cache_key in self._cache_tipo_peca:
             resultado, timestamp = self._cache_tipo_peca[cache_key]
             if datetime.now() - timestamp < self.cache_ttl:
-                print(f"✅ Cache hit - tipo de peça detectado anteriormente: {resultado.get('tipo_peca')}")
+                print(f"[AGENTE2] ✅ Cache hit - tipo de peça detectado anteriormente: {resultado.get('tipo_peca')}")
                 return resultado
             else:
                 del self._cache_tipo_peca[cache_key]
-        
+
+        print(f"[AGENTE2] Cache miss - buscando tipos de peça no banco...")
+
         # Buscar tipos de peça disponíveis no banco
         from admin.models_prompts import PromptModulo
         modulos_peca = self.db.query(PromptModulo).filter(
             PromptModulo.tipo == "peca",
             PromptModulo.ativo == True
         ).order_by(PromptModulo.ordem).all()
-        
+
+        print(f"[AGENTE2] Módulos de peça encontrados: {len(modulos_peca)}")
+
         if not modulos_peca:
-            print("⚠️ Nenhum módulo de peça disponível no banco")
+            print("[AGENTE2] ⚠️ Nenhum módulo de peça disponível no banco")
             return {
                 "tipo_peca": None,
                 "justificativa": "Nenhum tipo de peça configurado no sistema",
@@ -492,10 +537,20 @@ O campo "tipo_peca" deve conter EXATAMENTE uma das categorias disponíveis: {', 
 
 Responda SOMENTE com o JSON, sem texto adicional.
 """
-        
+
+        print(f"[AGENTE2] Prompt de detecção de tipo montado - tamanho: {len(prompt)} chars")
+
         try:
+            print(f"[AGENTE2] >>> INICIANDO chamada à IA para detectar tipo de peça...")
+            import time
+            inicio_ia = time.time()
+
             resultado = await self._chamar_ia(prompt)
-            
+
+            tempo_ia = time.time() - inicio_ia
+            print(f"[AGENTE2] <<< IA respondeu em {tempo_ia:.2f}s")
+            print(f"[AGENTE2] Resultado bruto: {resultado}")
+
             tipo_detectado = resultado.get('tipo_peca')
             justificativa = resultado.get('justificativa', '')
             confianca = resultado.get('confianca', 'media')
@@ -519,17 +574,21 @@ Responda SOMENTE com o JSON, sem texto adicional.
                 "confianca": confianca
             }
             
-            print(f"🎯 Tipo de peça detectado: {tipo_detectado}")
-            print(f"📊 Confiança: {confianca}")
-            print(f"💡 Justificativa: {justificativa}")
-            
+            print(f"[AGENTE2] 🎯 Tipo de peça detectado: {tipo_detectado}")
+            print(f"[AGENTE2] 📊 Confiança: {confianca}")
+            print(f"[AGENTE2] 💡 Justificativa: {justificativa}")
+
             # Salvar no cache
             self._cache_tipo_peca[cache_key] = (resultado_final, datetime.now())
-            
+
+            print(f"[AGENTE2] ========== FIM detectar_tipo_peca ==========\n")
             return resultado_final
-            
+
         except Exception as e:
-            print(f"❌ Erro na detecção de tipo de peça: {e}")
+            import traceback
+            print(f"[AGENTE2] ❌ Erro na detecção de tipo de peça: {e}")
+            print(f"[AGENTE2] Traceback: {traceback.format_exc()}")
+            print(f"[AGENTE2] ========== FIM detectar_tipo_peca (com erro) ==========\n")
             # Fallback: retorna o primeiro tipo disponível
             return {
                 "tipo_peca": tipos_info[0]['categoria'] if tipos_info else None,

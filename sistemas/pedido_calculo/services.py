@@ -93,6 +93,7 @@ class PedidoCalculoService:
         Para cumprimentos autônomos, busca do processo de ORIGEM:
         - Sentenças e acórdãos
         - Certidão de citação
+        - Certidão de trânsito em julgado
         - Datas processuais (ajuizamento, trânsito em julgado)
 
         Args:
@@ -119,7 +120,7 @@ class PedidoCalculoService:
             # Se for cumprimento autônomo, buscar documentos do processo de ORIGEM
             if documentos.is_cumprimento_autonomo and documentos.numero_processo_origem:
                 print(f"[DOWNLOAD] Buscando documentos do processo de ORIGEM: {documentos.numero_processo_origem}")
-                print(f"[DOWNLOAD] *** CUMPRIMENTO AUTÔNOMO: Sentenças, acórdãos, certidão de citação, data de ajuizamento e trânsito em julgado serão do processo de ORIGEM ***")
+                print(f"[DOWNLOAD] *** CUMPRIMENTO AUTÔNOMO: Sentenças, acórdãos, certidão de citação, certidão de trânsito em julgado, data de ajuizamento e trânsito em julgado serão do processo de ORIGEM ***")
 
                 async with DocumentDownloader() as downloader:
                     # Consulta XML do processo de origem
@@ -192,13 +193,18 @@ class PedidoCalculoService:
 
                     print(f"[DOWNLOAD] Certidões de citação do processo de origem: {ids_certidoes_origem}")
 
-                    # Baixa documentos do processo de origem (sentenças, acórdãos, certidão de citação)
+                    # Busca certidão de trânsito em julgado do processo de ORIGEM
+                    id_certidao_transito_origem = docs_origem.certidao_transito
+                    print(f"[DOWNLOAD] Certidão de trânsito do processo de origem: {id_certidao_transito_origem}")
+
+                    # Baixa documentos do processo de origem (sentenças, acórdãos, certidão de citação, certidão de trânsito)
                     textos_origem = await downloader.baixar_todos_relevantes(
                         numero_processo_docs,
                         ids_sentencas=ids_sentencas,
                         ids_acordaos=ids_acordaos,
                         ids_certidoes=ids_certidoes_origem,
-                        ids_cumprimento=[]
+                        ids_cumprimento=[],
+                        id_certidao_transito=id_certidao_transito_origem
                     )
 
                     print(f"[DOWNLOAD] Textos do processo de origem: {list(textos_origem.keys())}")
@@ -261,6 +267,10 @@ class PedidoCalculoService:
 
             print(f"[DOWNLOAD] Cumprimento: {ids_cumprimento}")
 
+            # Certidão de trânsito em julgado
+            id_certidao_transito = documentos.certidao_transito
+            print(f"[DOWNLOAD] Certidão de trânsito: {id_certidao_transito}")
+
             async with DocumentDownloader() as downloader:
                 textos = await downloader.baixar_todos_relevantes(
                     numero_processo,
@@ -269,7 +279,8 @@ class PedidoCalculoService:
                     ids_certidoes=ids_certidoes,
                     ids_cumprimento=ids_cumprimento,
                     docs_info_cumprimento=docs_info_cumprimento,
-                    logger=self.logger
+                    logger=self.logger,
+                    id_certidao_transito=id_certidao_transito
                 )
 
             print(f"[DOWNLOAD] Textos baixados: {list(textos.keys())}")

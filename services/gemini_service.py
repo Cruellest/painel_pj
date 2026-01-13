@@ -150,12 +150,17 @@ class GeminiService:
         Returns:
             GeminiResponse com o resultado
         """
+        import time
+        inicio = time.time()
+        print(f"[GeminiService.generate] Iniciando chamada...")
+
         if not self._api_key:
+            print(f"[GeminiService.generate] ERRO: GEMINI_KEY não configurada")
             return GeminiResponse(
-                success=False, 
+                success=False,
                 error="GEMINI_KEY não configurada"
             )
-        
+
         # Determina o modelo
         if model:
             model = self.normalize_model(model)
@@ -163,10 +168,13 @@ class GeminiService:
             model = self.get_model_for_task(task)
         else:
             model = self.DEFAULT_MODELS["analise"]
-        
+
+        print(f"[GeminiService.generate] Modelo: {model}")
+        print(f"[GeminiService.generate] Tamanho prompt: {len(prompt)} chars")
+
         # Monta URL
-        url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}"
-        
+        url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key[:8]}..."
+
         # Monta payload
         payload = self._build_payload(
             prompt=prompt,
@@ -174,12 +182,15 @@ class GeminiService:
             max_tokens=max_tokens,
             temperature=temperature
         )
-        
+
         try:
+            print(f"[GeminiService.generate] Enviando request para API...")
             async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(url, json=payload)
+                response = await client.post(f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}", json=payload)
+                print(f"[GeminiService.generate] Response status: {response.status_code}")
                 response.raise_for_status()
                 data = response.json()
+                print(f"[GeminiService.generate] Resposta recebida em {time.time() - inicio:.2f}s")
                 
                 content = self._extract_content(data)
                 tokens = self._extract_tokens(data)

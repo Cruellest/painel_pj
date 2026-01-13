@@ -242,8 +242,8 @@ class GeradorPecasApp {
             return;
         }
 
-        // Feature flag: Subcategorias (apenas para admin)
-        if (!FEATURE_FLAGS.SUBCATEGORIAS_ENABLED || !this.isAdmin) {
+        // Feature flag: Subcategorias (liberado para todos os usuários)
+        if (!FEATURE_FLAGS.SUBCATEGORIAS_ENABLED) {
             container.classList.add('hidden');
             this.subcategoriaIds = [];
             return;
@@ -728,7 +728,7 @@ class GeradorPecasApp {
                         tipo_peca: this.tipoPeca,
                         observacao_usuario: this.observacaoUsuario,
                         group_id: this.groupId,
-                        subgroup_ids: this.subcategoriaIds.length ? this.subcategoriaIds : null
+                        subcategoria_ids: this.subcategoriaIds.length ? this.subcategoriaIds : null
                     })
                 });
             }

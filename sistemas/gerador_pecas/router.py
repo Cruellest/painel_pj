@@ -356,7 +356,9 @@ async def processar_processo_stream(
                 
                 # Determina tipo de peça inicial (se fornecido manualmente)
                 tipo_peca_inicial = req.tipo_peca or req.resposta_usuario
-                
+                print(f"[ROUTER] tipo_peca_inicial: {tipo_peca_inicial}")
+                print(f"[ROUTER] group_id: {group_id}, subcategoria_ids: {subcategoria_ids}")
+
                 # Se tipo de peça foi escolhido manualmente, configura filtro de categorias ANTES do Agente 1
                 if tipo_peca_inicial:
                     try:
@@ -369,18 +371,28 @@ async def processar_processo_stream(
                                 orq.agente1.atualizar_codigos_permitidos(codigos, codigos_primeiro)
                                 yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Filtro ativado: {len(codigos)} categorias para {tipo_peca_inicial}'})}\n\n"
                     except Exception as e:
-                        print(f"[AVISO] Erro ao carregar filtro de categorias: {e}")
+                        import traceback
+                        print(f"[ROUTER] ERRO ao carregar filtro de categorias: {e}")
+                        print(f"[ROUTER] Traceback: {traceback.format_exc()}")
                 
                 # Agente 1: Coletor TJ-MS
+                print(f"[ROUTER] >>> Iniciando Agente 1...")
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': 'Baixando documentos do TJ-MS...'})}\n\n"
-                
+
                 resultado_agente1 = await orq.agente1.coletar_e_resumir(cnj_limpo)
-                
+
+                print(f"[ROUTER] <<< Agente 1 finalizado")
+                print(f"[ROUTER] Agente 1 - erro: {resultado_agente1.erro}")
+                print(f"[ROUTER] Agente 1 - total_documentos: {resultado_agente1.total_documentos}")
+                print(f"[ROUTER] Agente 1 - documentos_analisados: {resultado_agente1.documentos_analisados}")
+                print(f"[ROUTER] Agente 1 - resumo tamanho: {len(resultado_agente1.resumo_consolidado)} chars")
+
                 if resultado_agente1.erro:
+                    print(f"[ROUTER] Agente 1 retornou erro: {resultado_agente1.erro}")
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'erro', 'mensagem': resultado_agente1.erro})}\n\n"
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente1.erro})}\n\n"
                     return
-                
+
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'concluido', 'mensagem': f'{resultado_agente1.documentos_analisados} documentos processados'})}\n\n"
                 
                 # Usa o tipo de peça inicial (já determinado acima)
