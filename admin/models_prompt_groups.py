@@ -80,3 +80,28 @@ class PromptSubcategoria(Base):
 
     def __repr__(self):
         return f"<PromptSubcategoria(id={self.id}, slug='{self.slug}', group_id={self.group_id})>"
+
+
+class CategoriaOrdem(Base):
+    """
+    Define a ordem de exibição das categorias de módulos de conteúdo no prompt.
+    Usado para ordenar as seções (Preliminar, Mérito, Eventualidade, etc.) na peça gerada.
+    """
+    __tablename__ = "categoria_ordem"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("prompt_groups.id"), nullable=False, index=True)
+    nome = Column(String(100), nullable=False)  # Nome da categoria (ex: "Preliminar", "Mérito")
+    ordem = Column(Integer, default=0)  # Ordem de exibição (menor = primeiro)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    group = relationship("PromptGroup")
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "nome", name="uq_categoria_ordem_group_nome"),
+    )
+
+    def __repr__(self):
+        return f"<CategoriaOrdem(id={self.id}, nome='{self.nome}', ordem={self.ordem}, group_id={self.group_id})>"

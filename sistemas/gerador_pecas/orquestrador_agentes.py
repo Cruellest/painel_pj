@@ -459,25 +459,58 @@ class OrquestradorAgentes:
                     )
 
                 modulos_conteudo = modulos_query.order_by(PromptModulo.categoria, PromptModulo.ordem).all()
-                
+
                 if modulos_conteudo:
-                    partes_conteudo = ["## ARGUMENTOS E TESES APLICÁVEIS\n"]
+                    # Busca ordem das categorias configurada
+                    from admin.models_prompt_groups import CategoriaOrdem
+                    ordem_categorias = {}
+                    if self.group_id:
+                        configs_ordem = self.db.query(CategoriaOrdem).filter(
+                            CategoriaOrdem.group_id == self.group_id,
+                            CategoriaOrdem.ativo == True
+                        ).all()
+                        ordem_categorias = {c.nome: c.ordem for c in configs_ordem}
+
+                    # Agrupa módulos por categoria
+                    modulos_por_categoria = {}
                     for modulo in modulos_conteudo:
-                        # Monta cabeçalho com categoria e subcategoria
-                        categoria_info = ""
-                        if modulo.categoria:
-                            categoria_info = f"[{modulo.categoria}"
+                        cat = modulo.categoria or "Outros"
+                        if cat not in modulos_por_categoria:
+                            modulos_por_categoria[cat] = []
+                        modulos_por_categoria[cat].append(modulo)
+
+                    # Ordena categorias: primeiro as configuradas (por ordem), depois as não configuradas (alfabético)
+                    def get_categoria_ordem(cat_nome):
+                        if cat_nome in ordem_categorias:
+                            return (0, ordem_categorias[cat_nome], cat_nome)
+                        return (1, 0, cat_nome)  # Não configuradas vão para o final, ordenadas alfabeticamente
+
+                    categorias_ordenadas = sorted(modulos_por_categoria.keys(), key=get_categoria_ordem)
+
+                    # Monta prompt agrupado por categoria com headers
+                    partes_conteudo = ["## ARGUMENTOS E TESES APLICÁVEIS\n"]
+
+                    for categoria in categorias_ordenadas:
+                        modulos_cat = modulos_por_categoria[categoria]
+
+                        # Header da seção de categoria
+                        partes_conteudo.append(f"\n### === {categoria.upper()} ===\n")
+
+                        # Módulos desta categoria
+                        for modulo in modulos_cat:
+                            # Inclui subcategoria se houver
+                            subcategoria_info = ""
                             if modulo.subcategoria:
-                                categoria_info += f" > {modulo.subcategoria}"
-                            categoria_info += "] "
-                        
-                        # Inclui a condição de ativação para que o Agente 3 possa fazer juízo crítico
-                        condicao = modulo.condicao_ativacao or ""
-                        if condicao:
-                            partes_conteudo.append(f"### {categoria_info}{modulo.titulo}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
-                        else:
-                            partes_conteudo.append(f"### {categoria_info}{modulo.titulo}\n\n{modulo.conteudo}\n")
-                        print(f"   ✓ Módulo ativado: {modulo.titulo}")
+                                subcategoria_info = f" ({modulo.subcategoria})"
+
+                            # Inclui a condição de ativação para que o Agente 3 possa fazer juízo crítico
+                            condicao = modulo.condicao_ativacao or ""
+                            if condicao:
+                                partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
+                            else:
+                                partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n{modulo.conteudo}\n")
+                            print(f"   ✓ Módulo ativado: [{categoria}] {modulo.titulo}")
+
                     resultado.prompt_conteudo = "\n".join(partes_conteudo)
             
             print(f"📋 Módulos detectados: {len(modulos_ids)}")

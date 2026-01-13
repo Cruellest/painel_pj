@@ -45,6 +45,8 @@ class PromptModuloCreate(PromptModuloBase):
 
 class PromptModuloUpdate(BaseModel):
     titulo: Optional[str] = None
+    categoria: Optional[str] = None  # Campo texto para agrupamento visual
+    subcategoria: Optional[str] = None  # Campo texto legado para organização
     group_id: Optional[int] = None
     subgroup_id: Optional[int] = None
     subcategoria_ids: Optional[List[int]] = None  # IDs das subcategorias (muitos-para-muitos)
@@ -315,13 +317,17 @@ async def listar_modulos(
 @router.get("/categorias")
 async def listar_categorias(
     group_id: Optional[int] = None,
+    apenas_ativos: bool = True,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Lista todas as categorias disponíveis"""
+    """Lista todas as categorias disponíveis (de módulos ativos por padrão)"""
     query = db.query(PromptModulo.categoria).distinct().filter(
-        PromptModulo.categoria.isnot(None)
+        PromptModulo.categoria.isnot(None),
+        PromptModulo.tipo.in_(["base", "peca", "conteudo"])  # Apenas tipos válidos
     )
+    if apenas_ativos:
+        query = query.filter(PromptModulo.ativo == True)
     if group_id:
         query = query.filter(PromptModulo.group_id == group_id)
     categorias = query.all()
@@ -345,20 +351,20 @@ async def listar_tipos_peca(
 ):
     """
     Lista todos os tipos de peça disponíveis (módulos tipo='peca').
-    Opcionalmente filtra por grupo.
+    Tipos de peça são globais (não pertencem a grupos específicos).
+    O parâmetro group_id é ignorado pois tipos de peça são sempre globais.
     """
     query = db.query(PromptModulo).filter(
         PromptModulo.tipo == "peca",
         PromptModulo.ativo == True
     )
 
-    if group_id:
-        query = query.filter(PromptModulo.group_id == group_id)
-
+    # Tipos de peça são globais - não filtra por grupo
     modulos_peca = query.order_by(PromptModulo.ordem).all()
 
     return [
         {
+            "id": m.id,
             "categoria": m.categoria,
             "titulo": m.titulo,
             "nome": m.nome
@@ -376,15 +382,13 @@ async def resumo_configuracao_tipos_peca(
     """
     Retorna um resumo da configuração de módulos por tipo de peça.
     Mostra quantos módulos estão ativos para cada tipo.
-    Opcionalmente filtra por grupo.
+    O group_id filtra apenas os módulos de conteúdo, não os tipos de peça.
     """
-    # Busca tipos de peça
+    # Busca tipos de peça (são globais, não filtra por grupo)
     query_tipos = db.query(PromptModulo).filter(
         PromptModulo.tipo == "peca",
         PromptModulo.ativo == True
     )
-    if group_id:
-        query_tipos = query_tipos.filter(PromptModulo.group_id == group_id)
     tipos_peca = query_tipos.all()
 
     # Conta total de módulos de conteúdo
@@ -591,6 +595,46 @@ async def atualizar_subgrupo(
     db.commit()
     db.refresh(subgrupo)
     return subgrupo
+
+
+@router.delete("/subgrupos/{subgroup_id}")
+async def deletar_subgrupo(
+    subgroup_id: int,
+    force: bool = False,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Deleta um subgrupo. Use force=true para remover associacoes e deletar mesmo com modulos vinculados."""
+    verificar_permissao_prompts(current_user, "excluir")
+
+    subgrupo = db.query(PromptSubgroup).filter(PromptSubgroup.id == subgroup_id).first()
+    if not subgrupo:
+        raise HTTPException(status_code=404, detail="Subgrupo nao encontrado")
+
+    # Verifica se há módulos usando este subgrupo
+    modulos_usando = db.query(PromptModulo).filter(
+        PromptModulo.subgroup_id == subgroup_id
+    ).count()
+
+    if modulos_usando > 0 and not force:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{modulos_usando} modulo(s) estao usando este subgrupo"
+        )
+
+    # Se force=true, remove a associação dos módulos
+    if modulos_usando > 0 and force:
+        db.query(PromptModulo).filter(
+            PromptModulo.subgroup_id == subgroup_id
+        ).update({PromptModulo.subgroup_id: None})
+
+    nome = subgrupo.name
+    db.delete(subgrupo)
+    db.commit()
+
+    if modulos_usando > 0:
+        return {"message": f"Subgrupo '{nome}' deletado com sucesso. {modulos_usando} modulo(s) foram desvinculados."}
+    return {"message": f"Subgrupo '{nome}' deletado com sucesso"}
 
 
 # ==========================================
@@ -1778,10 +1822,183 @@ async def desativar_todos_modulos(
             ))
     
     db.commit()
-    
+
     return {
         "success": True,
         "tipo_peca": tipo_peca,
         "modulos_desativados": len(modulos)
     }
+
+
+# ==========================================
+# Endpoints: Ordem das Categorias
+# ==========================================
+
+class CategoriaOrdemBase(BaseModel):
+    nome: str
+    ordem: int = 0
+    ativo: bool = True
+
+
+class CategoriaOrdemCreate(CategoriaOrdemBase):
+    pass
+
+
+class CategoriaOrdemUpdate(BaseModel):
+    ordem: Optional[int] = None
+    ativo: Optional[bool] = None
+
+
+class CategoriaOrdemResponse(CategoriaOrdemBase):
+    id: int
+    group_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/grupos/{group_id}/categorias-ordem")
+async def listar_categorias_ordem(
+    group_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista a ordem configurada das categorias para um grupo.
+    Também retorna categorias existentes nos módulos que ainda não têm ordem configurada.
+    """
+    from admin.models_prompt_groups import CategoriaOrdem
+
+    # Busca categorias com ordem configurada
+    categorias_config = db.query(CategoriaOrdem).filter(
+        CategoriaOrdem.group_id == group_id
+    ).order_by(CategoriaOrdem.ordem).all()
+
+    # Busca categorias existentes nos módulos de conteúdo deste grupo
+    categorias_modulos = db.query(PromptModulo.categoria).distinct().filter(
+        PromptModulo.group_id == group_id,
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.ativo == True,
+        PromptModulo.categoria.isnot(None),
+        PromptModulo.categoria != ""
+    ).all()
+    categorias_existentes = {c[0] for c in categorias_modulos if c[0]}
+
+    # Mapa de categorias configuradas
+    config_map = {c.nome: c for c in categorias_config}
+
+    # Monta resultado
+    resultado = []
+    ordem_atual = 0
+
+    # Primeiro as configuradas (na ordem)
+    for cat in categorias_config:
+        resultado.append({
+            "id": cat.id,
+            "nome": cat.nome,
+            "ordem": cat.ordem,
+            "ativo": cat.ativo,
+            "configurado": True,
+            "tem_modulos": cat.nome in categorias_existentes
+        })
+        if cat.ordem >= ordem_atual:
+            ordem_atual = cat.ordem + 1
+
+    # Depois as não configuradas (ordem sugerida)
+    for nome in sorted(categorias_existentes):
+        if nome not in config_map:
+            resultado.append({
+                "id": None,
+                "nome": nome,
+                "ordem": ordem_atual,
+                "ativo": True,
+                "configurado": False,
+                "tem_modulos": True
+            })
+            ordem_atual += 1
+
+    return {
+        "group_id": group_id,
+        "categorias": resultado
+    }
+
+
+@router.post("/grupos/{group_id}/categorias-ordem")
+async def salvar_categorias_ordem(
+    group_id: int,
+    categorias: List[CategoriaOrdemCreate],
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Salva a ordem das categorias para um grupo.
+    Cria ou atualiza as configurações de ordem.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+    from admin.models_prompt_groups import CategoriaOrdem
+
+    # Verifica se o grupo existe
+    grupo = db.query(PromptGroup).filter(PromptGroup.id == group_id).first()
+    if not grupo:
+        raise HTTPException(status_code=404, detail="Grupo nao encontrado")
+
+    criados = 0
+    atualizados = 0
+
+    for cat_data in categorias:
+        # Busca configuração existente
+        existente = db.query(CategoriaOrdem).filter(
+            CategoriaOrdem.group_id == group_id,
+            CategoriaOrdem.nome == cat_data.nome
+        ).first()
+
+        if existente:
+            existente.ordem = cat_data.ordem
+            existente.ativo = cat_data.ativo
+            atualizados += 1
+        else:
+            nova = CategoriaOrdem(
+                group_id=group_id,
+                nome=cat_data.nome,
+                ordem=cat_data.ordem,
+                ativo=cat_data.ativo
+            )
+            db.add(nova)
+            criados += 1
+
+    db.commit()
+
+    return {
+        "success": True,
+        "criados": criados,
+        "atualizados": atualizados,
+        "message": f"Ordem das categorias salva: {criados} criadas, {atualizados} atualizadas"
+    }
+
+
+@router.delete("/grupos/{group_id}/categorias-ordem/{categoria_nome}")
+async def deletar_categoria_ordem(
+    group_id: int,
+    categoria_nome: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Remove a configuração de ordem de uma categoria."""
+    verificar_permissao_prompts(current_user, "excluir")
+    from admin.models_prompt_groups import CategoriaOrdem
+
+    config = db.query(CategoriaOrdem).filter(
+        CategoriaOrdem.group_id == group_id,
+        CategoriaOrdem.nome == categoria_nome
+    ).first()
+
+    if not config:
+        raise HTTPException(status_code=404, detail="Configuracao de categoria nao encontrada")
+
+    db.delete(config)
+    db.commit()
+
+    return {"success": True, "message": f"Configuracao da categoria '{categoria_nome}' removida"}
 

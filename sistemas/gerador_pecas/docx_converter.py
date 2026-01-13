@@ -45,7 +45,7 @@ class DocxConverter:
     Conversor de Markdown para DOCX com suporte a template personalizado.
     
     Configurações padrão (podem ser sobrescritas pelo template):
-    - Fonte: Arial 12pt
+    - Fonte: Times New Roman 12pt
     - Recuo primeira linha: 1.25 cm (apenas parágrafos normais)
     - Espaçamento entre linhas: 1.5
     - Margens: ABNT (3cm esq/sup, 2cm dir/inf)
@@ -57,7 +57,7 @@ class DocxConverter:
         self,
         template_path: Optional[str] = None,
         # Configurações de fonte
-        font_name: str = "Arial",
+        font_name: str = "Times New Roman",
         font_size: int = 12,
         # Configurações de parágrafo
         first_line_indent_cm: float = 1.25,
@@ -849,7 +849,7 @@ def create_default_template():
     
     # Configura estilo Normal
     style = doc.styles['Normal']
-    style.font.name = 'Arial'
+    style.font.name = 'Times New Roman'
     style.font.size = Pt(12)
     style.paragraph_format.line_spacing = 1.5
     style.paragraph_format.space_after = Pt(6)
