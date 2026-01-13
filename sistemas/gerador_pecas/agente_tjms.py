@@ -14,6 +14,7 @@ Autor: LAB/PGE-MS
 
 import os
 import re
+import sys
 import base64
 import asyncio
 import aiohttp
@@ -883,7 +884,14 @@ def extrair_conteudo_pdf(pdf_bytes: bytes, max_paginas_imagem: int = 10) -> Cont
             if len(texto_completo.strip()) > 200:
                 # Usa pymupdf4llm para extração otimizada
                 try:
-                    md_text = pymupdf4llm.to_markdown(doc)
+                    # Suprime avisos do pymupdf4llm (find_tables exceptions)
+                    import io
+                    old_stderr = sys.stderr
+                    sys.stderr = io.StringIO()
+                    try:
+                        md_text = pymupdf4llm.to_markdown(doc)
+                    finally:
+                        sys.stderr = old_stderr
                     # pymupdf4llm já formata bem, mas aplicamos normalização leve
                     return ConteudoPDF(tipo='texto', conteudo=md_text, paginas=num_paginas)
                 except:
