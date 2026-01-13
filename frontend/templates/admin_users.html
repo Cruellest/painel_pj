@@ -207,9 +207,13 @@
                             <input type="checkbox" id="sistema-pedido-calculo" value="pedido_calculo" class="rounded border-gray-300 text-primary-600">
                             <span class="text-sm text-gray-700">Pedido de Cálculo</span>
                         </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-prestacao-contas" value="prestacao_contas" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Prestação de Contas</span>
+                        </label>
                     </div>
                 </div>
-                
+
                 <!-- Permissões Especiais -->
                 <div class="border-t border-gray-200 pt-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -500,6 +504,7 @@
             document.getElementById('sistema-assistencia').checked = false;
             document.getElementById('sistema-gerador').checked = false;
             document.getElementById('sistema-pedido-calculo').checked = false;
+            document.getElementById('sistema-prestacao-contas').checked = false;
             document.getElementById('perm-editar-prompts').checked = false;
             document.getElementById('perm-criar-prompts').checked = false;
             document.getElementById('perm-excluir-prompts').checked = false;
@@ -533,7 +538,8 @@
             document.getElementById('sistema-assistencia').checked = sistemas.includes('assistencia_judiciaria');
             document.getElementById('sistema-gerador').checked = sistemas.includes('gerador_pecas');
             document.getElementById('sistema-pedido-calculo').checked = sistemas.includes('pedido_calculo');
-            
+            document.getElementById('sistema-prestacao-contas').checked = sistemas.includes('prestacao_contas');
+
             // Permissões especiais
             const permissoes = user.permissoes_especiais || [];
             document.getElementById('perm-editar-prompts').checked = permissoes.includes('editar_prompts');
@@ -562,6 +568,7 @@
             if (document.getElementById('sistema-assistencia').checked) sistemas.push('assistencia_judiciaria');
             if (document.getElementById('sistema-gerador').checked) sistemas.push('gerador_pecas');
             if (document.getElementById('sistema-pedido-calculo').checked) sistemas.push('pedido_calculo');
+            if (document.getElementById('sistema-prestacao-contas').checked) sistemas.push('prestacao_contas');
             return sistemas.length > 0 ? sistemas : null;
         }
 
