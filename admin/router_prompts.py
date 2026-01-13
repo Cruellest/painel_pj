@@ -607,34 +607,41 @@ async def deletar_subgrupo(
     """Deleta um subgrupo. Use force=true para remover associacoes e deletar mesmo com modulos vinculados."""
     verificar_permissao_prompts(current_user, "excluir")
 
-    subgrupo = db.query(PromptSubgroup).filter(PromptSubgroup.id == subgroup_id).first()
-    if not subgrupo:
-        raise HTTPException(status_code=404, detail="Subgrupo nao encontrado")
+    try:
+        subgrupo = db.query(PromptSubgroup).filter(PromptSubgroup.id == subgroup_id).first()
+        if not subgrupo:
+            raise HTTPException(status_code=404, detail="Subgrupo nao encontrado")
 
-    # Verifica se há módulos usando este subgrupo
-    modulos_usando = db.query(PromptModulo).filter(
-        PromptModulo.subgroup_id == subgroup_id
-    ).count()
-
-    if modulos_usando > 0 and not force:
-        raise HTTPException(
-            status_code=409,
-            detail=f"{modulos_usando} modulo(s) estao usando este subgrupo"
-        )
-
-    # Se force=true, remove a associação dos módulos
-    if modulos_usando > 0 and force:
-        db.query(PromptModulo).filter(
+        # Verifica se há módulos usando este subgrupo
+        modulos_usando = db.query(PromptModulo).filter(
             PromptModulo.subgroup_id == subgroup_id
-        ).update({PromptModulo.subgroup_id: None})
+        ).count()
 
-    nome = subgrupo.name
-    db.delete(subgrupo)
-    db.commit()
+        if modulos_usando > 0 and not force:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{modulos_usando} modulo(s) estao usando este subgrupo"
+            )
 
-    if modulos_usando > 0:
-        return {"message": f"Subgrupo '{nome}' deletado com sucesso. {modulos_usando} modulo(s) foram desvinculados."}
-    return {"message": f"Subgrupo '{nome}' deletado com sucesso"}
+        # Se force=true, remove a associação dos módulos
+        if modulos_usando > 0 and force:
+            db.query(PromptModulo).filter(
+                PromptModulo.subgroup_id == subgroup_id
+            ).update({PromptModulo.subgroup_id: None}, synchronize_session=False)
+
+        nome = subgrupo.name
+        db.delete(subgrupo)
+        db.commit()
+
+        if modulos_usando > 0:
+            return {"message": f"Subgrupo '{nome}' deletado com sucesso. {modulos_usando} modulo(s) foram desvinculados."}
+        return {"message": f"Subgrupo '{nome}' deletado com sucesso"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar subgrupo: {str(e)}")
 
 
 # ==========================================
