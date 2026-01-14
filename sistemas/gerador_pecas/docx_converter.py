@@ -7,11 +7,12 @@ preservando toda a formatação: negrito, itálico, títulos, listas, citações
 
 REGRAS DE FORMATAÇÃO (Peças Jurídicas PGE-MS):
 - Direcionamento (primeira linha em negrito): SEM recuo, justificado
-- Número do processo: SEM recuo, justificado  
+- Número do processo: SEM recuo, justificado
 - 5 linhas em branco entre direcionamento e número do processo
 - Títulos (## headers): SEM recuo, justificados (não centralizados), negrito
 - Parágrafos normais: COM recuo de 2cm na primeira linha
-- Citações (blockquote): Recuo de 4cm, fonte 11pt, itálico
+- Citações (blockquote): Recuo de 3cm, fonte 11pt, SEM itálico
+- Listas (bullets/numeração): Recuo de 3cm
 - NÃO gera linha horizontal para '---' (ignorado)
 
 Autor: Portal PGE-MS
@@ -49,8 +50,9 @@ class DocxConverter:
     - Recuo primeira linha: 2 cm (apenas parágrafos normais)
     - Espaçamento entre linhas: 1.5
     - Margens: ABNT (3cm esq/sup, 2cm dir/inf)
-    - Citações: Recuo 4cm, fonte 11pt, itálico
-    - Headers: justificados, SEM recuo, negrito, numerados automaticamente
+    - Citações: Recuo 3cm, fonte 11pt, SEM itálico
+    - Listas: Recuo 3cm
+    - Headers: justificados, SEM recuo, negrito
     """
     
     def __init__(
@@ -64,9 +66,11 @@ class DocxConverter:
         line_spacing: float = 1.5,
         space_after_pt: int = 6,
         # Configurações de citação (blockquote)
-        quote_indent_cm: float = 4.0,
+        quote_indent_cm: float = 3.0,
         quote_font_size: int = 11,
         quote_line_spacing: float = 1.0,
+        # Configurações de listas
+        list_indent_cm: float = 3.0,
         # Margens ABNT
         margin_top_cm: float = 3.0,
         margin_bottom_cm: float = 2.0,
@@ -111,6 +115,9 @@ class DocxConverter:
         self.quote_indent = Cm(quote_indent_cm)
         self.quote_font_size = quote_font_size
         self.quote_line_spacing = quote_line_spacing
+
+        # Configurações de listas
+        self.list_indent = Cm(list_indent_cm)
         
         # Linhas após direcionamento
         self.linhas_apos_direcionamento = linhas_apos_direcionamento
@@ -786,31 +793,33 @@ class DocxConverter:
                 run.italic = True
     
     def _add_blockquote(self, doc: Document, lines: List[str]):
-        """Adiciona citação (blockquote) com formatação especial."""
+        """Adiciona citação (blockquote) com formatação especial - recuo 3cm, sem itálico."""
         # Junta todas as linhas da citação
         text = ' '.join(lines)
-        
+
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        p.paragraph_format.left_indent = self.quote_indent
-        p.paragraph_format.right_indent = Cm(1)
+        p.paragraph_format.left_indent = self.quote_indent  # 3cm
+        p.paragraph_format.right_indent = Cm(0)  # Sem recuo direito
         p.paragraph_format.line_spacing = self.quote_line_spacing
         p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
         p.paragraph_format.space_before = Pt(6)
         p.paragraph_format.space_after = Pt(6)
         p.paragraph_format.first_line_indent = Cm(0)  # Citações sem recuo de primeira linha
-        
-        # Processa formatação inline com fonte menor e itálico
+
+        # Processa formatação inline com fonte menor (SEM itálico)
         self._add_blockquote_text(p, text)
     
     def _add_blockquote_text(self, paragraph, text: str):
-        """Adiciona texto de citação com formatação."""
-        # Remove asteriscos de itálico se existirem (citação já é itálica)
+        """Adiciona texto de citação com formatação (SEM itálico por padrão)."""
+        # Remove asteriscos simples que envolvem todo o texto (ex: *"texto"*)
         text = re.sub(r'^\*(.+)\*$', r'\1', text.strip())
-        
+        # Remove asteriscos simples internos também (ex: *texto*)
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+
         # Padrão para negrito dentro da citação
         pattern = r'\*\*(.+?)\*\*'
-        
+
         last_end = 0
         for match in re.finditer(pattern, text):
             # Texto antes do negrito
@@ -818,30 +827,30 @@ class DocxConverter:
                 run = paragraph.add_run(text[last_end:match.start()])
                 run.font.name = self.font_name
                 run.font.size = Pt(self.quote_font_size)
-                run.italic = True
-            
+                # SEM itálico
+
             # Texto em negrito
             run = paragraph.add_run(match.group(1))
             run.font.name = self.font_name
             run.font.size = Pt(self.quote_font_size)
             run.bold = True
-            run.italic = True
-            
+            # SEM itálico
+
             last_end = match.end()
-        
+
         # Texto restante
         if last_end < len(text):
             run = paragraph.add_run(text[last_end:])
             run.font.name = self.font_name
             run.font.size = Pt(self.quote_font_size)
-            run.italic = True
+            # SEM itálico
     
     def _add_list(self, doc: Document, items: List[str], ordered: bool = False, style: str = 'number'):
-        """Adiciona lista ordenada ou não ordenada."""
+        """Adiciona lista ordenada ou não ordenada com recuo de 3cm."""
         for i, item in enumerate(items):
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            p.paragraph_format.left_indent = Cm(1.25)
+            p.paragraph_format.left_indent = self.list_indent  # Recuo de 3cm
             p.paragraph_format.first_line_indent = Cm(0)
             p.paragraph_format.space_after = Pt(3)
             p.paragraph_format.line_spacing = self.line_spacing
