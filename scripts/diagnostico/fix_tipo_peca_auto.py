@@ -6,8 +6,10 @@
 import sys
 sys.path.insert(0, '.')
 
+# Importa todos os modelos para evitar erros de foreign key
 from database.connection import get_db
-from sistemas.gerador_pecas.models import GeracaoPeca
+from auth.models import User  # Necessário para resolver FK
+from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
 import re
 
 def inferir_tipo_peca(conteudo: str, prompt: str) -> str:
@@ -106,7 +108,7 @@ def main():
     # Salva as alterações
     db.commit()
     print("-" * 60)
-    print(f"\n✅ {corrigidos} registros corrigidos com sucesso!")
+    print(f"\n[OK] {corrigidos} registros corrigidos com sucesso!")
 
 
 if __name__ == "__main__":

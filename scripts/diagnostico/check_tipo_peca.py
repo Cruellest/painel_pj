@@ -1,5 +1,11 @@
-# Script temporário para verificar tipo_peca null em produção
+# Script para verificar tipo_peca null em produção
+# Execute com: railway run python scripts/diagnostico/check_tipo_peca.py
+
+import sys
+sys.path.insert(0, '.')
+
 from database.connection import get_db
+from auth.models import User
 from sistemas.gerador_pecas.models import GeracaoPeca
 
 db = next(get_db())
