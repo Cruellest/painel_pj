@@ -1,6 +1,6 @@
 # Scripts de Diagnóstico
 
-Scripts utilitários para diagnóstico e verificação do banco de dados em produção.
+Scripts utilitários para diagnóstico e correção do banco de dados em produção.
 
 ## Uso
 
@@ -31,7 +31,24 @@ Diagnóstico detalhado que mostra:
 railway run python scripts/diagnostico/check_tipo_peca_detalhado.py
 ```
 
+### fix_tipo_peca.py (Interativo)
+
+Corrige registros com `tipo_peca` NULL ou inválido, inferindo o tipo a partir do conteúdo gerado.
+**Requer confirmação** antes de salvar.
+
+```bash
+python scripts/diagnostico/fix_tipo_peca.py  # Local apenas (interativo)
+```
+
+### fix_tipo_peca_auto.py (Automático)
+
+Versão automática que corrige sem pedir confirmação. **Use com cuidado!**
+
+```bash
+railway run python scripts/diagnostico/fix_tipo_peca_auto.py
+```
+
 ## Observações
 
-- **Não execute** estes scripts sem o `railway run`, pois isso usará o banco local ao invés de produção
-- Os scripts são apenas de leitura (SELECT), não modificam dados
+- **Não execute** scripts de diagnóstico sem o `railway run`, pois isso usará o banco local
+- Scripts `fix_*` modificam dados - faça backup antes de executar em produção
