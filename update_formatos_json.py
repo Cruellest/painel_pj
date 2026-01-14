@@ -115,6 +115,7 @@ if not sentencas:
     # Cria categoria de sentenças
     sentencas = CategoriaResumoJSON(
         nome='sentencas',
+        titulo='Sentenças Judiciais',
         descricao='Sentenças judiciais de primeiro grau',
         codigos_documento=[21, 385, 386, 387, 388],  # Códigos de sentença
         is_residual=False,
@@ -173,6 +174,83 @@ if sentencas:
 - NÃO resuma demais - informação completa é essencial para recursos"""
     print('Sentenças atualizado!')
 
+# Verifica se existe categoria de Parecer NAT
+parecer_nat = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.nome == 'parecer_nat').first()
+if not parecer_nat:
+    # Cria categoria de Parecer NAT
+    parecer_nat = CategoriaResumoJSON(
+        nome='parecer_nat',
+        titulo='Parecer NAT/CATES/NATJus',
+        descricao='Pareceres técnicos do Núcleo de Apoio Técnico (NAT), CATES e NATJus',
+        codigos_documento=[8451, 9636],  # Códigos do Parecer NAT
+        is_residual=False,
+        ativo=True,
+        ordem=4
+    )
+    db.add(parecer_nat)
+    print('Categoria Parecer NAT criada!')
+
+if parecer_nat:
+    parecer_nat.formato_json = """{
+  "identificacao": {
+    "numero_parecer": null,
+    "data_emissao": null,
+    "orgao_emissor": "NAT | CATES | NATJus | outro",
+    "profissional_responsavel": null
+  },
+
+  "demanda_analisada": {
+    "medicamento_tratamento_solicitado": null,
+    "principio_ativo": null,
+    "indicacao_clinica": null,
+    "cid_doenca": null,
+    "pergunta_formulada": null
+  },
+
+  "analise_tecnica": {
+    "registro_anvisa": {
+      "possui_registro": null,
+      "indicacoes_aprovadas": []
+    },
+    "incorporacao_sus": {
+      "incorporado_ao_sus": null,
+      "pcdt_aplicavel": null,
+      "protocolo_clinico": null
+    },
+    "evidencias_cientificas": {
+      "nivel_evidencia": null,
+      "estudos_citados": [],
+      "eficacia_comprovada": null,
+      "seguranca": null
+    },
+    "alternativas_terapeuticas": {
+      "existem_alternativas_sus": null,
+      "alternativas_disponiveis": [],
+      "justificativa_alternativas": null
+    }
+  },
+
+  "conclusao": {
+    "recomendacao": "favoravel | desfavoravel | favoravel_com_ressalvas | inconclusivo",
+    "fundamentos_conclusao": null,
+    "transcricao_conclusao": null
+  },
+
+  "observacoes_extrator": null
+}"""
+    parecer_nat.instrucoes_extracao = """IMPORTANTE: Este é um documento técnico essencial para a defesa do Estado em ações de saúde.
+
+- Em "medicamento_tratamento_solicitado" identifique o medicamento ou tratamento analisado
+- Em "principio_ativo" extraia o nome do princípio ativo/substância
+- Em "incorporacao_sus" seja ESPECÍFICO sobre se está ou não incorporado ao SUS
+- Em "alternativas_terapeuticas" liste TODAS as alternativas mencionadas pelo parecer
+- Em "recomendacao" identifique claramente se o parecer é favorável ou desfavorável ao fornecimento
+- Em "transcricao_conclusao" TRANSCREVA NA ÍNTEGRA o trecho de conclusão/recomendação do parecer
+- Em "fundamentos_conclusao" resuma os principais argumentos técnicos da conclusão
+- Capture TODOS os estudos e evidências científicas citados
+- Este documento é CRUCIAL para a contestação - NÃO resuma demais, preserve detalhes técnicos"""
+    print('Parecer NAT atualizado!')
+
 db.commit()
 db.close()
-print('\n✅ Formatos atualizados com sucesso!')
+print('\nFormatos atualizados com sucesso!')

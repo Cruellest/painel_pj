@@ -126,10 +126,9 @@ CATEGORIAS_EXCLUIDAS = [
 # Documentos que devem ir INTEGRAIS para a IA (sem resumo JSON)
 # =========================
 # Para desativar esta funcionalidade, basta comentar ou esvaziar esta lista
+# NOTA: Parecer NAT (8451, 9636) foi removido para usar extração JSON padrão
 CODIGOS_TEXTO_INTEGRAL = {
     207,   # Parecer do CATES - Câmara Técnica em Saúde
-    8451,  # Parecer do NAT - Núcleo de Apoio Técnico
-    9636,  # Parecer NAT
     59,    # Nota Técnica NATJus
     8490,  # Nota Técnica NATJus
     8369,  # Laudo Pericial (pode incluir pareceres técnicos)
