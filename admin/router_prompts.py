@@ -623,11 +623,18 @@ async def deletar_subgrupo(
                 detail=f"{modulos_usando} modulo(s) estao usando este subgrupo"
             )
 
-        # Se force=true, remove a associação dos módulos
-        if modulos_usando > 0 and force:
-            db.query(PromptModulo).filter(
-                PromptModulo.subgroup_id == subgroup_id
-            ).update({PromptModulo.subgroup_id: None}, synchronize_session=False)
+        # Se force=true, remove a associação dos módulos e histórico
+        if force:
+            # Remove referência nos módulos
+            if modulos_usando > 0:
+                db.query(PromptModulo).filter(
+                    PromptModulo.subgroup_id == subgroup_id
+                ).update({PromptModulo.subgroup_id: None}, synchronize_session=False)
+
+            # Remove referência no histórico de módulos (foreign key constraint)
+            db.query(PromptModuloHistorico).filter(
+                PromptModuloHistorico.subgroup_id == subgroup_id
+            ).update({PromptModuloHistorico.subgroup_id: None}, synchronize_session=False)
 
         nome = subgrupo.name
         db.delete(subgrupo)
