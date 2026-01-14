@@ -189,8 +189,8 @@ async def listar_tipos_peca(
     tipos = []
     for modulo in modulos_peca:
         tipos.append({
-            "valor": modulo.categoria,  # Ex: "contestacao", "recurso_apelacao"
-            "label": modulo.titulo,      # Ex: "Contestação", "Recurso de Apelação"
+            "valor": modulo.nome,    # Identificador único: "contestacao", "agravo_instrumento", etc.
+            "label": modulo.titulo,  # Ex: "Contestação", "Agravo de Instrumento"
             "descricao": modulo.conteudo[:100] + "..." if len(modulo.conteudo) > 100 else modulo.conteudo
         })
     
