@@ -10,7 +10,7 @@ REGRAS DE FORMATAÇÃO (Peças Jurídicas PGE-MS):
 - Número do processo: SEM recuo, justificado  
 - 5 linhas em branco entre direcionamento e número do processo
 - Títulos (## headers): SEM recuo, justificados (não centralizados), negrito
-- Parágrafos normais: COM recuo de 1.25cm na primeira linha
+- Parágrafos normais: COM recuo de 2cm na primeira linha
 - Citações (blockquote): Recuo de 4cm, fonte 11pt, itálico
 - NÃO gera linha horizontal para '---' (ignorado)
 
@@ -43,10 +43,10 @@ LOGO_PATH = MODULE_DIR.parent.parent / "logo" / "logo-pge.png"
 class DocxConverter:
     """
     Conversor de Markdown para DOCX com suporte a template personalizado.
-    
+
     Configurações padrão (podem ser sobrescritas pelo template):
     - Fonte: Times New Roman 12pt
-    - Recuo primeira linha: 1.25 cm (apenas parágrafos normais)
+    - Recuo primeira linha: 2 cm (apenas parágrafos normais)
     - Espaçamento entre linhas: 1.5
     - Margens: ABNT (3cm esq/sup, 2cm dir/inf)
     - Citações: Recuo 4cm, fonte 11pt, itálico
@@ -60,7 +60,7 @@ class DocxConverter:
         font_name: str = "Times New Roman",
         font_size: int = 12,
         # Configurações de parágrafo
-        first_line_indent_cm: float = 1.25,
+        first_line_indent_cm: float = 2.0,
         line_spacing: float = 1.5,
         space_after_pt: int = 6,
         # Configurações de citação (blockquote)
@@ -284,6 +284,9 @@ class DocxConverter:
     
     def _process_markdown(self, doc: Document, markdown_text: str):
         """Processa texto Markdown e adiciona ao documento."""
+        # Remove tags <br> e substitui por quebras de linha reais
+        markdown_text = re.sub(r'<br\s*/?>', '\n', markdown_text, flags=re.IGNORECASE)
+
         lines = markdown_text.split('\n')
         i = 0
         in_blockquote = False
@@ -895,7 +898,7 @@ def create_default_template():
     style.font.size = Pt(12)
     style.paragraph_format.line_spacing = 1.5
     style.paragraph_format.space_after = Pt(6)
-    style.paragraph_format.first_line_indent = Cm(1.25)
+    style.paragraph_format.first_line_indent = Cm(2.0)
     style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     
     # Adiciona parágrafo placeholder

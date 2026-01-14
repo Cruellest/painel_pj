@@ -906,21 +906,23 @@ async def exportar_docx(
         # Gera nome único para o arquivo
         file_id = str(uuid.uuid4())
         
-        # Monta nome amigável baseado no processo
-        if req.numero_cnj and req.tipo_peca:
-            cnj_clean = _limpar_cnj(req.numero_cnj)[-8:]  # Últimos 8 dígitos
-            tipo_map = {
-                'contestacao': 'contestacao',
-                'recurso_apelacao': 'apelacao',
-                'contrarrazoes': 'contrarrazoes',
-                'parecer': 'parecer'
-            }
-            tipo_nome = tipo_map.get(req.tipo_peca, req.tipo_peca)
-            base_filename = f"{tipo_nome}_{cnj_clean}"
+        # Monta nome amigável: tipo_peca_numero_processo.docx
+        tipo_map = {
+            'contestacao': 'contestacao',
+            'recurso_apelacao': 'apelacao',
+            'contrarrazoes': 'contrarrazoes',
+            'parecer': 'parecer'
+        }
+        tipo_nome = tipo_map.get(req.tipo_peca, req.tipo_peca) if req.tipo_peca else 'peca'
+
+        # Número do processo (formatado ou limpo)
+        if req.numero_cnj:
+            # Remove caracteres especiais mas mantém o número completo
+            numero_processo = _limpar_cnj(req.numero_cnj)
         else:
-            base_filename = "peca_juridica"
-        
-        filename = f"{base_filename}_{file_id[:8]}.docx"
+            numero_processo = file_id[:8]
+
+        filename = f"{tipo_nome}_{numero_processo}.docx"
         filepath = os.path.join(TEMP_DIR, filename)
         
         # Converte markdown para DOCX

@@ -1,6 +1,6 @@
 # AGENTS.md - Guia para Agentes de IA
 
-> Ultima atualizacao: Janeiro 2026
+> Ultima atualizacao: 14 Janeiro 2026
 
 ---
 
@@ -360,6 +360,134 @@ response = await service.generate_with_images(
 - `gemini-3-flash-preview` - padrão
 - `gemini-3-pro-preview` - Mais capaz, mais caro
 - `gemini-2.5-flash-lite` - Mais rápido e mais barato, usado para classificações simples
+
+---
+
+## INTEGRAÇÃO COM TJ-MS
+
+### IMPORTANTE: Arquitetura de Proxy
+
+O TJ-MS **bloqueia requisições de IPs de cloud providers** (Railway, Fly.io, etc.) através de WAF.
+Por isso, TODAS as requisições ao TJ-MS devem passar por proxy.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    ARQUITETURA DE PROXY TJ-MS                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  [Railway]  ──────►  [Proxy Fly.io]  ──────►  [esaj.tjms.jus.br]    │
+│     │                (TJMS_PROXY_URL)              (SOAP API)        │
+│     │                     │                                          │
+│     │                     ▼                                          │
+│     │               Latência: ~0.15s                                 │
+│     │                                                                │
+│     └──────────►  [Proxy Local/ngrok]  ──────►  [www.tjms.jus.br]   │
+│               (TJMS_PROXY_LOCAL_URL)           (Subconta/Web)        │
+│                         │                                            │
+│                         ▼                                            │
+│                  Playwright no PC                                    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Cliente Centralizado: `services/tjms_client.py`
+
+**SEMPRE use este módulo para comunicação com TJ-MS.** Não crie implementações paralelas.
+
+```python
+from services import (
+    soap_consultar_processo,
+    soap_baixar_documentos,
+    extrair_subconta,
+    ResultadoSubconta,
+    diagnostico_tjms,
+)
+
+# Consulta SOAP (usa Fly.io automaticamente)
+xml_resposta = await soap_consultar_processo(
+    numero_processo="0857327-80.2025.8.12.0001",
+    movimentos=True,
+    incluir_documentos=True,
+)
+
+# Download de documentos
+xml_docs = await soap_baixar_documentos(
+    numero_processo="0857327-80.2025.8.12.0001",
+    ids_documentos=["123456", "789012"],
+)
+
+# Extrato de subconta (usa Proxy Local automaticamente)
+resultado = await extrair_subconta("0857327-80.2025.8.12.0001")
+if resultado.status == "ok":
+    pdf_bytes = resultado.pdf_bytes
+    texto = resultado.texto_extraido
+```
+
+### Variáveis de Ambiente TJ-MS
+
+```env
+# Proxies (OBRIGATÓRIOS em produção)
+TJMS_PROXY_URL=https://proxytjms.fly.dev          # Fly.io - para SOAP
+TJMS_PROXY_LOCAL_URL=https://xxx.ngrok-free.dev   # PC local - para subconta
+
+# Credenciais SOAP (MNI)
+MNI_USER=usuario_mni
+MNI_PASS=senha_mni
+
+# Credenciais Web (Subconta)
+TJMS_USUARIO=usuario_web
+TJMS_SENHA=senha_web
+
+# Timeouts (opcionais)
+TJMS_SOAP_TIMEOUT=60
+TJMS_SUBCONTA_TIMEOUT=180
+```
+
+### Quando Usar Cada Proxy
+
+| Operação | Proxy | Motivo |
+|----------|-------|--------|
+| **SOAP** (consultar processo, baixar docs) | Fly.io | Latência menor (~0.15s), mais estável |
+| **Subconta** (extrato PDF) | Proxy Local | Playwright precisa rodar no PC local |
+
+### Proxy Local (ngrok)
+
+O proxy local roda no PC do desenvolvedor e é exposto via ngrok:
+
+**Repositório:** `E:\Projetos\PGE\tjms-proxy-local\`
+
+**Iniciar:**
+```bash
+cd E:\Projetos\PGE\tjms-proxy-local
+iniciar_ngrok.bat
+```
+
+**Endpoints disponíveis:**
+- `POST /soap` - Proxy para SOAP
+- `POST /extrair-subconta` - Executa Playwright e retorna PDF/texto
+- `GET /diagnostico` - Testa conectividade
+
+**URL fixo ngrok:** `https://uncommonplace-unsubserviently-azalee.ngrok-free.dev`
+
+### Diagnóstico
+
+```python
+from services import diagnostico_tjms
+
+resultado = await diagnostico_tjms()
+# {
+#   "config": {
+#     "proxy_local": "https://...",
+#     "proxy_flyio": "https://...",
+#     "soap_url": "https://.../soap",
+#     "subconta_endpoint": "https://.../extrair-subconta",
+#   },
+#   "testes": {
+#     "proxy_local": {"ok": true, "tempo_ms": 120.5, "mensagem": "OK"},
+#     "proxy_flyio": {"ok": true, "tempo_ms": 55.2, "mensagem": "OK"},
+#   }
+# }
+```
 
 ---
 

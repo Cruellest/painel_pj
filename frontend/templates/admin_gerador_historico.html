@@ -343,7 +343,11 @@
                 'contrarrazoes': 'Contrarrazões',
                 'parecer': 'Parecer Jurídico'
             };
-            return labels[tipo] || tipo || 'Não definido';
+            // Trata null, undefined, "null" (string), e strings vazias
+            if (!tipo || tipo === 'null' || tipo === 'undefined') {
+                return 'Não informado';
+            }
+            return labels[tipo] || tipo;
         }
 
         function renderizarHistoricoChat(historico) {
