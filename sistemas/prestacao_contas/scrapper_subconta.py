@@ -478,9 +478,69 @@ class ExtratorSubconta:
         return resultado
 
 
+async def _tentar_endpoint_proxy(numero_processo: str) -> Optional[ResultadoExtracao]:
+    """
+    Tenta extrair o extrato usando o endpoint /extrair-subconta do proxy local.
+    Retorna None se o proxy não estiver disponível.
+    """
+    import httpx
+    import base64
+
+    proxy_local = os.getenv("TJMS_PROXY_LOCAL_URL", "").strip()
+    if not proxy_local:
+        return None
+
+    endpoint = f"{proxy_local.rstrip('/')}/extrair-subconta"
+
+    try:
+        logger.info(f"Tentando endpoint do proxy local: {endpoint}")
+        async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0)) as client:
+            response = await client.post(
+                endpoint,
+                json={"numero_processo": numero_processo},
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+
+                # Converte base64 de volta para bytes
+                pdf_bytes = None
+                if data.get("pdf_base64"):
+                    pdf_bytes = base64.b64decode(data["pdf_base64"])
+
+                status = StatusProcessamento(data["status"])
+
+                logger.info(f"Extrato obtido via endpoint proxy local: {status.value}")
+
+                return ResultadoExtracao(
+                    numero_processo=data["numero_processo"],
+                    status=status,
+                    pdf_bytes=pdf_bytes,
+                    texto_extraido=data.get("texto_extraido"),
+                    erro=data.get("erro"),
+                    timestamp=data.get("timestamp", datetime.now().isoformat(timespec="seconds")),
+                )
+            else:
+                logger.warning(f"Endpoint retornou status {response.status_code}")
+                return None
+
+    except httpx.ConnectError:
+        logger.debug("Proxy local não disponível (conexão recusada)")
+        return None
+    except httpx.TimeoutException:
+        logger.warning("Timeout ao chamar endpoint do proxy local")
+        return None
+    except Exception as e:
+        logger.warning(f"Erro ao chamar endpoint do proxy: {type(e).__name__}: {e}")
+        return None
+
+
 async def extrair_extrato_subconta(numero_processo: str) -> ResultadoExtracao:
     """
     Função de conveniência para extrair extrato de subconta.
+
+    Tenta primeiro o endpoint /extrair-subconta do proxy local (quando disponível),
+    depois usa Playwright diretamente como fallback.
 
     Args:
         numero_processo: Número CNJ do processo
@@ -488,5 +548,12 @@ async def extrair_extrato_subconta(numero_processo: str) -> ResultadoExtracao:
     Returns:
         ResultadoExtracao com PDF bytes e texto extraído
     """
+    # Primeira tentativa: endpoint do proxy local (Playwright rodando no PC)
+    resultado = await _tentar_endpoint_proxy(numero_processo)
+    if resultado is not None:
+        return resultado
+
+    # Fallback: Playwright local (funciona em homologação, pode falhar em produção)
+    logger.info("Usando Playwright local como fallback")
     extrator = ExtratorSubconta()
     return await extrator.extrair_extrato(numero_processo)
