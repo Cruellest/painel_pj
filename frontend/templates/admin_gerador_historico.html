@@ -7,8 +7,12 @@
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- SECURITY: DOMPurify para sanitização de HTML -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <!-- Marked.js para renderizar markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- SECURITY: Utilitários de segurança -->
+    <script src="/static/js/security.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -140,6 +144,27 @@
         let geracoesCache = [];
         let geracaoAtual = null;
 
+        // SECURITY: Configura marked para sanitizar output via DOMPurify
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+
+        // SECURITY: Wrapper seguro para marked que sanitiza o HTML resultante
+        function safeMarkedParse(markdown) {
+            if (!markdown) return '';
+            const rawHtml = marked.parse(markdown);
+            // Sanitiza com DOMPurify permitindo apenas tags seguras
+            return DOMPurify.sanitize(rawHtml, {
+                ALLOWED_TAGS: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'hr',
+                               'ul', 'ol', 'li', 'strong', 'em', 'b', 'i', 'u',
+                               'blockquote', 'pre', 'code', 'table', 'thead', 'tbody',
+                               'tr', 'th', 'td', 'a', 'span', 'div'],
+                ALLOWED_ATTR: ['class', 'id', 'href', 'target', 'rel'],
+                ALLOW_DATA_ATTR: false
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             carregarGeracoes();
         });
@@ -180,27 +205,28 @@
                 return;
             }
 
+            // SECURITY: Sanitiza dados de usuário antes de renderizar
             container.innerHTML = geracoesCache.map(g => `
-                <div class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="verDetalhes(${g.id})">
+                <div class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="verDetalhes(${parseInt(g.id) || 0})">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-4">
                             <div class="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
                                 <i class="fas fa-file-alt text-primary-600"></i>
                             </div>
                             <div>
-                                <p class="font-medium text-gray-800">${g.numero_cnj_formatado || g.numero_cnj}</p>
-                                <p class="text-sm text-gray-500">${formatarTipoPeca(g.tipo_peca)}</p>
+                                <p class="font-medium text-gray-800">${escapeHtml(g.numero_cnj_formatado || g.numero_cnj)}</p>
+                                <p class="text-sm text-gray-500">${escapeHtml(formatarTipoPeca(g.tipo_peca))}</p>
                             </div>
                         </div>
                         <div class="text-right">
-                            <p class="text-sm text-gray-500">${new Date(g.criado_em).toLocaleDateString('pt-BR')}</p>
-                            <p class="text-xs text-gray-400">${new Date(g.criado_em).toLocaleTimeString('pt-BR')}</p>
-                            ${g.tempo_processamento ? `<p class="text-xs text-green-600 mt-1">⏱️ ${g.tempo_processamento}s</p>` : ''}
+                            <p class="text-sm text-gray-500">${escapeHtml(new Date(g.criado_em).toLocaleDateString('pt-BR'))}</p>
+                            <p class="text-xs text-gray-400">${escapeHtml(new Date(g.criado_em).toLocaleTimeString('pt-BR'))}</p>
+                            ${g.tempo_processamento ? `<p class="text-xs text-green-600 mt-1">⏱️ ${escapeHtml(String(g.tempo_processamento))}s</p>` : ''}
                         </div>
                     </div>
-                    
+
                     <div class="mt-3 flex items-center gap-4 text-xs text-gray-500">
-                        <span><i class="fas fa-robot mr-1"></i> ${g.modelo_usado || 'N/A'}</span>
+                        <span><i class="fas fa-robot mr-1"></i> ${escapeHtml(g.modelo_usado || 'N/A')}</span>
                         ${g.prompt_enviado ? '<span class="text-green-600"><i class="fas fa-check mr-1"></i> Prompt salvo</span>' : '<span class="text-gray-400"><i class="fas fa-times mr-1"></i> Sem prompt</span>'}
                     </div>
                 </div>
@@ -226,8 +252,8 @@
                 const isMarkdown = typeof conteudo === 'string';
 
                 if (isMarkdown && conteudo) {
-                    // Renderiza markdown
-                    document.getElementById('texto-markdown').innerHTML = marked.parse(conteudo);
+                    // SECURITY: Renderiza markdown com sanitização
+                    document.getElementById('texto-markdown').innerHTML = safeMarkedParse(conteudo);
                     document.getElementById('texto-resultado').textContent = conteudo;
                     // Mostra botão de download DOCX
                     document.getElementById('btn-download-docx').classList.remove('hidden');
@@ -245,12 +271,13 @@
                 // Renderiza histórico de chat
                 renderizarHistoricoChat(geracao.historico_chat || []);
 
+                // SECURITY: Sanitiza dados de usuário
                 document.getElementById('info-geracao').innerHTML = `
-                    <strong>${geracao.numero_cnj_formatado || geracao.numero_cnj}</strong> |
-                    ${formatarTipoPeca(geracao.tipo_peca)} |
-                    ${new Date(geracao.criado_em).toLocaleString('pt-BR')}
+                    <strong>${escapeHtml(geracao.numero_cnj_formatado || geracao.numero_cnj)}</strong> |
+                    ${escapeHtml(formatarTipoPeca(geracao.tipo_peca))} |
+                    ${escapeHtml(new Date(geracao.criado_em).toLocaleString('pt-BR'))}
                     ${isMarkdown ? ' | <span class="text-green-600">Markdown</span>' : ' | <span class="text-amber-600">JSON</span>'}
-                    ${geracao.historico_chat && geracao.historico_chat.length > 0 ? ` | <span class="text-purple-600"><i class="fas fa-comments"></i> ${geracao.historico_chat.length} edições</span>` : ''}
+                    ${geracao.historico_chat && geracao.historico_chat.length > 0 ? ` | <span class="text-purple-600"><i class="fas fa-comments"></i> ${parseInt(geracao.historico_chat.length) || 0} edições</span>` : ''}
                 `;
 
                 // Carrega versões
@@ -514,15 +541,15 @@
                 // Abre um modal secundário ou substitui o conteúdo
                 const conteudo = versao.conteudo_markdown || 'Conteúdo não disponível';
 
-                // Mostra na tab de markdown temporariamente
+                // SECURITY: Mostra na tab de markdown com sanitização
                 document.getElementById('texto-markdown').innerHTML = `
                     <div class="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                        <p class="text-purple-800 font-medium">Visualizando: Versão ${numeroVersao}</p>
+                        <p class="text-purple-800 font-medium">Visualizando: Versão ${escapeHtml(String(numeroVersao))}</p>
                         <button onclick="voltarParaVersaoAtual()" class="mt-2 px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700">
                             <i class="fas fa-arrow-left mr-1"></i>Voltar para versão atual
                         </button>
                     </div>
-                ` + marked.parse(conteudo);
+                ` + safeMarkedParse(conteudo);
 
                 mostrarTab('markdown');
                 versaoModalAberta = versaoId;
@@ -535,7 +562,8 @@
 
         function voltarParaVersaoAtual() {
             if (geracaoAtual && geracaoAtual.conteudo_gerado) {
-                document.getElementById('texto-markdown').innerHTML = marked.parse(geracaoAtual.conteudo_gerado);
+                // SECURITY: Usa sanitização
+                document.getElementById('texto-markdown').innerHTML = safeMarkedParse(geracaoAtual.conteudo_gerado);
             }
             versaoModalAberta = null;
         }

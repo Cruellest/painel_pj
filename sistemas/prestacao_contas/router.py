@@ -382,6 +382,70 @@ async def cancelar_por_falta_documentos(
 
 
 # =====================================================
+# CONTINUAR SEM NOTA FISCAL
+# =====================================================
+
+class ContinuarSemNotaFiscalRequest(BaseModel):
+    geracao_id: int
+
+
+@router.post("/continuar-sem-nota-fiscal")
+async def continuar_sem_nota_fiscal(
+    request: ContinuarSemNotaFiscalRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Permite ao usuário prosseguir com a análise mesmo sem ter encontrado
+    a nota fiscal. A análise continuará com os documentos disponíveis.
+    """
+    geracao = db.query(GeracaoAnalise).filter(
+        GeracaoAnalise.id == request.geracao_id
+    ).first()
+
+    if not geracao:
+        raise HTTPException(status_code=404, detail="Análise não encontrada")
+
+    # Verifica permissão
+    if geracao.usuario_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    # Verifica se está no status correto
+    if geracao.status != "aguardando_nota_fiscal":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Análise não está aguardando nota fiscal (status atual: {geracao.status})"
+        )
+
+    # Atualiza status para permitir continuação
+    geracao.status = "continuando_sem_nota_fiscal"
+    db.commit()
+
+    logger.info(f"Usuário optou por continuar análise {request.geracao_id} sem nota fiscal")
+
+    # Continua a análise
+    async def continuar_analise():
+        orquestrador = OrquestradorPrestacaoContas(
+            db=db,
+            usuario_id=current_user.id
+        )
+
+        async for evento in orquestrador.continuar_com_documentos_manuais(request.geracao_id):
+            evento_json = evento.model_dump_json()
+            yield f"data: {evento_json}\n\n"
+
+    return StreamingResponse(
+        continuar_analise(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+# =====================================================
 # VISUALIZAR EXTRATO SUBCONTA (PDF)
 # =====================================================
 

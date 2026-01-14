@@ -1,11 +1,15 @@
 # auth/schemas.py
 """
 Schemas Pydantic para autenticação
+
+SECURITY: Inclui validação de política de senhas fortes.
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from datetime import datetime
+
+from utils.password_policy import validate_password, MIN_PASSWORD_LENGTH
 
 
 # ==========================================
@@ -36,9 +40,19 @@ class LoginRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    """Request de troca de senha"""
+    """
+    Request de troca de senha.
+
+    SECURITY: A nova senha é validada contra política de senhas fortes.
+    """
     current_password: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=4, max_length=100)
+    new_password: str = Field(..., min_length=MIN_PASSWORD_LENGTH, max_length=128)
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_new_password(cls, v):
+        """SECURITY: Valida força da nova senha"""
+        return validate_password(v)
 
 
 # ==========================================
@@ -54,12 +68,25 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    """Schema para criação de usuário"""
+    """
+    Schema para criação de usuário.
+
+    SECURITY: Se uma senha for fornecida, ela é validada contra política de senhas fortes.
+    Se não for fornecida, usa senha padrão que o usuário será forçado a trocar.
+    """
     password: Optional[str] = None  # Se None, usa senha padrão
     sistemas_permitidos: Optional[List[str]] = None  # Lista de sistemas
     permissoes_especiais: Optional[List[str]] = None  # Lista de permissões
     default_group_id: Optional[int] = None
     allowed_group_ids: Optional[List[int]] = None
+
+    @field_validator('password')
+    @classmethod
+    def validate_user_password(cls, v):
+        """SECURITY: Valida força da senha se fornecida"""
+        if v is not None:
+            return validate_password(v)
+        return v
 
 
 class UserUpdate(BaseModel):

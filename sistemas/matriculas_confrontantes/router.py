@@ -350,8 +350,17 @@ async def list_analyses(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Lista todas as análises salvas"""
-    analises = db.query(Analise).all()
+    """
+    Lista análises do usuário atual.
+
+    SECURITY: Filtrado por usuario_id para prevenir IDOR.
+    Admins podem ver todas as análises.
+    """
+    # SECURITY: Filtra por usuário para prevenir IDOR
+    if current_user.role == "admin":
+        analises = db.query(Analise).all()
+    else:
+        analises = db.query(Analise).filter(Analise.usuario_id == current_user.id).all()
     
     result = []
     for analise in analises:
@@ -877,12 +886,24 @@ async def get_resultado(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna resultado completo da análise"""
-    analise = db.query(Analise).filter(Analise.file_id == file_id).first()
-    
+    """
+    Retorna resultado completo da análise.
+
+    SECURITY: Verifica se a análise pertence ao usuário para prevenir IDOR.
+    Admins podem ver qualquer análise.
+    """
+    # SECURITY: Filtra por usuário para prevenir IDOR
+    if current_user.role == "admin":
+        analise = db.query(Analise).filter(Analise.file_id == file_id).first()
+    else:
+        analise = db.query(Analise).filter(
+            Analise.file_id == file_id,
+            Analise.usuario_id == current_user.id
+        ).first()
+
     if not analise:
         raise HTTPException(status_code=404, detail="Resultado não encontrado")
-    
+
     resultado = analise.resultado_json or {}
     resultado["analise_id"] = analise.id
     return resultado
@@ -897,8 +918,17 @@ async def list_registros(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Lista todos os registros"""
-    return db.query(Registro).all()
+    """
+    Lista registros do usuário atual.
+
+    SECURITY: Filtrado por usuario_id para prevenir IDOR.
+    Admins podem ver todos os registros.
+    """
+    # SECURITY: Filtra por usuário para prevenir IDOR
+    if current_user.role == "admin":
+        return db.query(Registro).all()
+    else:
+        return db.query(Registro).filter(Registro.usuario_id == current_user.id).all()
 
 
 @router.post("/registros", response_model=RegistroResponse, status_code=201)
@@ -934,12 +964,24 @@ async def get_registro(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
-    """Retorna um registro específico"""
-    registro = db.query(Registro).filter(Registro.id == registro_id).first()
-    
+    """
+    Retorna um registro específico.
+
+    SECURITY: Verifica se o registro pertence ao usuário para prevenir IDOR.
+    Admins podem ver qualquer registro.
+    """
+    # SECURITY: Filtra por usuário para prevenir IDOR
+    if current_user.role == "admin":
+        registro = db.query(Registro).filter(Registro.id == registro_id).first()
+    else:
+        registro = db.query(Registro).filter(
+            Registro.id == registro_id,
+            Registro.usuario_id == current_user.id
+        ).first()
+
     if not registro:
         raise HTTPException(status_code=404, detail="Registro não encontrado")
-    
+
     return registro
 
 

@@ -8,6 +8,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- SECURITY: DOMPurify para sanitização de HTML -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <!-- SECURITY: Utilitários de segurança -->
+    <script src="/static/js/security.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -158,6 +162,22 @@
         const API_BASE = '/admin/api/prestacao-admin';
         let geracoesCache = [];
 
+        /**
+         * SECURITY: Sanitiza markdown antes de renderizar.
+         * Usa DOMPurify para remover scripts maliciosos.
+         */
+        function safeMarkedParse(markdownText) {
+            if (!markdownText) return '';
+            const rawHtml = marked.parse(markdownText);
+            return DOMPurify.sanitize(rawHtml, {
+                ALLOWED_TAGS: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'br', 'strong', 'em', 'b', 'i', 'u',
+                               'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'table', 'thead', 'tbody',
+                               'tr', 'th', 'td', 'a', 'span', 'div', 'hr'],
+                ALLOWED_ATTR: ['class', 'id', 'href', 'target', 'rel'],
+                ALLOW_DATA_ATTR: false
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             carregarGeracoes();
         });
@@ -198,32 +218,33 @@
                 return;
             }
 
+            // SECURITY: escapeHtml para dados do servidor
             container.innerHTML = geracoesCache.map(g => {
                 const parecerBadge = getParecrBadgeClasses(g.parecer);
                 return `
-                    <div class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="verDetalhes(${g.id})">
+                    <div class="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow cursor-pointer" onclick="verDetalhes(${parseInt(g.id) || 0})">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-4">
-                                <div class="w-10 h-10 rounded-full ${parecerBadge.bgIcon} flex items-center justify-center">
-                                    <i class="fas ${parecerBadge.icon} ${parecerBadge.iconColor}"></i>
+                                <div class="w-10 h-10 rounded-full ${escapeHtml(parecerBadge.bgIcon)} flex items-center justify-center">
+                                    <i class="fas ${escapeHtml(parecerBadge.icon)} ${escapeHtml(parecerBadge.iconColor)}"></i>
                                 </div>
                                 <div>
-                                    <p class="font-medium text-gray-800">${g.numero_cnj}</p>
+                                    <p class="font-medium text-gray-800">${escapeHtml(g.numero_cnj)}</p>
                                     <p class="text-sm text-gray-500">Prestação de Contas</p>
                                 </div>
                             </div>
                             <div class="text-right">
-                                <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${parecerBadge.badge}">
-                                    ${parecerBadge.label}
+                                <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${escapeHtml(parecerBadge.badge)}">
+                                    ${escapeHtml(parecerBadge.label)}
                                 </span>
-                                <p class="text-sm text-gray-500 mt-1">${new Date(g.criado_em).toLocaleDateString('pt-BR')}</p>
-                                <p class="text-xs text-gray-400">${new Date(g.criado_em).toLocaleTimeString('pt-BR')}</p>
+                                <p class="text-sm text-gray-500 mt-1">${escapeHtml(new Date(g.criado_em).toLocaleDateString('pt-BR'))}</p>
+                                <p class="text-xs text-gray-400">${escapeHtml(new Date(g.criado_em).toLocaleTimeString('pt-BR'))}</p>
                             </div>
                         </div>
 
                         <div class="mt-3 flex items-center gap-4 text-xs text-gray-500">
-                            <span><i class="fas fa-robot mr-1"></i> ${g.modelo_usado || 'N/A'}</span>
-                            ${g.tempo_processamento_ms ? `<span><i class="fas fa-clock mr-1"></i> ${(g.tempo_processamento_ms / 1000).toFixed(1)}s</span>` : ''}
+                            <span><i class="fas fa-robot mr-1"></i> ${escapeHtml(g.modelo_usado || 'N/A')}</span>
+                            ${g.tempo_processamento_ms ? `<span><i class="fas fa-clock mr-1"></i> ${escapeHtml((g.tempo_processamento_ms / 1000).toFixed(1))}s</span>` : ''}
                         </div>
                     </div>
                 `;
@@ -307,18 +328,18 @@
         function preencherParecer(geracao) {
             const parecerBadge = getParecrBadgeClasses(geracao.parecer);
 
-            // Badge
+            // Badge - SECURITY: escapeHtml
             document.getElementById('parecer-badge').innerHTML = `
-                <span class="inline-block px-6 py-2 rounded-full text-lg font-bold ${parecerBadge.badge}">
-                    <i class="fas ${parecerBadge.icon} mr-2"></i>${parecerBadge.label}
+                <span class="inline-block px-6 py-2 rounded-full text-lg font-bold ${escapeHtml(parecerBadge.badge)}">
+                    <i class="fas ${escapeHtml(parecerBadge.icon)} mr-2"></i>${escapeHtml(parecerBadge.label)}
                 </span>
             `;
 
-            // Fundamentação
+            // Fundamentação - SECURITY: safeMarkedParse
             const fundamentacao = geracao.fundamentacao || 'Fundamentação não disponível';
-            document.getElementById('texto-fundamentacao').innerHTML = marked.parse(fundamentacao);
+            document.getElementById('texto-fundamentacao').innerHTML = safeMarkedParse(fundamentacao);
 
-            // Extras (Irregularidades ou Perguntas)
+            // Extras (Irregularidades ou Perguntas) - SECURITY: escapeHtml
             let extrasHtml = '';
 
             if (geracao.parecer === 'desfavoravel' && geracao.irregularidades?.length > 0) {
@@ -326,7 +347,7 @@
                     <div class="bg-red-50 border border-red-200 rounded-lg p-4">
                         <h4 class="font-semibold text-red-800 mb-2"><i class="fas fa-exclamation-triangle mr-2"></i>Irregularidades Identificadas</h4>
                         <ul class="list-disc list-inside text-red-700 space-y-1">
-                            ${geracao.irregularidades.map(i => `<li>${i}</li>`).join('')}
+                            ${geracao.irregularidades.map(i => `<li>${escapeHtml(i)}</li>`).join('')}
                         </ul>
                     </div>
                 `;
@@ -335,7 +356,7 @@
                     <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
                         <h4 class="font-semibold text-amber-800 mb-2"><i class="fas fa-question-circle mr-2"></i>Perguntas para o Usuário</h4>
                         <ul class="list-disc list-inside text-amber-700 space-y-1">
-                            ${geracao.perguntas_usuario.map(p => `<li>${p}</li>`).join('')}
+                            ${geracao.perguntas_usuario.map(p => `<li>${escapeHtml(p)}</li>`).join('')}
                         </ul>
                     </div>
                 `;
@@ -345,12 +366,13 @@
         }
 
         function preencherDados(geracao) {
-            // Subconta
+            // Subconta - SECURITY: escapeHtml
             let subcontaHtml = '<p class="text-gray-400">Dados não disponíveis</p>';
             if (geracao.extrato_subconta_texto) {
+                const textoTruncado = geracao.extrato_subconta_texto.substring(0, 2000);
                 subcontaHtml = `
                     <div class="max-h-40 overflow-y-auto bg-white p-2 rounded border text-xs">
-                        <pre class="whitespace-pre-wrap">${geracao.extrato_subconta_texto.substring(0, 2000)}${geracao.extrato_subconta_texto.length > 2000 ? '...' : ''}</pre>
+                        <pre class="whitespace-pre-wrap">${escapeHtml(textoTruncado)}${geracao.extrato_subconta_texto.length > 2000 ? '...' : ''}</pre>
                     </div>
                     <button onclick="expandirTextoGeracao('extrato_subconta')" class="mt-2 text-xs text-teal-600 hover:text-teal-700">
                         <i class="fas fa-expand mr-1"></i>Ver completo
@@ -359,16 +381,16 @@
             }
             document.getElementById('dados-subconta').innerHTML = subcontaHtml;
 
-            // Documentos
+            // Documentos - SECURITY: escapeHtml
             let docsHtml = '';
             const docs = geracao.documentos_anexos || [];
             if (docs.length > 0) {
-                docsHtml = `<p class="text-gray-600 mb-2">${docs.length} documento(s) analisado(s)</p>`;
+                docsHtml = `<p class="text-gray-600 mb-2">${parseInt(docs.length) || 0} documento(s) analisado(s)</p>`;
                 docs.forEach((doc, i) => {
                     docsHtml += `
                         <div class="bg-white p-2 rounded border mb-2">
-                            <p class="font-medium text-sm">${doc.tipo || 'Documento ' + (i + 1)}</p>
-                            <p class="text-xs text-gray-500">${doc.data || ''}</p>
+                            <p class="font-medium text-sm">${escapeHtml(doc.tipo || 'Documento ' + (i + 1))}</p>
+                            <p class="text-xs text-gray-500">${escapeHtml(doc.data || '')}</p>
                         </div>
                     `;
                 });
@@ -391,16 +413,18 @@
         }
 
         function criarCaixaTexto(titulo, texto, id) {
+            // SECURITY: escapeHtml para conteúdo
+            const textoTruncado = texto.substring(0, 500);
             return `
                 <div class="bg-white rounded border p-3">
                     <div class="flex items-center justify-between mb-2">
-                        <h4 class="font-medium text-sm text-gray-700">${titulo}</h4>
-                        <button onclick="expandirTextoGeracao('${id}')" class="text-xs text-teal-600 hover:text-teal-700">
+                        <h4 class="font-medium text-sm text-gray-700">${escapeHtml(titulo)}</h4>
+                        <button onclick="expandirTextoGeracao('${escapeHtml(id)}')" class="text-xs text-teal-600 hover:text-teal-700">
                             <i class="fas fa-expand mr-1"></i>Expandir
                         </button>
                     </div>
                     <div class="max-h-32 overflow-y-auto text-xs text-gray-600">
-                        <pre class="whitespace-pre-wrap">${texto.substring(0, 500)}${texto.length > 500 ? '...' : ''}</pre>
+                        <pre class="whitespace-pre-wrap">${escapeHtml(textoTruncado)}${texto.length > 500 ? '...' : ''}</pre>
                     </div>
                 </div>
             `;
@@ -431,11 +455,11 @@
                 // Raw Response
                 document.getElementById('texto-raw').textContent = geracaoAtual.resposta_ia_bruta || 'Não disponível';
 
-                // Info rodapé
+                // Info rodapé - SECURITY: escapeHtml
                 document.getElementById('info-geracao').innerHTML = `
-                    <strong>${geracaoAtual.numero_cnj}</strong> |
-                    ${new Date(geracaoAtual.criado_em).toLocaleString('pt-BR')} |
-                    ${(geracaoAtual.logs_ia || []).length} chamadas IA
+                    <strong>${escapeHtml(geracaoAtual.numero_cnj)}</strong> |
+                    ${escapeHtml(new Date(geracaoAtual.criado_em).toLocaleString('pt-BR'))} |
+                    ${parseInt((geracaoAtual.logs_ia || []).length) || 0} chamadas IA
                 `;
 
                 mostrarTab('parecer');
@@ -486,6 +510,7 @@
                 'extracao_documento': 'Extração de Documento'
             };
 
+            // SECURITY: escapeHtml para dados do servidor
             let html = '';
             logs.forEach((log, i) => {
                 const etapaLabel = etapaLabels[log.etapa] || log.etapa;
@@ -494,13 +519,13 @@
                         <div onclick="toggleLog(${i})" class="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-50">
                             <div class="flex items-center gap-2">
                                 <i class="fas ${log.sucesso ? 'fa-check-circle text-green-500' : 'fa-times-circle text-red-500'}"></i>
-                                <span class="font-medium text-sm">${etapaLabel}</span>
-                                ${log.tempo_ms ? `<span class="text-xs text-gray-400">${log.tempo_ms}ms</span>` : ''}
+                                <span class="font-medium text-sm">${escapeHtml(etapaLabel)}</span>
+                                ${log.tempo_ms ? `<span class="text-xs text-gray-400">${parseInt(log.tempo_ms) || 0}ms</span>` : ''}
                             </div>
                             <i id="chevron-${i}" class="fas fa-chevron-down text-gray-400 text-xs transition-transform"></i>
                         </div>
                         <div id="log-${i}" class="hidden border-t p-4 space-y-4 bg-gray-50">
-                            ${log.erro ? `<div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">${log.erro}</div>` : ''}
+                            ${log.erro ? `<div class="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">${escapeHtml(log.erro)}</div>` : ''}
                             <div>
                                 <div class="flex items-center justify-between mb-2">
                                     <p class="text-sm text-gray-600 font-medium">Prompt Enviado</p>
@@ -508,7 +533,7 @@
                                         <i class="fas fa-expand mr-1"></i>Expandir
                                     </button>
                                 </div>
-                                <pre id="prompt-${i}" class="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-48 whitespace-pre-wrap">${log.prompt_enviado || 'N/A'}</pre>
+                                <pre id="prompt-${i}" class="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-auto max-h-48 whitespace-pre-wrap">${escapeHtml(log.prompt_enviado || 'N/A')}</pre>
                             </div>
                             <div>
                                 <div class="flex items-center justify-between mb-2">
@@ -517,7 +542,7 @@
                                         <i class="fas fa-expand mr-1"></i>Expandir
                                     </button>
                                 </div>
-                                <pre id="resposta-${i}" class="bg-green-50 text-green-800 p-4 rounded-lg text-sm overflow-auto max-h-48 border border-green-200 whitespace-pre-wrap">${log.resposta_ia || 'N/A'}</pre>
+                                <pre id="resposta-${i}" class="bg-green-50 text-green-800 p-4 rounded-lg text-sm overflow-auto max-h-48 border border-green-200 whitespace-pre-wrap">${escapeHtml(log.resposta_ia || 'N/A')}</pre>
                             </div>
                         </div>
                     </div>

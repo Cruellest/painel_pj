@@ -33,14 +33,30 @@ CODIGOS_PETICAO_PRESTACAO = [
     "9500", "9511", "9615", "9635", "9875",
 ]
 
-# Codigos de documentos que podem ser anexos (notas fiscais, comprovantes)
-# Apenas os codigos especificos para notas fiscais e comprovantes
+# Codigos de documentos que podem ser anexos (notas fiscais, comprovantes, extratos, alvarás)
+# Apenas documentos relevantes para análise de prestação de contas
 CODIGOS_DOCUMENTOS_ANEXOS = [
+    # Notas fiscais
     "9870",  # Nota Fiscal
     "386",   # Nota Fiscal
+    # Comprovantes
     "9882",  # Comprovante
     "9908",  # Comprovante
     "9606",  # Comprovante
+    "8318",  # Comprovação de Pagamento
+    # Recibos e extratos
+    "9538",  # Recibos
+    "9623",  # Extrato bancário
+    # Alvarás
+    "3",     # Alvará
+    "140",   # Alvará
+    "571",   # Alvará de Levantamento com recibo
+]
+
+# Códigos específicos de notas fiscais (para verificar se foi encontrada)
+CODIGOS_NOTA_FISCAL = [
+    "9870",  # Nota Fiscal
+    "386",   # Nota Fiscal
 ]
 
 
@@ -419,7 +435,8 @@ class XMLParserPrestacao:
         self,
         data_referencia: datetime,
         excluir_id: str = None,
-        intervalo_minutos: int = 2
+        intervalo_minutos: int = 2,
+        filtrar_por_codigo: bool = True
     ) -> List[DocumentoProcesso]:
         """
         Retorna documentos juntados próximos ao horário de referência.
@@ -430,6 +447,8 @@ class XMLParserPrestacao:
             data_referencia: Data/hora da petição
             excluir_id: ID do documento a excluir (ex: a própria petição)
             intervalo_minutos: Intervalo em minutos para considerar (padrão: 2)
+            filtrar_por_codigo: Se True, retorna apenas documentos com códigos
+                               em CODIGOS_DOCUMENTOS_ANEXOS (padrão: True)
 
         Returns:
             Lista de documentos dentro do intervalo (exceto o documento excluído)
@@ -441,12 +460,23 @@ class XMLParserPrestacao:
         inicio = data_referencia - timedelta(minutes=intervalo_minutos)
         fim = data_referencia + timedelta(minutes=intervalo_minutos)
 
-        return [
+        # Filtra documentos pelo intervalo de tempo
+        docs_proximos = [
             doc for doc in self._documentos
             if doc.data_juntada
             and inicio <= doc.data_juntada <= fim
             and doc.id != excluir_id
         ]
+
+        # Se filtrar_por_codigo=True, retorna apenas documentos com códigos permitidos
+        # (notas fiscais, comprovantes, recibos, extratos)
+        if filtrar_por_codigo:
+            docs_proximos = [
+                doc for doc in docs_proximos
+                if str(doc.tipo_codigo) in CODIGOS_DOCUMENTOS_ANEXOS
+            ]
+
+        return docs_proximos
 
 
 def parse_xml_processo(xml_text: str) -> ResultadoParseXML:

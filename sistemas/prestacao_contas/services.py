@@ -24,7 +24,12 @@ from sqlalchemy.orm import Session
 from sistemas.prestacao_contas.models import GeracaoAnalise, FeedbackPrestacao
 from sistemas.prestacao_contas.schemas import EventoSSE, ResultadoAnalise as ResultadoAnaliseSchema
 from sistemas.prestacao_contas.scrapper_subconta import extrair_extrato_subconta, StatusProcessamento
-from sistemas.prestacao_contas.xml_parser import XMLParserPrestacao, parse_xml_processo, DocumentoProcesso
+from sistemas.prestacao_contas.xml_parser import (
+    XMLParserPrestacao,
+    parse_xml_processo,
+    DocumentoProcesso,
+    CODIGOS_NOTA_FISCAL,
+)
 from sistemas.prestacao_contas.identificador_peticoes import (
     IdentificadorPeticoes,
     TipoDocumento,
@@ -1086,10 +1091,31 @@ class OrquestradorPrestacaoContas:
             # VERIFICAÇÃO: Documentos suficientes para análise?
             # =====================================================
             tem_extrato = bool(geracao.extrato_subconta_texto and len(geracao.extrato_subconta_texto) > 100)
-            tem_notas = len(documentos_anexos) > 0
+            tem_documentos = len(documentos_anexos) > 0
 
-            # Se não tem extrato E não tem notas, solicita upload
-            if not tem_extrato and not tem_notas:
+            # Verifica se encontrou NOTA FISCAL especificamente (códigos 9870, 386)
+            # Busca nos documentos do XML que foram baixados como anexos
+            tem_nota_fiscal = False
+            for doc in resultado_xml.documentos:
+                if str(doc.tipo_codigo) in CODIGOS_NOTA_FISCAL:
+                    # Verifica se esse documento está nos anexos baixados
+                    for anexo in documentos_anexos:
+                        if anexo.get("id") == doc.id:
+                            tem_nota_fiscal = True
+                            break
+                if tem_nota_fiscal:
+                    break
+
+            # Também verifica se algum anexo é do tipo "Nota Fiscal" pelo nome
+            if not tem_nota_fiscal:
+                for anexo in documentos_anexos:
+                    tipo_anexo = anexo.get("tipo", "").lower()
+                    if "nota fiscal" in tipo_anexo or "nf" in tipo_anexo:
+                        tem_nota_fiscal = True
+                        break
+
+            # Se não tem extrato E não tem documentos, solicita upload obrigatório
+            if not tem_extrato and not tem_documentos:
                 log_aviso("Documentos insuficientes para análise - solicitando upload manual")
                 geracao.status = "aguardando_documentos"
 
@@ -1113,9 +1139,39 @@ class OrquestradorPrestacaoContas:
                 )
                 return
 
-            # Se tem extrato mas não tem notas, pode ser ok (depende do caso)
-            # Mas se não tem extrato e tem poucas notas, avisa mas continua
-            if not tem_extrato and tem_notas:
+            # Se não encontrou NOTA FISCAL, solicita ao usuário (com opção de continuar sem)
+            if not tem_nota_fiscal:
+                log_aviso("Nota fiscal não encontrada - solicitando ao usuário")
+                geracao.status = "aguardando_nota_fiscal"
+
+                # Salva documentos já capturados para não perder quando continuar
+                geracao.documentos_anexos = documentos_anexos
+                geracao.peticoes_relevantes = [
+                    {
+                        "id": pr["doc"].id,
+                        "tipo": pr["resultado"].resumo or "Petição relevante",
+                        "data": pr["doc"].data_juntada.isoformat() if pr["doc"].data_juntada else None
+                    }
+                    for pr in peticoes_relevantes
+                ]
+                self.db.commit()
+
+                yield EventoSSE(
+                    tipo="solicitar_nota_fiscal",
+                    etapa=4,
+                    mensagem="Nota fiscal não encontrada no processo.",
+                    dados={
+                        "geracao_id": geracao.id,
+                        "numero_cnj": numero_cnj,
+                        "documentos_encontrados": len(documentos_anexos),
+                        "permite_continuar_sem": True,
+                        "mensagem": "O sistema não encontrou a nota fiscal da prestação de contas no processo. Você pode anexar a nota fiscal manualmente ou continuar a análise sem ela."
+                    }
+                )
+                return
+
+            # Se não tem extrato mas tem documentos, avisa mas continua
+            if not tem_extrato and tem_documentos:
                 log_aviso("Extrato da subconta não encontrado - análise continuará apenas com notas fiscais")
 
             # =====================================================

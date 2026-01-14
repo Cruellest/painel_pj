@@ -1,9 +1,11 @@
 # users/router.py
 """
 Endpoints de gestão de usuários (somente admin)
+
+SECURITY: Todas as ações de usuários são registradas no audit log.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -14,6 +16,11 @@ from auth.security import get_password_hash
 from auth.dependencies import require_admin
 from config import DEFAULT_USER_PASSWORD
 from admin.models_prompt_groups import PromptGroup
+
+# SECURITY: Audit Logging
+from utils.audit import (
+    log_user_created, log_user_deleted, log_admin_action, log_audit_event, AuditEvent
+)
 
 router = APIRouter(prefix="/users", tags=["Usuários"])
 
@@ -36,17 +43,20 @@ async def list_users(
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
+    request: Request,
     user_data: UserCreate,
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     Cria um novo usuário.
-    
+
     **Acesso:** Apenas administradores
-    
+
     - Se **password** não for informada, usa a senha padrão "senha"
     - O usuário será forçado a trocar a senha no primeiro acesso
+
+    SECURITY: Ação registrada no audit log.
     """
     # Verifica se username já existe
     existing_user = db.query(User).filter(User.username == user_data.username).first()
@@ -113,7 +123,10 @@ async def create_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    
+
+    # SECURITY: Audit log de criação de usuário
+    log_user_created(new_user.id, new_user.username, admin.username, request)
+
     return new_user
 
 
@@ -141,6 +154,7 @@ async def get_user(
 
 @router.put("/{user_id}", response_model=UserResponse)
 async def update_user(
+    request: Request,
     user_id: int,
     user_data: UserUpdate,
     admin: User = Depends(require_admin),
@@ -148,14 +162,16 @@ async def update_user(
 ):
     """
     Atualiza dados de um usuário.
-    
+
     **Acesso:** Apenas administradores
-    
+
     Campos que podem ser atualizados:
     - email
     - full_name
     - role
     - is_active
+
+    SECURITY: Ação registrada no audit log.
     """
     user = db.query(User).filter(User.id == user_id).first()
     
@@ -233,70 +249,97 @@ async def update_user(
     
     db.commit()
     db.refresh(user)
-    
+
+    # SECURITY: Audit log de atualização de usuário
+    log_audit_event(
+        AuditEvent.USER_UPDATED,
+        user_id=user.id,
+        username=user.username,
+        request=request,
+        details={"updated_by": admin.username, "fields_updated": list(update_data.keys())}
+    )
+
     return user
 
 
 @router.delete("/{user_id}")
 async def delete_user(
+    request: Request,
     user_id: int,
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     Desativa um usuário (soft delete).
-    
+
     **Acesso:** Apenas administradores
-    
+
     Nota: O usuário não é removido do banco, apenas desativado.
+
+    SECURITY: Ação registrada no audit log.
     """
     user = db.query(User).filter(User.id == user_id).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuário não encontrado"
         )
-    
+
     # Impede deletar o próprio usuário
     if user.id == admin.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Você não pode desativar sua própria conta"
         )
-    
+
     user.is_active = False
     db.commit()
-    
+
+    # SECURITY: Audit log de desativação de usuário
+    log_user_deleted(user.id, user.username, admin.username, request)
+
     return {"message": f"Usuário '{user.username}' desativado com sucesso"}
 
 
 @router.post("/{user_id}/reset-password")
 async def reset_password(
+    request: Request,
     user_id: int,
     admin: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     Reseta a senha de um usuário para a senha padrão.
-    
+
     **Acesso:** Apenas administradores
-    
+
     - A senha será resetada para "senha"
     - O usuário será forçado a trocar no próximo acesso
+
+    SECURITY: Ação registrada no audit log.
     """
     user = db.query(User).filter(User.id == user_id).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuário não encontrado"
         )
-    
+
     user.hashed_password = get_password_hash(DEFAULT_USER_PASSWORD)
     user.must_change_password = True
     db.commit()
-    
+
+    # SECURITY: Audit log de reset de senha
+    log_audit_event(
+        AuditEvent.USER_PASSWORD_RESET,
+        user_id=user.id,
+        username=user.username,
+        request=request,
+        details={"reset_by": admin.username}
+    )
+
     return {
         "message": f"Senha do usuário '{user.username}' resetada com sucesso",
         "new_password": DEFAULT_USER_PASSWORD

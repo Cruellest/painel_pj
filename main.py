@@ -10,14 +10,17 @@ Com autenticação centralizada via JWT.
 """
 
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse, HTMLResponse, FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from contextlib import asynccontextmanager
 from pathlib import Path
 import os
+
+from config import IS_PRODUCTION
 
 # Configura logging para silenciar requests de polling repetitivos
 class StatusPollingFilter(logging.Filter):
@@ -38,6 +41,11 @@ from users.router import router as users_router
 # SECURITY: Rate Limiting
 from slowapi.errors import RateLimitExceeded
 from utils.rate_limit import limiter, rate_limit_exceeded_handler
+
+# SECURITY: Exception handling
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+import traceback
 
 # Import dos sistemas
 from sistemas.assistencia_judiciaria.router import router as assistencia_router
@@ -89,16 +97,101 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configuração de CORS
-# SECURITY: Em produção, definir ALLOWED_ORIGINS via variável de ambiente
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
-# Fallback para desenvolvimento local
-if not ALLOWED_ORIGINS:
-    ALLOWED_ORIGINS = [
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://localhost:3000",  # Dev frontend
-    ]
+# ==================================================
+# SECURITY: MIDDLEWARE DE HEADERS DE SEGURANÇA
+# ==================================================
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    SECURITY: Adiciona headers de segurança HTTP em todas as respostas.
+
+    Headers implementados:
+    - X-Frame-Options: Previne clickjacking
+    - X-Content-Type-Options: Previne MIME sniffing
+    - X-XSS-Protection: Proteção XSS do navegador (legacy)
+    - Referrer-Policy: Controla informações de referrer
+    - Strict-Transport-Security: Força HTTPS (HSTS)
+    - Content-Security-Policy: Controla recursos permitidos
+    - Permissions-Policy: Restringe APIs do navegador
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+
+        # Previne clickjacking - não permite embedding em iframes
+        response.headers["X-Frame-Options"] = "DENY"
+
+        # Previne MIME type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        # Proteção XSS do navegador (legacy, mas ainda útil)
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # Controla informações de referrer enviadas
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # Força HTTPS por 1 ano (apenas em produção)
+        if IS_PRODUCTION:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+
+        # Content Security Policy
+        # Permite scripts inline (necessário para templates) e CDNs específicos
+        csp_directives = [
+            "default-src 'self'",
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
+            "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com",
+            "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
+            "img-src 'self' data: blob: https:",
+            "connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai",
+            "frame-ancestors 'none'",
+            "form-action 'self'",
+            "base-uri 'self'",
+        ]
+        response.headers["Content-Security-Policy"] = "; ".join(csp_directives)
+
+        # Permissions Policy - restringe APIs do navegador
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=(), payment=()"
+
+        # Cache control para páginas HTML (não cachear por segurança)
+        content_type = response.headers.get("content-type", "")
+        if "text/html" in content_type:
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+
+        return response
+
+
+# ==================================================
+# SECURITY: CONFIGURAÇÃO DE CORS
+# ==================================================
+
+# SECURITY: Em produção, ALLOWED_ORIGINS DEVE ser definido explicitamente
+_allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+
+if _allowed_origins_env:
+    # Parse das origens configuradas
+    ALLOWED_ORIGINS = [origin.strip() for origin in _allowed_origins_env.split(",") if origin.strip()]
+else:
+    if IS_PRODUCTION:
+        # SECURITY: Em produção sem configuração, usar apenas a própria origem
+        import warnings
+        warnings.warn(
+            "ALLOWED_ORIGINS não configurado em produção! "
+            "Configure a variável de ambiente ALLOWED_ORIGINS com os domínios permitidos.",
+            RuntimeWarning
+        )
+        # Fallback seguro - apenas mesma origem
+        ALLOWED_ORIGINS = []
+    else:
+        # Desenvolvimento local - origens permissivas
+        ALLOWED_ORIGINS = [
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://localhost:3000",
+        ]
+
+# SECURITY: Adiciona middleware de headers ANTES do CORS
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -111,6 +204,58 @@ app.add_middleware(
 # SECURITY: Rate Limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+
+# ==================================================
+# SECURITY: EXCEPTION HANDLERS - Sanitiza erros em produção
+# ==================================================
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    SECURITY: Handler global para exceções não tratadas.
+
+    Em produção: retorna mensagem genérica (não vaza stack traces).
+    Em desenvolvimento: retorna detalhes para debug.
+    """
+    if IS_PRODUCTION:
+        # SECURITY: Em produção, não expõe detalhes internos
+        logging.error(f"Unhandled exception: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Erro interno do servidor. Tente novamente mais tarde."}
+        )
+    else:
+        # Em desenvolvimento, mostra detalhes para debug
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": str(exc),
+                "type": type(exc).__name__,
+                "traceback": traceback.format_exc()
+            }
+        )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """
+    SECURITY: Handler para erros de validação.
+
+    Sanitiza mensagens de erro para não expor estrutura interna.
+    """
+    if IS_PRODUCTION:
+        # SECURITY: Mensagem simplificada em produção
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Dados inválidos na requisição."}
+        )
+    else:
+        # Em desenvolvimento, mostra detalhes
+        return JSONResponse(
+            status_code=422,
+            content={"detail": exc.errors()}
+        )
 
 # Templates Jinja2 para páginas do portal
 templates = Jinja2Templates(directory="frontend/templates")

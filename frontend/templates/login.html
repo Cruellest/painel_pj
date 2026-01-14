@@ -192,12 +192,13 @@
                     throw new Error(data.detail || 'Erro ao fazer login');
                 }
 
-                // Salva o token
+                // SECURITY: O token agora é também definido como HttpOnly cookie pelo servidor
+                // Mantemos localStorage para compatibilidade com APIs que precisam do header
                 localStorage.setItem('access_token', data.access_token);
-                
+
                 // Decodifica o token para verificar must_change_password
                 const tokenPayload = JSON.parse(atob(data.access_token.split('.')[1]));
-                
+
                 if (tokenPayload.must_change_password) {
                     // Redireciona para troca de senha
                     window.location.href = '/change-password';
