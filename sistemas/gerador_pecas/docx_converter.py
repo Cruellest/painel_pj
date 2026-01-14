@@ -385,9 +385,9 @@ class DocxConverter:
                 line_lower = line.lower()
                 line_upper = line.upper()
                 
-                # Detecta se é o direcionamento (primeira linha com EXCELENTÍSSIMO ou EXMO)
+                # Detecta se é o direcionamento (primeira linha com EXCELENTÍSSIMO, EXMO, À CÂMARA, AO JUIZ, etc.)
                 # Pode ou não ter marcação ** de negrito
-                if is_first_paragraph and ('EXCELENTÍSSIMO' in line_upper or 'EXMO' in line_upper):
+                if is_first_paragraph and self._is_direcionamento(line_upper):
                     self._add_direcionamento(doc, line)
                     found_direcionamento = True
                     is_first_paragraph = False
@@ -497,6 +497,7 @@ class DocxConverter:
             r'^apelante',
             r'^apelado',
             r'^agravante',
+            r'^interessado',
             r'^agravado',
             r'^embargante',
             r'^embargado',
@@ -526,12 +527,53 @@ class DocxConverter:
             r'^executado',
             r'^reclamado',
             r'^demandado',
+            r'^interessado',
         ]
         for pattern in last_patterns:
             if re.match(pattern, line_clean):
                 return True
         return False
-    
+
+    def _is_direcionamento(self, line_upper: str) -> bool:
+        """
+        Verifica se a linha é um direcionamento (endereçamento da peça).
+        Exemplos: "EXCELENTÍSSIMO SENHOR JUIZ...", "À CÂMARA CÍVEL...", "AO JUÍZO...", etc.
+        """
+        # Padrões de direcionamento
+        direcionamento_patterns = [
+            'EXCELENTÍSSIMO',
+            'EXCELENTISSIMO',
+            'EXMO',
+            'À CÂMARA',
+            'A CÂMARA',
+            'À CAMARA',
+            'A CAMARA',
+            'AO JUIZ',
+            'AO JUÍZO',
+            'AO JUIZO',
+            'À TURMA',
+            'A TURMA',
+            'AO TRIBUNAL',
+            'À SEÇÃO',
+            'A SEÇÃO',
+            'À SECAO',
+            'A SECAO',
+            'AO DESEMBARGADOR',
+            'À VARA',
+            'A VARA',
+            'AO MINISTRO',
+            'AO SUPREMO',
+            'AO SUPERIOR',
+            'À CORTE',
+            'A CORTE',
+        ]
+
+        for pattern in direcionamento_patterns:
+            if pattern in line_upper:
+                return True
+
+        return False
+
     def _add_direcionamento(self, doc: Document, text: str):
         """Adiciona direcionamento (primeira linha) sem recuo, espaçamento simples.
         O direcionamento deve ficar em NEGRITO e MAIÚSCULO."""

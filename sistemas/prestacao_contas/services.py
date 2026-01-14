@@ -222,21 +222,33 @@ class OrquestradorPrestacaoContas:
             resultado_subconta = await extrair_extrato_subconta(numero_cnj)
 
             extrato_encontrado_scrapper = False
+            MIN_TEXTO_EXTRATO_SCRAPPER = 200  # Mínimo de caracteres para considerar extrato válido
 
             if resultado_subconta.status == StatusProcessamento.OK:
-                geracao.extrato_subconta_texto = resultado_subconta.texto_extraido
-                # Salva PDF em base64 para visualização
-                if resultado_subconta.pdf_bytes:
-                    import base64 as b64
-                    geracao.extrato_subconta_pdf_base64 = b64.b64encode(resultado_subconta.pdf_bytes).decode('utf-8')
-                log_sucesso(f"Extrato baixado ({len(resultado_subconta.texto_extraido or '')} caracteres)")
-                extrato_encontrado_scrapper = True
-                yield EventoSSE(
-                    tipo="progresso",
-                    etapa=1,
-                    mensagem="Extrato da subconta baixado com sucesso",
-                    progresso=20
-                )
+                texto_extrato = resultado_subconta.texto_extraido or ""
+
+                # Verifica se o texto extraído é suficiente (não vazio ou muito curto)
+                if len(texto_extrato) >= MIN_TEXTO_EXTRATO_SCRAPPER:
+                    geracao.extrato_subconta_texto = texto_extrato
+                    # Salva PDF em base64 para visualização
+                    if resultado_subconta.pdf_bytes:
+                        import base64 as b64
+                        geracao.extrato_subconta_pdf_base64 = b64.b64encode(resultado_subconta.pdf_bytes).decode('utf-8')
+                    log_sucesso(f"Extrato da subconta baixado com sucesso ({len(texto_extrato)} caracteres)")
+                    extrato_encontrado_scrapper = True
+                    yield EventoSSE(
+                        tipo="progresso",
+                        etapa=1,
+                        mensagem="Extrato da subconta baixado com sucesso",
+                        progresso=20
+                    )
+                else:
+                    log_aviso(f"Scrapper retornou texto insuficiente ({len(texto_extrato)} chars < {MIN_TEXTO_EXTRATO_SCRAPPER}), buscando nos documentos...")
+                    yield EventoSSE(
+                        tipo="aviso",
+                        etapa=1,
+                        mensagem="Extrato da subconta com texto insuficiente, buscando nos documentos do processo..."
+                    )
             elif resultado_subconta.status == StatusProcessamento.SEM_SUBCONTA:
                 log_aviso("Processo não possui subconta registrada no sistema TJ-MS")
                 yield EventoSSE(
@@ -252,9 +264,10 @@ class OrquestradorPrestacaoContas:
                     mensagem=f"Erro ao baixar subconta: {resultado_subconta.erro}. Buscando nos documentos..."
                 )
 
-            # FALLBACK: Se não encontrou via scrapper, busca código 71 (Extrato da Conta Única) no XML
+            # FALLBACK: Se não encontrou via scrapper (ou texto insuficiente), busca código 71 (Extrato da Conta Única) no XML
             # Este bloco será executado após a consulta do XML (Etapa 2), então definimos uma flag
             buscar_extrato_xml = not extrato_encontrado_scrapper
+            log_info(f"Flag buscar_extrato_xml = {buscar_extrato_xml} (extrato_encontrado_scrapper = {extrato_encontrado_scrapper})")
 
             # =====================================================
             # ETAPA 2: XML DO PROCESSO
@@ -317,6 +330,7 @@ class OrquestradorPrestacaoContas:
             extratos_imagens_fallback = []
 
             if buscar_extrato_xml:
+                log_info(">>> FALLBACK ATIVADO: Scrapper não retornou extrato válido, buscando nos documentos do processo...")
                 log_info("Buscando 'Extrato da Conta Única' (código 71) nos documentos do processo...")
                 yield EventoSSE(
                     tipo="info",
@@ -512,6 +526,9 @@ class OrquestradorPrestacaoContas:
                         )
                 else:
                     log_info("Nenhum Alvará encontrado nos últimos 30 documentos")
+            else:
+                # Fallback desativado - extrato já obtido via scrapper
+                log_info(">>> FALLBACK DESATIVADO: Extrato já obtido via scrapper da subconta, NÃO buscará nos documentos")
 
             # =====================================================
             # ETAPA 3: CLASSIFICAR DOCUMENTOS DO PROCESSO

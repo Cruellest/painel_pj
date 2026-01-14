@@ -17,11 +17,35 @@ from docx import Document
 from docx.shared import Pt, Inches, Cm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.style import WD_STYLE_TYPE
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
+
+# Diretório do módulo
+MODULE_DIR = Path(__file__).parent
 
 # Diretório para arquivos temporários
-TEMP_DIR = Path(__file__).parent / "temp_docs"
+TEMP_DIR = MODULE_DIR / "temp_docs"
 TEMP_DIR.mkdir(exist_ok=True)
+
+# Caminho da imagem do logo para cabeçalho
+LOGO_PATH = MODULE_DIR.parent.parent / "logo" / "logo-pge.png"
+
+# Meses em português
+MESES_PT_BR = {
+    1: "janeiro",
+    2: "fevereiro",
+    3: "março",
+    4: "abril",
+    5: "maio",
+    6: "junho",
+    7: "julho",
+    8: "agosto",
+    9: "setembro",
+    10: "outubro",
+    11: "novembro",
+    12: "dezembro"
+}
 
 
 def _criar_documento_base() -> Document:
@@ -36,7 +60,91 @@ def _criar_documento_base() -> Document:
         section.left_margin = Cm(3)
         section.right_margin = Cm(2)
 
+    # Adiciona cabeçalho com logo e rodapé institucional
+    _add_header_footer(doc)
+
+    # Adiciona borda de página
+    _add_page_border(doc)
+
     return doc
+
+
+def _add_header_footer(doc: Document):
+    """
+    Adiciona cabeçalho e rodapé padrão com imagem do logo.
+
+    Cabeçalho: Logo da PGE centralizado
+    Rodapé: Texto institucional centralizado
+    """
+    for section in doc.sections:
+        # Configura distância do cabeçalho e rodapé
+        section.header_distance = Cm(1.5)
+        section.footer_distance = Cm(1.0)
+
+        # ===== CABEÇALHO =====
+        header = section.header
+        header.is_linked_to_previous = False
+
+        # Limpa parágrafos existentes e adiciona um novo
+        header_para = header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+        header_para.clear()
+        header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Remove recuos para centralização perfeita
+        header_para.paragraph_format.left_indent = Cm(0)
+        header_para.paragraph_format.right_indent = Cm(0)
+        header_para.paragraph_format.first_line_indent = Cm(0)
+
+        # Adiciona imagem do logo no cabeçalho
+        if LOGO_PATH.exists():
+            run = header_para.add_run()
+            run.add_picture(str(LOGO_PATH), width=Cm(5.6))  # Largura de 5.6cm
+        else:
+            # Fallback: texto se não houver logo
+            run = header_para.add_run("PROCURADORIA-GERAL DO ESTADO DE MATO GROSSO DO SUL")
+            run.font.name = "Arial"
+            run.font.size = Pt(10)
+            run.font.bold = True
+
+        # ===== RODAPÉ =====
+        footer = section.footer
+        footer.is_linked_to_previous = False
+
+        # Limpa parágrafos existentes e adiciona um novo
+        footer_para = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        footer_para.clear()
+        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Texto do rodapé
+        run = footer_para.add_run("Procuradoria-Geral do Estado de Mato Grosso do Sul")
+        run.font.name = "Arial"
+        run.font.size = Pt(9)
+        run.font.italic = True
+
+        # Adiciona linha separadora acima do rodapé
+        footer_para.paragraph_format.space_before = Pt(6)
+
+
+def _add_page_border(doc: Document):
+    """
+    Adiciona borda de página ao documento.
+    """
+    for section in doc.sections:
+        sectPr = section._sectPr
+
+        # Cria elemento de borda de página
+        pgBorders = OxmlElement('w:pgBorders')
+        pgBorders.set(qn('w:offsetFrom'), 'page')
+
+        # Define as bordas (superior, inferior, esquerda, direita)
+        for border_name in ['top', 'left', 'bottom', 'right']:
+            border = OxmlElement(f'w:{border_name}')
+            border.set(qn('w:val'), 'single')
+            border.set(qn('w:sz'), '4')  # Espessura da linha
+            border.set(qn('w:space'), '24')  # Espaço da borda até o conteúdo
+            border.set(qn('w:color'), '000000')  # Cor preta
+            pgBorders.append(border)
+
+        sectPr.append(pgBorders)
 
 
 def _adicionar_cabecalho(doc: Document, numero_cnj: str):
@@ -183,29 +291,17 @@ def _adicionar_irregularidades(doc: Document, irregularidades: List[str]):
 
 
 def _adicionar_rodape(doc: Document):
-    """Adiciona rodapé com data e assinatura"""
+    """Adiciona rodapé com data em português"""
     doc.add_paragraph()
 
-    # Data
-    data = datetime.now().strftime("%d de %B de %Y")
+    # Data em português
+    agora = datetime.now()
+    mes_pt = MESES_PT_BR[agora.month]
+    data = f"{agora.day} de {mes_pt} de {agora.year}"
+
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     run = p.add_run(f"Campo Grande/MS, {data}")
-    run.font.name = "Arial"
-    run.font.size = Pt(12)
-
-    doc.add_paragraph()
-    doc.add_paragraph()
-
-    # Assinatura
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run("_" * 40)
-    run.font.name = "Arial"
-
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = p.add_run("Procurador do Estado")
     run.font.name = "Arial"
     run.font.size = Pt(12)
 
@@ -236,15 +332,7 @@ async def converter_parecer_docx(
     # Badge do parecer
     _adicionar_parecer_badge(doc, parecer)
 
-    # Fundamentação
-    p = doc.add_paragraph()
-    run = p.add_run("FUNDAMENTAÇÃO")
-    run.bold = True
-    run.font.size = Pt(12)
-    run.font.name = "Arial"
-
-    doc.add_paragraph()
-
+    # Fundamentação (conteúdo direto, sem título)
     _processar_markdown(doc, fundamentacao)
 
     # Irregularidades (se houver)

@@ -62,28 +62,44 @@ class ConfigSubconta:
 
     @classmethod
     def from_env(cls) -> "ConfigSubconta":
-        """Cria configuração a partir de variáveis de ambiente."""
-        # Proxy para ambientes cloud (Railway, etc)
-        proxy_url = os.getenv("TJMS_PROXY_URL", "").strip()
+        """Cria configuração a partir de variáveis de ambiente com fallback automático."""
+        import httpx
 
-        if proxy_url:
-            logger.info(f"Usando proxy TJ-MS: {proxy_url}")
-            return cls(
-                base_url=proxy_url.rstrip("/"),
-                usar_proxy=True,
-                delay_min=float(os.getenv("SUBCONTA_DELAY_MIN", 2.0)),
-                delay_max=float(os.getenv("SUBCONTA_DELAY_MAX", 5.0)),
-                max_tentativas=int(os.getenv("SUBCONTA_MAX_TENTATIVAS", 3)),
-                headless=os.getenv("SUBCONTA_HEADLESS", "true").lower() == "true",
-            )
-        else:
-            # Acesso direto (local)
-            return cls(
-                delay_min=float(os.getenv("SUBCONTA_DELAY_MIN", 2.0)),
-                delay_max=float(os.getenv("SUBCONTA_DELAY_MAX", 5.0)),
-                max_tentativas=int(os.getenv("SUBCONTA_MAX_TENTATIVAS", 3)),
-                headless=os.getenv("SUBCONTA_HEADLESS", "true").lower() == "true",
-            )
+        # Proxies disponíveis (ordem de prioridade)
+        proxy_local = os.getenv("TJMS_PROXY_LOCAL_URL", "").strip()  # Seu PC via Cloudflare Tunnel
+        proxy_flyio = os.getenv("TJMS_PROXY_URL", "").strip()  # Fly.io + BrightData
+
+        # Configurações comuns
+        config_base = dict(
+            delay_min=float(os.getenv("SUBCONTA_DELAY_MIN", 2.0)),
+            delay_max=float(os.getenv("SUBCONTA_DELAY_MAX", 5.0)),
+            max_tentativas=int(os.getenv("SUBCONTA_MAX_TENTATIVAS", 3)),
+            headless=os.getenv("SUBCONTA_HEADLESS", "true").lower() == "true",
+        )
+
+        # Tenta proxy local primeiro (mais rápido)
+        if proxy_local:
+            try:
+                r = httpx.get(f"{proxy_local.rstrip('/')}/", timeout=5)
+                if r.status_code == 200:
+                    logger.info(f"Usando proxy LOCAL: {proxy_local}")
+                    return cls(base_url=proxy_local.rstrip("/"), usar_proxy=True, **config_base)
+            except Exception as e:
+                logger.debug(f"Proxy local indisponível: {e}")
+
+        # Fallback para Fly.io
+        if proxy_flyio:
+            try:
+                r = httpx.get(f"{proxy_flyio.rstrip('/')}/", timeout=10)
+                if r.status_code == 200:
+                    logger.info(f"Usando proxy FLY.IO: {proxy_flyio}")
+                    return cls(base_url=proxy_flyio.rstrip("/"), usar_proxy=True, **config_base)
+            except Exception as e:
+                logger.debug(f"Proxy Fly.io indisponível: {e}")
+
+        # Acesso direto (sem proxy)
+        logger.info("Usando acesso DIRETO (sem proxy)")
+        return cls(**config_base)
 
 
 class StatusProcessamento(str, Enum):
