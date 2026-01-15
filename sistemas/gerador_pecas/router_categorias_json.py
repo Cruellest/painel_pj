@@ -35,11 +35,16 @@ class CategoriaResumoJSONBase(BaseModel):
     is_residual: bool = False
     ativo: bool = True
     ordem: int = 0
-    # Campos de namespace e fonte de verdade
+    # Campos de namespace
     namespace_prefix: Optional[str] = None  # Prefixo para variáveis (ex: "peticao", "nat")
     tipos_logicos_peca: Optional[List[str]] = None  # Tipos possíveis (ex: ["petição inicial", "contestação"])
-    fonte_verdade_tipo: Optional[str] = None  # Qual tipo é fonte de verdade
+    # Fonte de verdade (classificação de tipo lógico)
+    fonte_verdade_tipo: Optional[str] = None  # Tipo lógico fonte de verdade (ex: "petição inicial")
+    fonte_verdade_codigo: Optional[str] = None  # Código específico (ex: "9500")
     requer_classificacao: bool = False  # Se deve classificar antes de extrair
+    # Fonte especial (alternativa a códigos)
+    source_type: str = "code"  # "code" ou "special"
+    source_special_type: Optional[str] = None  # Ex: "peticao_inicial"
 
     @field_validator('formato_json')
     @classmethod
@@ -65,11 +70,18 @@ class CategoriaResumoJSONUpdate(BaseModel):
     is_residual: Optional[bool] = None
     ativo: Optional[bool] = None
     ordem: Optional[int] = None
-    # Campos de namespace e fonte de verdade
+    # Campos de namespace
     namespace_prefix: Optional[str] = None
     tipos_logicos_peca: Optional[List[str]] = None
+    # Fonte de verdade
     fonte_verdade_tipo: Optional[str] = None
+    fonte_verdade_codigo: Optional[str] = None
     requer_classificacao: Optional[bool] = None
+    # Fonte especial
+    source_type: Optional[str] = None
+    source_special_type: Optional[str] = None
+    # Origem do JSON
+    json_gerado_por_ia: Optional[bool] = None
     motivo: str  # Obrigatório para rastrear alterações
 
     @field_validator('formato_json')
@@ -96,12 +108,23 @@ class CategoriaResumoJSONResponse(BaseModel):
     is_residual: bool
     ativo: bool
     ordem: int
-    # Campos de namespace e fonte de verdade
+    # Campos de namespace
     namespace_prefix: Optional[str] = None
     namespace: Optional[str] = None  # Namespace efetivo (calculado)
     tipos_logicos_peca: Optional[List[str]] = None
+    # Fonte de verdade
     fonte_verdade_tipo: Optional[str] = None
+    fonte_verdade_codigo: Optional[str] = None
     requer_classificacao: bool = False
+    tem_fonte_verdade: bool = False  # Propriedade calculada
+    # Fonte especial
+    source_type: str = "code"
+    source_special_type: Optional[str] = None
+    usa_fonte_especial: bool = False  # Propriedade calculada
+    # Origem do JSON
+    json_gerado_por_ia: bool = False  # Se JSON foi gerado por IA
+    json_gerado_em: Optional[datetime] = None
+    json_gerado_por: Optional[int] = None
     # Auditoria
     criado_por: Optional[int]
     criado_em: datetime
@@ -242,6 +265,21 @@ async def listar_codigos_disponiveis(
     return sorted(resultado, key=lambda x: x["codigo"])
 
 
+@router.get("/fontes-especiais")
+async def listar_fontes_especiais(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Lista as fontes especiais disponíveis para categorias.
+
+    Fontes especiais permitem identificar documentos por regras lógicas
+    em vez de códigos de documento (ex: Petição Inicial = primeiro doc 9500/500).
+    """
+    from sistemas.gerador_pecas.services_source_resolver import get_available_special_sources
+
+    return get_available_special_sources()
+
+
 # ==========================================
 # Endpoints CRUD
 # ==========================================
@@ -379,6 +417,11 @@ async def atualizar_categoria(
     for field, value in update_data.items():
         setattr(categoria, field, value)
     
+    # Se marcou como gerado por IA, salva timestamp
+    if categoria_data.json_gerado_por_ia:
+        categoria.json_gerado_em = datetime.utcnow()
+        categoria.json_gerado_por = current_user.id
+    
     categoria.atualizado_por = current_user.id
     categoria.atualizado_em = datetime.utcnow()
     
@@ -468,3 +511,50 @@ async def testar_formato(
             "erro": str(e),
             "posicao": e.pos
         }
+
+
+# ==========================================
+# Endpoints para Info de Perguntas/Variáveis
+# ==========================================
+
+@router.get("/{categoria_id}/info-extracao")
+async def info_extracao(
+    categoria_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna informações sobre as perguntas e variáveis de uma categoria.
+    
+    Inclui:
+    - Número de perguntas configuradas
+    - Se JSON foi gerado por IA
+    - Número de variáveis criadas
+    """
+    categoria = db.query(CategoriaResumoJSON).filter(
+        CategoriaResumoJSON.id == categoria_id
+    ).first()
+    
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    
+    from .models_extraction import ExtractionQuestion, ExtractionVariable
+    
+    # Conta perguntas ativas
+    perguntas_count = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.categoria_id == categoria_id,
+        ExtractionQuestion.ativo == True
+    ).count()
+    
+    # Conta variáveis
+    variaveis_count = db.query(ExtractionVariable).filter(
+        ExtractionVariable.categoria_id == categoria_id,
+        ExtractionVariable.ativo == True
+    ).count()
+    
+    return {
+        "perguntas_count": perguntas_count,
+        "variaveis_count": variaveis_count,
+        "json_gerado_por_ia": categoria.json_gerado_por_ia,
+        "json_gerado_em": categoria.json_gerado_em.isoformat() if categoria.json_gerado_em else None
+    }

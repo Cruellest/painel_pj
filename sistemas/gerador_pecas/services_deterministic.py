@@ -84,6 +84,16 @@ class DeterministicRuleGenerator:
                 logger.error(f"Resposta IA não é JSON válido: {response.content[:500]}")
                 return {"success": False, "erro": "A IA não retornou um JSON válido"}
 
+            # 4.1 Verifica se IA indicou variáveis insuficientes
+            if resultado.get("erro") == "variaveis_insuficientes":
+                logger.info("IA indicou variáveis insuficientes para a condição")
+                return {
+                    "success": False,
+                    "erro": "variaveis_insuficientes",
+                    "mensagem": resultado.get("mensagem", "Não há variáveis suficientes para expressar esta condição"),
+                    "variaveis_necessarias": resultado.get("variaveis_necessarias", [])
+                }
+
             regra = resultado.get("regra")
             variaveis_usadas = resultado.get("variaveis_usadas", [])
 
@@ -182,16 +192,64 @@ EXEMPLOS:
     ]
 }
 
-FORMATO DE RESPOSTA (JSON estrito):
+4. "Quando for pleiteado medicamento e ele for não incorporado ao SUS ou não incorporado para patologia" (agrupamento lógico)
 {
-    "regra": { ... AST ... },
+    "type": "and",
+    "conditions": [
+        {"type": "condition", "variable": "pleiteado_medicamento", "operator": "equals", "value": true},
+        {
+            "type": "or",
+            "conditions": [
+                {"type": "condition", "variable": "nao_incorporado_sus", "operator": "equals", "value": true},
+                {"type": "condition", "variable": "nao_incorporado_patologia", "operator": "equals", "value": true}
+            ]
+        }
+    ]
+}
+
+5. "O autor é idoso ou (o valor é alto e urgente)" (agrupamento com OR externo)
+{
+    "type": "or",
+    "conditions": [
+        {"type": "condition", "variable": "autor_idoso", "operator": "equals", "value": true},
+        {
+            "type": "and",
+            "conditions": [
+                {"type": "condition", "variable": "valor_alto", "operator": "equals", "value": true},
+                {"type": "condition", "variable": "urgente", "operator": "equals", "value": true}
+            ]
+        }
+    ]
+}
+
+FORMATO DE RESPOSTA (JSON estrito):
+
+CASO 1 - Se existirem variáveis suficientes para expressar a condição:
+{
+    "regra": { ... AST conforme exemplos acima ... },
     "variaveis_usadas": ["var1", "var2"]
 }
 
-IMPORTANTE:
-- Use APENAS variáveis que existem na lista fornecida
-- Retorne APENAS JSON válido, sem explicações
-- Variáveis devem estar em snake_case"""
+CASO 2 - Se NÃO existirem variáveis suficientes (OBRIGATÓRIO preencher todos os campos):
+{
+    "erro": "variaveis_insuficientes",
+    "mensagem": "Explique detalhadamente quais variáveis estão faltando e por quê. Ex: 'Para expressar esta condição, seriam necessárias variáveis que identifiquem se foi pleiteada cirurgia e se o laudo médico é de especialista do SUS, mas essas variáveis não existem no sistema.'",
+    "variaveis_necessarias": [
+        {
+            "slug_sugerido": "nome_em_snake_case",
+            "descricao": "Descrição clara e completa do que essa variável representa",
+            "tipo_sugerido": "boolean"
+        }
+    ]
+}
+
+REGRAS CRÍTICAS:
+1. Use APENAS variáveis que existem na lista fornecida
+2. Se não houver variáveis suficientes, SEMPRE retorne CASO 2 com TODOS os campos preenchidos
+3. No CASO 2, liste TODAS as variáveis que precisariam ser criadas para atender a condição
+4. A "mensagem" deve ser explicativa para o usuário entender o problema
+5. Retorne APENAS JSON válido, sem texto adicional
+6. Variáveis devem estar em snake_case"""
 
     def _buscar_variaveis_disponiveis(self) -> List[Dict]:
         """Busca todas as variáveis disponíveis no sistema."""
@@ -518,6 +576,10 @@ class DeterministicRuleEvaluator:
             return any(self._avaliar_no(c, dados) for c in conditions)
 
         elif tipo == "not":
+            # Aceita tanto 'condition' (singular) quanto 'conditions' (plural)
+            condition = no.get("condition")
+            if condition:
+                return not self._avaliar_no(condition, dados)
             conditions = no.get("conditions", [])
             # NOT é verdadeiro se NENHUMA condição for verdadeira
             return not any(self._avaliar_no(c, dados) for c in conditions)

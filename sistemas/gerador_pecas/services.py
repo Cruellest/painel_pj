@@ -25,6 +25,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from sistemas.gerador_pecas.models import GeracaoPeca
 from admin.models_prompts import PromptModulo
 from admin.models import ConfiguracaoIA
+from admin.models_prompt_groups import CategoriaOrdem
 from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
 
 # Flag para indicar se o orquestrador está disponível (será verificado na primeira chamada)
@@ -158,7 +159,7 @@ class GeradorPecasService:
         subcategoria_ids: Optional[List[int]] = None
     ) -> List[PromptModulo]:
         """
-        Carrega módulos de CONTEÚDO.
+        Carrega módulos de CONTEÚDO ordenados por categoria e depois por ordem do módulo.
 
         Args:
             modulos_ids: IDs dos módulos detectados pela IA (se None, retorna todos)
@@ -196,7 +197,33 @@ class GeradorPecasService:
                 )
             )
 
-        return query.order_by(PromptModulo.ordem).all()
+        # Busca todos os módulos
+        modulos = query.all()
+
+        # Ordena por categoria (usando CategoriaOrdem) e depois por ordem do módulo
+        if group_id and modulos:
+            # Busca ordem das categorias configurada
+            categorias_ordem = self.db.query(CategoriaOrdem).filter(
+                CategoriaOrdem.group_id == group_id
+            ).all()
+            ordem_categorias = {co.nome: co.ordem for co in categorias_ordem}
+
+            # Ordena: primeiro por ordem da categoria, depois por ordem do módulo
+            modulos.sort(key=lambda m: (
+                ordem_categorias.get(m.categoria, 9999),  # Categoria sem ordem vai pro final
+                m.ordem or 0
+            ))
+
+            # Log da ordem dos prompts para debug
+            print(f"[ORDEM PROMPTS] Grupo {group_id} - Ordem das categorias: {ordem_categorias}")
+            for idx, m in enumerate(modulos):
+                cat_ordem = ordem_categorias.get(m.categoria, 9999)
+                print(f"  {idx+1}. [{m.categoria}:{cat_ordem}] ordem={m.ordem or 0} - {m.titulo}")
+        else:
+            # Fallback: ordena apenas por ordem do módulo
+            modulos.sort(key=lambda m: m.ordem or 0)
+
+        return modulos
     
     def _montar_prompt_sistema(
         self,

@@ -3,7 +3,7 @@ import unittest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from admin.models_prompt_groups import PromptGroup, PromptSubgroup
+from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
 from admin.models_prompts import PromptModulo, PromptModuloHistorico
 from auth.models import User
 from database.connection import Base
@@ -89,6 +89,11 @@ class PromptGroupTests(unittest.TestCase):
         self.db.add_all([sub_a, sub_b])
         self.db.flush()
 
+        subcat_a = PromptSubcategoria(group_id=grupo_ps.id, nome="A", slug="a", active=True)
+        subcat_b = PromptSubcategoria(group_id=grupo_ps.id, nome="B", slug="b", active=True)
+        self.db.add_all([subcat_a, subcat_b])
+        self.db.flush()
+
         modulo_a = self._create_modulo(
             nome="mod_a",
             titulo="Modulo A",
@@ -96,13 +101,15 @@ class PromptGroupTests(unittest.TestCase):
             group_id=grupo_ps.id,
             subgroup_id=sub_a.id,
         )
-        self._create_modulo(
+        modulo_a.subcategorias.append(subcat_a)
+        modulo_b = self._create_modulo(
             nome="mod_b",
             titulo="Modulo B",
             ordem=2,
             group_id=grupo_ps.id,
             subgroup_id=sub_b.id,
         )
+        modulo_b.subcategorias.append(subcat_b)
         self._create_modulo(
             nome="mod_c",
             titulo="Modulo C",
@@ -122,7 +129,7 @@ class PromptGroupTests(unittest.TestCase):
         service = GeradorPecasService.__new__(GeradorPecasService)
         service.db = self.db
         service.group_id = grupo_ps.id
-        service.subgroup_ids = [sub_a.id]
+        service.subcategoria_ids = [subcat_a.id]
 
         modulos = service._carregar_modulos_conteudo()
         modulos_ids = [modulo.id for modulo in modulos]

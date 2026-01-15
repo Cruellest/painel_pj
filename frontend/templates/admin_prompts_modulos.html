@@ -7,7 +7,8 @@
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-
+    <!-- SortableJS para drag & drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
     <script>
         tailwind.config = {
@@ -38,71 +39,85 @@
         .categoria-grupo:hover > div:first-child {
             filter: brightness(0.97);
         }
+        
+        /* Estilos para drag & drop */
+        .sortable-ghost {
+            opacity: 0.4;
+            background: #c8ebfb;
+        }
+        .sortable-chosen {
+            background: #e3f2fd;
+        }
+        .sortable-drag {
+            background: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .drag-handle {
+            cursor: grab;
+        }
+        .drag-handle:active {
+            cursor: grabbing;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <!-- Header -->
-    <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
-        <div class="flex items-center justify-between max-w-7xl mx-auto">
-            <div class="flex items-center gap-4">
-                <a href="/dashboard" class="text-gray-500 hover:text-primary-600 p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                    <i class="fas fa-arrow-left"></i>
+    <header class="bg-white border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-6">
+            <!-- Linha principal -->
+            <div class="flex items-center justify-between h-14">
+                <!-- Identidade (esquerda) -->
+                <div class="flex items-center gap-3">
+                    <a href="/dashboard" class="text-gray-400 hover:text-gray-600 p-1.5 hover:bg-gray-100 rounded transition-colors" title="Voltar">
+                        <i class="fas fa-arrow-left text-sm"></i>
+                    </a>
+                    <div class="h-5 w-px bg-gray-200"></div>
+                    <div>
+                        <h1 class="text-base font-medium text-gray-800">Prompts</h1>
+                    </div>
+                </div>
+
+                <!-- Ações (direita) -->
+                <div class="flex items-center gap-2">
+                    <button onclick="abrirGlossario()" class="px-3 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 rounded transition-colors" title="Glossário de Conceitos">
+                        <i class="fas fa-book mr-1"></i><span class="hidden sm:inline">Glossário</span>
+                    </button>
+                    <button onclick="abrirModalImportar()" class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors" title="Importar">
+                        <i class="fas fa-upload mr-1"></i><span class="hidden sm:inline">Importar</span>
+                    </button>
+                    <button onclick="abrirModalExportar()" class="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors" title="Exportar">
+                        <i class="fas fa-download mr-1"></i><span class="hidden sm:inline">Exportar</span>
+                    </button>
+                    <button onclick="criarModulo()" class="px-3 py-1.5 text-xs bg-primary-600 text-white rounded hover:bg-primary-700 transition-colors">
+                        <i class="fas fa-plus mr-1"></i>Novo Módulo
+                    </button>
+                </div>
+            </div>
+
+            <!-- Navegação secundária -->
+            <nav class="flex items-center gap-1 -mb-px">
+                <a href="/admin/prompts-modulos" class="px-3 py-2 text-xs font-medium text-primary-600 border-b-2 border-primary-600">
+                    Módulos
                 </a>
-                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
-                <div>
-                    <h1 class="text-xl font-semibold text-gray-800">Prompts Modulares</h1>
-                    <p class="text-sm text-gray-500">Gerencie prompts do sistema</p>
-                </div>
-            </div>
-            <div class="flex items-center gap-1">
-                <!-- Navegacao -->
-                <div class="flex items-center bg-blue-50 rounded-lg p-1 gap-1 mr-2">
-                    <a href="/admin/categorias-resumo-json" class="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md flex items-center gap-2 transition-all" title="Categorias de extracao JSON">
-                        <i class="fas fa-file-code"></i>
-                        <span class="hidden lg:inline">Categorias</span>
-                    </a>
-                    <a href="/admin/variaveis" class="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md flex items-center gap-2 transition-all" title="Painel de variaveis do sistema">
-                        <i class="fas fa-hashtag"></i>
-                        <span class="hidden lg:inline">Variaveis</span>
-                    </a>
-                </div>
-                <!-- Configuracoes -->
-                <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
-                    <a href="/admin/modulos-tipo-peca" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-md flex items-center gap-2 transition-all" title="Configurar modulos por tipo de peca">
-                        <i class="fas fa-layer-group"></i>
-                        <span class="hidden lg:inline">Tipos de Peca</span>
-                    </a>
-                    <button onclick="abrirModalGrupos()" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-md flex items-center gap-2 transition-all" title="Gerenciar grupos e subgrupos">
-                        <i class="fas fa-folder"></i>
-                        <span class="hidden lg:inline">Grupos</span>
-                    </button>
-                    <button onclick="abrirGerenciarSubcategoriasPrincipal()" class="px-3 py-2 text-sm text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-md flex items-center gap-2 transition-all" title="Gerenciar assuntos/subcategorias">
-                        <i class="fas fa-tags"></i>
-                        <span class="hidden lg:inline">Assuntos</span>
-                    </button>
-                    <button onclick="abrirModalOrdemCategorias()" class="px-3 py-2 text-sm text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md flex items-center gap-2 transition-all" title="Configurar ordem das categorias no prompt">
-                        <i class="fas fa-sort-amount-down"></i>
-                        <span class="hidden lg:inline">Ordem</span>
-                    </button>
-                </div>
-                <div class="w-px h-8 bg-gray-300 mx-2"></div>
-                <!-- Acoes -->
-                <button onclick="criarModulo()" class="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2 transition-colors shadow-sm">
-                    <i class="fas fa-plus"></i>
-                    <span class="hidden sm:inline">Novo Modulo</span>
+                <a href="/admin/categorias-resumo-json" class="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 transition-colors">
+                    Categorias
+                </a>
+                <a href="/admin/variaveis" class="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 transition-colors">
+                    Variáveis
+                </a>
+                <a href="/admin/modulos-tipo-peca" class="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 transition-colors">
+                    Tipos de Peça
+                </a>
+                <button onclick="abrirModalGrupos()" class="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 transition-colors">
+                    Grupos
                 </button>
-                <div class="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-                    <button onclick="abrirModalImportar()" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 flex items-center gap-2 transition-colors" title="Importar modulos">
-                        <i class="fas fa-upload"></i>
-                        <span class="hidden md:inline">Importar</span>
-                    </button>
-                    <div class="w-px h-6 bg-gray-200"></div>
-                    <button onclick="abrirModalExportar()" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 flex items-center gap-2 transition-colors" title="Exportar modulos">
-                        <i class="fas fa-download"></i>
-                        <span class="hidden md:inline">Exportar</span>
-                    </button>
-                </div>
-            </div>
+                <button onclick="abrirGerenciarSubcategoriasPrincipal()" class="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 transition-colors">
+                    Assuntos
+                </button>
+                <button onclick="abrirModalOrdemCategorias()" class="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 transition-colors">
+                    Ordem
+                </button>
+            </nav>
         </div>
     </header>
 
@@ -250,14 +265,14 @@
             
             <!-- Corpo do Modal -->
             <div class="flex-1 overflow-y-auto p-6">
-                <form id="form-modulo" class="space-y-6">
+                <form id="form-modulo" class="space-y-4">
                     <input type="hidden" id="modulo-id">
-                    
-                    <!-- Informações Básicas -->
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+
+                    <!-- Linha 1: Tipo, Categoria, Subcategoria, Assuntos -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
-                            <select id="modulo-tipo" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required>
+                            <select id="modulo-tipo" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required>
                                 <option value="base">Base (Sistema)</option>
                                 <option value="peca">Peça</option>
                                 <option value="conteudo">Conteúdo</option>
@@ -266,260 +281,253 @@
                         <div id="categoria-field-container">
                             <label class="block text-sm font-medium text-gray-700 mb-1">
                                 Categoria
-                                <span class="text-xs text-gray-400 ml-1">(agrupa/colapsa no painel)</span>
+                                <span class="text-xs text-gray-400 ml-1">(agrupa)</span>
                             </label>
-                            <input type="text" id="modulo-categoria" class="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                                placeholder="Ex: Eventualidade, Mérito">
+                            <input type="text" id="modulo-categoria" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                placeholder="Ex: Eventualidade">
                         </div>
                         <div id="subcategoria-field-container">
                             <label class="block text-sm font-medium text-gray-700 mb-1">
                                 Subcategoria
-                                <span class="text-xs text-gray-400 ml-1">(organiza dentro da categoria)</span>
+                                <span class="text-xs text-gray-400 ml-1">(organiza)</span>
                             </label>
-                            <input type="text" id="modulo-subcategoria" class="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                                placeholder="Ex: Cirurgia, Direcionamento, Execução">
+                            <input type="text" id="modulo-subcategoria" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                placeholder="Ex: Cirurgia">
                         </div>
                         <div id="subcategorias-field-container" class="hidden">
                             <label class="block text-sm font-medium text-gray-700 mb-1">
                                 Assuntos
-                                <button type="button" onclick="abrirGerenciarSubcategorias()" class="ml-2 text-xs text-primary-600 hover:text-primary-700">
-                                    <i class="fas fa-cog"></i> Gerenciar
+                                <button type="button" onclick="abrirGerenciarSubcategorias()" class="ml-1 text-xs text-primary-600 hover:text-primary-700">
+                                    <i class="fas fa-cog"></i>
                                 </button>
                             </label>
-                            <div id="modulo-subcategorias-container" class="w-full px-3 py-2 border border-gray-300 rounded-lg min-h-[42px]">
-                                <div id="modulo-subcategorias-opcoes" class="flex flex-wrap gap-2">
-                                    <span class="text-gray-400 text-sm">Selecione um grupo primeiro</span>
+                            <div id="modulo-subcategorias-container" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg min-h-[38px] max-h-[80px] overflow-y-auto">
+                                <div id="modulo-subcategorias-opcoes" class="flex flex-wrap gap-1">
+                                    <span class="text-gray-400 text-xs">Selecione um grupo</span>
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Linha 2: Nome e Título -->
+                    <div class="grid grid-cols-3 gap-3">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Nome (único)</label>
-                            <input type="text" id="modulo-nome" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required
+                            <input type="text" id="modulo-nome" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required
                                 placeholder="identificador_unico">
                         </div>
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Título</label>
+                            <input type="text" id="modulo-titulo" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" required
+                                placeholder="Título legível do módulo">
+                        </div>
                     </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Título</label>
-                        <input type="text" id="modulo-titulo" class="w-full px-3 py-2 border border-gray-300 rounded-lg" required
-                            placeholder="Título legível do módulo">
-                    </div>
-                    
-                    <div id="grupo-conteudo-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                    <!-- Linha 3: Grupo e Subgrupo -->
+                    <div id="grupo-conteudo-container" class="grid grid-cols-2 gap-3">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Grupo (Conteudo)</label>
-                            <select id="modulo-grupo" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Grupo</label>
+                            <select id="modulo-grupo" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                                 <option value="">Selecione o grupo</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Subgrupo (Opcional)</label>
-                            <select id="modulo-subgrupo" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Subgrupo</label>
+                            <select id="modulo-subgrupo" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                                 <option value="">Sem subgrupo</option>
                             </select>
                         </div>
                     </div>
 
-                    <!-- Condição de Ativação (apenas para tipo conteudo) -->
-                    <div id="condicao-ativacao-container">
+                    <!-- SEÇÃO: CONTEÚDO DO MÓDULO -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-file-alt text-blue-600 text-sm"></i>
+                                <span class="font-medium text-blue-800 text-sm">Conteúdo do Módulo</span>
+                                <span class="text-xs text-blue-500">(único, independente do modo de ativação)</span>
+                            </div>
+                            <button type="button" onclick="toggleFullscreen()" class="text-xs text-primary-600 hover:text-primary-700 flex items-center gap-1">
+                                <i class="fas fa-expand"></i> Expandir
+                            </button>
+                        </div>
+                        <textarea id="modulo-conteudo" rows="12"
+                            class="editor-container w-full px-3 py-2 border border-blue-300 rounded-lg font-mono text-sm resize-y bg-white"
+                            placeholder="Digite o conteúdo do prompt aqui..."></textarea>
+                    </div>
+
+                    <!-- SEÇÃO: FORMA DE ATIVAÇÃO (APENAS TIPO CONTEUDO) -->
+                    <div id="condicao-ativacao-container" class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fas fa-bolt text-amber-500 text-sm"></i>
+                            <span class="font-medium text-gray-800 text-sm">Forma de Ativação</span>
+                            <span class="text-xs text-gray-500">(define quando este módulo é ativado)</span>
+                        </div>
+
                         <!-- Toggle Modo LLM/Determinístico -->
-                        <div class="flex items-center gap-4 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                            <span class="text-sm font-medium text-gray-700">
-                                <i class="fas fa-bolt text-yellow-500 mr-1"></i>
-                                Modo de Ativação:
-                            </span>
-                            <div class="flex items-center gap-1 bg-white rounded-lg border border-gray-200 p-1">
+                        <div class="flex items-center gap-3 mb-3 p-2 bg-white rounded-lg border border-gray-200">
+                            <span class="text-xs font-medium text-gray-600">Modo:</span>
+                            <div class="flex items-center gap-1 bg-gray-100 rounded-md p-0.5">
                                 <button type="button" onclick="selecionarModoAtivacao('llm')" id="btn-modo-llm"
-                                    class="px-3 py-1.5 text-sm rounded-md bg-primary-100 text-primary-700 font-medium">
-                                    <i class="fas fa-brain mr-1"></i> LLM
+                                    class="px-2.5 py-1 text-xs rounded bg-primary-100 text-primary-700 font-medium">
+                                    <i class="fas fa-brain mr-1"></i>LLM
                                 </button>
                                 <button type="button" onclick="selecionarModoAtivacao('deterministic')" id="btn-modo-deterministic"
-                                    class="px-3 py-1.5 text-sm rounded-md text-gray-500 hover:bg-gray-100">
-                                    <i class="fas fa-code-branch mr-1"></i> Determinístico
+                                    class="px-2.5 py-1 text-xs rounded text-gray-500 hover:bg-gray-200">
+                                    <i class="fas fa-code-branch mr-1"></i>Determinístico
                                 </button>
                             </div>
-                            <span id="modo-info" class="text-xs text-gray-500">
-                                A IA avalia a descrição para decidir se ativa este módulo
-                            </span>
+                            <span id="modo-info" class="text-xs text-gray-500">IA avalia a descrição</span>
                         </div>
 
                         <!-- Modo LLM: Descrição em linguagem natural -->
                         <div id="modo-llm-content">
-                            <label class="block text-sm font-medium text-gray-700 mb-1">
-                                Condição de Ativação (Descrição)
-                                <span class="text-xs text-gray-400 ml-2">(Quando este prompt deve ser acionado?)</span>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">
+                                Condição de Ativação <span class="text-gray-400">(quando este módulo deve ser acionado?)</span>
                             </label>
-                            <textarea id="modulo-condicao-ativacao" rows="4"
-                                class="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm resize-y"
-                                placeholder="Descreva a situação em que este prompt deve ser ativado. Ex: 'Quando o processo envolve pedido de medicamento não incorporado ao SUS' ou 'Quando há alegação de dano moral'"></textarea>
-                            <p class="text-xs text-gray-500 mt-1">Esta descrição é usada pelo Agente Detector (LLM) para decidir se ativa este módulo.</p>
+                            <textarea id="modulo-condicao-ativacao" rows="3"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y"
+                                placeholder="Ex: 'Quando há medicamento não incorporado ao SUS' ou 'Quando há alegação de dano moral'"></textarea>
                         </div>
 
                         <!-- Modo Determinístico: Editor de Regras -->
                         <div id="modo-deterministic-content" class="hidden">
-                            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4 mb-4">
-                                <div class="flex items-start gap-3">
-                                    <i class="fas fa-info-circle text-indigo-500 mt-0.5"></i>
-                                    <div class="text-sm text-indigo-700">
-                                        <p class="font-medium mb-1">Modo Determinístico:</p>
-                                        <p>Configure regras baseadas em variáveis extraídas dos documentos. O módulo será ativado quando as condições forem satisfeitas, sem necessidade de avaliação por LLM.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- NOVO: Geracao via Linguagem Natural -->
-                            <div class="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
-                                <label class="block text-sm font-medium text-blue-700 mb-2">
-                                    <i class="fas fa-magic mr-1"></i>
-                                    Gerar Regra via IA (Linguagem Natural)
+                            <!-- Gerar Regra via IA -->
+                            <div class="mb-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                                <label class="block text-xs font-medium text-blue-700 mb-1.5">
+                                    <i class="fas fa-magic mr-1"></i>Gerar Regra via IA
                                 </label>
-                                <div class="flex gap-2 mb-2">
+                                <div class="flex gap-2">
                                     <textarea id="regra-linguagem-natural" rows="2"
-                                        class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm resize-none"
-                                        placeholder="Ex: 'O valor da causa e maior que 100000 e o autor e idoso' ou 'O medicamento nao esta na lista RENAME'"></textarea>
+                                        class="flex-1 px-2 py-1.5 border border-blue-300 rounded text-xs resize-none"
+                                        placeholder="Ex: 'O medicamento não está na lista RENAME' ou 'O autor é idoso'"></textarea>
                                     <button type="button" onclick="gerarRegraIA()"
                                         id="btn-gerar-regra-ia"
-                                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 whitespace-nowrap">
-                                        <i class="fas fa-wand-magic-sparkles"></i>
-                                        <span>Gerar Regra</span>
+                                        class="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 text-xs whitespace-nowrap">
+                                        <i class="fas fa-wand-magic-sparkles"></i>Gerar
                                     </button>
                                 </div>
 
                                 <!-- Preview da regra gerada -->
-                                <div id="preview-regra-gerada" class="hidden mt-3">
-                                    <div class="bg-white p-3 rounded-lg border border-blue-200">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <span class="text-sm font-medium text-gray-700">Regra Gerada:</span>
-                                            <span id="preview-status" class="text-xs px-2 py-1 rounded bg-green-100 text-green-700">Valida</span>
+                                <div id="preview-regra-gerada" class="hidden mt-2">
+                                    <div class="bg-white p-2 rounded border border-blue-200">
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-xs font-medium text-gray-700">Regra:</span>
+                                            <span id="preview-status" class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">OK</span>
                                         </div>
-                                        <div id="preview-regra-conteudo" class="text-sm text-gray-600 mb-3"></div>
+                                        <div id="preview-regra-conteudo" class="text-xs text-gray-600 mb-2"></div>
                                         <div class="flex gap-2">
                                             <button type="button" onclick="aplicarRegraGerada()"
-                                                class="px-3 py-1.5 bg-green-600 text-white rounded-md text-sm hover:bg-green-700">
-                                                <i class="fas fa-check mr-1"></i> Aplicar Regra
+                                                class="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">
+                                                <i class="fas fa-check mr-1"></i>Aplicar
                                             </button>
                                             <button type="button" onclick="descartarRegraGerada()"
-                                                class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-md text-sm hover:bg-gray-300">
-                                                <i class="fas fa-times mr-1"></i> Descartar
+                                                class="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs hover:bg-gray-300">
+                                                <i class="fas fa-times mr-1"></i>Descartar
                                             </button>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Erros e variaveis faltantes -->
-                                <div id="erro-regra-gerada" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                                    <div class="flex items-start gap-2">
-                                        <i class="fas fa-exclamation-circle text-red-500 mt-0.5"></i>
+                                <!-- Erros -->
+                                <div id="erro-regra-gerada" class="hidden mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                                    <div class="flex items-start gap-1.5">
+                                        <i class="fas fa-exclamation-circle text-red-500 text-xs mt-0.5"></i>
                                         <div class="flex-1">
-                                            <p id="erro-regra-msg" class="text-sm text-red-700"></p>
-                                            <div id="variaveis-faltantes" class="mt-2 hidden">
-                                                <p class="text-xs text-red-600 font-medium mb-1">Variaveis nao encontradas:</p>
-                                                <div id="lista-variaveis-faltantes" class="space-y-1"></div>
+                                            <p id="erro-regra-msg" class="text-xs text-red-700"></p>
+                                            <div id="variaveis-faltantes" class="mt-1 hidden">
+                                                <p class="text-xs text-red-600 font-medium">Variáveis não encontradas:</p>
+                                                <div id="lista-variaveis-faltantes" class="space-y-0.5"></div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="border-t border-gray-200 pt-4 mb-4">
-                                <p class="text-xs text-gray-500 text-center">
-                                    <i class="fas fa-arrow-down mr-1"></i>
-                                    Ou configure manualmente abaixo
-                                    <i class="fas fa-arrow-down ml-1"></i>
-                                </p>
-                            </div>
+                            <div class="text-xs text-gray-400 text-center mb-2">— ou configure manualmente —</div>
 
-                            <label class="block text-sm font-medium text-gray-700 mb-2">
-                                <i class="fas fa-code-branch text-indigo-500 mr-1"></i>
-                                Regra de Ativacao (Manual)
+                            <label class="block text-xs font-medium text-gray-700 mb-1">
+                                <i class="fas fa-code-branch text-indigo-500 mr-1"></i>Regra Manual
                             </label>
 
                             <!-- Visualizador Humanizado -->
-                            <div id="regra-humanizada" class="mb-4 p-4 bg-white border border-gray-200 rounded-lg">
-                                <p class="text-gray-400 text-sm italic">Nenhuma regra configurada</p>
+                            <div id="regra-humanizada" class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs">
+                                <span class="text-gray-400 italic">Nenhuma regra configurada</span>
                             </div>
 
                             <!-- Editor de Condições -->
-                            <div id="editor-regras" class="space-y-3">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <label class="text-sm text-gray-600">Operador lógico:</label>
-                                    <select id="regra-operador" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                            <div id="editor-regras" class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <label class="text-xs text-gray-600">Operador:</label>
+                                    <select id="regra-operador" class="px-2 py-1 border border-gray-300 rounded text-xs"
                                         onchange="atualizarVisualizadorRegra()">
-                                        <option value="and">E (AND) - Todas as condições</option>
-                                        <option value="or">OU (OR) - Qualquer condição</option>
+                                        <option value="and">E (AND)</option>
+                                        <option value="or">OU (OR)</option>
                                     </select>
                                 </div>
 
-                                <div id="lista-condicoes" class="space-y-2">
-                                    <!-- Condições serão adicionadas aqui -->
+                                <div id="lista-condicoes" class="space-y-1.5">
+                                    <!-- Condições e grupos serão adicionados aqui -->
                                 </div>
 
-                                <button type="button" onclick="adicionarCondicao()"
-                                    class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 text-sm">
-                                    <i class="fas fa-plus mr-1"></i> Adicionar Condição
-                                </button>
+                                <div class="flex gap-2">
+                                    <button type="button" onclick="adicionarCondicao()"
+                                        class="px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 text-xs">
+                                        <i class="fas fa-plus mr-1"></i>Condição
+                                    </button>
+                                    <button type="button" onclick="adicionarGrupo()"
+                                        class="px-2.5 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 text-xs"
+                                        title="Adicionar grupo de condições">
+                                        <i class="fas fa-object-group mr-1"></i>Grupo
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- JSON da regra (hidden para backend) -->
                             <input type="hidden" id="modulo-regra-json">
                         </div>
                     </div>
-                    
-                    <!-- Editor de Conteúdo -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            <i class="fas fa-file-alt text-blue-500 mr-1"></i>
-                            Conteúdo do Prompt (Markdown)
-                            <span class="text-xs text-gray-400 ml-2">(Enviado ao Agente Gerador de Peça)</span>
-                            <button type="button" onclick="toggleFullscreen()" class="ml-2 text-primary-600 hover:text-primary-700">
-                                <i class="fas fa-expand"></i> Tela cheia
-                            </button>
-                        </label>
-                        <textarea id="modulo-conteudo" rows="15" 
-                            class="editor-container w-full px-4 py-3 border border-gray-300 rounded-lg font-mono text-sm resize-y"
-                            placeholder="Digite o conteúdo do prompt aqui... Este é o texto que será incluído no prompt enviado à IA para gerar a peça."></textarea>
-                    </div>
-                    
-                    <!-- Tags -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            <i class="fas fa-folder text-blue-500 mr-1"></i>
-                            Tags (organização)
-                        </label>
-                        <div id="tags-container" class="flex flex-wrap gap-2 p-3 border border-gray-300 rounded-lg min-h-[44px]">
-                            <!-- Tags renderizadas aqui -->
+
+                    <!-- Tags e Status na mesma linha -->
+                    <div class="grid grid-cols-3 gap-3 items-end">
+                        <!-- Tags -->
+                        <div class="col-span-2">
+                            <label class="block text-xs font-medium text-gray-700 mb-1">
+                                <i class="fas fa-tags text-gray-400 mr-1"></i>Tags
+                            </label>
+                            <div class="flex gap-2">
+                                <div id="tags-container" class="flex-1 flex flex-wrap gap-1 px-2 py-1.5 border border-gray-300 rounded-lg min-h-[36px] max-h-[60px] overflow-y-auto">
+                                    <!-- Tags renderizadas aqui -->
+                                </div>
+                                <input type="text" id="nova-tag" placeholder="Nova tag"
+                                    class="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-xs"
+                                    onkeypress="if(event.key==='Enter'){event.preventDefault();adicionarTag()}">
+                                <button type="button" onclick="adicionarTag()" class="px-2 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-xs">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
                         </div>
-                        <div class="mt-2 flex gap-2">
-                            <input type="text" id="nova-tag" placeholder="Adicionar tag"
-                                class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                                onkeypress="if(event.key==='Enter'){event.preventDefault();adicionarTag()}">
-                            <button type="button" onclick="adicionarTag()" class="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">
-                                <i class="fas fa-plus"></i>
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- Status -->
-                    <div class="flex items-center gap-4">
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="modulo-ativo" checked class="w-4 h-4 text-primary-600 rounded">
-                            <span class="text-sm text-gray-700">Módulo ativo</span>
-                        </label>
-                        <div>
-                            <label class="text-sm text-gray-700 mr-2">Ordem:</label>
-                            <input type="number" id="modulo-ordem" value="0" min="0" 
-                                class="w-20 px-2 py-1 border border-gray-300 rounded-lg text-sm">
+                        <!-- Status e Ordem -->
+                        <div class="flex items-center gap-3">
+                            <label class="flex items-center gap-1.5 text-xs">
+                                <input type="checkbox" id="modulo-ativo" checked class="w-3.5 h-3.5 text-primary-600 rounded">
+                                <span class="text-gray-700">Ativo</span>
+                            </label>
+                            <div class="flex items-center gap-1">
+                                <label class="text-xs text-gray-600">Ordem:</label>
+                                <input type="number" id="modulo-ordem" value="0" min="0"
+                                    class="w-14 px-2 py-1 border border-gray-300 rounded text-xs">
+                            </div>
                         </div>
                     </div>
-                    
+
                     <!-- Motivo da alteração (apenas para edição) -->
                     <div id="motivo-container" class="hidden">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            <i class="fas fa-comment text-orange-500 mr-1"></i>
-                            Motivo da alteração <span class="text-gray-400 text-xs">(opcional)</span>
+                        <label class="block text-xs font-medium text-gray-700 mb-1">
+                            <i class="fas fa-comment text-orange-400 mr-1"></i>Motivo da alteração <span class="text-gray-400">(opcional)</span>
                         </label>
                         <input type="text" id="modulo-motivo"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            class="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
                             placeholder="Ex: Atualização de jurisprudência - Tema 106 STJ">
                     </div>
                 </form>
@@ -936,10 +944,13 @@
         let subcategoriasCache = [];
         let subcategoriasSelecionadas = [];
         let grupoSelecionadoId = null;
+        let ordemCategoriasConfig = {}; // Cache da ordem das categorias por grupo
+        let salvarOrdemTimeout = null; // Timeout para debounce do salvamento automático
         // Estado do modo de ativação
         let modoAtivacaoAtual = 'llm'; // 'llm' ou 'deterministic'
-        let condicoesRegra = []; // Array de condições para modo determinístico
+        let condicoesRegra = []; // Array de condições/grupos para modo determinístico
         let variaveisDisponiveis = []; // Cache de variáveis para autocomplete
+        let contadorIdCondicao = 0; // Contador para IDs únicos
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {
@@ -973,6 +984,24 @@
                 if (!response.ok) throw new Error('Erro ao carregar módulos');
 
                 modulosCache = await response.json();
+
+                // Busca ordem das categorias usando grupo selecionado ou inferido
+                let grupoOrdemId = null;
+                if (grupoId) {
+                    grupoOrdemId = parseInt(grupoId, 10);
+                    if (Number.isNaN(grupoOrdemId)) {
+                        grupoOrdemId = null;
+                    }
+                }
+                if (!grupoOrdemId) {
+                    grupoOrdemId = obterGrupoIdParaSalvar();
+                }
+                if (grupoOrdemId) {
+                    await carregarOrdemCategoriasGrupo(grupoOrdemId);
+                } else {
+                    ordemCategoriasConfig = {};
+                }
+
                 renderizarModulos();
             } catch (error) {
                 console.error(error);
@@ -981,6 +1010,24 @@
                         <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
                         <p>Erro ao carregar módulos</p>
                     </div>`;
+            }
+        }
+
+        // Carrega a ordem configurada das categorias para um grupo
+        async function carregarOrdemCategoriasGrupo(grupoId) {
+            try {
+                const response = await fetch(`${API_BASE}/grupos/${grupoId}/categorias-ordem`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    ordemCategoriasConfig = {};
+                    (data.categorias || []).forEach(cat => {
+                        ordemCategoriasConfig[cat.nome] = cat.ordem;
+                    });
+                }
+            } catch (error) {
+                console.error('Erro ao carregar ordem das categorias:', error);
             }
         }
 
@@ -1730,10 +1777,24 @@
                 categorias[cat].push(m);
             });
             
-            // Ordena categorias alfabeticamente
+            // Ordena categorias pela ordem configurada, ou alfabeticamente se não houver ordem
             const categoriasOrdenadas = Object.keys(categorias).sort((a, b) => {
                 if (a === 'Sem Categoria') return 1;
                 if (b === 'Sem Categoria') return -1;
+
+                // Usa ordem configurada se disponível
+                const ordemA = ordemCategoriasConfig[a];
+                const ordemB = ordemCategoriasConfig[b];
+
+                // Se ambas têm ordem configurada, ordena por ordem
+                if (ordemA !== undefined && ordemB !== undefined) {
+                    return ordemA - ordemB;
+                }
+                // Se apenas uma tem ordem, ela vem primeiro
+                if (ordemA !== undefined) return -1;
+                if (ordemB !== undefined) return 1;
+
+                // Fallback: ordem alfabética
                 return a.localeCompare(b, 'pt-BR');
             });
             
@@ -1753,7 +1814,7 @@
                             </button>
                         </div>
                     </div>
-                    <div class="divide-y divide-gray-100">
+                    <div id="categorias-container" class="divide-y divide-gray-100">
             `;
             
             // Cores para subcategorias
@@ -1765,6 +1826,9 @@
                 const modulosCat = categorias[cat];
                 const corCategoria = coresCategoria[idx % coresCategoria.length];
                 const catId = `cat-${cat.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                
+                // Ordena por campo ordem
+                modulosCat.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
                 
                 // Agrupa por subcategoria dentro da categoria
                 const subcategorias = {};
@@ -1783,12 +1847,14 @@
                 });
                 
                 html += `
-                    <div class="categoria-grupo" data-categoria="${cat}">
-                        <div class="px-4 py-3 bg-${corCategoria}-50 border-b border-${corCategoria}-100 cursor-pointer hover:bg-${corCategoria}-100 transition-colors flex items-center justify-between"
-                            onclick="toggleCategoria('${catId}')">
+                    <div class="categoria-grupo categoria-draggable" data-categoria="${cat}">
+                        <div class="px-4 py-3 bg-${corCategoria}-50 border-b border-${corCategoria}-100 cursor-pointer hover:bg-${corCategoria}-100 transition-colors flex items-center justify-between">
                             <div class="flex items-center gap-3">
-                                <i class="fas fa-chevron-down text-${corCategoria}-500 transition-transform categoria-icon" id="icon-${catId}"></i>
-                                <span class="font-medium text-${corCategoria}-800">${cat}</span>
+                                <span class="drag-handle-categoria text-${corCategoria}-300 hover:text-${corCategoria}-500 cursor-grab" title="Arraste para reordenar categoria">
+                                    <i class="fas fa-grip-vertical"></i>
+                                </span>
+                                <i class="fas fa-chevron-down text-${corCategoria}-500 transition-transform categoria-icon" id="icon-${catId}" onclick="toggleCategoria('${catId}')"></i>
+                                <span class="font-medium text-${corCategoria}-800" onclick="toggleCategoria('${catId}')">${cat}</span>
                                 <span class="px-2 py-0.5 text-xs bg-${corCategoria}-200 text-${corCategoria}-800 rounded-full">${modulosCat.length} módulos</span>
                             </div>
                             <div class="flex items-center gap-2 text-xs text-${corCategoria}-600">
@@ -1801,6 +1867,7 @@
                 // Renderiza por subcategoria
                 subcategoriasOrdenadas.forEach(subcat => {
                     const modulosSubcat = subcategorias[subcat];
+                    const subcatId = `${catId}-${subcat.replace(/[^a-zA-Z0-9]/g, '_')}`;
                     
                     if (subcategoriasOrdenadas.length > 1 || subcat !== 'Geral') {
                         html += `
@@ -1812,7 +1879,7 @@
                         `;
                     }
                     
-                    html += `<div class="divide-y divide-gray-100">`;
+                    html += `<div class="prompts-sortable divide-y divide-gray-100" id="${subcatId}" data-categoria="${cat}" data-subcategoria="${subcat}">`;
                     modulosSubcat.forEach(m => {
                         html += renderizarItemModulo(m, false); // Não mostra categoria no badge
                     });
@@ -1838,17 +1905,28 @@
                 ? `<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">${m.categoria}</span>`
                 : '';
 
+            // Badge de modo de ativação (apenas para prompts de conteúdo)
+            const modoAtivacaoBadge = m.tipo === 'conteudo'
+                ? (m.modo_ativacao === 'deterministic'
+                    ? '<span class="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full" title="Ativação por regra determinística"><i class="fas fa-cog mr-1"></i>Regra</span>'
+                    : '<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full" title="Ativação por LLM"><i class="fas fa-brain mr-1"></i>LLM</span>')
+                : '';
+
             // Subcategorias associadas (tags minimalistas em roxo)
             const subcatsBadges = (m.subcategorias_nomes && m.subcategorias_nomes.length > 0)
                 ? m.subcategorias_nomes.map(n => `<span class="px-1.5 py-0.5 text-[10px] bg-purple-50 text-purple-600 rounded">${n}</span>`).join('')
                 : '';
 
             return `
-                <div class="px-4 py-3 hover:bg-gray-50 flex items-center justify-between">
+                <div class="prompt-item px-4 py-3 hover:bg-gray-50 flex items-center justify-between" data-id="${m.id}" data-categoria="${m.categoria || ''}">
+                    <div class="drag-handle text-gray-300 hover:text-gray-500 mr-3 cursor-grab" title="Arraste para reordenar">
+                        <i class="fas fa-grip-vertical"></i>
+                    </div>
                     <div class="flex-1">
                         <div class="flex items-center gap-2 mb-1">
                             <span class="font-medium text-gray-800">${m.titulo}</span>
                             ${statusBadge}
+                            ${modoAtivacaoBadge}
                             ${categoriaBadge}
                             <span class="text-xs text-gray-400">v${m.versao}</span>
                         </div>
@@ -1902,6 +1980,184 @@
                 el.style.transform = 'rotate(-90deg)';
             });
         }
+
+        // ==========================================
+        // Drag & Drop - Reordenação de Prompts
+        // ==========================================
+        
+        let sortableInstances = [];
+        let ordemModificada = false;
+        let salvarOrdemTimeout = null;
+
+        function obterGrupoIdParaSalvar() {
+            const filtroGrupo = document.getElementById('filtro-grupo');
+            const grupoIdRaw = filtroGrupo ? filtroGrupo.value : '';
+            const grupoId = parseInt(grupoIdRaw, 10);
+            if (!Number.isNaN(grupoId)) {
+                return grupoId;
+            }
+
+            const gruposConteudo = new Set(
+                (modulosCache || [])
+                    .filter(modulo => modulo.tipo === 'conteudo' && modulo.group_id)
+                    .map(modulo => modulo.group_id)
+            );
+            if (gruposConteudo.size === 1) {
+                return [...gruposConteudo][0];
+            }
+
+            return null;
+        }
+        
+        function inicializarSortable() {
+            // Limpa instâncias anteriores
+            sortableInstances.forEach(instance => instance.destroy());
+            sortableInstances = [];
+            
+            // Inicializa sortable para cada container de prompts
+            document.querySelectorAll('.prompts-sortable').forEach(container => {
+                const sortable = new Sortable(container, {
+                    group: 'prompts',
+                    animation: 150,
+                    handle: '.drag-handle',
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    dragClass: 'sortable-drag',
+                    onEnd: function(evt) {
+                        marcarOrdemModificada();
+                    }
+                });
+                sortableInstances.push(sortable);
+            });
+            
+            // Inicializa sortable para categorias
+            const categoriasContainer = document.getElementById('categorias-container');
+            if (categoriasContainer) {
+                const sortableCategorias = new Sortable(categoriasContainer, {
+                    group: 'categorias',
+                    animation: 150,
+                    handle: '.drag-handle-categoria',
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    dragClass: 'sortable-drag',
+                    onEnd: function(evt) {
+                        marcarOrdemModificada();
+                    }
+                });
+                sortableInstances.push(sortableCategorias);
+            }
+        }
+        
+        function marcarOrdemModificada() {
+            ordemModificada = true;
+            if (salvarOrdemTimeout) {
+                clearTimeout(salvarOrdemTimeout);
+            }
+            salvarOrdemTimeout = setTimeout(() => {
+                salvarOrdemPrompts(true);
+            }, 500);
+        }
+        
+        async function salvarOrdemPrompts(silencioso = false) {
+            const btnSalvar = document.getElementById('btn-salvar-ordem');
+            if (btnSalvar) {
+                btnSalvar.disabled = true;
+                btnSalvar.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Salvando...';
+            }
+            
+            try {
+                const grupoId = obterGrupoIdParaSalvar();
+                if (!grupoId) {
+                    return;
+                }
+                
+                // Coleta ordem das categorias e prompts
+                const categoriasContainer = document.getElementById('categorias-container');
+                const categorias = [];
+                
+                let ordemCategoria = 0;
+                categoriasContainer.querySelectorAll('.categoria-draggable').forEach(catEl => {
+                    const nomeCategoria = catEl.dataset.categoria;
+                    const prompts = [];
+                    
+                    let ordemPrompt = 0;
+                    catEl.querySelectorAll('.prompt-item').forEach(promptEl => {
+                        prompts.push({
+                            id: parseInt(promptEl.dataset.id),
+                            ordem: ordemPrompt++
+                        });
+                    });
+                    
+                    categorias.push({
+                        nome: nomeCategoria,
+                        ordem: ordemCategoria++,
+                        prompts: prompts
+                    });
+                });
+                
+                const response = await fetch(`${API_BASE}/prompts/reordenar-completo`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    },
+                    body: JSON.stringify({
+                        group_id: grupoId,
+                        categorias: categorias
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Erro ao salvar ordem');
+                }
+                
+                const result = await response.json();
+                
+                ordemModificada = false;
+                if (btnSalvar) {
+                    btnSalvar.style.display = 'none';
+                    btnSalvar.classList.remove('animate-pulse');
+                }
+                
+                if (!silencioso) {
+                    mostrarNotificacao(`Ordem salva! ${result.categorias_atualizadas} categorias e ${result.prompts_atualizados} prompts atualizados.`, 'success');
+                }
+                
+            } catch (error) {
+                console.error('Erro ao salvar ordem:', error);
+                mostrarNotificacao('Erro ao salvar ordem. Tente novamente.', 'error');
+            } finally {
+                if (btnSalvar) {
+                    btnSalvar.disabled = false;
+                    btnSalvar.innerHTML = '<i class="fas fa-save mr-1"></i> Salvar Ordem';
+                }
+            }
+        }
+        
+        function mostrarNotificacao(mensagem, tipo = 'info') {
+            const cores = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500'
+            };
+            
+            const notif = document.createElement('div');
+            notif.className = `fixed bottom-4 right-4 ${cores[tipo]} text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity`;
+            notif.textContent = mensagem;
+            document.body.appendChild(notif);
+            
+            setTimeout(() => {
+                notif.style.opacity = '0';
+                setTimeout(() => notif.remove(), 300);
+            }, 3000);
+        }
+        
+        // Reinicializa sortable após carregar módulos
+        const originalRenderizarModulos = renderizarModulos;
+        renderizarModulos = function() {
+            originalRenderizarModulos();
+            setTimeout(inicializarSortable, 100);
+        };
 
         function filtrarModulos() {
             carregarModulos();
@@ -1983,35 +2239,106 @@
             }
         }
 
-        // Adiciona uma nova condição ao editor de regras
-        function adicionarCondicao() {
-            const id = Date.now();
-            condicoesRegra.push({
-                id: id,
+        // Gera ID único para condições/grupos
+        function gerarIdUnico() {
+            return ++contadorIdCondicao;
+        }
+
+        // Adiciona uma nova condição ao editor de regras (no nível raiz ou dentro de um grupo)
+        function adicionarCondicao(grupoId = null) {
+            const novaCondicao = {
+                type: 'condition',
+                id: gerarIdUnico(),
                 variavel: '',
                 operador: 'equals',
                 valor: ''
-            });
+            };
+            
+            if (grupoId !== null) {
+                // Adiciona dentro de um grupo
+                const grupo = encontrarItemPorId(condicoesRegra, grupoId);
+                if (grupo && grupo.type === 'group') {
+                    grupo.conditions.push(novaCondicao);
+                }
+            } else {
+                // Adiciona no nível raiz
+                condicoesRegra.push(novaCondicao);
+            }
             renderizarCondicoes();
         }
 
-        // Remove uma condição
-        function removerCondicao(id) {
-            condicoesRegra = condicoesRegra.filter(c => c.id !== id);
+        // Adiciona um novo grupo de condições
+        function adicionarGrupo(grupoId = null) {
+            const novoGrupo = {
+                type: 'group',
+                id: gerarIdUnico(),
+                operador: 'or', // Por padrão o grupo interno é OR (para A AND (B OR C))
+                conditions: []
+            };
+            
+            if (grupoId !== null) {
+                // Adiciona dentro de outro grupo (subgrupo)
+                const grupoPai = encontrarItemPorId(condicoesRegra, grupoId);
+                if (grupoPai && grupoPai.type === 'group') {
+                    grupoPai.conditions.push(novoGrupo);
+                }
+            } else {
+                // Adiciona no nível raiz
+                condicoesRegra.push(novoGrupo);
+            }
             renderizarCondicoes();
-            atualizarVisualizadorRegra();
         }
 
-        // Atualiza uma condição
+        // Encontra um item (condição ou grupo) por ID, recursivamente
+        function encontrarItemPorId(items, id) {
+            for (const item of items) {
+                if (item.id === id) return item;
+                if (item.type === 'group' && item.conditions) {
+                    const found = encontrarItemPorId(item.conditions, id);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        // Remove uma condição ou grupo (recursivamente)
+        function removerCondicao(id, parentArray = null) {
+            const array = parentArray || condicoesRegra;
+            const idx = array.findIndex(c => c.id === id);
+            if (idx !== -1) {
+                array.splice(idx, 1);
+                renderizarCondicoes();
+                atualizarVisualizadorRegra();
+                return true;
+            }
+            // Busca em grupos aninhados
+            for (const item of array) {
+                if (item.type === 'group' && item.conditions) {
+                    if (removerCondicao(id, item.conditions)) return true;
+                }
+            }
+            return false;
+        }
+
+        // Atualiza uma condição (busca recursivamente)
         function atualizarCondicao(id, campo, valor) {
-            const condicao = condicoesRegra.find(c => c.id === id);
+            const condicao = encontrarItemPorId(condicoesRegra, id);
             if (condicao) {
                 condicao[campo] = valor;
                 atualizarVisualizadorRegra();
             }
         }
 
-        // Renderiza as condições no editor
+        // Atualiza o operador de um grupo
+        function atualizarOperadorGrupo(id, novoOperador) {
+            const grupo = encontrarItemPorId(condicoesRegra, id);
+            if (grupo && grupo.type === 'group') {
+                grupo.operador = novoOperador;
+                atualizarVisualizadorRegra();
+            }
+        }
+
+        // Renderiza as condições e grupos no editor
         function renderizarCondicoes() {
             const container = document.getElementById('lista-condicoes');
             if (!container) return;
@@ -2019,12 +2346,18 @@
             if (condicoesRegra.length === 0) {
                 container.innerHTML = `
                     <div class="text-gray-400 text-sm italic p-3 bg-gray-50 rounded-lg">
-                        Nenhuma condição adicionada. Clique em "Adicionar Condição" para começar.
+                        Nenhuma condição adicionada. Clique em "Adicionar Condição" ou "Adicionar Grupo" para começar.
                     </div>`;
                 atualizarVisualizadorRegra();
                 return;
             }
 
+            container.innerHTML = renderizarItens(condicoesRegra, 0);
+            atualizarVisualizadorRegra();
+        }
+
+        // Renderiza itens recursivamente (condições e grupos)
+        function renderizarItens(items, nivel) {
             const operadores = [
                 { value: 'equals', label: 'é igual a' },
                 { value: 'not_equals', label: 'é diferente de' },
@@ -2038,41 +2371,91 @@
                 { value: 'not_in_list', label: 'não está na lista' }
             ];
 
-            container.innerHTML = condicoesRegra.map(c => {
-                // Encontra informacoes da variavel selecionada
-                const varInfo = variaveisDisponiveis.find(v => v.slug === c.variavel);
-                const esconderValor = ['exists', 'not_exists'].includes(c.operador);
+            return items.map(item => {
+                if (item.type === 'group') {
+                    return renderizarGrupo(item, nivel, operadores);
+                } else {
+                    return renderizarCondicaoItem(item, nivel, operadores);
+                }
+            }).join('');
+        }
 
-                return `
-                <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200" data-id="${c.id}">
-                    <select class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        onchange="onVariavelChange(${c.id}, this.value)">
-                        <option value="">Selecione a variável...</option>
-                        ${variaveisDisponiveis.map(v => `
-                            <option value="${v.slug}" ${c.variavel === v.slug ? 'selected' : ''}>
-                                ${v.slug} (${v.tipo})
-                            </option>
-                        `).join('')}
-                    </select>
-                    <select class="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        onchange="atualizarCondicao(${c.id}, 'operador', this.value); toggleValorCondicao(${c.id}, this.value)">
-                        ${operadores.map(op => `
-                            <option value="${op.value}" ${c.operador === op.value ? 'selected' : ''}>
-                                ${op.label}
-                            </option>
-                        `).join('')}
-                    </select>
-                    <div id="valor-container-${c.id}" class="${esconderValor ? 'hidden' : ''}">
-                        ${renderizarCampoValor(c, varInfo)}
+        // Renderiza um grupo
+        function renderizarGrupo(grupo, nivel, operadores) {
+            const bgColor = nivel === 0 ? 'bg-purple-50' : 'bg-indigo-50';
+            const borderColor = nivel === 0 ? 'border-purple-300' : 'border-indigo-300';
+            
+            return `
+            <div class="p-3 ${bgColor} rounded-lg border-2 ${borderColor} border-dashed" data-id="${grupo.id}" data-type="group">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-object-group text-purple-500"></i>
+                        <span class="text-sm font-medium text-purple-700">Grupo</span>
+                        <select class="px-2 py-1 text-xs border border-purple-300 rounded bg-white"
+                            onchange="atualizarOperadorGrupo(${grupo.id}, this.value)">
+                            <option value="and" ${grupo.operador === 'and' ? 'selected' : ''}>AND</option>
+                            <option value="or" ${grupo.operador === 'or' ? 'selected' : ''}>OR</option>
+                        </select>
                     </div>
-                    <button type="button" onclick="removerCondicao(${c.id})"
-                        class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                        <i class="fas fa-trash text-sm"></i>
+                    <button type="button" onclick="removerCondicao(${grupo.id})"
+                        class="p-1 text-red-400 hover:text-red-600 hover:bg-red-100 rounded">
+                        <i class="fas fa-trash text-xs"></i>
                     </button>
                 </div>
-            `}).join('');
+                <div class="space-y-2 ml-4 border-l-2 border-purple-200 pl-3">
+                    ${grupo.conditions.length === 0 
+                        ? '<p class="text-xs text-gray-400 italic py-2">Grupo vazio - adicione condições</p>'
+                        : renderizarItens(grupo.conditions, nivel + 1)
+                    }
+                </div>
+                <div class="mt-2 ml-4 flex gap-2">
+                    <button type="button" onclick="adicionarCondicao(${grupo.id})"
+                        class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs hover:bg-purple-200">
+                        <i class="fas fa-plus mr-1"></i> Condição
+                    </button>
+                    <button type="button" onclick="adicionarGrupo(${grupo.id})"
+                        class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs hover:bg-indigo-200">
+                        <i class="fas fa-object-group mr-1"></i> Subgrupo
+                    </button>
+                </div>
+            </div>
+            `;
+        }
 
-            atualizarVisualizadorRegra();
+        // Renderiza uma condição individual
+        function renderizarCondicaoItem(c, nivel, operadores) {
+            const varInfo = variaveisDisponiveis.find(v => v.slug === c.variavel);
+            const esconderValor = ['exists', 'not_exists'].includes(c.operador);
+            const marginLeft = nivel > 0 ? '' : '';
+
+            return `
+            <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 ${marginLeft}" data-id="${c.id}" data-type="condition">
+                <select class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    onchange="onVariavelChange(${c.id}, this.value)">
+                    <option value="">Selecione a variável...</option>
+                    ${variaveisDisponiveis.map(v => `
+                        <option value="${v.slug}" ${c.variavel === v.slug ? 'selected' : ''}>
+                            ${v.slug} (${v.tipo})
+                        </option>
+                    `).join('')}
+                </select>
+                <select class="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    onchange="atualizarCondicao(${c.id}, 'operador', this.value); toggleValorCondicao(${c.id}, this.value)">
+                    ${operadores.map(op => `
+                        <option value="${op.value}" ${c.operador === op.value ? 'selected' : ''}>
+                            ${op.label}
+                        </option>
+                    `).join('')}
+                </select>
+                <div id="valor-container-${c.id}" class="${esconderValor ? 'hidden' : ''}">
+                    ${renderizarCampoValor(c, varInfo)}
+                </div>
+                <button type="button" onclick="removerCondicao(${c.id})"
+                    class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                    <i class="fas fa-trash text-sm"></i>
+                </button>
+            </div>
+            `;
         }
 
         // Renderiza campo de valor baseado no tipo da variavel
@@ -2201,70 +2584,120 @@
                 return;
             }
 
-            const operador = document.getElementById('regra-operador')?.value || 'and';
+            const operadorPrincipal = document.getElementById('regra-operador')?.value || 'and';
+
+            // Gera visualização humanizada recursiva
+            const htmlRegra = gerarVisualizacaoHumanizada(condicoesRegra, operadorPrincipal);
+            container.innerHTML = `
+                <div class="text-sm">
+                    <span class="text-gray-500 mr-2">Ativar quando:</span>
+                    ${htmlRegra}
+                </div>`;
+
+            // Gera o AST JSON para o backend
+            const regraAST = gerarRegraAST(condicoesRegra, operadorPrincipal);
+            document.getElementById('modulo-regra-json').value = JSON.stringify(regraAST);
+        }
+
+        // Gera visualização humanizada recursiva
+        function gerarVisualizacaoHumanizada(items, operador) {
             const operadorTexto = operador === 'and' ? 'E' : 'OU';
 
             const getOperadorTexto = (op) => {
                 const map = {
-                    'equals': '=',
-                    'not_equals': '≠',
-                    'contains': 'contém',
-                    'not_contains': 'não contém',
-                    'exists': 'existe',
-                    'not_exists': 'não existe',
-                    'greater_than': '>',
-                    'less_than': '<',
-                    'in_list': 'em',
-                    'not_in_list': 'não em'
+                    'equals': '=', 'not_equals': '≠', 'contains': 'contém',
+                    'not_contains': 'não contém', 'exists': 'existe', 'not_exists': 'não existe',
+                    'greater_than': '>', 'less_than': '<', 'in_list': 'em', 'not_in_list': 'não em'
                 };
                 return map[op] || op;
             };
 
-            const condicoesHtml = condicoesRegra.map((c, index) => {
-                const varInfo = variaveisDisponiveis.find(v => v.slug === c.variavel);
-                const varLabel = varInfo ? `<span class="font-mono text-indigo-600">${c.variavel}</span>` :
-                    (c.variavel ? `<span class="font-mono text-gray-600">${c.variavel}</span>` : '<span class="text-red-400">[variável não selecionada]</span>');
+            const partes = items.map((item, index) => {
+                let html = '';
+                
+                if (item.type === 'group') {
+                    const grupoOperadorTexto = item.operador === 'and' ? 'E' : 'OU';
+                    const subHtml = gerarVisualizacaoHumanizada(item.conditions || [], item.operador);
+                    html = `<span class="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 rounded border border-purple-300">
+                        <span class="text-purple-600 text-xs font-bold">(</span>
+                        ${subHtml}
+                        <span class="text-purple-600 text-xs font-bold">)</span>
+                    </span>`;
+                } else {
+                    const varInfo = variaveisDisponiveis.find(v => v.slug === item.variavel);
+                    const varLabel = varInfo ? `<span class="font-mono text-indigo-600">${item.variavel}</span>` :
+                        (item.variavel ? `<span class="font-mono text-gray-600">${item.variavel}</span>` : '<span class="text-red-400">[?]</span>');
 
-                let valorHtml = '';
-                if (!['exists', 'not_exists'].includes(c.operador)) {
-                    valorHtml = c.valor ? `<span class="font-semibold text-green-600">"${c.valor}"</span>` : '<span class="text-red-400">[valor não definido]</span>';
+                    let valorHtml = '';
+                    if (!['exists', 'not_exists'].includes(item.operador)) {
+                        valorHtml = item.valor !== undefined && item.valor !== '' 
+                            ? `<span class="font-semibold text-green-600">"${item.valor}"</span>` 
+                            : '<span class="text-red-400">[?]</span>';
+                    }
+
+                    const opTexto = getOperadorTexto(item.operador);
+                    html = `<span class="inline-flex items-center gap-1">
+                        ${varLabel} <span class="text-gray-500">${opTexto}</span> ${valorHtml}
+                    </span>`;
                 }
 
-                const opTexto = getOperadorTexto(c.operador);
-                const conectivo = index < condicoesRegra.length - 1 ?
-                    `<span class="mx-2 px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-xs font-bold">${operadorTexto}</span>` : '';
+                const conectivo = index < items.length - 1 
+                    ? `<span class="mx-2 px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-xs font-bold">${operadorTexto}</span>` 
+                    : '';
 
-                return `<span class="inline-flex items-center gap-1">
-                    ${varLabel} <span class="text-gray-500">${opTexto}</span> ${valorHtml}
-                </span>${conectivo}`;
-            }).join('');
+                return html + conectivo;
+            });
 
-            container.innerHTML = `
-                <div class="text-sm">
-                    <span class="text-gray-500 mr-2">Ativar quando:</span>
-                    ${condicoesHtml}
-                </div>`;
+            return partes.join('');
+        }
 
-            // Atualiza o JSON da regra para o backend
-            const regraJson = {
-                logic: operador,
-                conditions: condicoesRegra.map(c => ({
-                    variable: c.variavel,
-                    operator: c.operador,
-                    value: c.valor
-                }))
+        // Gera AST JSON para o backend (formato compatível com DeterministicRuleEvaluator)
+        function gerarRegraAST(items, operador) {
+            if (items.length === 0) return null;
+
+            // Se só tem um item, retorna ele diretamente
+            if (items.length === 1) {
+                return converterParaAST(items[0]);
+            }
+
+            // Múltiplos itens: agrupa com o operador
+            return {
+                type: operador,
+                conditions: items.map(item => converterParaAST(item))
             };
-            document.getElementById('modulo-regra-json').value = JSON.stringify(regraJson);
+        }
+
+        // Converte um item (condição ou grupo) para formato AST
+        function converterParaAST(item) {
+            if (item.type === 'group') {
+                return gerarRegraAST(item.conditions || [], item.operador);
+            } else {
+                // Condição simples
+                let valor = item.valor;
+                // Converte string 'true'/'false' para boolean
+                if (valor === 'true') valor = true;
+                else if (valor === 'false') valor = false;
+                // Tenta converter para número se parecer número
+                else if (!isNaN(valor) && valor !== '') valor = Number(valor);
+
+                return {
+                    type: 'condition',
+                    variable: item.variavel,
+                    operator: item.operador,
+                    value: valor
+                };
+            }
         }
 
         // Reseta o editor de regras
         function resetarEditorRegras() {
             modoAtivacaoAtual = 'llm';
             condicoesRegra = [];
+            contadorIdCondicao = 0;
             selecionarModoAtivacao('llm');
         }
 
-        // Carrega regra existente do módulo
+        // Carrega regra existente do módulo (suporta formato antigo e novo)
         function carregarRegraModulo(regraJson) {
             if (!regraJson) {
                 resetarEditorRegras();
@@ -2273,17 +2706,43 @@
 
             try {
                 const regra = typeof regraJson === 'string' ? JSON.parse(regraJson) : regraJson;
-
-                if (regra.conditions && regra.conditions.length > 0) {
+                
+                // Formato antigo: { logic: 'and', conditions: [...] }
+                if (regra.logic && regra.conditions) {
                     modoAtivacaoAtual = 'deterministic';
                     document.getElementById('regra-operador').value = regra.logic || 'and';
 
-                    condicoesRegra = regra.conditions.map((c, index) => ({
-                        id: Date.now() + index,
+                    condicoesRegra = regra.conditions.map(c => ({
+                        type: 'condition',
+                        id: gerarIdUnico(),
                         variavel: c.variable || '',
                         operador: c.operator || 'equals',
-                        valor: c.value || ''
+                        valor: c.value !== undefined ? c.value : ''
                     }));
+
+                    selecionarModoAtivacao('deterministic');
+                }
+                // Formato novo (AST): { type: 'and', conditions: [...] }
+                else if (regra.type && regra.type !== 'condition') {
+                    modoAtivacaoAtual = 'deterministic';
+                    document.getElementById('regra-operador').value = regra.type || 'and';
+                    
+                    condicoesRegra = carregarASTRecursivo(regra.conditions || []);
+
+                    selecionarModoAtivacao('deterministic');
+                }
+                // Condição única
+                else if (regra.type === 'condition') {
+                    modoAtivacaoAtual = 'deterministic';
+                    document.getElementById('regra-operador').value = 'and';
+                    
+                    condicoesRegra = [{
+                        type: 'condition',
+                        id: gerarIdUnico(),
+                        variavel: regra.variable || '',
+                        operador: regra.operator || 'equals',
+                        valor: regra.value !== undefined ? regra.value : ''
+                    }];
 
                     selecionarModoAtivacao('deterministic');
                 } else {
@@ -2293,6 +2752,38 @@
                 console.error('Erro ao carregar regra:', e);
                 resetarEditorRegras();
             }
+        }
+
+        // Carrega AST recursivamente (converte formato backend para frontend)
+        function carregarASTRecursivo(conditions) {
+            return conditions.map(c => {
+                if (c.type === 'condition') {
+                    return {
+                        type: 'condition',
+                        id: gerarIdUnico(),
+                        variavel: c.variable || '',
+                        operador: c.operator || 'equals',
+                        valor: c.value !== undefined ? c.value : ''
+                    };
+                } else if (c.type === 'and' || c.type === 'or') {
+                    return {
+                        type: 'group',
+                        id: gerarIdUnico(),
+                        operador: c.type,
+                        conditions: carregarASTRecursivo(c.conditions || [])
+                    };
+                } else if (c.type === 'not') {
+                    // NOT com condição única ou múltiplas
+                    const innerConditions = c.condition ? [c.condition] : (c.conditions || []);
+                    return {
+                        type: 'group',
+                        id: gerarIdUnico(),
+                        operador: 'not',
+                        conditions: carregarASTRecursivo(innerConditions)
+                    };
+                }
+                return c;
+            });
         }
 
         // ============================================================================
@@ -2325,7 +2816,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${getToken()}`
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
                     },
                     body: JSON.stringify({
                         condicao_texto: texto,
@@ -2374,6 +2865,40 @@
         // Mostra erro de geracao
         function mostrarErroRegra(data) {
             document.getElementById('erro-regra-gerada').classList.remove('hidden');
+            
+            // Erro especial: variáveis insuficientes
+            if (data.erro === 'variaveis_insuficientes') {
+                document.getElementById('erro-regra-msg').textContent = data.mensagem || 'Não há variáveis suficientes para esta condição';
+                
+                if (data.variaveis_necessarias && data.variaveis_necessarias.length > 0) {
+                    document.getElementById('variaveis-faltantes').classList.remove('hidden');
+                    const lista = document.getElementById('lista-variaveis-faltantes');
+                    
+                    lista.innerHTML = `
+                        <p class="text-xs text-amber-700 mb-2 font-medium">
+                            <i class="fas fa-lightbulb mr-1"></i>
+                            A IA sugere criar as seguintes variáveis:
+                        </p>
+                        ${data.variaveis_necessarias.map(v => `
+                            <div class="flex items-center gap-2 text-sm bg-amber-50 p-2 rounded border border-amber-200 mb-1">
+                                <span class="font-mono bg-amber-100 px-1.5 py-0.5 rounded text-amber-800">${v.slug_sugerido}</span>
+                                <span class="text-gray-600 flex-1">${v.descricao || ''}</span>
+                                <span class="text-xs text-gray-500">(${v.tipo_sugerido || 'text'})</span>
+                                <button type="button"
+                                    onclick="criarVariavelFaltante('${v.slug_sugerido}', '${v.tipo_sugerido || 'text'}', '${v.descricao || ''}')"
+                                    class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
+                                    <i class="fas fa-plus mr-1"></i>Criar
+                                </button>
+                            </div>
+                        `).join('')}
+                    `;
+                } else {
+                    document.getElementById('variaveis-faltantes').classList.add('hidden');
+                }
+                return;
+            }
+
+            // Erro padrão
             document.getElementById('erro-regra-msg').textContent = data.erro || 'Erro ao gerar regra';
 
             // Mostra variaveis faltantes com sugestao de criacao
@@ -2407,18 +2932,26 @@
 
             const regra = ultimaRegraGerada.regra;
 
-            // Converte AST para formato do builder
-            const condicoes = extrairCondicoesDoAST(regra);
-            const operadorLogico = regra.type === 'or' ? 'or' : 'and';
-
-            // Aplica ao builder
+            // Determina operador principal
+            const operadorLogico = (regra.type === 'or') ? 'or' : 'and';
             document.getElementById('regra-operador').value = operadorLogico;
-            condicoesRegra = condicoes.map((c, i) => ({
-                id: Date.now() + i,
-                variavel: c.variable,
-                operador: c.operator,
-                valor: c.value !== undefined ? String(c.value) : ''
-            }));
+
+            // Converte AST para formato do builder (mantendo estrutura aninhada)
+            if (regra.type === 'condition') {
+                // Condição única
+                condicoesRegra = [{
+                    type: 'condition',
+                    id: gerarIdUnico(),
+                    variavel: regra.variable,
+                    operador: regra.operator,
+                    valor: regra.value !== undefined ? String(regra.value) : ''
+                }];
+            } else if (regra.conditions) {
+                // Múltiplas condições (possivelmente aninhadas)
+                condicoesRegra = carregarASTRecursivo(regra.conditions);
+            } else {
+                condicoesRegra = [];
+            }
 
             renderizarCondicoes();
 
@@ -2434,17 +2967,6 @@
                 btn.className = btn.className.replace('bg-indigo-100', 'bg-green-100').replace('text-indigo-700', 'text-green-700');
                 setTimeout(() => { btn.className = originalClass; }, 1000);
             }
-        }
-
-        // Extrai condicoes simples de um AST (flatten)
-        function extrairCondicoesDoAST(node) {
-            if (node.type === 'condition') {
-                return [node];
-            }
-            if (node.conditions) {
-                return node.conditions.flatMap(c => extrairCondicoesDoAST(c));
-            }
-            return [];
         }
 
         // Descarta regra gerada
@@ -3481,6 +4003,140 @@
                 textarea.rows = 50;
             }
         }
+
+        // ============================================
+        // Glossário de Conceitos
+        // ============================================
+        let glossarioCarregado = false;
+        let glossarioConteudoOriginal = '';
+
+        async function abrirGlossario() {
+            document.getElementById('modal-glossario').classList.remove('hidden');
+            if (!glossarioCarregado) {
+                await carregarGlossario();
+            }
+        }
+
+        function fecharGlossario() {
+            document.getElementById('modal-glossario').classList.add('hidden');
+            document.getElementById('glossario-busca').value = '';
+            if (glossarioConteudoOriginal) {
+                document.getElementById('glossario-conteudo').innerHTML = glossarioConteudoOriginal;
+            }
+        }
+
+        async function carregarGlossario() {
+            try {
+                const response = await fetch('/admin/help/glossary', {
+                    headers: { 'Authorization': `Bearer ${getToken()}` }
+                });
+                if (!response.ok) throw new Error('Erro ao carregar');
+                const data = await response.json();
+                const html = converterMarkdownParaHTML(data.content);
+                document.getElementById('glossario-conteudo').innerHTML = html;
+                glossarioConteudoOriginal = html;
+                glossarioCarregado = true;
+            } catch (error) {
+                document.getElementById('glossario-conteudo').innerHTML = `
+                    <div class="flex items-center justify-center h-full">
+                        <div class="text-center text-red-500">
+                            <i class="fas fa-exclamation-circle text-3xl mb-3"></i>
+                            <p>Erro ao carregar glossário</p>
+                        </div>
+                    </div>`;
+            }
+        }
+
+        function converterMarkdownParaHTML(md) {
+            return '<p>' + md
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/^### (.+)$/gm, (m, t) => `<h3 id="${t.toLowerCase().replace(/[^\w\s-]/g,'').replace(/\s+/g,'-')}">${t}</h3>`)
+                .replace(/^## (.+)$/gm, (m, t) => `<h2 id="${t.toLowerCase().replace(/[^\w\s-]/g,'').replace(/\s+/g,'-')}">${t}</h2>`)
+                .replace(/^# (.+)$/gm, (m, t) => `<h1 id="${t.toLowerCase().replace(/[^\w\s-]/g,'').replace(/\s+/g,'-')}">${t}</h1>`)
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                .replace(/^\|(.+)\|$/gm, (m, c) => {
+                    const cells = c.split('|').map(x => x.trim());
+                    if (cells.every(x => /^[-:]+$/.test(x))) return '';
+                    return '<tr>' + cells.map(x => `<td>${x}</td>`).join('') + '</tr>';
+                })
+                .replace(/^- (.+)$/gm, '<li>$1</li>')
+                .replace(/^---+$/gm, '<hr>')
+                .replace(/\n\n/g, '</p><p>') + '</p>';
+        }
+
+        function buscarNoGlossario(termo) {
+            if (!termo || termo.length < 2) {
+                document.getElementById('glossario-conteudo').innerHTML = glossarioConteudoOriginal;
+                return;
+            }
+            const regex = new RegExp(`(${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            document.getElementById('glossario-conteudo').innerHTML = glossarioConteudoOriginal.replace(regex, '<span class="bg-yellow-200">$1</span>');
+        }
+
+        function irParaSecao(id) {
+            const el = document.getElementById(id);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     </script>
+
+    <!-- Modal do Glossário -->
+    <div id="modal-glossario" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden m-4 h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-indigo-50 to-purple-50">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-book text-indigo-600 text-xl"></i>
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-800">Glossário de Conceitos</h2>
+                        <p class="text-xs text-gray-500">Documentação completa do sistema</p>
+                    </div>
+                </div>
+                <button onclick="fecharGlossario()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="px-6 py-3 border-b bg-gray-50">
+                <div class="flex items-center gap-4">
+                    <div class="relative flex-1">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                        <input type="text" id="glossario-busca" placeholder="Buscar..." class="w-full pl-10 pr-4 py-2 border rounded-lg" onkeyup="buscarNoGlossario(this.value)">
+                    </div>
+                    <div class="flex gap-2 text-xs">
+                        <button onclick="irParaSecao('documentos-e-extração')" class="px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200">Documentos</button>
+                        <button onclick="irParaSecao('prompts-e-ativação')" class="px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200">Prompts</button>
+                        <button onclick="irParaSecao('termos-ambíguos---como-diferenciar')" class="px-2 py-1 bg-amber-100 text-amber-700 rounded hover:bg-amber-200">Ambiguidades</button>
+                    </div>
+                </div>
+            </div>
+            <div id="glossario-conteudo" class="flex-1 overflow-y-auto p-6 prose prose-sm max-w-none">
+                <div class="flex items-center justify-center h-full">
+                    <div class="text-center text-gray-400">
+                        <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
+                        <p>Carregando...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-3 border-t bg-gray-50 flex justify-end">
+                <button onclick="fecharGlossario()" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        #glossario-conteudo h1 { font-size: 1.5rem; font-weight: 700; color: #1f2937; margin-top: 1.5rem; margin-bottom: 0.75rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+        #glossario-conteudo h2 { font-size: 1.25rem; font-weight: 600; color: #374151; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+        #glossario-conteudo h3 { font-size: 1rem; font-weight: 600; color: #4b5563; margin-top: 1rem; margin-bottom: 0.5rem; }
+        #glossario-conteudo code { background: #f3f4f6; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.875em; color: #7c3aed; }
+        #glossario-conteudo pre { background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
+        #glossario-conteudo pre code { background: transparent; color: inherit; }
+        #glossario-conteudo table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.875rem; }
+        #glossario-conteudo th, #glossario-conteudo td { padding: 0.5rem; border: 1px solid #e5e7eb; }
+        #glossario-conteudo th { background: #f9fafb; font-weight: 600; }
+        #glossario-conteudo ul { padding-left: 1.5rem; }
+        #glossario-conteudo li { margin-bottom: 0.25rem; }
+        #glossario-conteudo hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5rem 0; }
+    </style>
 </body>
 </html>

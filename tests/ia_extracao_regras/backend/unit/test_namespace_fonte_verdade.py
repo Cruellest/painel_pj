@@ -197,7 +197,7 @@ class TestSourceOfTruthValidator(unittest.TestCase):
 
         # Executa validação
         import asyncio
-        resultado = asyncio.get_event_loop().run_until_complete(
+        resultado = asyncio.run(
             validator.validar_documento_para_extracao(
                 conteudo="teste",
                 categoria_id=1
@@ -255,7 +255,7 @@ class TestDocumentClassificationService(unittest.TestCase):
         )
 
         import asyncio
-        resultado = asyncio.get_event_loop().run_until_complete(
+        resultado = asyncio.run(
             service.classificar_documento(
                 conteudo="teste",
                 categoria=categoria
@@ -281,7 +281,7 @@ class TestDocumentClassificationService(unittest.TestCase):
         )
 
         import asyncio
-        resultado = asyncio.get_event_loop().run_until_complete(
+        resultado = asyncio.run(
             service.classificar_documento(
                 conteudo="teste",
                 categoria=categoria

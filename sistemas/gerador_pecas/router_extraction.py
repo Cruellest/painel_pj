@@ -56,9 +56,6 @@ class ExtractionQuestionBase(BaseModel):
     dependency_operator: Optional[str] = Field(None, description="Operador da dependência (equals, not_equals, exists, etc.)")
     dependency_value: Optional[Any] = Field(None, description="Valor da condição de dependência")
     dependency_inferred: bool = Field(False, description="Se a dependência foi inferida por IA")
-    # Fonte de verdade individual
-    fonte_verdade_tipo: Optional[str] = Field(None, description="Tipo de documento fonte de verdade para esta pergunta")
-    fonte_verdade_override: bool = Field(False, description="Se usa fonte de verdade específica (diferente do grupo)")
     ativo: bool = Field(True, description="Se a pergunta está ativa")
     ordem: int = Field(0, description="Ordem de exibição")
 
@@ -80,9 +77,6 @@ class ExtractionQuestionUpdate(BaseModel):
     dependency_operator: Optional[str] = None
     dependency_value: Optional[Any] = None
     dependency_inferred: Optional[bool] = None
-    # Fonte de verdade
-    fonte_verdade_tipo: Optional[str] = None
-    fonte_verdade_override: Optional[bool] = None
     ativo: Optional[bool] = None
     ordem: Optional[int] = None
 
@@ -142,6 +136,46 @@ class GenerateSchemaResponse(BaseModel):
     erro: Optional[str] = None
 
 
+# --- Criação em Lote de Perguntas (com análise de dependências por IA) ---
+
+class BulkQuestionInput(BaseModel):
+    """Uma pergunta no formato de entrada para criação em lote"""
+    pergunta: str = Field(..., description="Texto da pergunta em linguagem natural")
+    nome_variavel_sugerido: Optional[str] = Field(None, description="Nome sugerido para a variável")
+    tipo_sugerido: Optional[str] = Field(None, description="Tipo sugerido (text, number, boolean, etc)")
+    opcoes_sugeridas: Optional[List[str]] = Field(None, description="Opções para tipo choice")
+
+
+class BulkQuestionsCreate(BaseModel):
+    """Schema para criação em lote de perguntas com análise de dependências"""
+    categoria_id: int = Field(..., description="ID da categoria de documento")
+    perguntas: List[BulkQuestionInput] = Field(..., min_length=1, description="Lista de perguntas a criar")
+    analisar_dependencias: bool = Field(True, description="Se deve usar IA para analisar dependências entre perguntas")
+
+
+class BulkQuestionResult(BaseModel):
+    """Resultado da criação de uma pergunta no lote"""
+    index: int
+    pergunta_texto: str
+    id: Optional[int] = None
+    slug_sugerido: Optional[str] = None
+    depends_on_variable: Optional[str] = None
+    dependency_operator: Optional[str] = None
+    dependency_value: Optional[Any] = None
+    erro: Optional[str] = None
+
+
+class BulkQuestionsResponse(BaseModel):
+    """Resposta da criação em lote de perguntas"""
+    success: bool
+    total_enviadas: int
+    total_criadas: int
+    total_com_dependencias: int
+    perguntas: List[BulkQuestionResult]
+    grafo_dependencias: Optional[dict] = None
+    erro: Optional[str] = None
+
+
 # --- Variáveis Normalizadas ---
 
 class ExtractionVariableBase(BaseModel):
@@ -151,7 +185,8 @@ class ExtractionVariableBase(BaseModel):
     descricao: Optional[str] = Field(None, description="Descrição da variável")
     tipo: str = Field(..., description="Tipo de dado")
     opcoes: Optional[List[str]] = Field(None, description="Opções para tipo choice/list")
-    # Fonte de verdade individual
+    # Fonte de verdade individual (override do grupo)
+    fonte_verdade_codigo: Optional[str] = Field(None, description="Código específico de documento (ex: 9500)")
     fonte_verdade_tipo: Optional[str] = Field(None, description="Tipo de documento fonte de verdade para esta variável")
     fonte_verdade_override: bool = Field(False, description="Se usa fonte de verdade específica")
 
@@ -167,6 +202,7 @@ class ExtractionVariableUpdate(BaseModel):
     descricao: Optional[str] = None
     tipo: Optional[str] = None
     opcoes: Optional[List[str]] = None
+    fonte_verdade_codigo: Optional[str] = None
     fonte_verdade_tipo: Optional[str] = None
     fonte_verdade_override: Optional[bool] = None
     ativo: Optional[bool] = None
@@ -182,6 +218,12 @@ class ExtractionVariableResponse(ExtractionVariableBase):
     criado_em: datetime
     atualizado_em: datetime
     uso_count: int = Field(0, description="Quantidade de prompts que usam esta variável")
+    # Campos de dependência para visualização
+    is_conditional: bool = Field(False, description="Se a variável é condicional")
+    depends_on_variable: Optional[str] = Field(None, description="Slug da variável da qual depende")
+    depth: int = Field(0, description="Profundidade na árvore de dependências (para recuo)")
+    ordem: int = Field(0, description="Ordem da pergunta de origem")
+    em_uso_json: bool = Field(False, description="Se está em uso no JSON da categoria")
 
     class Config:
         from_attributes = True
@@ -244,8 +286,6 @@ async def listar_perguntas_categoria(
             dependency_operator=p.dependency_operator,
             dependency_value=p.dependency_value,
             dependency_inferred=p.dependency_inferred,
-            fonte_verdade_tipo=p.fonte_verdade_tipo,
-            fonte_verdade_override=p.fonte_verdade_override,
             ativo=p.ativo,
             ordem=p.ordem,
             criado_por=p.criado_por,
@@ -285,8 +325,6 @@ async def criar_pergunta(
         dependency_operator=data.dependency_operator,
         dependency_value=data.dependency_value,
         dependency_inferred=data.dependency_inferred,
-        fonte_verdade_tipo=data.fonte_verdade_tipo,
-        fonte_verdade_override=data.fonte_verdade_override,
         ativo=data.ativo,
         ordem=data.ordem,
         criado_por=current_user.id
@@ -310,14 +348,142 @@ async def criar_pergunta(
         dependency_operator=pergunta.dependency_operator,
         dependency_value=pergunta.dependency_value,
         dependency_inferred=pergunta.dependency_inferred,
-        fonte_verdade_tipo=pergunta.fonte_verdade_tipo,
-        fonte_verdade_override=pergunta.fonte_verdade_override,
         ativo=pergunta.ativo,
         ordem=pergunta.ordem,
         criado_por=pergunta.criado_por,
         criado_em=pergunta.criado_em,
         atualizado_em=pergunta.atualizado_em
     )
+
+
+@router.post("/perguntas/lote", response_model=BulkQuestionsResponse, status_code=201)
+async def criar_perguntas_lote(
+    data: BulkQuestionsCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Cria múltiplas perguntas de extração de uma vez.
+    
+    Se analisar_dependencias=True:
+    1. Envia todas as perguntas para a IA (Gemini)
+    2. A IA analisa relações de dependência entre elas
+    3. Cria as perguntas na ordem correta (respeitando dependências)
+    4. Retorna as perguntas criadas com suas dependências inferidas
+    
+    Exemplo de uso:
+    - Envie: ["O medicamento é incorporado ao SUS?", "Qual alternativa terapêutica foi tentada?"]
+    - IA detecta: A segunda pergunta só faz sentido se o medicamento NÃO é incorporado
+    - Resultado: Segunda pergunta depende da primeira com condição "equals: false"
+    """
+    # Verifica permissão
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissão para criar perguntas")
+
+    # Verifica se a categoria existe
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == data.categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    perguntas_resultado = []
+    total_criadas = 0
+    total_com_dependencias = 0
+    grafo_dependencias = None
+
+    try:
+        # Se deve analisar dependências com IA
+        dependencias_map = {}
+        if data.analisar_dependencias and len(data.perguntas) > 1:
+            from .services_dependencies import DependencyInferenceService
+            
+            service = DependencyInferenceService(db)
+            resultado_analise = await service.analisar_dependencias_batch(
+                perguntas=[p.pergunta for p in data.perguntas],
+                nomes_variaveis=[p.nome_variavel_sugerido for p in data.perguntas],
+                categoria_nome=categoria.nome
+            )
+            
+            if resultado_analise.get("success"):
+                dependencias_map = resultado_analise.get("dependencias", {})
+                grafo_dependencias = resultado_analise.get("grafo")
+        
+        # Conta perguntas existentes para definir ordem
+        perguntas_existentes = db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.categoria_id == data.categoria_id
+        ).count()
+        
+        # Cria as perguntas na ordem, aplicando dependências se houver
+        for i, p in enumerate(data.perguntas):
+            try:
+                # Busca dependência inferida para esta pergunta
+                dep_info = dependencias_map.get(str(i), {})
+                depends_on = dep_info.get("depends_on_variable")
+                dep_operator = dep_info.get("operator", "equals") if depends_on else None
+                dep_value = dep_info.get("value") if depends_on else None
+                
+                pergunta = ExtractionQuestion(
+                    categoria_id=data.categoria_id,
+                    pergunta=p.pergunta,
+                    nome_variavel_sugerido=p.nome_variavel_sugerido,
+                    tipo_sugerido=p.tipo_sugerido,
+                    opcoes_sugeridas=p.opcoes_sugeridas,
+                    depends_on_variable=depends_on,
+                    dependency_operator=dep_operator,
+                    dependency_value=dep_value,
+                    dependency_inferred=bool(depends_on),
+                    ativo=True,
+                    ordem=perguntas_existentes + i,
+                    criado_por=current_user.id
+                )
+                db.add(pergunta)
+                db.flush()  # Obtém o ID antes do commit
+                
+                perguntas_resultado.append(BulkQuestionResult(
+                    index=i,
+                    pergunta_texto=p.pergunta,
+                    id=pergunta.id,
+                    slug_sugerido=p.nome_variavel_sugerido,
+                    depends_on_variable=depends_on,
+                    dependency_operator=dep_operator,
+                    dependency_value=dep_value
+                ))
+                
+                total_criadas += 1
+                if depends_on:
+                    total_com_dependencias += 1
+                    
+            except Exception as e:
+                logger.error(f"Erro ao criar pergunta {i}: {e}")
+                perguntas_resultado.append(BulkQuestionResult(
+                    index=i,
+                    pergunta_texto=p.pergunta,
+                    erro=str(e)
+                ))
+        
+        db.commit()
+        
+        logger.info(f"Criadas {total_criadas} perguntas em lote para categoria {categoria.nome}")
+        
+        return BulkQuestionsResponse(
+            success=True,
+            total_enviadas=len(data.perguntas),
+            total_criadas=total_criadas,
+            total_com_dependencias=total_com_dependencias,
+            perguntas=perguntas_resultado,
+            grafo_dependencias=grafo_dependencias
+        )
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Erro na criação em lote: {e}")
+        return BulkQuestionsResponse(
+            success=False,
+            total_enviadas=len(data.perguntas),
+            total_criadas=0,
+            total_com_dependencias=0,
+            perguntas=[],
+            erro=str(e)
+        )
 
 
 @router.get("/perguntas/{pergunta_id}", response_model=ExtractionQuestionResponse)
@@ -400,8 +566,6 @@ async def atualizar_pergunta(
         dependency_operator=pergunta.dependency_operator,
         dependency_value=pergunta.dependency_value,
         dependency_inferred=pergunta.dependency_inferred,
-        fonte_verdade_tipo=pergunta.fonte_verdade_tipo,
-        fonte_verdade_override=pergunta.fonte_verdade_override,
         ativo=pergunta.ativo,
         ordem=pergunta.ordem,
         criado_por=pergunta.criado_por,
@@ -603,6 +767,7 @@ async def criar_modelo_manual(
 @router.get("/variaveis", response_model=List[ExtractionVariableResponse])
 async def listar_variaveis(
     categoria_id: Optional[int] = Query(None, description="Filtrar por categoria"),
+    source_question_id: Optional[int] = Query(None, description="Filtrar por pergunta de origem"),
     tipo: Optional[str] = Query(None, description="Filtrar por tipo"),
     busca: Optional[str] = Query(None, description="Buscar por slug ou label"),
     apenas_ativos: bool = Query(True, description="Filtrar apenas ativos"),
@@ -616,6 +781,9 @@ async def listar_variaveis(
 
     if categoria_id:
         query = query.filter(ExtractionVariable.categoria_id == categoria_id)
+
+    if source_question_id:
+        query = query.filter(ExtractionVariable.source_question_id == source_question_id)
 
     if tipo:
         query = query.filter(ExtractionVariable.tipo == tipo)
@@ -631,18 +799,71 @@ async def listar_variaveis(
         query = query.filter(ExtractionVariable.ativo == True)
 
     total = query.count()
-    variaveis = query.order_by(ExtractionVariable.slug).offset(offset).limit(limit).all()
+    
+    # Ordena por categoria, depois pela ordem da pergunta de origem
+    variaveis = query.outerjoin(
+        ExtractionQuestion,
+        ExtractionVariable.source_question_id == ExtractionQuestion.id
+    ).order_by(
+        ExtractionVariable.categoria_id,
+        ExtractionQuestion.ordem.nulls_last(),
+        ExtractionVariable.slug
+    ).offset(offset).limit(limit).all()
 
-    # Busca contagem de uso para cada variável
+    # Busca contagem de uso e informações de dependência para cada variável
     resultado = []
+    
+    # Mapa de slug para profundidade (para calcular recuo)
+    depth_map = {}
+    
+    def calcular_profundidade(var_slug: str, visitados: set = None) -> int:
+        if visitados is None:
+            visitados = set()
+        if var_slug in depth_map:
+            return depth_map[var_slug]
+        if var_slug in visitados:
+            return 0  # Evita ciclos
+        
+        # Busca a variável
+        var = db.query(ExtractionVariable).filter(ExtractionVariable.slug == var_slug).first()
+        if not var or not var.depends_on_variable:
+            depth_map[var_slug] = 0
+            return 0
+        
+        visitados.add(var_slug)
+        parent_depth = calcular_profundidade(var.depends_on_variable, visitados)
+        depth_map[var_slug] = parent_depth + 1
+        return depth_map[var_slug]
+    
     for v in variaveis:
         uso_count = db.query(PromptVariableUsage).filter(
             PromptVariableUsage.variable_slug == v.slug
         ).count()
 
         categoria = None
+        em_uso_json = False
         if v.categoria_id:
             categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == v.categoria_id).first()
+            if categoria and categoria.json_gerado_por_ia:
+                em_uso_json = True
+        
+        # Busca info da pergunta de origem para ordem e dependência
+        ordem = 0
+        is_conditional = v.is_conditional
+        depends_on = v.depends_on_variable
+        
+        if v.source_question_id:
+            pergunta = db.query(ExtractionQuestion).filter(
+                ExtractionQuestion.id == v.source_question_id
+            ).first()
+            if pergunta:
+                ordem = pergunta.ordem or 0
+                if pergunta.depends_on_variable:
+                    is_conditional = True
+                    depends_on = pergunta.depends_on_variable
+        
+        # Calcula profundidade para recuo
+        depth = calcular_profundidade(v.slug) if depends_on else 0
 
         resp = ExtractionVariableResponse(
             id=v.id,
@@ -653,15 +874,122 @@ async def listar_variaveis(
             categoria_id=v.categoria_id,
             categoria_nome=categoria.nome if categoria else None,
             opcoes=v.opcoes,
+            fonte_verdade_codigo=v.fonte_verdade_codigo,
+            fonte_verdade_tipo=v.fonte_verdade_tipo,
+            fonte_verdade_override=v.fonte_verdade_override,
             source_question_id=v.source_question_id,
             ativo=v.ativo,
             criado_em=v.criado_em,
             atualizado_em=v.atualizado_em,
-            uso_count=uso_count
+            uso_count=uso_count,
+            is_conditional=is_conditional,
+            depends_on_variable=depends_on,
+            depth=depth,
+            ordem=ordem,
+            em_uso_json=em_uso_json
         )
         resultado.append(resp)
 
     return resultado
+
+
+@router.get("/variaveis/resumo")
+async def resumo_variaveis(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Retorna um resumo das variáveis do sistema.
+
+    Inclui:
+    - Total de variáveis
+    - Distribuição por tipo
+    - Variáveis mais usadas
+    - Variáveis não utilizadas
+    """
+    # Total de variáveis
+    total = db.query(ExtractionVariable).filter(ExtractionVariable.ativo == True).count()
+
+    # Por tipo
+    tipos = db.query(
+        ExtractionVariable.tipo,
+        func.count(ExtractionVariable.id)
+    ).filter(
+        ExtractionVariable.ativo == True
+    ).group_by(ExtractionVariable.tipo).all()
+
+    distribuicao_tipos = {t[0]: t[1] for t in tipos}
+
+    # Variáveis com uso em prompts (regras determinísticas)
+    variaveis_com_uso_prompts = db.query(ExtractionVariable).join(
+        PromptVariableUsage,
+        PromptVariableUsage.variable_slug == ExtractionVariable.slug
+    ).filter(
+        ExtractionVariable.ativo == True
+    ).distinct().count()
+    
+    # Variáveis em uso no JSON de categorias com json_gerado_por_ia=True
+    variaveis_em_uso_json = db.query(ExtractionVariable).join(
+        CategoriaResumoJSON,
+        ExtractionVariable.categoria_id == CategoriaResumoJSON.id
+    ).filter(
+        ExtractionVariable.ativo == True,
+        CategoriaResumoJSON.json_gerado_por_ia == True
+    ).distinct().count()
+    
+    # Total de variáveis em uso (união dos dois conjuntos)
+    # Para evitar contagem dupla, usamos uma abordagem diferente
+    variaveis_ids_em_uso = set()
+    
+    # IDs de variáveis usadas em prompts
+    ids_prompts = db.query(ExtractionVariable.id).join(
+        PromptVariableUsage,
+        PromptVariableUsage.variable_slug == ExtractionVariable.slug
+    ).filter(ExtractionVariable.ativo == True).distinct().all()
+    variaveis_ids_em_uso.update(id[0] for id in ids_prompts)
+    
+    # IDs de variáveis em uso no JSON
+    ids_json = db.query(ExtractionVariable.id).join(
+        CategoriaResumoJSON,
+        ExtractionVariable.categoria_id == CategoriaResumoJSON.id
+    ).filter(
+        ExtractionVariable.ativo == True,
+        CategoriaResumoJSON.json_gerado_por_ia == True
+    ).distinct().all()
+    variaveis_ids_em_uso.update(id[0] for id in ids_json)
+    
+    variaveis_com_uso = len(variaveis_ids_em_uso)
+
+    # Variáveis mais usadas (top 10)
+    mais_usadas_query = db.query(
+        PromptVariableUsage.variable_slug,
+        func.count(PromptVariableUsage.id).label('uso_count')
+    ).group_by(
+        PromptVariableUsage.variable_slug
+    ).order_by(
+        func.count(PromptVariableUsage.id).desc()
+    ).limit(10).all()
+
+    mais_usadas = []
+    for slug, count in mais_usadas_query:
+        variavel = db.query(ExtractionVariable).filter(
+            ExtractionVariable.slug == slug
+        ).first()
+        if variavel:
+            mais_usadas.append({
+                "slug": slug,
+                "label": variavel.label,
+                "tipo": variavel.tipo,
+                "uso_count": count
+            })
+
+    return {
+        "total": total,
+        "distribuicao_tipos": distribuicao_tipos,
+        "variaveis_com_uso": variaveis_com_uso,
+        "variaveis_sem_uso": total - variaveis_com_uso,
+        "mais_usadas": mais_usadas
+    }
 
 
 @router.get("/variaveis/{variavel_id}", response_model=VariableDetailResponse)
@@ -819,12 +1147,52 @@ async def atualizar_variavel(
         categoria_id=variavel.categoria_id,
         categoria_nome=categoria.nome if categoria else None,
         opcoes=variavel.opcoes,
+        fonte_verdade_codigo=variavel.fonte_verdade_codigo,
+        fonte_verdade_tipo=variavel.fonte_verdade_tipo,
+        fonte_verdade_override=variavel.fonte_verdade_override,
         source_question_id=variavel.source_question_id,
         ativo=variavel.ativo,
         criado_em=variavel.criado_em,
         atualizado_em=variavel.atualizado_em,
         uso_count=uso_count
     )
+
+
+@router.get("/variaveis/{variavel_id}/dependentes")
+async def obter_variaveis_dependentes(
+    variavel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Retorna variáveis e perguntas que dependem desta variável"""
+    variavel = db.query(ExtractionVariable).filter(ExtractionVariable.id == variavel_id).first()
+    if not variavel:
+        raise HTTPException(status_code=404, detail="Variável não encontrada")
+
+    # Busca variáveis que dependem desta
+    variaveis_dependentes = db.query(ExtractionVariable).filter(
+        ExtractionVariable.depends_on_variable == variavel.slug,
+        ExtractionVariable.ativo == True
+    ).all()
+
+    # Busca perguntas que dependem desta variável
+    perguntas_dependentes = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.depends_on_variable == variavel.slug,
+        ExtractionQuestion.ativo == True
+    ).all()
+
+    return {
+        "variavel_slug": variavel.slug,
+        "variaveis_dependentes": [
+            {"id": v.id, "slug": v.slug, "label": v.label}
+            for v in variaveis_dependentes
+        ],
+        "perguntas_dependentes": [
+            {"id": p.id, "pergunta": p.pergunta[:50] + "..." if len(p.pergunta) > 50 else p.pergunta}
+            for p in perguntas_dependentes
+        ],
+        "total_dependentes": len(variaveis_dependentes) + len(perguntas_dependentes)
+    }
 
 
 @router.delete("/variaveis/{variavel_id}")
@@ -842,7 +1210,7 @@ async def excluir_variavel(
     if not variavel:
         raise HTTPException(status_code=404, detail="Variável não encontrada")
 
-    # Verifica se está em uso
+    # Verifica se está em uso em prompts
     uso_count = db.query(PromptVariableUsage).filter(
         PromptVariableUsage.variable_slug == variavel.slug
     ).count()
@@ -853,14 +1221,45 @@ async def excluir_variavel(
             detail=f"Variável está em uso por {uso_count} prompt(s). Remova os usos antes de desativar."
         )
 
+    # Busca variáveis que dependem desta e remove a dependência
+    variaveis_dependentes = db.query(ExtractionVariable).filter(
+        ExtractionVariable.depends_on_variable == variavel.slug
+    ).all()
+
+    for v in variaveis_dependentes:
+        v.depends_on_variable = None
+        v.dependency_operator = None
+        v.dependency_value = None
+        v.atualizado_em = datetime.utcnow()
+
+    # Busca perguntas que dependem desta e remove a dependência
+    perguntas_dependentes = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.depends_on_variable == variavel.slug
+    ).all()
+
+    for p in perguntas_dependentes:
+        p.depends_on_variable = None
+        p.dependency_operator = None
+        p.dependency_value = None
+        p.dependency_inferred = False
+        p.atualizado_em = datetime.utcnow()
+
+    # Desativa a variável
     variavel.ativo = False
     variavel.atualizado_em = datetime.utcnow()
 
     db.commit()
 
-    logger.info(f"Variável desativada: slug={variavel.slug}")
+    logger.info(f"Variável desativada: slug={variavel.slug}, dependências removidas: {len(variaveis_dependentes)} variáveis, {len(perguntas_dependentes)} perguntas")
 
-    return {"success": True, "message": "Variável desativada com sucesso"}
+    return {
+        "success": True,
+        "message": "Variável desativada com sucesso",
+        "dependencias_removidas": {
+            "variaveis": len(variaveis_dependentes),
+            "perguntas": len(perguntas_dependentes)
+        }
+    }
 
 
 @router.post("/variaveis/{variavel_id}/reativar")
@@ -914,13 +1313,43 @@ async def excluir_variavel_permanente(
             detail=f"Variável está em uso por {uso_count} prompt(s). Remova os usos antes de excluir."
         )
 
+    # Remove dependências de variáveis que dependem desta
+    variaveis_dependentes = db.query(ExtractionVariable).filter(
+        ExtractionVariable.depends_on_variable == variavel.slug
+    ).all()
+
+    for v in variaveis_dependentes:
+        v.depends_on_variable = None
+        v.dependency_operator = None
+        v.dependency_value = None
+        v.atualizado_em = datetime.utcnow()
+
+    # Remove dependências de perguntas que dependem desta
+    perguntas_dependentes = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.depends_on_variable == variavel.slug
+    ).all()
+
+    for p in perguntas_dependentes:
+        p.depends_on_variable = None
+        p.dependency_operator = None
+        p.dependency_value = None
+        p.dependency_inferred = False
+        p.atualizado_em = datetime.utcnow()
+
     slug = variavel.slug
     db.delete(variavel)
     db.commit()
 
-    logger.info(f"Variável excluída permanentemente: slug={slug}")
+    logger.info(f"Variável excluída permanentemente: slug={slug}, dependências removidas: {len(variaveis_dependentes)} variáveis, {len(perguntas_dependentes)} perguntas")
 
-    return {"success": True, "message": "Variável excluída permanentemente"}
+    return {
+        "success": True,
+        "message": "Variável excluída permanentemente",
+        "dependencias_removidas": {
+            "variaveis": len(variaveis_dependentes),
+            "perguntas": len(perguntas_dependentes)
+        }
+    }
 
 
 # ============================================================================
@@ -1126,77 +1555,6 @@ async def avaliar_regra_deterministica(
             resultado=False,
             erro=str(e)
         )
-
-
-# ============================================================================
-# ENDPOINTS - RESUMO E ESTATÍSTICAS
-# ============================================================================
-
-@router.get("/variaveis/resumo")
-async def resumo_variaveis(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user)
-):
-    """
-    Retorna um resumo das variáveis do sistema.
-
-    Inclui:
-    - Total de variáveis
-    - Distribuição por tipo
-    - Variáveis mais usadas
-    - Variáveis não utilizadas
-    """
-    # Total de variáveis
-    total = db.query(ExtractionVariable).filter(ExtractionVariable.ativo == True).count()
-
-    # Por tipo
-    tipos = db.query(
-        ExtractionVariable.tipo,
-        func.count(ExtractionVariable.id)
-    ).filter(
-        ExtractionVariable.ativo == True
-    ).group_by(ExtractionVariable.tipo).all()
-
-    distribuicao_tipos = {t[0]: t[1] for t in tipos}
-
-    # Variáveis com uso
-    variaveis_com_uso = db.query(ExtractionVariable).join(
-        PromptVariableUsage,
-        PromptVariableUsage.variable_slug == ExtractionVariable.slug
-    ).filter(
-        ExtractionVariable.ativo == True
-    ).distinct().count()
-
-    # Variáveis mais usadas (top 10)
-    mais_usadas_query = db.query(
-        PromptVariableUsage.variable_slug,
-        func.count(PromptVariableUsage.id).label('uso_count')
-    ).group_by(
-        PromptVariableUsage.variable_slug
-    ).order_by(
-        func.count(PromptVariableUsage.id).desc()
-    ).limit(10).all()
-
-    mais_usadas = []
-    for slug, count in mais_usadas_query:
-        variavel = db.query(ExtractionVariable).filter(
-            ExtractionVariable.slug == slug
-        ).first()
-        if variavel:
-            mais_usadas.append({
-                "slug": slug,
-                "label": variavel.label,
-                "tipo": variavel.tipo,
-                "uso_count": count
-            })
-
-    return {
-        "total": total,
-        "distribuicao_tipos": distribuicao_tipos,
-        "variaveis_com_uso": variaveis_com_uso,
-        "variaveis_sem_uso": total - variaveis_com_uso,
-        "mais_usadas": mais_usadas
-    }
 
 
 # ============================================================================

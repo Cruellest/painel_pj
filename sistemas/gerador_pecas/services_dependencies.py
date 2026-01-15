@@ -115,6 +115,174 @@ class DependencyInferenceService:
             logger.exception(f"Erro ao inferir dependências: {e}")
             return {"success": False, "erro": str(e)}
 
+    async def analisar_dependencias_batch(
+        self,
+        perguntas: List[str],
+        nomes_variaveis: List[Optional[str]],
+        categoria_nome: str
+    ) -> Dict[str, Any]:
+        """
+        Analisa dependências entre perguntas em lote (antes de serem criadas).
+        
+        Diferente de inferir_dependencias, este método:
+        - Recebe apenas textos de perguntas (não objetos do banco)
+        - Retorna um mapa indexado por posição na lista original
+        - É usado para criação em lote com análise de dependências
+        
+        Args:
+            perguntas: Lista de textos das perguntas
+            nomes_variaveis: Lista de nomes sugeridos (pode conter None)
+            categoria_nome: Nome da categoria para contexto
+            
+        Returns:
+            Dict com:
+            - success: bool
+            - dependencias: Dict[str, Dict] mapeando índice -> info de dependência
+            - grafo: estrutura de visualização
+        """
+        if not perguntas or len(perguntas) < 2:
+            return {"success": True, "dependencias": {}, "grafo": None}
+        
+        try:
+            # Monta prompt para IA
+            prompt = self._montar_prompt_batch(perguntas, nomes_variaveis, categoria_nome)
+            
+            logger.info(f"Analisando dependências para {len(perguntas)} perguntas em lote")
+            
+            response = await gemini_service.generate(
+                prompt=prompt,
+                system_prompt=self._get_system_prompt_batch(),
+                model=GEMINI_MODEL,
+                temperature=0.1
+            )
+            
+            if not response.success:
+                logger.error(f"Erro na chamada Gemini: {response.error}")
+                return {"success": False, "erro": f"Erro na IA: {response.error}"}
+            
+            # Parseia resposta
+            resultado = self._extrair_json_resposta(response.content)
+            
+            if not resultado:
+                logger.error(f"Resposta IA não é JSON válido: {response.content[:500]}")
+                return {"success": False, "erro": "A IA não retornou um JSON válido"}
+            
+            # Converte para mapa indexado
+            dependencias_map = {}
+            for dep in resultado.get("dependencias", []):
+                idx = dep.get("indice")
+                if idx is not None and 0 <= idx < len(perguntas):
+                    dependencias_map[str(idx)] = {
+                        "depends_on_variable": dep.get("depends_on"),
+                        "operator": dep.get("operator", "equals"),
+                        "value": dep.get("value"),
+                        "justificativa": dep.get("justificativa", "")
+                    }
+            
+            # Constrói grafo simples
+            grafo = {
+                "ordem_recomendada": resultado.get("ordem_recomendada", list(range(len(perguntas)))),
+                "arvore": resultado.get("arvore", {})
+            }
+            
+            logger.info(f"Analisadas {len(dependencias_map)} dependências em lote")
+            
+            return {
+                "success": True,
+                "dependencias": dependencias_map,
+                "grafo": grafo
+            }
+            
+        except Exception as e:
+            logger.exception(f"Erro ao analisar dependências em lote: {e}")
+            return {"success": False, "erro": str(e)}
+    
+    def _get_system_prompt_batch(self) -> str:
+        """Prompt de sistema para análise de dependências em lote."""
+        return """Você é um especialista em análise de questionários e fluxos condicionais.
+
+Sua tarefa é analisar uma lista de perguntas de extração de dados e:
+1. Identificar quais perguntas dependem de outras
+2. Sugerir a ordem correta de aplicação
+3. Definir as condições de dependência
+
+EXEMPLOS DE DEPENDÊNCIAS:
+
+Perguntas:
+0: "É ação de medicamento?"
+1: "O medicamento tem registro na ANVISA?"
+2: "É incorporado ao SUS?"
+3: "Qual alternativa foi tentada antes?"
+
+Dependências identificadas:
+- Pergunta 1 depende de pergunta 0 (só faz sentido perguntar ANVISA se for medicamento)
+- Pergunta 2 depende de pergunta 1 (só pergunta SUS se tiver registro ANVISA)
+- Pergunta 3 depende de pergunta 2 com valor FALSE (só pergunta alternativa se NÃO for incorporado)
+
+REGRAS:
+1. Perguntas iniciais/de classificação geralmente são independentes
+2. Perguntas de detalhamento dependem das de classificação
+3. Use o slug sugerido ou infira baseado na pergunta
+4. O índice é 0-based (primeira pergunta = 0)
+
+FORMATO DE RESPOSTA (JSON estrito):
+{
+    "dependencias": [
+        {
+            "indice": 1,
+            "depends_on": "medicamento",
+            "operator": "equals",
+            "value": true,
+            "justificativa": "Só pergunta ANVISA se for ação de medicamento"
+        },
+        {
+            "indice": 3,
+            "depends_on": "incorporado_sus",
+            "operator": "equals",
+            "value": false,
+            "justificativa": "Só pergunta alternativa se não for incorporado"
+        }
+    ],
+    "ordem_recomendada": [0, 1, 2, 3],
+    "arvore": {
+        "medicamento": ["registro_anvisa"],
+        "registro_anvisa": ["incorporado_sus"],
+        "incorporado_sus": ["alternativa_tentada"]
+    }
+}"""
+
+    def _montar_prompt_batch(
+        self,
+        perguntas: List[str],
+        nomes_variaveis: List[Optional[str]],
+        categoria_nome: str
+    ) -> str:
+        """Monta o prompt para análise de dependências em lote."""
+        perguntas_formatadas = []
+        
+        for i, (pergunta, nome_var) in enumerate(zip(perguntas, nomes_variaveis)):
+            linha = f"{i}: \"{pergunta}\""
+            if nome_var:
+                linha += f" (slug sugerido: {nome_var})"
+            perguntas_formatadas.append(linha)
+        
+        return f"""Analise as seguintes perguntas de extração para a categoria "{categoria_nome}" e identifique dependências:
+
+PERGUNTAS:
+{chr(10).join(perguntas_formatadas)}
+
+INSTRUÇÕES:
+1. Identifique quais perguntas dependem de outras (use o índice 0-based)
+2. Para cada dependência, indique:
+   - indice: número da pergunta dependente
+   - depends_on: slug da variável da qual depende (use o sugerido ou infira)
+   - operator: equals, not_equals, exists, etc.
+   - value: valor esperado (true, false, ou texto)
+3. Sugira a ordem ideal de aplicação
+4. Retorne APENAS JSON válido
+
+IMPORTANTE: Perguntas sem dependência não devem aparecer na lista de dependências."""
+
     def _get_system_prompt(self) -> str:
         """Prompt de sistema para inferência de dependências."""
         return """Você é um especialista em análise de questionários e fluxos condicionais.

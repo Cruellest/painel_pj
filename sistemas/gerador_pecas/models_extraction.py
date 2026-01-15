@@ -94,16 +94,6 @@ class ExtractionQuestion(Base):
     # Se a dependência foi inferida por IA (vs definida manualmente)
     dependency_inferred = Column(Boolean, default=False)
 
-    # === FONTE DE VERDADE INDIVIDUAL ===
-    # Tipo lógico de documento que é fonte de verdade para esta pergunta
-    # Se definido, sobrescreve a configuração do grupo
-    # NOTA: O matching é feito SEMANTICAMENTE pela LLM durante a extração.
-    # Ex: "parecer do NAT" deve casar com "parecer do NATJUS"
-    fonte_verdade_tipo = Column(String(100), nullable=True)
-
-    # Se usa fonte de verdade específica (diferente do grupo)
-    fonte_verdade_override = Column(Boolean, default=False)
-
     # Status e ordem
     ativo = Column(Boolean, default=True, index=True)
     ordem = Column(Integer, default=0)
@@ -254,6 +244,9 @@ class ExtractionVariable(Base):
     dependency_config = Column(JSON, nullable=True)
 
     # === FONTE DE VERDADE INDIVIDUAL ===
+    # Código específico para filtrar documentos (override do grupo)
+    fonte_verdade_codigo = Column(String(20), nullable=True)
+
     # Tipo lógico de documento que é fonte de verdade para esta variável
     # NOTA: O matching é feito SEMANTICAMENTE pela LLM durante a extração.
     # Ex: "parecer do NAT" deve casar com "parecer do NATJUS"

@@ -92,9 +92,9 @@ WS_PASS = os.getenv('WS_PASS') or os.getenv('TJ_WS_PASS')
 
 # Validação das configurações
 if not URL_WSDL:
-    print("⚠️ URL_WSDL não configurada - defina TJ_WSDL_URL no .env")
+    print("[WARN] URL_WSDL não configurada - defina TJ_WSDL_URL no .env")
 if not WS_USER or not WS_PASS:
-    print("⚠️ Credenciais TJ-MS não configuradas - defina TJ_WS_USER e TJ_WS_PASS no .env")
+    print("[WARN] Credenciais TJ-MS não configuradas - defina TJ_WS_USER e TJ_WS_PASS no .env")
 
 # Modelo padrão (sem prefixo google/)
 MODELO_PADRAO = "gemini-3-flash-preview"
@@ -1086,10 +1086,10 @@ Se o documento for de natureza **meramente administrativa ou acessória**, sem c
 
 ## ATENÇÃO ESPECIAL:
 
-⚠️ **AGRAVO DE INSTRUMENTO**: Identificar e informar OBRIGATORIAMENTE o número do processo de origem (1º grau) no formato CNJ.
-⚠️ **PETIÇÃO INICIAL**: Detalhar pedidos, diagnóstico, tratamento solicitado e tutela de urgência.
-⚠️ **PARECER NAT/CATES**: Transcrever conclusão sobre incorporação ao SUS, alternativas terapêuticas e recomendação técnica.
-⚠️ **CONTESTAÇÃO/RECURSOS**: Listar todas as teses e argumentos apresentados.
+[WARN] **AGRAVO DE INSTRUMENTO**: Identificar e informar OBRIGATORIAMENTE o número do processo de origem (1º grau) no formato CNJ.
+[WARN] **PETIÇÃO INICIAL**: Detalhar pedidos, diagnóstico, tratamento solicitado e tutela de urgência.
+[WARN] **PARECER NAT/CATES**: Transcrever conclusão sobre incorporação ao SUS, alternativas terapêuticas e recomendação técnica.
+[WARN] **CONTESTAÇÃO/RECURSOS**: Listar todas as teses e argumentos apresentados.
 
 Seja fiel ao documento. Não invente informações.
 
@@ -1143,7 +1143,7 @@ Desenvolva uma análise detalhada do tratamento requerido:
 
 ### 3. ANÁLISE DO PARECER TÉCNICO (NAT/CATES/NATJus)
 
-⚠️ SEÇÃO CRÍTICA - Desenvolver com máximo detalhamento.
+[WARN] SEÇÃO CRÍTICA - Desenvolver com máximo detalhamento.
 
 [Se houver parecer, desenvolver em parágrafos:]
 - Identificação do parecer (número, data, órgão emissor)
@@ -1295,7 +1295,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
 
                 if '<sucesso>false</sucesso>' in xml_consulta or '<sucesso>true</sucesso>' not in xml_consulta:
                     # Debug: mostrar parte da resposta para diagnóstico
-                    print(f"      ⚠️ Resposta da API (primeiros 500 chars):")
+                    print(f"      [WARN] Resposta da API (primeiros 500 chars):")
                     print(f"      {xml_consulta[:500]}")
                     resultado.erro_geral = "Processo não encontrado ou erro na consulta"
                     return resultado
@@ -1412,6 +1412,12 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 for doc in resultado.documentos:
                     doc.numero_processo = numero_processo
 
+                # Preparar gerenciador JSON para fontes especiais (ex: Petição Inicial)
+                if self._deve_usar_json():
+                    gerenciador = self._obter_gerenciador_json()
+                    if gerenciador:
+                        gerenciador.preparar_lote(resultado.documentos)
+
                 # 4. Processar documentos em PARALELO com controle de concorrência
                 print(f"[4/4] Processando documentos em paralelo com IA (max {self.max_workers} simultâneos)...")
 
@@ -1441,11 +1447,11 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 docs_irrelevantes = resultado.documentos_irrelevantes()
                 docs_erro = resultado.documentos_com_erro()
 
-                print(f"      ✓ {len(docs_ok)} documentos resumidos")
+                print(f"      [OK] {len(docs_ok)} documentos resumidos")
                 if docs_irrelevantes:
                     print(f"      ○ {len(docs_irrelevantes)} documentos irrelevantes (ignorados)")
                 if docs_erro:
-                    print(f"      ✗ {len(docs_erro)} documentos com erro:")
+                    print(f"      [X] {len(docs_erro)} documentos com erro:")
                     for doc in docs_erro:
                         print(f"         - ID {doc.id}: {doc.erro}")
 
@@ -1459,7 +1465,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     resultado.relatorio_final = await self._gerar_relatorio_async(
                         session, resultado
                     )
-                    print("      ✓ Relatório gerado!")
+                    print("      [OK] Relatório gerado!")
 
             except Exception as e:
                 resultado.erro_geral = f"Erro durante análise: {str(e)}"
@@ -1583,7 +1589,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
             docs_origem_ok = [d for d in docs_para_adicionar if d.resumo and not d.irrelevante]
             docs_origem_irrel = [d for d in docs_para_adicionar if d.irrelevante]
 
-            print(f"      ✓ {len(docs_origem_ok)} documentos do 1º grau resumidos")
+            print(f"      [OK] {len(docs_origem_ok)} documentos do 1º grau resumidos")
             if duplicatas > 0:
                 print(f"      ⊘ {duplicatas} documentos duplicados (já no Agravo)")
             if docs_origem_irrel and (len(docs_origem_irrel) - duplicatas) > 0:
@@ -1606,11 +1612,11 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
         
         # Obtém código do documento
         codigo = int(doc.tipo_documento) if doc.tipo_documento else 0
-        formato = gerenciador.obter_formato(codigo)
-        
+        formato = gerenciador.obter_formato(codigo, doc_id=doc.id)
+
         if not formato:
             return None
-        
+
         from sistemas.gerador_pecas.extrator_resumo_json import gerar_prompt_extracao_json
         return gerar_prompt_extracao_json(formato, doc.descricao or "", db=self.db_session)
 
@@ -1620,13 +1626,13 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
         """
         if not self._deve_usar_json():
             return None
-        
+
         gerenciador = self._obter_gerenciador_json()
         if not gerenciador:
             return None
-        
+
         codigo = int(doc.tipo_documento) if doc.tipo_documento else 0
-        formato = gerenciador.obter_formato(codigo)
+        formato = gerenciador.obter_formato(codigo, doc_id=doc.id)
         
         if not formato:
             return None
@@ -1942,7 +1948,7 @@ def salvar_resultado(
         cabecalho_agravo = ""
         if resultado.is_agravo and resultado.processo_origem:
             cabecalho_agravo = f"""
-**⚠️ AGRAVO DE INSTRUMENTO**
+**[WARN] AGRAVO DE INSTRUMENTO**
 **Processo de Origem (1º Grau)**: {resultado.processo_origem}
 
 > **Nota**: Este é um Agravo de Instrumento. Os documentos marcados com [ORIGEM] são do processo de 1º grau.
@@ -1965,7 +1971,7 @@ def salvar_resultado(
 """
         # Primeiro os documentos do Agravo
         if docs_ai:
-            conteudo_consolidado += "# 📋 DOCUMENTOS DO AGRAVO DE INSTRUMENTO\n\n"
+            conteudo_consolidado += "#  DOCUMENTOS DO AGRAVO DE INSTRUMENTO\n\n"
             for i, doc in enumerate(docs_ai, 1):
                 conteudo_consolidado += f"""## {i}. {doc.categoria_nome}
 
@@ -2067,14 +2073,14 @@ def salvar_resultado(
 async def analisar_um_processo():
     """Analisa um único processo - retorna True se deve continuar"""
 
-    numero_processo = input("\n📋 Digite o número do processo (formato CNJ): ").strip()
+    numero_processo = input("\n Digite o número do processo (formato CNJ): ").strip()
 
     if not numero_processo:
-        print("\n❌ Erro: O número do processo é obrigatório")
+        print("\n[ERRO] Erro: O número do processo é obrigatório")
         return True  # Continua para perguntar outro
 
     # Perguntar se quer gerar relatório final
-    gerar_relatorio = input("\n📝 Deseja gerar o relatório final consolidado? (s/N): ").strip().lower()
+    gerar_relatorio = input("\n Deseja gerar o relatório final consolidado? (s/N): ").strip().lower()
     gerar_relatorio = gerar_relatorio in ['s', 'sim', 'y', 'yes']
 
     # Criar agente
@@ -2093,7 +2099,7 @@ async def analisar_um_processo():
 
     # Verificar erros
     if resultado.erro_geral:
-        print(f"\n❌ Erro: {resultado.erro_geral}")
+        print(f"\n[ERRO] Erro: {resultado.erro_geral}")
         return True  # Continua para perguntar outro
 
     # Salvar resultados na pasta resultados/<numero_processo>
@@ -2105,7 +2111,7 @@ async def analisar_um_processo():
 
     # Info de Agravo
     if resultado.is_agravo:
-        print(f"\n⚖️  AGRAVO DE INSTRUMENTO")
+        print(f"\n[JUR]  AGRAVO DE INSTRUMENTO")
         print(f"   Processo de origem: {resultado.processo_origem}")
 
     print(f"\n📊 Estatísticas:")
@@ -2136,7 +2142,7 @@ async def analisar_um_processo():
 async def main_interativo():
     """Execução interativa - loop principal"""
 
-    print("\n🔍 Agente de Análise de Documentos do TJ-MS")
+    print("\n Agente de Análise de Documentos do TJ-MS")
     print("=" * 50)
 
     while True:

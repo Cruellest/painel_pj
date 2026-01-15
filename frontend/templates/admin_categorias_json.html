@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Categorias de Resumo JSON - Portal PGE-MS</title>
+    <!-- VERSAO: 2026-01-15-v4 - fix duplicata ao editar -->
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
@@ -49,6 +50,9 @@
                 <a href="/admin/prompts-modulos" class="px-3 py-2 text-gray-600 hover:text-primary-600 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-sm">
                     <i class="fas fa-puzzle-piece"></i> Prompts
                 </a>
+                <button onclick="abrirAjudaFonteVerdade()" class="px-3 py-2 text-indigo-600 hover:bg-indigo-50 rounded-lg flex items-center gap-2 text-sm" title="Ajuda sobre conceitos">
+                    <i class="fas fa-question-circle"></i> Ajuda
+                </button>
                 <button onclick="criarCategoria()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
                     <i class="fas fa-plus"></i> Nova Categoria
                 </button>
@@ -126,8 +130,52 @@
                             placeholder="Descreva o propósito desta categoria..."></textarea>
                     </div>
 
-                    <!-- Códigos de documento -->
-                    <div>
+                    <!-- Tipo de Fonte (código vs especial) -->
+                    <div class="border border-indigo-200 rounded-lg p-4 bg-indigo-50/50">
+                        <div class="flex items-center gap-2 mb-3">
+                            <i class="fas fa-filter text-indigo-500"></i>
+                            <h4 class="text-sm font-semibold text-gray-700">Fonte dos Documentos</h4>
+                        </div>
+
+                        <div class="flex gap-4 mb-4">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="source_type" value="code" checked
+                                    class="text-primary-600 focus:ring-primary-500"
+                                    onchange="alterarTipoFonte('code')">
+                                <span class="text-sm text-gray-700">Por código de documento</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="source_type" value="special"
+                                    class="text-indigo-600 focus:ring-indigo-500"
+                                    onchange="alterarTipoFonte('special')">
+                                <span class="text-sm text-gray-700">Fonte especial (regra lógica)</span>
+                            </label>
+                        </div>
+
+                        <!-- Seção para fonte especial (oculta por padrão) -->
+                        <div id="secao-fonte-especial" class="hidden">
+                            <div class="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-3 mb-3">
+                                <div class="flex items-start gap-2">
+                                    <i class="fas fa-lightbulb text-amber-500 mt-0.5"></i>
+                                    <div class="text-sm text-amber-700">
+                                        <p class="font-medium mb-1">Fontes especiais</p>
+                                        <p>Identificam documentos por regras lógicas em vez de códigos. Útil quando o mesmo código aparece em múltiplos documentos.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Selecione a fonte especial</label>
+                                <select id="categoria-fonte-especial"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                    <option value="">-- Selecione --</option>
+                                </select>
+                                <p id="descricao-fonte-especial" class="text-xs text-gray-500 mt-2 hidden"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Códigos de documento (somente se tipo = code) -->
+                    <div id="secao-codigos-documento">
                         <label class="block text-sm font-medium text-gray-700 mb-1">
                             Códigos de Documento TJ-MS
                             <button type="button" onclick="abrirSeletorCodigos()" class="ml-2 text-primary-600 hover:text-primary-700 text-xs">
@@ -147,37 +195,46 @@
                         </div>
                     </div>
 
-                    <!-- ABAS: Modo IA vs Modo Legado -->
+                    <!-- ABAS: Ferramenta IA para gerar JSON -->
                     <div class="border-t border-gray-200 pt-6">
-                        <div class="flex items-center gap-2 mb-4">
-                            <i class="fas fa-robot text-primary-500"></i>
-                            <h3 class="text-md font-semibold text-gray-700">Modo de Extração</h3>
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-robot text-primary-500"></i>
+                                <h3 class="text-md font-semibold text-gray-700">Formato JSON</h3>
+                            </div>
+                            <!-- Badge indicando se JSON foi gerado por IA -->
+                            <div id="badge-json-ia" class="hidden">
+                                <span class="px-3 py-1.5 bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-xs font-bold rounded-full flex items-center gap-2 shadow-md">
+                                    <i class="fas fa-magic"></i>
+                                    GERADO POR IA
+                                </span>
+                            </div>
                         </div>
 
                         <!-- Seletor de Abas -->
                         <div class="flex border-b border-gray-200 mb-4">
-                            <button type="button" onclick="selecionarModo('ia')" id="tab-modo-ia"
-                                class="px-4 py-2 text-sm font-medium border-b-2 border-primary-500 text-primary-600 bg-primary-50 rounded-t-lg">
-                                <i class="fas fa-brain mr-2"></i>Modo IA (Perguntas)
-                            </button>
                             <button type="button" onclick="selecionarModo('legado')" id="tab-modo-legado"
+                                class="px-4 py-2 text-sm font-medium border-b-2 border-primary-500 text-primary-600 bg-primary-50 rounded-t-lg">
+                                <i class="fas fa-code mr-2"></i>JSON Manual
+                            </button>
+                            <button type="button" onclick="selecionarModo('ia')" id="tab-modo-ia"
                                 class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
-                                <i class="fas fa-code mr-2"></i>Modo Legado (JSON Manual)
+                                <i class="fas fa-magic mr-2"></i>Gerar com IA
                             </button>
                         </div>
 
                         <!-- Conteúdo Modo IA -->
-                        <div id="conteudo-modo-ia" class="space-y-4">
+                        <div id="conteudo-modo-ia" class="hidden space-y-4">
                             <div class="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4">
                                 <div class="flex items-start gap-3">
                                     <i class="fas fa-magic text-purple-500 mt-1"></i>
                                     <div class="text-sm text-purple-700">
-                                        <p class="font-medium mb-1">Como funciona o Modo IA:</p>
+                                        <p class="font-medium mb-1">Como funciona:</p>
                                         <ol class="list-decimal list-inside space-y-1">
                                             <li>Escreva as perguntas que deseja extrair do documento</li>
                                             <li>Clique em <strong>"Gerar JSON com IA"</strong></li>
-                                            <li>A IA (Gemini) gerará o schema JSON automaticamente</li>
-                                            <li>Revise e aprove o JSON gerado</li>
+                                            <li>A IA (Gemini) gerará o schema JSON e criará as variáveis</li>
+                                            <li>Clique em <strong>"Aceitar e Usar"</strong> para aplicar o JSON gerado</li>
                                         </ol>
                                     </div>
                                 </div>
@@ -190,21 +247,26 @@
                                         Perguntas de Extração
                                         <span class="text-xs text-gray-400 ml-1" id="contador-perguntas">(0 perguntas)</span>
                                     </label>
-                                    <button type="button" onclick="abrirModalPergunta()" class="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm">
-                                        <i class="fas fa-plus mr-1"></i> Nova Pergunta
-                                    </button>
+                                    <div class="flex gap-2">
+                                        <button type="button" onclick="abrirModalPerguntasLote()" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm">
+                                            <i class="fas fa-list-ul mr-1"></i> Várias Perguntas
+                                        </button>
+                                        <button type="button" onclick="abrirModalPergunta()" class="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm">
+                                            <i class="fas fa-plus mr-1"></i> Nova Pergunta
+                                        </button>
+                                    </div>
                                 </div>
                                 <div id="lista-perguntas" class="space-y-3 max-h-96 overflow-auto border border-gray-200 rounded-lg p-3 bg-gray-50">
                                     <p class="text-gray-400 text-sm text-center py-8">
                                         <i class="fas fa-question-circle text-2xl mb-2 block"></i>
                                         Nenhuma pergunta adicionada ainda.<br>
-                                        <span class="text-xs">Clique em "Nova Pergunta" para começar.</span>
+                                        <span class="text-xs">Clique em "Nova Pergunta" ou "Várias Perguntas" para começar.</span>
                                     </p>
                                 </div>
                             </div>
 
                             <!-- Botão Gerar JSON -->
-                            <div class="flex items-center gap-4">
+                            <div class="flex items-center gap-4 flex-wrap">
                                 <button type="button" onclick="gerarJSONcomIA()" id="btn-gerar-ia"
                                     class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 font-medium shadow-md hover:shadow-lg transition-all">
                                     <i class="fas fa-magic mr-2"></i>Gerar JSON com IA
@@ -221,7 +283,7 @@
                                     </label>
                                     <div class="flex gap-2">
                                         <button type="button" onclick="aceitarJSONGerado()" class="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200">
-                                            <i class="fas fa-check mr-1"></i>Aceitar
+                                            <i class="fas fa-check mr-1"></i>Aceitar e Usar
                                         </button>
                                         <button type="button" onclick="editarJSONGerado()" class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded text-sm hover:bg-yellow-200">
                                             <i class="fas fa-edit mr-1"></i>Editar
@@ -245,7 +307,7 @@
                         </div>
 
                         <!-- Conteúdo Modo Legado -->
-                        <div id="conteudo-modo-legado" class="hidden space-y-4">
+                        <div id="conteudo-modo-legado" class="space-y-4">
                             <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
                                 <div class="flex items-start gap-3">
                                     <i class="fas fa-code text-amber-500 mt-1"></i>
@@ -469,21 +531,48 @@
                     </div>
                 </div>
 
-                <!-- Fonte de Verdade Individual -->
-                <div class="border-t border-gray-200 pt-4">
+                <!-- Fonte de Verdade (edita a variável vinculada) -->
+                <div id="fonte-verdade-container" class="border-t border-gray-200 pt-4">
                     <div class="flex items-center gap-2 mb-3">
-                        <input type="checkbox" id="pergunta-fonte-override" class="rounded"
-                            onchange="toggleFonteVerdadePergunta()">
-                        <label for="pergunta-fonte-override" class="text-sm font-medium text-gray-700">
-                            Usar fonte de verdade específica para esta pergunta
-                        </label>
+                        <i class="fas fa-crosshairs text-indigo-500"></i>
+                        <span class="text-sm font-medium text-gray-700">Fonte de Verdade</span>
+                        <span class="text-xs text-gray-400">(salvo na variável)</span>
                     </div>
-                    <div id="fonte-verdade-pergunta-container" class="hidden">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de documento fonte de verdade</label>
-                        <input type="text" id="pergunta-fonte-verdade"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                            placeholder="ex: petição inicial, parecer NAT">
-                        <p class="text-xs text-gray-400 mt-1">Esta pergunta só será extraída de documentos deste tipo.</p>
+
+                    <!-- Info quando não há variável vinculada -->
+                    <div id="fonte-verdade-sem-variavel" class="hidden bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <p class="text-xs text-gray-500">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            A fonte de verdade será configurável após gerar a variável (salve a categoria primeiro).
+                        </p>
+                    </div>
+
+                    <!-- Campos editáveis quando há variável -->
+                    <div id="fonte-verdade-campos" class="space-y-3">
+                        <input type="hidden" id="variavel-vinculada-id" value="">
+                        <div class="grid grid-cols-2 gap-3">
+                            <!-- Código específico -->
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">
+                                    Código específico
+                                </label>
+                                <select id="pergunta-fonte-codigo"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500">
+                                    <option value="">Todos os códigos</option>
+                                </select>
+                                <p class="text-xs text-gray-400 mt-1">Filtro por código TJ-MS</p>
+                            </div>
+                            <!-- Tipo lógico (LLM) -->
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 mb-1">
+                                    Tipo lógico (LLM)
+                                </label>
+                                <input type="text" id="pergunta-fonte-tipo"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="ex: petição inicial">
+                                <p class="text-xs text-gray-400 mt-1">Classificação semântica pela IA</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -507,6 +596,78 @@
         </div>
     </div>
 
+    <!-- Modal de Perguntas em Lote -->
+    <div id="modal-perguntas-lote" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col m-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-purple-50">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">
+                        <i class="fas fa-list-ul text-indigo-600 mr-2"></i>
+                        Adicionar Várias Perguntas
+                    </h2>
+                    <p class="text-sm text-gray-500">A IA irá analisar dependências automaticamente</p>
+                </div>
+                <button onclick="fecharModalPerguntasLote()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-auto p-6 space-y-4">
+                <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                    <div class="flex items-start gap-3">
+                        <i class="fas fa-robot text-indigo-500 mt-1"></i>
+                        <div class="text-sm text-indigo-700">
+                            <p class="font-medium mb-1">Como funciona:</p>
+                            <ol class="list-decimal list-inside space-y-1">
+                                <li>Digite uma pergunta por linha</li>
+                                <li>A IA (Gemini) analisará as relações de dependência</li>
+                                <li>Perguntas serão criadas na ordem correta</li>
+                                <li>Dependências serão configuradas automaticamente</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                        Perguntas (uma por linha)
+                    </label>
+                    <textarea id="perguntas-lote-texto" rows="10"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+                        placeholder="O autor é idoso?
+O medicamento tem registro na ANVISA?
+O medicamento é incorporado ao SUS?
+Qual alternativa terapêutica foi tentada?
+Qual o valor da causa?"></textarea>
+                    <p class="text-xs text-gray-400 mt-1">
+                        <span id="contador-linhas-lote">0 perguntas</span> detectadas
+                    </p>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="analisar-dependencias-lote" class="rounded" checked>
+                    <label for="analisar-dependencias-lote" class="text-sm text-gray-700">
+                        Analisar dependências com IA (recomendado)
+                    </label>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
+                <span id="status-lote" class="text-sm text-gray-500"></span>
+                <div class="flex gap-3">
+                    <button type="button" onclick="fecharModalPerguntasLote()"
+                        class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                        Cancelar
+                    </button>
+                    <button type="button" onclick="salvarPerguntasLote()" id="btn-salvar-lote"
+                        class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                        <i class="fas fa-magic mr-2"></i>Criar Perguntas
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '/admin/api/categorias-resumo-json';
         const API_EXTRACTION = '/admin/api/extraction';
@@ -515,7 +676,8 @@
         let codigosSelecionados = [];
         let perguntasSelecionadas = [];
         let categoriaAtual = null;
-        let modoSelecionado = 'ia'; // 'ia' ou 'legado'
+        let modoSelecionado = 'legado'; // 'ia' ou 'legado' - LEGADO é o padrão
+        let jsonGeradoPorIA = false; // Se o JSON atual foi gerado por IA
         let jsonGerado = null;
         let variaveisGeradas = [];
         let perguntasExistentes = []; // Perguntas já salvas no banco
@@ -530,6 +692,81 @@
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${getToken()}`
             };
+        }
+
+        // Fontes especiais disponíveis
+        let fontesEspeciais = [];
+
+        // Carrega fontes especiais disponíveis
+        async function carregarFontesEspeciais() {
+            try {
+                const response = await fetch(`${API_BASE}/fontes-especiais`, {
+                    headers: getHeaders()
+                });
+                if (response.ok) {
+                    fontesEspeciais = await response.json();
+                    popularSelectFontesEspeciais();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar fontes especiais:', error);
+            }
+        }
+
+        // Popular dropdown de fontes especiais
+        function popularSelectFontesEspeciais() {
+            const select = document.getElementById('categoria-fonte-especial');
+            select.innerHTML = '<option value="">-- Selecione --</option>';
+            fontesEspeciais.forEach(fonte => {
+                const option = document.createElement('option');
+                option.value = fonte.key;
+                option.textContent = fonte.nome;
+                option.dataset.descricao = fonte.descricao;
+                select.appendChild(option);
+            });
+
+            // Listener para mostrar descrição
+            select.onchange = function() {
+                const descEl = document.getElementById('descricao-fonte-especial');
+                const selected = this.options[this.selectedIndex];
+                if (selected.value && selected.dataset.descricao) {
+                    descEl.textContent = selected.dataset.descricao;
+                    descEl.classList.remove('hidden');
+                } else {
+                    descEl.classList.add('hidden');
+                }
+            };
+        }
+
+        // Alternar tipo de fonte (código vs especial)
+        function alterarTipoFonte(tipo) {
+            const secaoCodigos = document.getElementById('secao-codigos-documento');
+            const secaoEspecial = document.getElementById('secao-fonte-especial');
+
+            if (tipo === 'special') {
+                secaoCodigos.classList.add('hidden');
+                secaoEspecial.classList.remove('hidden');
+            } else {
+                secaoCodigos.classList.remove('hidden');
+                secaoEspecial.classList.add('hidden');
+            }
+        }
+
+        // Define o tipo de fonte no formulário
+        function setTipoFonte(tipo, valorEspecial = '') {
+            // Marca o radio correto
+            document.querySelectorAll('input[name="source_type"]').forEach(radio => {
+                radio.checked = (radio.value === tipo);
+            });
+
+            // Atualiza visibilidade
+            alterarTipoFonte(tipo);
+
+            // Se especial, seleciona o valor
+            if (tipo === 'special' && valorEspecial) {
+                document.getElementById('categoria-fonte-especial').value = valorEspecial;
+                // Dispara change para mostrar descrição
+                document.getElementById('categoria-fonte-especial').dispatchEvent(new Event('change'));
+            }
         }
 
         // Carrega categorias
@@ -578,6 +815,11 @@
                         <div class="flex-1">
                             <div class="flex items-center gap-3 mb-2 flex-wrap">
                                 <h3 class="text-lg font-semibold ${cat.ativo ? 'text-gray-800' : 'text-gray-500'}">${cat.titulo}</h3>
+                                ${cat.json_gerado_por_ia ? `
+                                    <span class="px-2 py-0.5 text-xs rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-bold flex items-center gap-1">
+                                        <i class="fas fa-magic"></i> GERADO POR IA
+                                    </span>
+                                ` : ''}
                                 ${cat.is_residual ? '<span class="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">RESIDUAL</span>' : ''}
                                 ${!cat.ativo ? '<span class="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">INATIVO</span>' : ''}
                             </div>
@@ -639,6 +881,7 @@
             perguntasExistentes = [];
             jsonGerado = null;
             variaveisGeradas = [];
+            jsonGeradoPorIA = false;
 
             document.getElementById('modal-titulo').textContent = 'Nova Categoria';
             document.getElementById('modal-subtitulo').textContent = '';
@@ -663,14 +906,21 @@
             document.getElementById('categoria-ativo').checked = true;
             document.getElementById('campo-motivo').classList.add('hidden');
 
-            // Reset modo IA
-            selecionarModo('ia');
+            // Começa no modo legado (padrão)
+            selecionarModo('legado');
             atualizarListaPerguntas();
+            atualizarBadgeJsonIA();
             document.getElementById('preview-json-gerado').classList.add('hidden');
             document.getElementById('variaveis-criadas').classList.add('hidden');
             document.getElementById('status-geracao').textContent = '';
 
             atualizarListaCodigos();
+
+            // Reset fonte especial para modo padrão (código)
+            setTipoFonte('code', '');
+            document.getElementById('categoria-fonte-especial').value = '';
+            document.getElementById('descricao-fonte-especial').classList.add('hidden');
+
             document.getElementById('modal-editor').classList.remove('hidden');
         }
 
@@ -684,6 +934,7 @@
                 codigosSelecionados = categoria.codigos_documento || [];
                 jsonGerado = null;
                 variaveisGeradas = [];
+                jsonGeradoPorIA = categoria.json_gerado_por_ia || false;
 
                 document.getElementById('modal-titulo').textContent = 'Editar Categoria';
                 document.getElementById('modal-subtitulo').textContent = `ID: ${categoria.id}`;
@@ -701,12 +952,12 @@
                 // Carrega perguntas existentes da categoria
                 await carregarPerguntasCategoria(id);
 
-                // Se tem perguntas, mostra modo IA; senão, mostra legado
-                if (perguntasSelecionadas.length > 0) {
-                    selecionarModo('ia');
-                } else {
-                    selecionarModo('legado');
-                }
+                // Sempre começa no modo legado (que é o padrão)
+                // O usuário pode alternar para modo IA se desejar
+                selecionarModo('legado');
+
+                // Atualiza badge de JSON gerado por IA
+                atualizarBadgeJsonIA();
 
                 // Reset preview
                 document.getElementById('preview-json-gerado').classList.add('hidden');
@@ -714,10 +965,26 @@
                 document.getElementById('status-geracao').textContent = '';
 
                 atualizarListaCodigos();
+
+                // Configura tipo de fonte (código vs especial)
+                const sourceType = categoria.source_type || 'code';
+                const sourceSpecialType = categoria.source_special_type || '';
+                setTipoFonte(sourceType, sourceSpecialType);
+
                 document.getElementById('modal-editor').classList.remove('hidden');
             } catch (error) {
                 console.error('Erro ao carregar categoria:', error);
                 alert('Erro ao carregar categoria');
+            }
+        }
+
+        // Atualiza badge indicando se JSON foi gerado por IA
+        function atualizarBadgeJsonIA() {
+            const badge = document.getElementById('badge-json-ia');
+            if (jsonGeradoPorIA) {
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
             }
         }
 
@@ -731,17 +998,17 @@
         function adicionarCodigo() {
             const input = document.getElementById('novo-codigo');
             const codigo = parseInt(input.value.trim());
-            
+
             if (isNaN(codigo) || codigo <= 0) {
                 alert('Digite um código numérico válido');
                 return;
             }
-            
+
             if (codigosSelecionados.includes(codigo)) {
                 alert('Este código já foi adicionado');
                 return;
             }
-            
+
             codigosSelecionados.push(codigo);
             input.value = '';
             atualizarListaCodigos();
@@ -798,6 +1065,97 @@
             }
         }
 
+        // ==========================================
+        // Funções de Perguntas em Lote
+        // ==========================================
+
+        function abrirModalPerguntasLote() {
+            document.getElementById('perguntas-lote-texto').value = '';
+            document.getElementById('status-lote').textContent = '';
+            atualizarContadorLinhasLote();
+            document.getElementById('modal-perguntas-lote').classList.remove('hidden');
+
+            // Adiciona listener para contar linhas
+            document.getElementById('perguntas-lote-texto').addEventListener('input', atualizarContadorLinhasLote);
+        }
+
+        function fecharModalPerguntasLote() {
+            document.getElementById('modal-perguntas-lote').classList.add('hidden');
+        }
+
+        function atualizarContadorLinhasLote() {
+            const texto = document.getElementById('perguntas-lote-texto').value;
+            const linhas = texto.split('\n').filter(l => l.trim()).length;
+            document.getElementById('contador-linhas-lote').textContent = `${linhas} pergunta${linhas !== 1 ? 's' : ''}`;
+        }
+
+        async function salvarPerguntasLote() {
+            const categoriaId = document.getElementById('categoria-id').value;
+            if (!categoriaId) {
+                alert('Salve a categoria primeiro');
+                return;
+            }
+
+            const texto = document.getElementById('perguntas-lote-texto').value;
+            const linhas = texto.split('\n').filter(l => l.trim());
+
+            if (linhas.length === 0) {
+                alert('Digite pelo menos uma pergunta');
+                return;
+            }
+
+            const analisarDependencias = document.getElementById('analisar-dependencias-lote').checked;
+
+            const btn = document.getElementById('btn-salvar-lote');
+            const status = document.getElementById('status-lote');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processando...';
+            status.textContent = analisarDependencias ? 'Analisando dependências com IA...' : 'Criando perguntas...';
+            status.className = 'text-sm text-blue-500';
+
+            try {
+                const perguntas = linhas.map(l => ({
+                    pergunta: l.trim()
+                }));
+
+                const response = await fetch(`${API_EXTRACTION}/perguntas/lote`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({
+                        categoria_id: parseInt(categoriaId),
+                        perguntas: perguntas,
+                        analisar_dependencias: analisarDependencias
+                    })
+                });
+
+                const resultado = await response.json();
+
+                if (!resultado.success) {
+                    throw new Error(resultado.erro || 'Erro ao criar perguntas');
+                }
+
+                status.textContent = `✓ ${resultado.total_criadas} perguntas criadas (${resultado.total_com_dependencias} com dependências)`;
+                status.className = 'text-sm text-green-600';
+
+                // Recarrega perguntas da categoria
+                await carregarPerguntasCategoria(categoriaId);
+
+                // Fecha modal após 1.5s
+                setTimeout(() => {
+                    fecharModalPerguntasLote();
+                }, 1500);
+
+            } catch (error) {
+                console.error('Erro:', error);
+                status.textContent = `Erro: ${error.message}`;
+                status.className = 'text-sm text-red-500';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-magic mr-2"></i>Criar Perguntas';
+            }
+        }
+
         // Adicionar pergunta
         function adicionarPergunta() {
             const input = document.getElementById('nova-pergunta');
@@ -824,11 +1182,76 @@
         }
 
         // Remover pergunta
-        function removerPergunta(index) {
-            perguntasSelecionadas.splice(index, 1);
-            // Reordena
-            perguntasSelecionadas.forEach((p, i) => p.ordem = i);
-            atualizarListaPerguntas();
+        async function removerPergunta(index) {
+            const pergunta = perguntasSelecionadas[index];
+
+            // Se a pergunta ainda não foi salva (sem ID), apenas remove da lista
+            if (!pergunta.id) {
+                if (!confirm('Tem certeza que deseja remover esta pergunta?')) {
+                    return;
+                }
+                perguntasSelecionadas.splice(index, 1);
+                perguntasSelecionadas.forEach((p, i) => p.ordem = i);
+                atualizarListaPerguntas();
+                return;
+            }
+
+            // Pergunta já salva - verifica se tem variáveis vinculadas
+            let temVariaveis = false;
+            try {
+                const response = await fetch(`${API_EXTRACTION}/variaveis?source_question_id=${pergunta.id}&apenas_ativos=false`, {
+                    headers: getHeaders()
+                });
+                if (response.ok) {
+                    const variaveis = await response.json();
+                    temVariaveis = variaveis.length > 0;
+                }
+            } catch (e) {
+                console.error('Erro ao verificar variáveis:', e);
+            }
+
+            // Monta mensagem de confirmação
+            let mensagem = `Tem certeza que deseja excluir a pergunta:\n\n"${pergunta.pergunta}"?\n\n`;
+            if (temVariaveis) {
+                mensagem += '⚠️ ATENÇÃO: Esta pergunta possui variáveis vinculadas.\n';
+                mensagem += 'As variáveis continuarão existindo, mas ficarão sem vínculo com a pergunta de origem.\n\n';
+            }
+            mensagem += 'Esta ação não pode ser desfeita.';
+
+            if (!confirm(mensagem)) {
+                return;
+            }
+
+            // Exclui do banco via API
+            try {
+                const response = await fetch(`${API_EXTRACTION}/perguntas/${pergunta.id}`, {
+                    method: 'DELETE',
+                    headers: getHeaders()
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao excluir pergunta');
+                }
+
+                // Remove da lista local
+                perguntasSelecionadas.splice(index, 1);
+                perguntasSelecionadas.forEach((p, i) => p.ordem = i);
+                atualizarListaPerguntas();
+
+                // Feedback visual
+                const statusEl = document.getElementById('status-geracao');
+                if (statusEl) {
+                    statusEl.textContent = 'Pergunta excluída com sucesso!';
+                    statusEl.className = 'text-sm text-green-600';
+                    setTimeout(() => {
+                        statusEl.textContent = '';
+                    }, 3000);
+                }
+            } catch (error) {
+                console.error('Erro ao excluir pergunta:', error);
+                alert(`Erro ao excluir pergunta: ${error.message}`);
+            }
         }
 
         // Atualizar lista visual de perguntas
@@ -893,11 +1316,6 @@
                                         <i class="fas fa-code-branch text-purple-400 mr-0.5"></i>${escapeHtml(p.depends_on_variable)}
                                     </span>
                                 ` : ''}
-                                ${p.fonte_verdade_override && p.fonte_verdade_tipo ? `
-                                    <span class="px-1.5 py-0.5 text-xs rounded bg-indigo-50 text-indigo-600">
-                                        <i class="fas fa-bullseye text-indigo-400 mr-0.5"></i>${escapeHtml(p.fonte_verdade_tipo)}
-                                    </span>
-                                ` : ''}
                                 ${p.ativo === false ? `
                                     <span class="px-1.5 py-0.5 text-xs rounded bg-red-100 text-red-600">INATIVA</span>
                                 ` : ''}
@@ -942,9 +1360,6 @@
                     dependency_operator: p.dependency_operator || null,
                     dependency_value: p.dependency_value,
                     dependency_inferred: p.dependency_inferred || false,
-                    // Fonte de verdade
-                    fonte_verdade_tipo: p.fonte_verdade_tipo || null,
-                    fonte_verdade_override: p.fonte_verdade_override || false,
                     ativo: p.ativo !== false
                 }));
 
@@ -1037,9 +1452,6 @@
                     dependency_operator: p.dependency_operator || null,
                     dependency_value: p.dependency_value,
                     dependency_inferred: p.dependency_inferred || false,
-                    // Fonte de verdade
-                    fonte_verdade_tipo: p.fonte_verdade_tipo || null,
-                    fonte_verdade_override: p.fonte_verdade_override || false,
                     ativo: p.ativo !== false
                 };
 
@@ -1081,6 +1493,10 @@
             // Coloca o JSON no campo de formato
             document.getElementById('categoria-formato-json').value = JSON.stringify(jsonGerado, null, 2);
 
+            // Marca que foi gerado por IA
+            jsonGeradoPorIA = true;
+            atualizarBadgeJsonIA();
+
             // Limpa preview
             document.getElementById('preview-json-gerado').classList.add('hidden');
             document.getElementById('status-geracao').textContent = 'JSON aceito e aplicado ao formulário!';
@@ -1096,6 +1512,10 @@
 
             // Coloca o JSON no campo de formato para edição
             document.getElementById('categoria-formato-json').value = JSON.stringify(jsonGerado, null, 2);
+
+            // Ao editar manualmente, não é mais "gerado por IA"
+            jsonGeradoPorIA = false;
+            atualizarBadgeJsonIA();
 
             // Limpa preview
             document.getElementById('preview-json-gerado').classList.add('hidden');
@@ -1128,8 +1548,16 @@
         // ==========================================
 
         // Abre modal para nova pergunta ou edição
-        function abrirModalPergunta(index = -1) {
+        async function abrirModalPergunta(index = -1) {
             document.getElementById('pergunta-index').value = index;
+
+            // Popula select de códigos do grupo
+            atualizarSelectFonteCodigoPergunta();
+
+            // Limpa campos de fonte de verdade
+            document.getElementById('variavel-vinculada-id').value = '';
+            document.getElementById('pergunta-fonte-codigo').value = '';
+            document.getElementById('pergunta-fonte-tipo').value = '';
 
             if (index === -1) {
                 // Nova pergunta
@@ -1144,10 +1572,11 @@
                 document.getElementById('pergunta-depends-on').value = '';
                 document.getElementById('pergunta-dependency-operator').value = 'equals';
                 document.getElementById('pergunta-dependency-value').value = '';
-                // Fonte de verdade
-                document.getElementById('pergunta-fonte-override').checked = false;
-                document.getElementById('pergunta-fonte-verdade').value = '';
                 document.getElementById('pergunta-ativa').checked = true;
+
+                // Nova pergunta não tem variável ainda
+                document.getElementById('fonte-verdade-sem-variavel').classList.remove('hidden');
+                document.getElementById('fonte-verdade-campos').classList.add('hidden');
             } else {
                 // Edição
                 const p = perguntasSelecionadas[index];
@@ -1163,17 +1592,21 @@
                 document.getElementById('pergunta-depends-on').value = p.depends_on_variable || '';
                 document.getElementById('pergunta-dependency-operator').value = p.dependency_operator || 'equals';
                 document.getElementById('pergunta-dependency-value').value = p.dependency_value || '';
-                // Fonte de verdade
-                document.getElementById('pergunta-fonte-override').checked = p.fonte_verdade_override || false;
-                document.getElementById('pergunta-fonte-verdade').value = p.fonte_verdade_tipo || '';
                 document.getElementById('pergunta-ativa').checked = p.ativo !== false;
+
+                // Busca variável vinculada (se a pergunta foi salva)
+                if (p.id) {
+                    await carregarVariavelVinculada(p.id);
+                } else {
+                    document.getElementById('fonte-verdade-sem-variavel').classList.remove('hidden');
+                    document.getElementById('fonte-verdade-campos').classList.add('hidden');
+                }
             }
 
             // Toggle visibilidades iniciais
             toggleOpcoesPergunta();
             toggleDependenciaPergunta();
             toggleValorDependencia();
-            toggleFonteVerdadePergunta();
             atualizarPreviewDependencia();
 
             document.getElementById('modal-pergunta').classList.remove('hidden');
@@ -1182,6 +1615,69 @@
         // Fecha modal de pergunta
         function fecharModalPergunta() {
             document.getElementById('modal-pergunta').classList.add('hidden');
+        }
+
+        // Popula select de códigos para fonte de verdade
+        function atualizarSelectFonteCodigoPergunta() {
+            const select = document.getElementById('pergunta-fonte-codigo');
+            const valorAtual = select.value;
+            select.innerHTML = '<option value="">Todos os códigos</option>';
+            codigosSelecionados.forEach(cod => {
+                select.innerHTML += `<option value="${cod}">${cod}</option>`;
+            });
+            if (valorAtual && codigosSelecionados.map(String).includes(String(valorAtual))) {
+                select.value = valorAtual;
+            }
+        }
+
+        // Busca variável vinculada à pergunta
+        async function carregarVariavelVinculada(perguntaId) {
+            try {
+                const response = await fetch(`${API_EXTRACTION}/variaveis?source_question_id=${perguntaId}&apenas_ativos=false`, {
+                    headers: getHeaders()
+                });
+
+                if (response.ok) {
+                    const variaveis = await response.json();
+                    if (variaveis.length > 0) {
+                        const v = variaveis[0];
+                        document.getElementById('variavel-vinculada-id').value = v.id;
+                        document.getElementById('pergunta-fonte-codigo').value = v.fonte_verdade_codigo || '';
+                        document.getElementById('pergunta-fonte-tipo').value = v.fonte_verdade_tipo || '';
+
+                        document.getElementById('fonte-verdade-sem-variavel').classList.add('hidden');
+                        document.getElementById('fonte-verdade-campos').classList.remove('hidden');
+                    } else {
+                        // Sem variável vinculada
+                        document.getElementById('fonte-verdade-sem-variavel').classList.remove('hidden');
+                        document.getElementById('fonte-verdade-campos').classList.add('hidden');
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao carregar variável:', error);
+            }
+        }
+
+        // Salva fonte de verdade na variável
+        async function salvarFonteVerdadeVariavel() {
+            const variavelId = document.getElementById('variavel-vinculada-id').value;
+            if (!variavelId) return;
+
+            const fonteCodigo = document.getElementById('pergunta-fonte-codigo').value || null;
+            const fonteTipo = document.getElementById('pergunta-fonte-tipo').value.trim() || null;
+
+            try {
+                await fetch(`${API_EXTRACTION}/variaveis/${variavelId}`, {
+                    method: 'PUT',
+                    headers: getHeaders(),
+                    body: JSON.stringify({
+                        fonte_verdade_codigo: fonteCodigo,
+                        fonte_verdade_tipo: fonteTipo
+                    })
+                });
+            } catch (error) {
+                console.error('Erro ao salvar fonte de verdade:', error);
+            }
         }
 
         // Salva pergunta do modal
@@ -1194,13 +1690,19 @@
                 return;
             }
 
-            // Verifica duplicata (exceto se está editando a mesma)
-            const duplicata = perguntasSelecionadas.findIndex((p, i) =>
-                i !== index && p.pergunta.toLowerCase() === texto.toLowerCase()
-            );
-            if (duplicata !== -1) {
-                alert('Esta pergunta já existe');
-                return;
+            // Verifica duplicata apenas se for nova pergunta OU se o texto foi alterado
+            const isNovaPergunta = index === -1;
+            const textoOriginal = !isNovaPergunta ? (perguntasSelecionadas[index]?.pergunta || '').trim().toLowerCase() : '';
+            const textoAlterado = isNovaPergunta || textoOriginal !== texto.toLowerCase();
+
+            if (textoAlterado) {
+                const duplicata = perguntasSelecionadas.findIndex((p, i) => {
+                    return i !== index && (p.pergunta || '').trim().toLowerCase() === texto.toLowerCase();
+                });
+                if (duplicata !== -1) {
+                    alert(`Já existe outra pergunta com este texto (posição ${duplicata + 1}). Altere o texto ou remova a duplicata.`);
+                    return;
+                }
             }
 
             const tipo = document.getElementById('pergunta-tipo').value;
@@ -1235,11 +1737,6 @@
                 dependency_operator: dependsOn ? dependencyOperator : null,
                 dependency_value: dependsOn ? dependencyValue : null,
                 dependency_inferred: false,
-                // Fonte de verdade
-                fonte_verdade_override: document.getElementById('pergunta-fonte-override').checked,
-                fonte_verdade_tipo: document.getElementById('pergunta-fonte-override').checked
-                    ? document.getElementById('pergunta-fonte-verdade').value.trim() || null
-                    : null,
                 ativo: document.getElementById('pergunta-ativa').checked
             };
 
@@ -1250,6 +1747,9 @@
                 // Edição - mantém o id se existir
                 perguntaData.id = perguntasSelecionadas[index].id;
                 perguntasSelecionadas[index] = perguntaData;
+
+                // Salva fonte de verdade na variável vinculada (se existir)
+                salvarFonteVerdadeVariavel();
             }
 
             // Reordena por ordem
@@ -1265,18 +1765,6 @@
             const container = document.getElementById('opcoes-pergunta-container');
 
             if (tipo === 'choice') {
-                container.classList.remove('hidden');
-            } else {
-                container.classList.add('hidden');
-            }
-        }
-
-        // Toggle visibilidade do campo fonte de verdade
-        function toggleFonteVerdadePergunta() {
-            const checked = document.getElementById('pergunta-fonte-override').checked;
-            const container = document.getElementById('fonte-verdade-pergunta-container');
-
-            if (checked) {
                 container.classList.remove('hidden');
             } else {
                 container.classList.add('hidden');
@@ -1472,6 +1960,12 @@
                 return;
             }
 
+            // Determina tipo de fonte selecionado
+            const sourceType = document.querySelector('input[name="source_type"]:checked')?.value || 'code';
+            const sourceSpecialType = sourceType === 'special'
+                ? (document.getElementById('categoria-fonte-especial').value || null)
+                : null;
+
             const dados = {
                 nome: document.getElementById('categoria-nome').value.trim(),
                 titulo: document.getElementById('categoria-titulo').value.trim(),
@@ -1480,7 +1974,10 @@
                 formato_json: formatoJson,
                 instrucoes_extracao: document.getElementById('categoria-instrucoes').value.trim() || null,
                 is_residual: document.getElementById('categoria-residual').checked,
-                ativo: document.getElementById('categoria-ativo').checked
+                ativo: document.getElementById('categoria-ativo').checked,
+                json_gerado_por_ia: jsonGeradoPorIA,
+                source_type: sourceType,
+                source_special_type: sourceSpecialType
             };
 
             if (isEdit) {
@@ -1614,6 +2111,15 @@
             }
         }
 
+        // Modal de Ajuda - Fonte de Verdade
+        function abrirAjudaFonteVerdade() {
+            document.getElementById('modal-ajuda-fonte-verdade').classList.remove('hidden');
+        }
+
+        function fecharAjudaFonteVerdade() {
+            document.getElementById('modal-ajuda-fonte-verdade').classList.add('hidden');
+        }
+
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {
             if (!getToken()) {
@@ -1622,7 +2128,124 @@
             }
             carregarCategorias();
             carregarVariaveisDisponiveis(); // Carrega variáveis para autocomplete de dependências
+            carregarFontesEspeciais(); // Carrega fontes especiais disponíveis
         });
     </script>
+
+    <!-- Modal de Ajuda: Fonte de Verdade -->
+    <div id="modal-ajuda-fonte-verdade" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col m-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-purple-50">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-book-open text-indigo-500"></i>
+                    <h2 class="text-lg font-semibold text-gray-800">Conceitos: Fonte de Verdade e Extração</h2>
+                </div>
+                <button onclick="fecharAjudaFonteVerdade()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-auto p-6 space-y-5">
+                <!-- Grupo -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h3 class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                        <i class="fas fa-layer-group"></i> Grupo (Categoria de Resumo JSON)
+                    </h3>
+                    <p class="text-sm text-blue-700">
+                        Um <strong>grupo</strong> agrupa documentos pelo código TJ-MS (ex: 500, 510, 9500).
+                        Todos os documentos com esses códigos serão processados e terão suas variáveis extraídas
+                        conforme as perguntas configuradas.
+                    </p>
+                    <p class="text-xs text-blue-600 mt-2">
+                        <strong>Exemplo:</strong> Grupo "Petições" com códigos 500, 510, 9500, 8320, 8326
+                    </p>
+                </div>
+
+                <!-- Fonte de Verdade -->
+                <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                    <h3 class="font-semibold text-indigo-800 mb-2 flex items-center gap-2">
+                        <i class="fas fa-crosshairs"></i> Fonte de Verdade
+                    </h3>
+                    <p class="text-sm text-indigo-700">
+                        A <strong>fonte de verdade</strong> define DE QUAL documento do grupo as variáveis serão extraídas.
+                        É opcional - se não definida, extrai de todos os documentos do grupo.
+                    </p>
+                    <p class="text-xs text-indigo-600 mt-2">
+                        <strong>Útil quando:</strong> Você quer extrair dados apenas da petição inicial, não das outras petições do processo.
+                    </p>
+                </div>
+
+                <!-- Código Específico -->
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <h3 class="font-semibold text-green-800 mb-2 flex items-center gap-2">
+                        <i class="fas fa-hashtag"></i> Código Específico
+                    </h3>
+                    <p class="text-sm text-green-700">
+                        Filtra documentos por um código específico do grupo.
+                        Se o código identifica unicamente o tipo de documento, use apenas este campo.
+                    </p>
+                    <p class="text-xs text-green-600 mt-2">
+                        <strong>Exemplo:</strong> Código 500 = apenas petições iniciais
+                    </p>
+                </div>
+
+                <!-- Tipo Lógico (LLM) -->
+                <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                    <h3 class="font-semibold text-purple-800 mb-2 flex items-center gap-2">
+                        <i class="fas fa-brain"></i> Tipo Lógico (LLM)
+                    </h3>
+                    <p class="text-sm text-purple-700">
+                        Quando o código é <strong>ambíguo</strong> (vários tipos usam o mesmo código),
+                        a LLM classifica semanticamente qual documento é do tipo desejado.
+                    </p>
+                    <p class="text-xs text-purple-600 mt-2">
+                        <strong>Exemplo:</strong> Código 9500 pode ser "petição inicial" ou "contestação" - a LLM identifica qual é qual.
+                    </p>
+                </div>
+
+                <!-- Override por Pergunta -->
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <h3 class="font-semibold text-amber-800 mb-2 flex items-center gap-2">
+                        <i class="fas fa-code-branch"></i> Override por Pergunta/Variável
+                    </h3>
+                    <p class="text-sm text-amber-700">
+                        Cada pergunta ou variável pode ter sua <strong>própria fonte de verdade</strong>,
+                        sobrepondo a configuração do grupo.
+                    </p>
+                    <p class="text-xs text-amber-600 mt-2">
+                        <strong>Exemplo:</strong> O grupo extrai da "petição inicial", mas uma pergunta específica extrai do "parecer NAT".
+                    </p>
+                </div>
+
+                <!-- Fluxo Visual -->
+                <div class="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                    <h3 class="font-semibold text-gray-800 mb-3">Hierarquia de Configuração</h3>
+                    <div class="flex items-center justify-center gap-2 text-sm">
+                        <div class="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-center">
+                            <div class="font-semibold">Grupo</div>
+                            <div class="text-xs">Padrão</div>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-400"></i>
+                        <div class="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-center">
+                            <div class="font-semibold">Pergunta</div>
+                            <div class="text-xs">Override</div>
+                        </div>
+                        <i class="fas fa-chevron-right text-gray-400"></i>
+                        <div class="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-center">
+                            <div class="font-semibold">Variável</div>
+                            <div class="text-xs">Override</div>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 text-center mt-3">
+                        Cada nível pode sobrepor o anterior. Se não configurado, herda do nível acima.
+                    </p>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+                <button onclick="fecharAjudaFonteVerdade()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                    Entendi
+                </button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

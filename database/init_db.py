@@ -1114,6 +1114,7 @@ def run_migrations():
     # Migração: Adicionar colunas de fonte de verdade individual em extraction_questions
     if table_exists('extraction_questions'):
         colunas_fv_questions = [
+            ("fonte_verdade_codigo", "VARCHAR(20)"),
             ("fonte_verdade_tipo", "VARCHAR(100)"),
             ("fonte_verdade_override", "BOOLEAN DEFAULT FALSE"),
         ]
@@ -1131,6 +1132,7 @@ def run_migrations():
     # Migração: Adicionar colunas de fonte de verdade individual em extraction_variables
     if table_exists('extraction_variables'):
         colunas_fv_variables = [
+            ("fonte_verdade_codigo", "VARCHAR(20)"),
             ("fonte_verdade_tipo", "VARCHAR(100)"),
             ("fonte_verdade_override", "BOOLEAN DEFAULT FALSE"),
         ]
@@ -1191,6 +1193,68 @@ def run_migrations():
     except Exception as e:
         db.rollback()
         print(f"[WARN] Criação de índice namespace: {e}")
+
+    # Migração: Adicionar colunas de origem do JSON em categorias_resumo_json
+    if table_exists('categorias_resumo_json'):
+        colunas_json_ia = [
+            ("json_gerado_por_ia", "BOOLEAN DEFAULT FALSE"),
+            ("json_gerado_em", "TIMESTAMP" if not is_sqlite else "DATETIME"),
+            ("json_gerado_por", "INTEGER REFERENCES users(id)"),
+        ]
+
+        for coluna, tipo in colunas_json_ia:
+            if not column_exists('categorias_resumo_json', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE categorias_resumo_json ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em categorias_resumo_json")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} categorias_resumo_json: {e}")
+
+    # Migração: Adicionar coluna fonte_verdade_codigo em categorias_resumo_json
+    if table_exists('categorias_resumo_json'):
+        if not column_exists('categorias_resumo_json', 'fonte_verdade_codigo'):
+            try:
+                db.execute(text("ALTER TABLE categorias_resumo_json ADD COLUMN fonte_verdade_codigo VARCHAR(20)"))
+                db.commit()
+                print("[OK] Migração: coluna fonte_verdade_codigo adicionada em categorias_resumo_json")
+            except Exception as e:
+                db.rollback()
+                print(f"[WARN] Migração fonte_verdade_codigo categorias_resumo_json: {e}")
+
+    # Migração: Adicionar coluna fonte_verdade_codigo em extraction_variables
+    if table_exists('extraction_variables'):
+        if not column_exists('extraction_variables', 'fonte_verdade_codigo'):
+            try:
+                db.execute(text("ALTER TABLE extraction_variables ADD COLUMN fonte_verdade_codigo VARCHAR(20)"))
+                db.commit()
+                print("[OK] Migração: coluna fonte_verdade_codigo adicionada em extraction_variables")
+            except Exception as e:
+                db.rollback()
+                print(f"[WARN] Migração fonte_verdade_codigo extraction_variables: {e}")
+
+    # Migração: Adicionar coluna source_type em categorias_resumo_json
+    if table_exists('categorias_resumo_json'):
+        if not column_exists('categorias_resumo_json', 'source_type'):
+            try:
+                db.execute(text("ALTER TABLE categorias_resumo_json ADD COLUMN source_type VARCHAR(20) DEFAULT 'code'"))
+                db.commit()
+                print("[OK] Migração: coluna source_type adicionada em categorias_resumo_json")
+            except Exception as e:
+                db.rollback()
+                print(f"[WARN] Migração source_type categorias_resumo_json: {e}")
+
+    # Migração: Adicionar coluna source_special_type em categorias_resumo_json
+    if table_exists('categorias_resumo_json'):
+        if not column_exists('categorias_resumo_json', 'source_special_type'):
+            try:
+                db.execute(text("ALTER TABLE categorias_resumo_json ADD COLUMN source_special_type VARCHAR(50)"))
+                db.commit()
+                print("[OK] Migração: coluna source_special_type adicionada em categorias_resumo_json")
+            except Exception as e:
+                db.rollback()
+                print(f"[WARN] Migração source_special_type categorias_resumo_json: {e}")
 
     seed_prompt_groups(db)
 

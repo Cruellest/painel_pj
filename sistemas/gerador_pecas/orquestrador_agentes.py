@@ -221,7 +221,7 @@ class OrquestradorAgentes:
             # AGENTE 1: Coletor TJ-MS
             # ========================================
             print("\n" + "=" * 60)
-            print("🤖 AGENTE 1 - COLETOR TJ-MS")
+            print("[AGENTE 1] COLETOR TJ-MS")
             print("=" * 60)
             
             # Se modo manual, atualiza os códigos permitidos para o tipo específico
@@ -240,20 +240,20 @@ class OrquestradorAgentes:
                 return resultado
             
             resumo_consolidado = resultado.agente1.resumo_consolidado
-            print(f"⏱️  Tempo Agente 1: {resultado.tempo_agente1:.1f}s")
+            print(f"   Tempo Agente 1: {resultado.tempo_agente1:.1f}s")
             
             # ========================================
             # AGENTE 2: Detector de Módulos (e tipo de peça se necessário)
             # ========================================
             print("\n" + "=" * 60)
-            print("🤖 AGENTE 2 - DETECTOR DE MÓDULOS")
+            print("[AGENTE 2] DETECTOR DE MODULOS")
             print("=" * 60)
             
             inicio = datetime.now()
             
             # Se não tem tipo de peça, o Agente 2 detecta automaticamente
             if modo_automatico:
-                print("📋 Detectando tipo de peça automaticamente...")
+                print("   Detectando tipo de peca automaticamente...")
                 deteccao_tipo = await self.agente2.detectar_tipo_peca(resumo_consolidado)
                 tipo_peca = deteccao_tipo.get("tipo_peca")
                 
@@ -269,7 +269,7 @@ class OrquestradorAgentes:
                     )
                 else:
                     # Se mesmo assim não conseguiu detectar, usa fallback
-                    print("⚠️ Não foi possível detectar o tipo de peça automaticamente")
+                    print("[WARN] Nao foi possivel detectar o tipo de peca automaticamente")
                     tipo_peca = "contestacao"  # Fallback padrão
                     print(f"   Usando fallback: {tipo_peca}")
             
@@ -281,13 +281,13 @@ class OrquestradorAgentes:
                 resultado.mensagem = resultado.agente2.erro
                 return resultado
             
-            print(f"⏱️  Tempo Agente 2: {resultado.tempo_agente2:.1f}s")
+            print(f"   Tempo Agente 2: {resultado.tempo_agente2:.1f}s")
             
             # ========================================
             # AGENTE 3: Gerador de Peça (Gemini 3 Pro)
             # ========================================
             print("\n" + "=" * 60)
-            print("🤖 AGENTE 3 - GERADOR (Gemini 3 Pro)")
+            print("[AGENTE 3] GERADOR (Gemini 3 Pro)")
             print("=" * 60)
             
             inicio = datetime.now()
@@ -312,7 +312,7 @@ class OrquestradorAgentes:
                 resultado.mensagem = resultado.agente3.erro
                 return resultado
             
-            print(f"⏱️  Tempo Agente 3: {resultado.tempo_agente3:.1f}s")
+            print(f"   Tempo Agente 3: {resultado.tempo_agente3:.1f}s")
             
             # Sucesso!
             resultado.status = "sucesso"
@@ -323,7 +323,7 @@ class OrquestradorAgentes:
             
             print("\n" + "=" * 60)
             print("[OK] ORQUESTRACAO CONCLUIDA")
-            print(f"⏱️  Tempo Total: {resultado.tempo_total:.1f}s")
+            print(f"   Tempo Total: {resultado.tempo_total:.1f}s")
             print("=" * 60)
             
             return resultado
@@ -331,7 +331,7 @@ class OrquestradorAgentes:
         except Exception as e:
             resultado.status = "erro"
             resultado.mensagem = f"Erro na orquestração: {str(e)}"
-            print(f"❌ Erro: {resultado.mensagem}")
+            print(f"[ERRO] {resultado.mensagem}")
             return resultado
     
     def _filtrar_resumo_por_tipo(
@@ -376,7 +376,7 @@ class OrquestradorAgentes:
             ]
             
             if len(docs_filtrados) < len(resultado_agente1.dados_brutos.documentos_com_resumo()):
-                print(f"   📋 Filtrado: {len(docs_filtrados)} de {len(resultado_agente1.dados_brutos.documentos_com_resumo())} documentos para '{tipo_peca}'")
+                print(f"   Filtrado: {len(docs_filtrados)} de {len(resultado_agente1.dados_brutos.documentos_com_resumo())} documentos para '{tipo_peca}'")
                 
                 # Remonta o resumo com os documentos filtrados
                 # Por ora, retorna o resumo original com uma nota
@@ -464,14 +464,20 @@ class OrquestradorAgentes:
                     # Busca ordem das categorias configurada
                     from admin.models_prompt_groups import CategoriaOrdem
                     ordem_categorias = {}
-                    if self.group_id:
+                    group_id_ordem = self.group_id
+                    if group_id_ordem is None:
+                        group_ids = {m.group_id for m in modulos_conteudo if m.group_id is not None}
+                        if len(group_ids) == 1:
+                            group_id_ordem = next(iter(group_ids))
+
+                    if group_id_ordem is not None:
                         configs_ordem = self.db.query(CategoriaOrdem).filter(
-                            CategoriaOrdem.group_id == self.group_id,
+                            CategoriaOrdem.group_id == group_id_ordem,
                             CategoriaOrdem.ativo == True
                         ).all()
                         ordem_categorias = {c.nome: c.ordem for c in configs_ordem}
 
-                    # Agrupa módulos por categoria
+# Agrupa módulos por categoria
                     modulos_por_categoria = {}
                     for modulo in modulos_conteudo:
                         cat = modulo.categoria or "Outros"
@@ -491,7 +497,7 @@ class OrquestradorAgentes:
                     partes_conteudo = ["## ARGUMENTOS E TESES APLICÁVEIS\n"]
 
                     for categoria in categorias_ordenadas:
-                        modulos_cat = modulos_por_categoria[categoria]
+                        modulos_cat = sorted(modulos_por_categoria[categoria], key=lambda m: (m.ordem or 0, m.id))
 
                         # Header da seção de categoria
                         partes_conteudo.append(f"\n### === {categoria.upper()} ===\n")
@@ -509,14 +515,14 @@ class OrquestradorAgentes:
                                 partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
                             else:
                                 partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n{modulo.conteudo}\n")
-                            print(f"   ✓ Módulo ativado: [{categoria}] {modulo.titulo}")
+                            print(f"   [+] Modulo ativado: [{categoria}] {modulo.titulo}")
 
                     resultado.prompt_conteudo = "\n".join(partes_conteudo)
-            
-            print(f"📋 Módulos detectados: {len(modulos_ids)}")
-            print(f"📝 Prompt sistema: {len(resultado.prompt_sistema)} chars")
-            print(f"📝 Prompt peça: {len(resultado.prompt_peca)} chars")
-            print(f"📝 Prompt conteúdo: {len(resultado.prompt_conteudo)} chars")
+
+            print(f"   Modulos detectados: {len(modulos_ids)}")
+            print(f"   Prompt sistema: {len(resultado.prompt_sistema)} chars")
+            print(f"   Prompt peca: {len(resultado.prompt_peca)} chars")
+            print(f"   Prompt conteudo: {len(resultado.prompt_conteudo)} chars")
             
             return resultado
             
@@ -566,7 +572,7 @@ O usuário responsável pela peça forneceu as seguintes observações important
 **ATENÇÃO:** As observações acima são instruções específicas do usuário e devem ser incorporadas na peça conforme solicitado.
 
 """
-                print(f"📝 Observação do usuário incluída: {len(observacao_usuario)} caracteres")
+                print(f" Observação do usuário incluída: {len(observacao_usuario)} caracteres")
 
             # Monta seção de dados estruturados do processo (se disponíveis)
             secao_dados_processo = ""
@@ -591,7 +597,7 @@ Os dados abaixo foram extraídos automaticamente do sistema judicial e são conf
 - Verificar representação processual (advogados, defensoria, etc.)
 
 """
-                print(f"📝 Dados do processo incluídos: {len(dados_json)} caracteres")
+                print(f" Dados do processo incluídos: {len(dados_json)} caracteres")
 
             # Monta o prompt final combinando tudo (SEM template JSON)
             prompt_completo = f"""{prompt_sistema}
@@ -617,6 +623,8 @@ Cada argumento/tese acima possui uma "Condição de ativação" que indica em qu
 Antes de incorporar cada argumento na peça, avalie criticamente se a condição de ativação realmente se aplica aos fatos do caso concreto.
 Se a condição NÃO corresponder aos fatos, NÃO inclua esse argumento na peça.
 
+Respeite a ordem apresentada na secao "ARGUMENTOS E TESES APLICAVEIS" (categorias e argumentos), sem reordenar.
+
 Retorne a peça formatada em **Markdown**, seguindo a estrutura indicada no prompt de peça acima.
 Use formatação adequada: ## para títulos de seção, **negrito** para ênfase, > para citações.
 """
@@ -624,7 +632,7 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
             # Salva o prompt para auditoria
             resultado.prompt_enviado = prompt_completo
             
-            print(f"📝 Prompt montado: {len(prompt_completo)} caracteres (SEM template JSON)")
+            print(f" Prompt montado: {len(prompt_completo)} caracteres (SEM template JSON)")
 
             # Chama a API do Gemini diretamente
             content = await chamar_gemini_async(

@@ -136,6 +136,8 @@ portal-pge/
 PROMPT_FINAL = BASE_SYSTEM + PROMPT_PEÇA + PROMPT_CONTEÚDO_1 + ... + PROMPT_CONTEÚDO_N
 ```
 
+**Ordem dos Argumentos (Agente 3):** O prompt final instrui a respeitar a ordem apresentada em "ARGUMENTOS E TESES APLICAVEIS"; a ordem vem do group_id selecionado (ou inferido quando ha um unico grupo).
+
 **Grupos e Subgrupos (Prompts de Conteudo):**
 - Apenas prompts CONTEUDO usam grupo/subgrupo; BASE e PECA continuam globais.
 - Usuarios possuem default_group_id e allowed_group_ids; multi-grupo exige selecao no gerador-pecas.
@@ -179,23 +181,93 @@ O sistema suporta dois modos de ativação de prompts:
 - `services_deterministic.py` - DeterministicRuleGenerator, DeterministicRuleEvaluator
 - `router_extraction.py` - Endpoints de geração/validação/avaliação
 
-**Formato AST JSON:**
+**Formato AST JSON (suporta agrupamento/nesting):**
 ```json
 {
     "type": "and",
     "conditions": [
-        {"type": "condition", "variable": "valor_causa", "operator": "greater_than", "value": 100000},
-        {"type": "condition", "variable": "autor_idoso", "operator": "equals", "value": true}
+        {"type": "condition", "variable": "pleiteado_medicamento", "operator": "equals", "value": true},
+        {
+            "type": "or",
+            "conditions": [
+                {"type": "condition", "variable": "nao_incorporado_sus", "operator": "equals", "value": true},
+                {"type": "condition", "variable": "nao_incorporado_patologia", "operator": "equals", "value": true}
+            ]
+        }
     ]
 }
 ```
+
+**Exemplos de expressões suportadas:**
+- `A AND (B OR C)` - Agrupamento básico
+- `(A OR B) AND C` - Grupo no início
+- `(A AND B) OR (C AND D)` - Múltiplos grupos
+- `A AND NOT(B OR C)` - Negação de grupo
+- `A AND (B OR (C AND D))` - Nesting triplo
 
 **Operadores suportados:**
 - equals, not_equals, contains, not_contains
 - greater_than, less_than, greater_or_equal, less_or_equal
 - exists, not_exists, is_empty, is_not_empty
 - in_list, not_in_list, matches_regex
-- and, or, not (lógicos)
+- and, or, not (lógicos com suporte a nesting)
+
+**Builder Visual (frontend):**
+- Botão "Adicionar Condição" - adiciona condição simples
+- Botão "Adicionar Grupo" - adiciona grupo (parênteses) que pode conter condições ou subgrupos
+- Grupos podem ser aninhados indefinidamente
+- Visualização humanizada mostra parênteses para grupos
+
+---
+
+### CATEGORIAS DE RESUMO JSON (`/admin/categorias-resumo-json`)
+
+**Objetivo:** Definir formatos de extração de dados para diferentes tipos de documentos.
+
+**Ferramenta IA para Gerar JSON:**
+A IA é uma **ferramenta de criação**, não um "modo de operação" separado. O JSON gerado pela IA substitui o JSON manual.
+
+**Fluxo:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 1. Usuário adiciona perguntas de extração                   │
+│    - Individual ou em lote (múltiplas de uma vez)           │
+│    - IA analisa dependências automaticamente                │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 2. Clica "Gerar JSON com IA"                                │
+│    - Gemini gera schema JSON a partir das perguntas         │
+│    - Cria variáveis de extração automaticamente             │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ 3. Clica "Aceitar e Usar"                                   │
+│    - JSON gerado é copiado para o campo formato_json        │
+│    - Badge "GERADO POR IA" aparece na interface             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Campos na tabela `categorias_resumo_json`:**
+- `json_gerado_por_ia`: Boolean - se o JSON atual foi gerado por IA (apenas tag visual)
+- `json_gerado_em`: DateTime - quando foi gerado
+- `json_gerado_por`: FK users.id - quem gerou
+
+**Painel de Variáveis (`/admin/variaveis`):**
+- Mostra variáveis com recuo visual para indicar dependências
+- Coluna "Em Uso" mostra se está em prompts ou no JSON da categoria
+- Ordenação segue a ordem das perguntas de origem (ordem no JSON)
+
+**Endpoints importantes:**
+- `GET /{id}/info-extracao` - Info sobre perguntas e variáveis
+- `POST /admin/api/extraction/perguntas/lote` - Cria várias perguntas com análise de dependências
+
+**Arquivos-chave:**
+- `router_categorias_json.py` - CRUD de categorias
+- `router_extraction.py` - Perguntas, modelos, variáveis
+- `services_dependencies.py` - Análise de dependências com IA
+- `models_resumo_json.py` - CategoriaResumoJSON
+- `models_extraction.py` - ExtractionQuestion, ExtractionModel, ExtractionVariable
 
 ---
 
@@ -670,6 +742,8 @@ ADMIN_PASSWORD=senha-inicial
 | `services/gemini_service.py` | Wrapper IA | ~552 |
 | `admin/router.py` | API admin completa | ~1600 |
 | `admin/router_prompts.py` | CRUD prompts | ~1016 |
+| `docs/README.md` | Indice da documentacao tecnica | ~100 |
+| `docs/ARCHITECTURE.md` | Arquitetura atual em docs | ~110 |
 
 ---
 

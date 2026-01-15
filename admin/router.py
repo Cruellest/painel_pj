@@ -1836,3 +1836,47 @@ async def importar_prompts_producao(
             status_code=500,
             detail=f"Erro ao importar prompts: {str(e)}"
         )
+
+
+# ============================================
+# Glossário de Conceitos (Ajuda)
+# ============================================
+
+@router.get("/help/glossary")
+async def obter_glossario(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Retorna o conteúdo do glossário de conceitos do sistema.
+    O glossário está em formato Markdown.
+    """
+    import os
+
+    # Caminho do arquivo do glossário
+    glossary_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        'docs',
+        'GLOSSARIO_CONCEITOS.md'
+    )
+
+    if not os.path.exists(glossary_path):
+        raise HTTPException(
+            status_code=404,
+            detail="Arquivo de glossário não encontrado"
+        )
+
+    try:
+        with open(glossary_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        return {
+            "success": True,
+            "content": content,
+            "format": "markdown"
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao ler glossário: {str(e)}"
+        )

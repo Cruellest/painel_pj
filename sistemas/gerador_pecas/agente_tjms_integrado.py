@@ -109,7 +109,7 @@ class AgenteTJMSIntegrado:
         resultado = ResultadoAgente1(numero_processo=numero_processo)
         
         try:
-            print(f"\n🔍 AGENTE 1 - Iniciando coleta do processo {numero_processo}")
+            print(f"\n AGENTE 1 - Iniciando coleta do processo {numero_processo}")
             print("=" * 60)
             
             # Executa análise completa via AgenteTJMS
@@ -137,13 +137,13 @@ class AgenteTJMSIntegrado:
             print(f"✅ AGENTE 1 - Coleta concluída!")
             print(f"   📄 Documentos analisados: {resultado.documentos_analisados}")
             if resultado.is_agravo:
-                print(f"   ⚖️  Agravo de Instrumento - Origem: {resultado.numero_processo_origem}")
+                print(f"   [JUR]  Agravo de Instrumento - Origem: {resultado.numero_processo_origem}")
             
             return resultado
             
         except Exception as e:
             resultado.erro = f"Erro no Agente 1: {str(e)}"
-            print(f"❌ AGENTE 1 - Erro: {resultado.erro}")
+            print(f"[ERRO] AGENTE 1 - Erro: {resultado.erro}")
             return resultado
     
     def _montar_resumo_consolidado(self, analise: ResultadoAnalise) -> str:
@@ -163,7 +163,7 @@ class AgenteTJMSIntegrado:
         partes.append(f"**Formato dos Resumos**: {self.formato_saida.upper()}")
         
         if analise.is_agravo:
-            partes.append(f"\n**⚠️ AGRAVO DE INSTRUMENTO**")
+            partes.append(f"\n**[WARN] AGRAVO DE INSTRUMENTO**")
             partes.append(f"**Processo de Origem (1º Grau)**: {analise.processo_origem}")
         
         partes.append(f"\n**Total de Documentos Analisados**: {len(analise.documentos_com_resumo())}")
@@ -251,7 +251,7 @@ class AgenteTJMSIntegrado:
                     docs_filtrados.append(doc)
         
         docs_depois = len(docs_filtrados)
-        print(f"📋 Filtro pós-detecção: {docs_antes} -> {docs_depois} documentos")
+        print(f" Filtro pós-detecção: {docs_antes} -> {docs_depois} documentos")
         
         if not docs_filtrados:
             return resultado.resumo_consolidado
@@ -268,7 +268,7 @@ class AgenteTJMSIntegrado:
         partes.append(f"**Documentos após filtro**: {docs_depois} de {docs_antes}")
         
         if analise.is_agravo:
-            partes.append(f"\n**⚠️ AGRAVO DE INSTRUMENTO**")
+            partes.append(f"\n**[WARN] AGRAVO DE INSTRUMENTO**")
             partes.append(f"**Processo de Origem (1º Grau)**: {analise.processo_origem}")
         
         # Dados do processo extraídos do XML (SEM IA)
@@ -347,8 +347,8 @@ if __name__ == "__main__":
     resultado = asyncio.run(processar_processo_tjms(numero))
     
     if resultado.erro:
-        print(f"\n❌ Erro: {resultado.erro}")
+        print(f"\n[ERRO] Erro: {resultado.erro}")
     else:
-        print(f"\n📋 Resumo consolidado ({len(resultado.resumo_consolidado)} caracteres):")
+        print(f"\n Resumo consolidado ({len(resultado.resumo_consolidado)} caracteres):")
         print("-" * 40)
         print(resultado.resumo_consolidado[:2000] + "..." if len(resultado.resumo_consolidado) > 2000 else resultado.resumo_consolidado)

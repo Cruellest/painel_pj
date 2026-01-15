@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel de Variaveis - Portal PGE-MS</title>
+    <!-- VERSAO: 2026-01-15-v2 - fonte_verdade_codigo + ajuda -->
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
@@ -52,6 +53,13 @@
                     <a href="/admin/prompts-modulos" class="text-gray-500 hover:text-gray-700 transition-colors text-sm">
                         <i class="fas fa-puzzle-piece mr-1"></i> Prompts Modulares
                     </a>
+                    <button onclick="abrirGlossario()" class="flex items-center gap-1 px-2 py-1 text-sm text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Glossário de Conceitos">
+                        <i class="fas fa-book"></i>
+                        <span class="hidden sm:inline">Glossário</span>
+                    </button>
+                    <button onclick="abrirModalAjuda()" class="text-gray-500 hover:text-blue-600 transition-colors" title="Ajuda Rápida">
+                        <i class="fas fa-question-circle"></i>
+                    </button>
                     <a href="/dashboard" class="text-gray-500 hover:text-gray-700 transition-colors">
                         <i class="fas fa-home"></i>
                     </a>
@@ -156,20 +164,31 @@
 
         <!-- Tabela de Variaveis -->
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <table class="w-full">
+            <style>
+                .variaveis-table td { white-space: nowrap; vertical-align: middle; }
+                .variaveis-table .col-slug { min-width: 200px; max-width: 320px; }
+                .variaveis-table .col-label { min-width: 150px; max-width: 250px; }
+                .variaveis-table .col-slug .slug-text,
+                .variaveis-table .col-label .label-text {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    display: block;
+                }
+            </style>
+            <table class="w-full variaveis-table">
                 <thead class="bg-gray-50 border-b border-gray-200">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Slug</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Label</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Uso em Prompts</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acoes</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider col-slug">Slug</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider col-label">Label</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
+                        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Uso</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                     </tr>
                 </thead>
                 <tbody id="variaveis-table" class="divide-y divide-gray-200">
                     <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-gray-400">
+                        <td colspan="6" class="px-4 py-8 text-center text-gray-400">
                             <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
                             <p>Carregando variaveis...</p>
                         </td>
@@ -261,6 +280,219 @@
         </div>
     </div>
 
+    <!-- Modal de Ajuda -->
+    <div id="modal-ajuda" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full overflow-hidden m-4 max-h-[90vh] flex flex-col">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+                <h2 class="text-lg font-semibold text-gray-800">
+                    <i class="fas fa-question-circle text-blue-500 mr-2"></i>
+                    Conceitos do Sistema de Variaveis
+                </h2>
+                <button onclick="fecharModalAjuda()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto flex-1 space-y-6">
+                <!-- Variaveis -->
+                <div class="border-l-4 border-blue-500 pl-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-hashtag text-blue-500 mr-2"></i>Variaveis
+                    </h3>
+                    <p class="text-gray-600 text-sm">
+                        Variaveis sao dados extraidos automaticamente dos documentos do processo pela IA.
+                        Cada variavel tem um <strong>slug</strong> (identificador tecnico unico) e pode ser
+                        usada em regras deterministicas para ativar prompts.
+                    </p>
+                    <div class="mt-2 text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                        <strong>Exemplo:</strong> <code class="bg-gray-200 px-1 rounded">peticao_tipo_acao</code> = tipo de acao extraido da peticao
+                    </div>
+                </div>
+
+                <!-- Grupos -->
+                <div class="border-l-4 border-purple-500 pl-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-layer-group text-purple-500 mr-2"></i>Grupos (Categorias)
+                    </h3>
+                    <p class="text-gray-600 text-sm">
+                        Grupos organizam documentos por codigo do TJ-MS (ex: 500, 510, 9500).
+                        Cada variavel pertence a um grupo e e extraida dos documentos desse grupo.
+                        O grupo define o <strong>namespace</strong> das variaveis (ex: <code class="bg-gray-200 px-1 rounded">peticao_</code>).
+                    </p>
+                </div>
+
+                <!-- Fonte de Verdade -->
+                <div class="border-l-4 border-indigo-500 pl-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-crosshairs text-indigo-500 mr-2"></i>Fonte de Verdade
+                    </h3>
+                    <p class="text-gray-600 text-sm">
+                        Define <strong>qual documento especifico</strong> deve ser usado para extrair uma variavel.
+                        E util quando um grupo tem varios tipos de documentos (ex: peticao inicial vs contestacao).
+                    </p>
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                        <div class="bg-gray-50 p-3 rounded-lg">
+                            <h4 class="text-xs font-semibold text-gray-700 mb-1">Codigo Especifico</h4>
+                            <p class="text-xs text-gray-500">
+                                Filtra por codigo do documento (ex: <code class="bg-gray-200 px-1 rounded">9500</code>).
+                                Rapido mas limitado quando varios tipos usam o mesmo codigo.
+                            </p>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded-lg">
+                            <h4 class="text-xs font-semibold text-gray-700 mb-1">Tipo Logico (LLM)</h4>
+                            <p class="text-xs text-gray-500">
+                                A IA classifica semanticamente qual e o tipo de documento
+                                (ex: "peticao inicial", "parecer NAT"). Ideal quando codigos sao ambiguos.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        <strong>Fonte de Verdade e OPCIONAL.</strong> Se nao definida, extrai de qualquer documento do grupo.
+                    </div>
+                </div>
+
+                <!-- Hierarquia de Override -->
+                <div class="border-l-4 border-green-500 pl-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-sitemap text-green-500 mr-2"></i>Hierarquia de Override
+                    </h3>
+                    <p class="text-gray-600 text-sm mb-3">
+                        A fonte de verdade pode ser definida em tres niveis, onde cada nivel sobrescreve o anterior:
+                    </p>
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                            1. Grupo
+                        </span>
+                        <i class="fas fa-arrow-right text-gray-300"></i>
+                        <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                            2. Pergunta
+                        </span>
+                        <i class="fas fa-arrow-right text-gray-300"></i>
+                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                            3. Variavel
+                        </span>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">
+                        Ao definir fonte de verdade aqui na variavel, voce sobrescreve a configuracao do grupo e da pergunta de origem.
+                    </p>
+                </div>
+
+                <!-- Uso em Prompts -->
+                <div class="border-l-4 border-yellow-500 pl-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-puzzle-piece text-yellow-500 mr-2"></i>Uso em Prompts
+                    </h3>
+                    <p class="text-gray-600 text-sm">
+                        Variaveis podem ser usadas em <strong>regras deterministicas</strong> para ativar prompts.
+                        A coluna "Uso" indica se a variavel esta sendo usada em algum prompt.
+                        Variaveis em uso nao podem ser desativadas.
+                    </p>
+                </div>
+
+                <!-- Dependencias -->
+                <div class="border-l-4 border-orange-500 pl-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-link text-orange-500 mr-2"></i>Dependencias Condicionais
+                    </h3>
+                    <p class="text-gray-600 text-sm">
+                        Variaveis podem depender de outras. O icone <i class="fas fa-caret-right text-gray-400"></i>
+                        indica que uma variavel depende de outra (ex: so extrair <code class="bg-gray-200 px-1 rounded">valor_causa</code>
+                        se <code class="bg-gray-200 px-1 rounded">tem_valor_causa</code> = Sim).
+                    </p>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
+                <button onclick="fecharModalAjuda(); abrirGlossario();" class="text-sm text-indigo-600 hover:text-indigo-800 transition-colors">
+                    <i class="fas fa-book mr-1"></i> Ver Glossário Completo
+                </button>
+                <button onclick="fecharModalAjuda()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+                    Entendi
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal do Glossário de Conceitos -->
+    <div id="modal-glossario" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden m-4 h-[90vh] flex flex-col">
+            <!-- Header -->
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-indigo-50 to-purple-50">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-book text-indigo-600 text-xl"></i>
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-800">Glossário de Conceitos</h2>
+                        <p class="text-xs text-gray-500">Documentação completa do sistema</p>
+                    </div>
+                </div>
+                <button onclick="fecharGlossario()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Busca e Navegação -->
+            <div class="px-6 py-3 border-b border-gray-100 bg-gray-50">
+                <div class="flex items-center gap-4">
+                    <div class="relative flex-1">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                        <input
+                            type="text"
+                            id="glossario-busca"
+                            placeholder="Buscar no glossário..."
+                            class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            onkeyup="buscarNoGlossario(this.value)"
+                        >
+                    </div>
+                    <div class="flex gap-2 text-xs">
+                        <button onclick="irParaSecao('documentos-e-extração')" class="px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors">Documentos</button>
+                        <button onclick="irParaSecao('prompts-e-ativação')" class="px-2 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors">Prompts</button>
+                        <button onclick="irParaSecao('termos-ambíguos---como-diferenciar')" class="px-2 py-1 bg-amber-100 text-amber-700 rounded hover:bg-amber-200 transition-colors">Ambiguidades</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Conteúdo -->
+            <div id="glossario-conteudo" class="flex-1 overflow-y-auto p-6 prose prose-sm max-w-none">
+                <div class="flex items-center justify-center h-full">
+                    <div class="text-center text-gray-400">
+                        <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
+                        <p>Carregando glossário...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-6 py-3 border-t border-gray-100 bg-gray-50 flex justify-between items-center text-xs text-gray-500">
+                <span><i class="fas fa-info-circle mr-1"></i> Use Ctrl+F para buscar no documento</span>
+                <button onclick="fecharGlossario()" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CSS para renderização do Markdown -->
+    <style>
+        #glossario-conteudo h1 { font-size: 1.5rem; font-weight: 700; color: #1f2937; margin-top: 1.5rem; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 2px solid #e5e7eb; }
+        #glossario-conteudo h2 { font-size: 1.25rem; font-weight: 600; color: #374151; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+        #glossario-conteudo h3 { font-size: 1rem; font-weight: 600; color: #4b5563; margin-top: 1rem; margin-bottom: 0.5rem; }
+        #glossario-conteudo h4 { font-size: 0.875rem; font-weight: 600; color: #6b7280; margin-top: 0.75rem; margin-bottom: 0.25rem; }
+        #glossario-conteudo p { margin-bottom: 0.75rem; color: #4b5563; line-height: 1.6; }
+        #glossario-conteudo code { background: #f3f4f6; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.875em; color: #7c3aed; }
+        #glossario-conteudo pre { background: #1f2937; color: #e5e7eb; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 1rem 0; }
+        #glossario-conteudo pre code { background: transparent; color: inherit; padding: 0; }
+        #glossario-conteudo table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.875rem; }
+        #glossario-conteudo th { background: #f9fafb; padding: 0.5rem; text-align: left; font-weight: 600; border: 1px solid #e5e7eb; }
+        #glossario-conteudo td { padding: 0.5rem; border: 1px solid #e5e7eb; }
+        #glossario-conteudo ul, #glossario-conteudo ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+        #glossario-conteudo li { margin-bottom: 0.25rem; color: #4b5563; }
+        #glossario-conteudo hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5rem 0; }
+        #glossario-conteudo strong { color: #1f2937; }
+        #glossario-conteudo blockquote { border-left: 4px solid #6366f1; padding-left: 1rem; margin: 1rem 0; color: #6b7280; font-style: italic; }
+        #glossario-conteudo .highlight { background: #fef08a; padding: 0.125rem 0.25rem; border-radius: 0.125rem; }
+    </style>
+
     <!-- Modal de Criar/Editar Variavel -->
     <div id="modal-variavel" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
         <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden m-4 max-h-[90vh] flex flex-col">
@@ -334,6 +566,30 @@
                         rows="2"
                     ></textarea>
                 </div>
+
+                <!-- Fonte de Verdade (opcional) -->
+                <div class="pt-3 border-t border-gray-200">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fas fa-crosshairs text-indigo-500 text-sm"></i>
+                        <span class="text-sm font-medium text-gray-700">Fonte de Verdade</span>
+                        <span class="text-xs text-gray-400">(opcional - override do grupo)</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Código específico</label>
+                            <input type="text" id="variavel-fonte-codigo"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                placeholder="ex: 9500">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 mb-1">Tipo lógico (LLM)</label>
+                            <input type="text" id="variavel-fonte-tipo"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                placeholder="ex: petição inicial">
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Se vazio, usa configuração do grupo</p>
+                </div>
             </form>
 
             <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
@@ -366,14 +622,7 @@
 
         // Funcao auxiliar para obter o token
         function getToken() {
-            const cookies = document.cookie.split(';');
-            for (const cookie of cookies) {
-                const [name, value] = cookie.trim().split('=');
-                if (name === 'access_token') {
-                    return value;
-                }
-            }
-            return null;
+            return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
         }
 
         // Verificar autenticacao
@@ -406,7 +655,7 @@
             }
         }
 
-        // Carregar categorias para filtro
+        // Carregar categorias para filtro e modal
         async function carregarCategorias() {
             try {
                 const response = await fetch('/admin/api/categorias-resumo-json', {
@@ -417,10 +666,11 @@
                 if (!response.ok) return;
                 categorias = await response.json();
 
-                const select = document.getElementById('filtro-categoria');
-                select.innerHTML = '<option value="">Todas as categorias</option>';
+                // Popular select de filtro
+                const selectFiltro = document.getElementById('filtro-categoria');
+                selectFiltro.innerHTML = '<option value="">Todas as categorias</option>';
                 categorias.forEach(cat => {
-                    select.innerHTML += `<option value="${cat.id}">${cat.nome}</option>`;
+                    selectFiltro.innerHTML += `<option value="${cat.id}">${cat.nome}</option>`;
                 });
             } catch (error) {
                 console.error('Erro ao carregar categorias:', error);
@@ -480,68 +730,69 @@
                 return;
             }
 
-            tbody.innerHTML = variaveis.map(v => `
-                <tr class="hover:bg-gray-50 transition-colors ${!v.ativo ? 'bg-red-50 opacity-75' : ''}">
-                    <td class="px-6 py-4">
-                        <div class="flex items-center gap-2">
-                            <span class="font-mono text-sm bg-gray-100 px-2 py-1 rounded">${v.slug}</span>
-                            ${!v.ativo ? '<span class="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">Inativa</span>' : ''}
+            tbody.innerHTML = variaveis.map(v => {
+                // Recuo horizontal fixo por nivel de dependencia (16px por nivel)
+                const indentPx = v.depth > 0 ? (v.depth * 16) : 0;
+
+                // Indicador discreto de dependencia (apenas seta)
+                const depIcon = v.depth > 0
+                    ? `<i class="fas fa-caret-right text-gray-300 text-xs" title="Depende de: ${v.depends_on_variable || 'pai'}"></i>`
+                    : '';
+
+                // Indicador de uso - apenas icone com tooltip
+                const emUso = v.em_uso_json || v.uso_count > 0;
+                let usoIcon;
+                if (emUso) {
+                    const usoTitle = v.uso_count > 0 ? `Em uso: ${v.uso_count} prompt(s)` : 'Em uso';
+                    usoIcon = `<i class="fas fa-check-circle text-green-500" title="${usoTitle}"></i>`;
+                } else {
+                    usoIcon = `<i class="fas fa-times-circle text-red-400" title="Sem uso"></i>`;
+                }
+
+                // Badge de inativa (compacto)
+                const inativaBadge = !v.ativo
+                    ? `<span class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-100 text-red-600">OFF</span>`
+                    : '';
+
+                return `
+                <tr class="hover:bg-gray-50 transition-colors ${!v.ativo ? 'bg-red-50/50' : ''}">
+                    <td class="px-4 py-2 col-slug">
+                        <div class="flex items-center gap-1" style="padding-left: ${indentPx}px;">
+                            ${depIcon}
+                            <span class="slug-text font-mono text-sm bg-gray-100 px-2 py-0.5 rounded" title="${v.slug}">${v.slug}</span>
+                            ${inativaBadge}
                         </div>
                     </td>
-                    <td class="px-6 py-4 text-gray-800">${v.label}</td>
-                    <td class="px-6 py-4">
-                        <span class="px-2 py-1 text-xs rounded-full ${getTipoBadgeClass(v.tipo)}">${getTipoLabel(v.tipo)}</span>
+                    <td class="px-4 py-2 col-label">
+                        <span class="label-text text-gray-800 text-sm" title="${v.label}">${v.label}</span>
                     </td>
-                    <td class="px-6 py-4 text-gray-500 text-sm">${v.categoria_nome || '-'}</td>
-                    <td class="px-6 py-4">
-                        ${v.uso_count > 0
-                            ? `<span class="text-green-600"><i class="fas fa-link mr-1"></i>${v.uso_count} prompt(s)</span>`
-                            : '<span class="text-gray-400">Nenhum</span>'
-                        }
+                    <td class="px-4 py-2">
+                        <span class="px-2 py-0.5 text-xs rounded-full ${getTipoBadgeClass(v.tipo)}">${getTipoLabel(v.tipo)}</span>
                     </td>
-                    <td class="px-6 py-4 text-right">
-                        <button
-                            onclick="verDetalhes(${v.id})"
-                            class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Ver detalhes"
-                        >
-                            <i class="fas fa-eye"></i>
+                    <td class="px-4 py-2 text-gray-500 text-xs">${v.categoria_nome || '-'}</td>
+                    <td class="px-4 py-2 text-center">${usoIcon}</td>
+                    <td class="px-4 py-2 text-right">
+                        <button onclick="verDetalhes(${v.id})" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Ver detalhes">
+                            <i class="fas fa-eye text-sm"></i>
                         </button>
                         ${v.ativo ? `
-                            <button
-                                onclick="editarVariavel(${v.id})"
-                                class="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                                title="Editar"
-                            >
-                                <i class="fas fa-edit"></i>
+                            <button onclick="editarVariavel(${v.id})" class="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded transition-colors" title="Editar">
+                                <i class="fas fa-edit text-sm"></i>
                             </button>
-                            <button
-                                onclick="excluirVariavel(${v.id})"
-                                class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Desativar"
-                                ${v.uso_count > 0 ? 'disabled' : ''}
-                            >
-                                <i class="fas fa-ban"></i>
+                            <button onclick="excluirVariavel(${v.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Desativar" ${v.uso_count > 0 || v.em_uso_json ? 'disabled' : ''}>
+                                <i class="fas fa-ban text-sm"></i>
                             </button>
                         ` : `
-                            <button
-                                onclick="reativarVariavel(${v.id})"
-                                class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                title="Reativar"
-                            >
-                                <i class="fas fa-undo"></i>
+                            <button onclick="reativarVariavel(${v.id})" class="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" title="Reativar">
+                                <i class="fas fa-undo text-sm"></i>
                             </button>
-                            <button
-                                onclick="excluirPermanente(${v.id})"
-                                class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Excluir permanentemente"
-                            >
-                                <i class="fas fa-trash"></i>
+                            <button onclick="excluirPermanente(${v.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir permanentemente">
+                                <i class="fas fa-trash text-sm"></i>
                             </button>
                         `}
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
 
         function getTipoBadgeClass(tipo) {
@@ -662,6 +913,8 @@
             document.getElementById('variavel-tipo').value = 'text';
             document.getElementById('variavel-descricao').value = '';
             document.getElementById('variavel-opcoes').value = '';
+            document.getElementById('variavel-fonte-codigo').value = '';
+            document.getElementById('variavel-fonte-tipo').value = '';
             document.getElementById('opcoes-container').classList.add('hidden');
             document.getElementById('variavel-slug').disabled = false;
             document.getElementById('modal-variavel').classList.remove('hidden');
@@ -679,6 +932,8 @@
             document.getElementById('variavel-tipo').value = v.tipo;
             document.getElementById('variavel-descricao').value = v.descricao || '';
             document.getElementById('variavel-opcoes').value = (v.opcoes || []).join('\n');
+            document.getElementById('variavel-fonte-codigo').value = v.fonte_verdade_codigo || '';
+            document.getElementById('variavel-fonte-tipo').value = v.fonte_verdade_tipo || '';
             document.getElementById('variavel-slug').disabled = true;
 
             if (v.tipo === 'choice' || v.tipo === 'list') {
@@ -702,6 +957,8 @@
             const tipo = document.getElementById('variavel-tipo').value;
             const descricao = document.getElementById('variavel-descricao').value;
             const opcoesText = document.getElementById('variavel-opcoes').value;
+            const fonteCodigo = document.getElementById('variavel-fonte-codigo').value.trim();
+            const fonteTipo = document.getElementById('variavel-fonte-tipo').value.trim();
 
             if (!slug || !label || !tipo) {
                 alert('Preencha os campos obrigatorios');
@@ -712,7 +969,15 @@
                 ? opcoesText.split('\n').map(o => o.trim()).filter(o => o)
                 : null;
 
-            const data = { slug, label, tipo, descricao, opcoes };
+            const data = {
+                slug,
+                label,
+                tipo,
+                descricao,
+                opcoes,
+                fonte_verdade_codigo: fonteCodigo || null,
+                fonte_verdade_tipo: fonteTipo || null
+            };
 
             try {
                 let response;
@@ -750,19 +1015,44 @@
             }
         }
 
-        // Excluir variavel
+        // Excluir variavel (desativar)
         async function excluirVariavel(id) {
             const v = variaveis.find(v => v.id === id);
             if (!v) return;
 
-            if (v.uso_count > 0) {
-                alert('Nao e possivel excluir uma variavel que esta em uso por prompts.');
+            if (v.uso_count > 0 || v.em_uso_json) {
+                alert('Nao e possivel desativar uma variavel que esta em uso por prompts ou categorias JSON.');
                 return;
             }
 
-            if (!confirm(`Deseja excluir a variavel "${v.label}"?`)) return;
-
             try {
+                // Primeiro, busca informacoes sobre dependencias
+                const depResponse = await fetch(`/admin/api/extraction/variaveis/${id}/dependentes`, {
+                    headers: {
+                        'Authorization': `Bearer ${getToken()}`
+                    }
+                });
+
+                let mensagemConfirmacao = `Deseja desativar a variavel "${v.label}"?`;
+
+                if (depResponse.ok) {
+                    const depData = await depResponse.json();
+                    if (depData.total_dependentes > 0) {
+                        mensagemConfirmacao = `ATENCAO: Existem ${depData.total_dependentes} item(ns) que dependem desta variavel:\n\n`;
+
+                        if (depData.variaveis_dependentes.length > 0) {
+                            mensagemConfirmacao += `Variaveis: ${depData.variaveis_dependentes.map(v => v.slug).join(', ')}\n`;
+                        }
+                        if (depData.perguntas_dependentes.length > 0) {
+                            mensagemConfirmacao += `Perguntas: ${depData.perguntas_dependentes.length} pergunta(s)\n`;
+                        }
+
+                        mensagemConfirmacao += `\nEssas dependencias serao REMOVIDAS.\n\nDeseja continuar e desativar "${v.label}"?`;
+                    }
+                }
+
+                if (!confirm(mensagemConfirmacao)) return;
+
                 const response = await fetch(`/admin/api/extraction/variaveis/${id}`, {
                     method: 'DELETE',
                     headers: {
@@ -772,14 +1062,25 @@
 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.detail || 'Erro ao excluir');
+                    throw new Error(error.detail || 'Erro ao desativar');
                 }
 
+                const result = await response.json();
+
+                let msgSucesso = 'Variavel desativada com sucesso!';
+                if (result.dependencias_removidas) {
+                    const total = result.dependencias_removidas.variaveis + result.dependencias_removidas.perguntas;
+                    if (total > 0) {
+                        msgSucesso += `\n${total} dependencia(s) foram removidas.`;
+                    }
+                }
+
+                alert(msgSucesso);
                 carregarVariaveis();
                 carregarResumo();
             } catch (error) {
-                console.error('Erro ao excluir variavel:', error);
-                alert('Erro ao excluir variavel: ' + error.message);
+                console.error('Erro ao desativar variavel:', error);
+                alert('Erro ao desativar variavel: ' + error.message);
             }
         }
 
@@ -826,9 +1127,36 @@
             const v = variaveis.find(v => v.id === id);
             if (!v) return;
 
-            if (!confirm(`ATENCAO: Esta acao e IRREVERSIVEL!\n\nDeseja excluir PERMANENTEMENTE a variavel "${v.label}"?`)) return;
-
             try {
+                // Primeiro, busca informacoes sobre dependencias
+                const depResponse = await fetch(`/admin/api/extraction/variaveis/${id}/dependentes`, {
+                    headers: {
+                        'Authorization': `Bearer ${getToken()}`
+                    }
+                });
+
+                let mensagemConfirmacao = `ATENCAO: Esta acao e IRREVERSIVEL!\n\n`;
+
+                if (depResponse.ok) {
+                    const depData = await depResponse.json();
+                    if (depData.total_dependentes > 0) {
+                        mensagemConfirmacao += `Existem ${depData.total_dependentes} item(ns) que dependem desta variavel:\n`;
+
+                        if (depData.variaveis_dependentes.length > 0) {
+                            mensagemConfirmacao += `- Variaveis: ${depData.variaveis_dependentes.map(v => v.slug).join(', ')}\n`;
+                        }
+                        if (depData.perguntas_dependentes.length > 0) {
+                            mensagemConfirmacao += `- Perguntas: ${depData.perguntas_dependentes.length} pergunta(s)\n`;
+                        }
+
+                        mensagemConfirmacao += `\nEssas dependencias serao REMOVIDAS.\n\n`;
+                    }
+                }
+
+                mensagemConfirmacao += `Deseja excluir PERMANENTEMENTE a variavel "${v.label}"?`;
+
+                if (!confirm(mensagemConfirmacao)) return;
+
                 const response = await fetch(`/admin/api/extraction/variaveis/${id}/permanente`, {
                     method: 'DELETE',
                     headers: {
@@ -841,6 +1169,17 @@
                     throw new Error(error.detail || 'Erro ao excluir');
                 }
 
+                const result = await response.json();
+
+                let msgSucesso = 'Variavel excluida permanentemente!';
+                if (result.dependencias_removidas) {
+                    const total = result.dependencias_removidas.variaveis + result.dependencias_removidas.perguntas;
+                    if (total > 0) {
+                        msgSucesso += `\n${total} dependencia(s) foram removidas.`;
+                    }
+                }
+
+                alert(msgSucesso);
                 carregarVariaveis();
                 carregarResumo();
             } catch (error) {
@@ -881,6 +1220,176 @@
                 clearTimeout(timeout);
                 timeout = setTimeout(later, wait);
             };
+        }
+
+        // Modal de ajuda
+        function abrirModalAjuda() {
+            document.getElementById('modal-ajuda').classList.remove('hidden');
+        }
+
+        function fecharModalAjuda() {
+            document.getElementById('modal-ajuda').classList.add('hidden');
+        }
+
+        // Modal do Glossario
+        let glossarioCarregado = false;
+        let glossarioConteudoOriginal = '';
+
+        async function abrirGlossario() {
+            document.getElementById('modal-glossario').classList.remove('hidden');
+
+            if (!glossarioCarregado) {
+                await carregarGlossario();
+            }
+        }
+
+        function fecharGlossario() {
+            document.getElementById('modal-glossario').classList.add('hidden');
+            document.getElementById('glossario-busca').value = '';
+            if (glossarioConteudoOriginal) {
+                document.getElementById('glossario-conteudo').innerHTML = glossarioConteudoOriginal;
+            }
+        }
+
+        async function carregarGlossario() {
+            try {
+                const response = await fetch('/admin/help/glossary', {
+                    headers: {
+                        'Authorization': `Bearer ${getToken()}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Erro ao carregar glossário');
+                }
+
+                const data = await response.json();
+
+                // Converte markdown para HTML (simplificado)
+                const html = converterMarkdownParaHTML(data.content);
+
+                document.getElementById('glossario-conteudo').innerHTML = html;
+                glossarioConteudoOriginal = html;
+                glossarioCarregado = true;
+
+            } catch (error) {
+                console.error('Erro ao carregar glossário:', error);
+                document.getElementById('glossario-conteudo').innerHTML = `
+                    <div class="flex items-center justify-center h-full">
+                        <div class="text-center text-red-500">
+                            <i class="fas fa-exclamation-circle text-3xl mb-3"></i>
+                            <p>Erro ao carregar glossário</p>
+                            <p class="text-sm text-gray-500 mt-2">${error.message}</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function converterMarkdownParaHTML(markdown) {
+            // Conversão simplificada de markdown para HTML
+            let html = markdown
+                // Escapa HTML
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+
+                // Blocos de código
+                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+
+                // Código inline
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+
+                // Headers com IDs para navegação
+                .replace(/^### (.+)$/gm, (match, text) => {
+                    const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+                    return `<h3 id="${id}">${text}</h3>`;
+                })
+                .replace(/^## (.+)$/gm, (match, text) => {
+                    const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+                    return `<h2 id="${id}">${text}</h2>`;
+                })
+                .replace(/^# (.+)$/gm, (match, text) => {
+                    const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+                    return `<h1 id="${id}">${text}</h1>`;
+                })
+
+                // Bold e Italic
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+
+                // Links
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-indigo-600 hover:underline">$1</a>')
+
+                // Tabelas
+                .replace(/^\|(.+)\|$/gm, (match, content) => {
+                    const cells = content.split('|').map(c => c.trim());
+                    if (cells.every(c => /^[-:]+$/.test(c))) {
+                        return ''; // linha divisória da tabela, ignora
+                    }
+                    const isHeader = cells.every(c => c.length > 0);
+                    const tag = 'td';
+                    return '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+                })
+
+                // Listas não ordenadas
+                .replace(/^- (.+)$/gm, '<li>$1</li>')
+                .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+
+                // Linhas horizontais
+                .replace(/^---+$/gm, '<hr>')
+
+                // Parágrafos
+                .replace(/\n\n/g, '</p><p>')
+
+                // Quebras de linha em listas
+                .replace(/<\/li>\n<li>/g, '</li><li>');
+
+            // Envolver listas
+            html = html.replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>');
+            html = html.replace(/<\/ul>\s*<ul>/g, '');
+
+            // Envolver tabelas
+            html = html.replace(/(<tr>[\s\S]*?<\/tr>)+/g, '<table>$&</table>');
+            html = html.replace(/<\/table>\s*<table>/g, '');
+
+            // Primeiro td vira th na primeira tr de cada tabela
+            html = html.replace(/<table>[\s\S]*?<\/table>/g, (table) => {
+                return table.replace(/<table><tr>([\s\S]*?)<\/tr>/, (match, content) => {
+                    return '<table><tr>' + content.replace(/<td>/g, '<th>').replace(/<\/td>/g, '</th>') + '</tr>';
+                });
+            });
+
+            return '<p>' + html + '</p>';
+        }
+
+        function buscarNoGlossario(termo) {
+            if (!termo || termo.length < 2) {
+                document.getElementById('glossario-conteudo').innerHTML = glossarioConteudoOriginal;
+                return;
+            }
+
+            const conteudo = document.getElementById('glossario-conteudo');
+            let html = glossarioConteudoOriginal;
+
+            // Destaca o termo buscado
+            const regex = new RegExp(`(${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            html = html.replace(regex, '<span class="highlight">$1</span>');
+
+            conteudo.innerHTML = html;
+
+            // Scroll para a primeira ocorrência
+            const firstHighlight = conteudo.querySelector('.highlight');
+            if (firstHighlight) {
+                firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        function irParaSecao(secaoId) {
+            const elemento = document.getElementById(secaoId);
+            if (elemento) {
+                elemento.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
 
         // Inicializacao

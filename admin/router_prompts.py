@@ -2055,3 +2055,136 @@ async def deletar_categoria_ordem(
 
     return {"success": True, "message": f"Configuracao da categoria '{categoria_nome}' removida"}
 
+
+# ==========================================
+# Endpoints: Reordenação de Prompts (Drag & Drop)
+# ==========================================
+
+class ReordenarPromptItem(BaseModel):
+    """Item para reordenação de prompt"""
+    id: int
+    ordem: int
+
+
+class ReordenarPromptsRequest(BaseModel):
+    """Request para reordenar múltiplos prompts"""
+    prompts: List[ReordenarPromptItem]
+
+
+@router.post("/prompts/reordenar")
+async def reordenar_prompts(
+    request: ReordenarPromptsRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reordena múltiplos prompts de uma vez.
+    Usado para drag & drop no frontend.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+
+    atualizados = []
+    for item in request.prompts:
+        modulo = db.query(PromptModulo).filter(PromptModulo.id == item.id).first()
+        if modulo:
+            modulo.ordem = item.ordem
+            atualizados.append({"id": modulo.id, "ordem": modulo.ordem})
+
+    db.commit()
+
+    return {
+        "success": True,
+        "atualizados": len(atualizados),
+        "prompts": atualizados
+    }
+
+
+@router.put("/prompts/{prompt_id}/ordem")
+async def atualizar_ordem_prompt(
+    prompt_id: int,
+    nova_ordem: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Atualiza a ordem de um único prompt.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+
+    modulo = db.query(PromptModulo).filter(PromptModulo.id == prompt_id).first()
+    if not modulo:
+        raise HTTPException(status_code=404, detail="Prompt não encontrado")
+
+    modulo.ordem = nova_ordem
+    db.commit()
+
+    return {
+        "success": True,
+        "id": modulo.id,
+        "ordem": modulo.ordem
+    }
+
+
+class ReordenarCategoriasPromptsRequest(BaseModel):
+    """Request para reordenar categorias e seus prompts"""
+    group_id: int
+    categorias: List[dict]  # [{nome, ordem, prompts: [{id, ordem}]}]
+
+
+@router.post("/prompts/reordenar-completo")
+async def reordenar_prompts_completo(
+    request: ReordenarCategoriasPromptsRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reordena categorias e prompts dentro de cada categoria.
+    Atualiza tanto a ordem das categorias quanto dos prompts individuais.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+    from admin.models_prompt_groups import CategoriaOrdem
+
+    categorias_atualizadas = 0
+    prompts_atualizados = 0
+
+    for cat_data in request.categorias:
+        nome_categoria = cat_data.get("nome")
+        ordem_categoria = cat_data.get("ordem", 0)
+        prompts = cat_data.get("prompts", [])
+
+        # Atualiza ou cria ordem da categoria
+        cat_ordem = db.query(CategoriaOrdem).filter(
+            CategoriaOrdem.group_id == request.group_id,
+            CategoriaOrdem.nome == nome_categoria
+        ).first()
+
+        if cat_ordem:
+            cat_ordem.ordem = ordem_categoria
+        else:
+            cat_ordem = CategoriaOrdem(
+                group_id=request.group_id,
+                nome=nome_categoria,
+                ordem=ordem_categoria,
+                ativo=True
+            )
+            db.add(cat_ordem)
+        categorias_atualizadas += 1
+
+        # Atualiza ordem dos prompts dentro da categoria
+        for prompt_data in prompts:
+            prompt_id = prompt_data.get("id")
+            prompt_ordem = prompt_data.get("ordem", 0)
+
+            modulo = db.query(PromptModulo).filter(PromptModulo.id == prompt_id).first()
+            if modulo:
+                modulo.ordem = prompt_ordem
+                prompts_atualizados += 1
+
+    db.commit()
+
+    return {
+        "success": True,
+        "categorias_atualizadas": categorias_atualizadas,
+        "prompts_atualizados": prompts_atualizados
+    }
+

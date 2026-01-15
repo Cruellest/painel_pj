@@ -84,13 +84,13 @@ class DetectorModulosIA:
 
         if not modulos:
             if tipo_peca:
-                print(f"[AGENTE2] ⚠️ Nenhum módulo de CONTEÚDO disponível para tipo de peça '{tipo_peca}'")
+                print(f"[AGENTE2] [WARN] Nenhum módulo de CONTEÚDO disponível para tipo de peça '{tipo_peca}'")
             else:
-                print("[AGENTE2] ⚠️ Nenhum módulo de CONTEÚDO disponível no banco")
+                print("[AGENTE2] [WARN] Nenhum módulo de CONTEÚDO disponível no banco")
             return []
 
         if tipo_peca:
-            print(f"[AGENTE2] 📋 {len(modulos)} módulos disponíveis para tipo '{tipo_peca}'")
+            print(f"[AGENTE2]  {len(modulos)} módulos disponíveis para tipo '{tipo_peca}'")
 
         # Preparar prompt para a IA
         print(f"[AGENTE2] Montando prompt de detecção...")
@@ -124,7 +124,7 @@ class DetectorModulosIA:
 
         except Exception as e:
             import traceback
-            print(f"[AGENTE2] ❌ Erro na detecção por IA: {e}")
+            print(f"[AGENTE2] [ERRO] Erro na detecção por IA: {e}")
             print(f"[AGENTE2] Traceback: {traceback.format_exc()}")
             print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes (com erro) ==========\n")
             # Em caso de erro, retorna lista vazia (sem fallback)
@@ -333,14 +333,14 @@ Responda SOMENTE com o JSON, sem texto adicional.
         try:
             return json.loads(content)
         except json.JSONDecodeError as e:
-            print(f"⚠️ Erro ao parsear JSON: {e}")
-            print(f"⚠️ Conteúdo recebido: {content[:200]}...")
+            print(f"[WARN] Erro ao parsear JSON: {e}")
+            print(f"[WARN] Conteúdo recebido: {content[:200]}...")
 
             # Tenta extrair módulos do novo formato: {"id": X, "motivo": "..."}
             modulos_obj_match = re.findall(r'\{\s*"id"\s*:\s*(\d+)\s*,\s*"motivo"\s*:\s*"([^"]*)"', content)
             if modulos_obj_match:
                 modulos = [{"id": int(m[0]), "motivo": m[1]} for m in modulos_obj_match]
-                print(f"🔧 Recuperados {len(modulos)} módulos de JSON truncado (formato novo)")
+                print(f" Recuperados {len(modulos)} módulos de JSON truncado (formato novo)")
                 return {
                     "modulos_relevantes": modulos,
                     "confianca": "media"
@@ -353,7 +353,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
                     nums_str = modulos_match.group(1).rstrip(',').strip()
                     if nums_str:
                         modulos = [int(n.strip()) for n in nums_str.split(',') if n.strip().isdigit()]
-                        print(f"🔧 Recuperados {len(modulos)} módulos de JSON truncado (formato antigo)")
+                        print(f" Recuperados {len(modulos)} módulos de JSON truncado (formato antigo)")
                         return {
                             "modulos_relevantes": modulos,
                             "confianca": "media"
@@ -399,9 +399,9 @@ Responda SOMENTE com o JSON, sem texto adicional.
             if 0 <= idx < len(modulos):
                 ids_reais.append(modulos[idx].id)
                 if motivo:
-                    print(f"   ✓ {modulos[idx].titulo}: {motivo}")
+                    print(f"   [OK] {modulos[idx].titulo}: {motivo}")
                 else:
-                    print(f"   ✓ {modulos[idx].titulo}")
+                    print(f"   [OK] {modulos[idx].titulo}")
 
         return ids_reais
 
@@ -429,7 +429,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
         """Limpa todo o cache"""
         self._cache.clear()
         self._cache_tipo_peca.clear()
-        print("🗑️ Cache de detecções limpo")
+        print("[DEL] Cache de detecções limpo")
     
     async def detectar_tipo_peca(
         self,
@@ -470,7 +470,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
         print(f"[AGENTE2] Módulos de peça encontrados: {len(modulos_peca)}")
 
         if not modulos_peca:
-            print("[AGENTE2] ⚠️ Nenhum módulo de peça disponível no banco")
+            print("[AGENTE2] [WARN] Nenhum módulo de peça disponível no banco")
             return {
                 "tipo_peca": None,
                 "justificativa": "Nenhum tipo de peça configurado no sistema",
@@ -558,7 +558,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
             # Valida se o tipo retornado existe
             tipos_validos = [t['nome'] for t in tipos_info]
             if tipo_detectado not in tipos_validos:
-                print(f"⚠️ Tipo detectado '{tipo_detectado}' não é válido. Tipos válidos: {tipos_validos}")
+                print(f"[WARN] Tipo detectado '{tipo_detectado}' não é válido. Tipos válidos: {tipos_validos}")
                 # Tenta encontrar correspondência parcial
                 for tipo in tipos_validos:
                     if tipo in str(tipo_detectado).lower() or str(tipo_detectado).lower() in tipo:
@@ -576,7 +576,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
             
             print(f"[AGENTE2] 🎯 Tipo de peça detectado: {tipo_detectado}")
             print(f"[AGENTE2] 📊 Confiança: {confianca}")
-            print(f"[AGENTE2] 💡 Justificativa: {justificativa}")
+            print(f"[AGENTE2]  Justificativa: {justificativa}")
 
             # Salvar no cache
             self._cache_tipo_peca[cache_key] = (resultado_final, datetime.now())
@@ -586,7 +586,7 @@ Responda SOMENTE com o JSON, sem texto adicional.
 
         except Exception as e:
             import traceback
-            print(f"[AGENTE2] ❌ Erro na detecção de tipo de peça: {e}")
+            print(f"[AGENTE2] [ERRO] Erro na detecção de tipo de peça: {e}")
             print(f"[AGENTE2] Traceback: {traceback.format_exc()}")
             print(f"[AGENTE2] ========== FIM detectar_tipo_peca (com erro) ==========\n")
             # Fallback: retorna o primeiro tipo disponível

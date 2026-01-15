@@ -65,9 +65,36 @@ class CategoriaResumoJSON(Base):
     # Se não definido, extrai de qualquer peça do grupo
     fonte_verdade_tipo = Column(String(100), nullable=True)
 
+    # Código específico para filtrar documentos (ex: "9500")
+    # Se definido, filtra apenas documentos com este código
+    # Se não definido, considera todos os códigos do grupo
+    fonte_verdade_codigo = Column(String(20), nullable=True)
+
     # Se deve classificar o documento antes de extrair
     # Se True, LLM identifica o tipo lógico e só extrai se for fonte de verdade
     requer_classificacao = Column(Boolean, default=False)
+
+    # === FONTE ESPECIAL (alternativa a códigos) ===
+
+    # Tipo de fonte da categoria: "code" (padrão) ou "special"
+    # "code" = usa codigos_documento para filtrar
+    # "special" = usa lógica especial (ex: primeiro documento do processo)
+    source_type = Column(String(20), nullable=False, default="code")
+
+    # Identificador da fonte especial (quando source_type = "special")
+    # Ex: "peticao_inicial" = primeiro documento com código 9500 ou 500
+    source_special_type = Column(String(50), nullable=True)
+
+    # === ORIGEM DO JSON ===
+    
+    # Se o JSON atual foi gerado por IA (apenas para exibição/tag)
+    json_gerado_por_ia = Column(Boolean, default=False)
+    
+    # Data/hora em que o JSON foi gerado pela IA
+    json_gerado_em = Column(DateTime, nullable=True)
+    
+    # Usuário que gerou/aprovou o JSON via IA
+    json_gerado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Se é a categoria residual (fallback para docs não categorizados)
     is_residual = Column(Boolean, default=False, index=True)
@@ -92,6 +119,11 @@ class CategoriaResumoJSON(Base):
         nome_normalizado = self.nome.lower()
         nome_normalizado = re.sub(r'[^a-z0-9]+', '_', nome_normalizado)
         return nome_normalizado.strip('_')
+
+    @property
+    def usa_fonte_especial(self) -> bool:
+        """Retorna True se a categoria usa fonte especial em vez de códigos."""
+        return self.source_type == "special" and bool(self.source_special_type)
 
     @property
     def tem_fonte_verdade(self) -> bool:

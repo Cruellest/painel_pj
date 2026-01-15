@@ -375,25 +375,36 @@ class GerenciadorFormatosJSON:
     """
     Gerenciador que mantém cache dos formatos JSON para evitar
     consultas repetidas ao banco durante processamento de múltiplos documentos.
+
+    Suporta:
+    - Categorias por código de documento (comportamento padrão)
+    - Categorias com fonte especial (ex: "peticao_inicial" = primeiro doc com código 9500/500)
+    - Exclusão automática de documentos de fontes especiais das categorias por código
     """
-    
+
     def __init__(self, db: Session):
         self.db = db
-        self._cache: Dict[int, FormatoResumo] = {}
+        self._cache: Dict[int, FormatoResumo] = {}  # código -> formato
         self._residual: Optional[FormatoResumo] = None
         self._carregado = False
-    
+
+        # Fontes especiais
+        self._fontes_especiais: Dict[str, Tuple[FormatoResumo, List[int]]] = {}  # key -> (formato, códigos)
+        self._doc_fonte_especial: Dict[str, FormatoResumo] = {}  # doc_id -> formato (para docs de fonte especial)
+        self._docs_excluir_codigo: set = set()  # doc_ids que devem ser excluídos de categorias por código
+        self._lote_preparado = False
+
     def _carregar_formatos(self):
         """Carrega todos os formatos do banco para cache"""
         if self._carregado:
             return
-            
+
         from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON
-        
+
         categorias = self.db.query(CategoriaResumoJSON).filter(
             CategoriaResumoJSON.ativo == True
         ).all()
-        
+
         for cat in categorias:
             formato = FormatoResumo(
                 categoria_id=cat.id,
@@ -402,27 +413,115 @@ class GerenciadorFormatosJSON:
                 instrucoes_extracao=cat.instrucoes_extracao,
                 is_residual=cat.is_residual
             )
-            
+
             if cat.is_residual:
                 self._residual = formato
+            elif cat.usa_fonte_especial:
+                # Categoria com fonte especial - armazena separadamente
+                from sistemas.gerador_pecas.services_source_resolver import get_source_resolver
+                resolver = get_source_resolver()
+                source_info = resolver.get_source_info(cat.source_special_type)
+                codigos = source_info["codigos_validos"] if source_info else []
+                self._fontes_especiais[cat.source_special_type] = (formato, codigos)
             else:
+                # Categoria por código normal
                 for codigo in (cat.codigos_documento or []):
                     self._cache[codigo] = formato
-        
+
         self._carregado = True
-    
-    def obter_formato(self, codigo_documento: int) -> Optional[FormatoResumo]:
-        """Obtém o formato para um código de documento (usa cache)"""
+
+    def preparar_lote(self, documentos: List[Any]) -> None:
+        """
+        Prepara o gerenciador para processar um lote de documentos.
+
+        Identifica quais documentos pertencem a fontes especiais e marca-os
+        para exclusão das categorias por código.
+
+        IMPORTANTE: Chamar este método ANTES de iterar os documentos chamando obter_formato().
+
+        Args:
+            documentos: Lista de documentos (deve ter atributos 'id' e 'tipo_documento')
+        """
         self._carregar_formatos()
-        
-        # Tenta cache específico
+
+        # Limpa estado anterior
+        self._doc_fonte_especial.clear()
+        self._docs_excluir_codigo.clear()
+        self._lote_preparado = True
+
+        if not self._fontes_especiais:
+            return  # Sem fontes especiais configuradas
+
+        from sistemas.gerador_pecas.services_source_resolver import (
+            get_source_resolver, DocumentoInfo
+        )
+
+        # Converte documentos para formato do resolver
+        docs_info = []
+        for i, doc in enumerate(documentos):
+            doc_id = str(getattr(doc, 'id', i))
+            codigo_raw = getattr(doc, 'tipo_documento', None)
+            data = getattr(doc, 'data', None)
+
+            try:
+                codigo = int(codigo_raw) if codigo_raw else 0
+            except (ValueError, TypeError):
+                codigo = 0
+
+            docs_info.append(DocumentoInfo(
+                id=doc_id,
+                codigo=codigo,
+                data=data,
+                ordem=i
+            ))
+
+        # Resolve cada fonte especial
+        resolver = get_source_resolver()
+        for source_type, (formato, codigos) in self._fontes_especiais.items():
+            result = resolver.resolve(source_type, docs_info)
+
+            if result.sucesso and result.documento_id:
+                # Documento encontrado para fonte especial
+                self._doc_fonte_especial[result.documento_id] = formato
+                self._docs_excluir_codigo.add(result.documento_id)
+                print(f"[FONTE ESPECIAL] {source_type}: doc_id={result.documento_id} (categoria: {formato.categoria_nome})")
+
+    def obter_formato(self, codigo_documento: int, doc_id: str = None) -> Optional[FormatoResumo]:
+        """
+        Obtém o formato para um documento.
+
+        Args:
+            codigo_documento: Código do tipo de documento
+            doc_id: ID do documento (opcional, mas necessário para fontes especiais)
+
+        Returns:
+            FormatoResumo ou None
+        """
+        self._carregar_formatos()
+
+        # Se doc_id fornecido e lote preparado, verifica fonte especial
+        if doc_id and self._lote_preparado:
+            doc_id_str = str(doc_id)
+
+            # Verifica se é documento de fonte especial
+            if doc_id_str in self._doc_fonte_especial:
+                return self._doc_fonte_especial[doc_id_str]
+
+            # Verifica se deve excluir de categoria por código
+            # (documento foi identificado como fonte especial de outra categoria)
+            if doc_id_str in self._docs_excluir_codigo:
+                # Já retornou acima se era deste doc, então não deve processar
+                # por categoria de código
+                return self._residual  # Usa residual como fallback
+
+        # Tenta cache específico por código
         if codigo_documento in self._cache:
             return self._cache[codigo_documento]
-        
+
         # Retorna residual
         return self._residual
-    
+
     def tem_formatos_configurados(self) -> bool:
         """Verifica se há formatos JSON configurados no banco"""
         self._carregar_formatos()
-        return self._residual is not None or len(self._cache) > 0
+        return self._residual is not None or len(self._cache) > 0 or len(self._fontes_especiais) > 0
