@@ -89,6 +89,8 @@ class PromptModuloResponse(BaseModel):
     regra_deterministica: Optional[dict] = None
     # Texto original da regra em linguagem natural
     regra_texto_original: Optional[str] = None
+    # Palavras-chave para ativação
+    palavras_chave: Optional[List[str]] = []
     tags: Optional[List[str]] = []
     ativo: bool = True
     ordem: int = 0
