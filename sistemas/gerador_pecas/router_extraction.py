@@ -922,7 +922,8 @@ async def resumo_variaveis(
         distribuicao_tipos = {t[0]: t[1] for t in tipos}
 
         # Variáveis com uso em prompts (regras determinísticas)
-        variaveis_com_uso_prompts = db.query(ExtractionVariable).join(
+        # Nota: usamos query apenas pelo ID para evitar erro de DISTINCT em colunas JSON no PostgreSQL
+        variaveis_com_uso_prompts = db.query(ExtractionVariable.id).join(
             PromptVariableUsage,
             PromptVariableUsage.variable_slug == ExtractionVariable.slug
         ).filter(
@@ -930,7 +931,7 @@ async def resumo_variaveis(
         ).distinct().count()
 
         # Variáveis em uso no JSON de categorias com json_gerado_por_ia=True
-        variaveis_em_uso_json = db.query(ExtractionVariable).join(
+        variaveis_em_uso_json = db.query(ExtractionVariable.id).join(
             CategoriaResumoJSON,
             ExtractionVariable.categoria_id == CategoriaResumoJSON.id
         ).filter(
