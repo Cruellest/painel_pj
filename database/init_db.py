@@ -18,6 +18,10 @@ from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAna
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON, CategoriaResumoJSONHistorico
 from sistemas.gerador_pecas.models_config_pecas import CategoriaDocumento, TipoPeca, tipo_peca_categorias
+from sistemas.gerador_pecas.models_extraction import (
+    ExtractionQuestion, ExtractionModel, ExtractionVariable,
+    PromptVariableUsage, PromptActivationLog
+)
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from admin.models import PromptConfig, ConfiguracaoIA
@@ -833,6 +837,360 @@ def run_migrations():
                 except Exception as e:
                     db.rollback()
                     print(f"[WARN] Migração {coluna} geracoes_prestacao_contas: {e}")
+
+    # =====================================================================
+    # MIGRAÇÕES PARA SISTEMA DE EXTRAÇÃO BASEADO EM IA
+    # =====================================================================
+
+    # Migração: Criar tabela extraction_questions
+    if not table_exists('extraction_questions'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE extraction_questions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        categoria_id INTEGER NOT NULL REFERENCES categorias_resumo_json(id) ON DELETE CASCADE,
+                        pergunta TEXT NOT NULL,
+                        nome_variavel_sugerido VARCHAR(100),
+                        tipo_sugerido VARCHAR(50),
+                        opcoes_sugeridas JSON,
+                        descricao TEXT,
+                        ativo BOOLEAN DEFAULT 1,
+                        ordem INTEGER DEFAULT 0,
+                        criado_por INTEGER REFERENCES users(id),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_por INTEGER REFERENCES users(id),
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS extraction_questions (
+                        id SERIAL PRIMARY KEY,
+                        categoria_id INTEGER NOT NULL REFERENCES categorias_resumo_json(id) ON DELETE CASCADE,
+                        pergunta TEXT NOT NULL,
+                        nome_variavel_sugerido VARCHAR(100),
+                        tipo_sugerido VARCHAR(50),
+                        opcoes_sugeridas JSON,
+                        descricao TEXT,
+                        ativo BOOLEAN DEFAULT true,
+                        ordem INTEGER DEFAULT 0,
+                        criado_por INTEGER REFERENCES users(id),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_por INTEGER REFERENCES users(id),
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            db.commit()
+            print("[OK] Migração: tabela extraction_questions criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração extraction_questions: {e}")
+
+    # Migração: Criar tabela extraction_models
+    if not table_exists('extraction_models'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE extraction_models (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        categoria_id INTEGER NOT NULL REFERENCES categorias_resumo_json(id) ON DELETE CASCADE,
+                        modo VARCHAR(20) NOT NULL DEFAULT 'manual',
+                        schema_json JSON NOT NULL,
+                        mapeamento_variaveis JSON,
+                        versao INTEGER DEFAULT 1,
+                        ativo BOOLEAN DEFAULT 1,
+                        criado_por INTEGER REFERENCES users(id),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(categoria_id, versao)
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS extraction_models (
+                        id SERIAL PRIMARY KEY,
+                        categoria_id INTEGER NOT NULL REFERENCES categorias_resumo_json(id) ON DELETE CASCADE,
+                        modo VARCHAR(20) NOT NULL DEFAULT 'manual',
+                        schema_json JSON NOT NULL,
+                        mapeamento_variaveis JSON,
+                        versao INTEGER DEFAULT 1,
+                        ativo BOOLEAN DEFAULT true,
+                        criado_por INTEGER REFERENCES users(id),
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(categoria_id, versao)
+                    )
+                """))
+            db.commit()
+            print("[OK] Migração: tabela extraction_models criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração extraction_models: {e}")
+
+    # Migração: Criar tabela extraction_variables
+    if not table_exists('extraction_variables'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE extraction_variables (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        slug VARCHAR(100) UNIQUE NOT NULL,
+                        label VARCHAR(200) NOT NULL,
+                        descricao TEXT,
+                        tipo VARCHAR(50) NOT NULL,
+                        categoria_id INTEGER REFERENCES categorias_resumo_json(id) ON DELETE SET NULL,
+                        opcoes JSON,
+                        source_question_id INTEGER REFERENCES extraction_questions(id) ON DELETE SET NULL,
+                        ativo BOOLEAN DEFAULT 1,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS extraction_variables (
+                        id SERIAL PRIMARY KEY,
+                        slug VARCHAR(100) UNIQUE NOT NULL,
+                        label VARCHAR(200) NOT NULL,
+                        descricao TEXT,
+                        tipo VARCHAR(50) NOT NULL,
+                        categoria_id INTEGER REFERENCES categorias_resumo_json(id) ON DELETE SET NULL,
+                        opcoes JSON,
+                        source_question_id INTEGER REFERENCES extraction_questions(id) ON DELETE SET NULL,
+                        ativo BOOLEAN DEFAULT true,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            db.commit()
+            print("[OK] Migração: tabela extraction_variables criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração extraction_variables: {e}")
+
+    # Migração: Criar tabela prompt_variable_usage
+    if not table_exists('prompt_variable_usage'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE prompt_variable_usage (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
+                        variable_slug VARCHAR(100) NOT NULL,
+                        variable_id INTEGER REFERENCES extraction_variables(id) ON DELETE SET NULL,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(prompt_id, variable_slug)
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS prompt_variable_usage (
+                        id SERIAL PRIMARY KEY,
+                        prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
+                        variable_slug VARCHAR(100) NOT NULL,
+                        variable_id INTEGER REFERENCES extraction_variables(id) ON DELETE SET NULL,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(prompt_id, variable_slug)
+                    )
+                """))
+            db.commit()
+            print("[OK] Migração: tabela prompt_variable_usage criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração prompt_variable_usage: {e}")
+
+    # Migração: Criar tabela prompt_activation_logs
+    if not table_exists('prompt_activation_logs'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE prompt_activation_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
+                        modo_ativacao VARCHAR(20) NOT NULL,
+                        resultado BOOLEAN NOT NULL,
+                        variaveis_usadas JSON,
+                        contexto JSON,
+                        justificativa_ia TEXT,
+                        geracao_id INTEGER,
+                        numero_processo VARCHAR(30),
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS prompt_activation_logs (
+                        id SERIAL PRIMARY KEY,
+                        prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
+                        modo_ativacao VARCHAR(20) NOT NULL,
+                        resultado BOOLEAN NOT NULL,
+                        variaveis_usadas JSON,
+                        contexto JSON,
+                        justificativa_ia TEXT,
+                        geracao_id INTEGER,
+                        numero_processo VARCHAR(30),
+                        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+            db.commit()
+            print("[OK] Migração: tabela prompt_activation_logs criada")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração prompt_activation_logs: {e}")
+
+    # Migração: Adicionar colunas de regra determinística em prompt_modulos
+    if table_exists('prompt_modulos'):
+        colunas_deterministic = [
+            ('modo_ativacao', "VARCHAR(20) DEFAULT 'llm'"),
+            ('regra_deterministica', 'JSON'),
+            ('regra_texto_original', 'TEXT'),
+        ]
+
+        for coluna, tipo in colunas_deterministic:
+            if not column_exists('prompt_modulos', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE prompt_modulos ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em prompt_modulos")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} prompt_modulos: {e}")
+
+    # Migração: Adicionar colunas de regra determinística em prompt_modulos_historico
+    if table_exists('prompt_modulos_historico'):
+        colunas_deterministic_hist = [
+            ('modo_ativacao', 'VARCHAR(20)'),
+            ('regra_deterministica', 'JSON'),
+            ('regra_texto_original', 'TEXT'),
+        ]
+
+        for coluna, tipo in colunas_deterministic_hist:
+            if not column_exists('prompt_modulos_historico', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE prompt_modulos_historico ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em prompt_modulos_historico")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} prompt_modulos_historico: {e}")
+
+    # Migração: Adicionar colunas de dependência em extraction_questions
+    if table_exists('extraction_questions'):
+        colunas_dep_questions = [
+            ("depends_on_variable", "VARCHAR(100)"),
+            ("dependency_operator", "VARCHAR(20)"),
+            ("dependency_value", "JSON" if not is_sqlite else "TEXT"),
+            ("dependency_config", "JSON" if not is_sqlite else "TEXT"),
+            ("dependency_inferred", "BOOLEAN DEFAULT FALSE"),
+        ]
+
+        for coluna, tipo in colunas_dep_questions:
+            if not column_exists('extraction_questions', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE extraction_questions ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em extraction_questions")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} extraction_questions: {e}")
+
+    # Migração: Adicionar colunas de dependência em extraction_variables
+    if table_exists('extraction_variables'):
+        colunas_dep_variables = [
+            ("is_conditional", "BOOLEAN DEFAULT FALSE"),
+            ("depends_on_variable", "VARCHAR(100)"),
+            ("dependency_config", "JSON" if not is_sqlite else "TEXT"),
+        ]
+
+        for coluna, tipo in colunas_dep_variables:
+            if not column_exists('extraction_variables', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE extraction_variables ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em extraction_variables")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} extraction_variables: {e}")
+
+    # Migração: Adicionar colunas de fonte de verdade individual em extraction_questions
+    if table_exists('extraction_questions'):
+        colunas_fv_questions = [
+            ("fonte_verdade_tipo", "VARCHAR(100)"),
+            ("fonte_verdade_override", "BOOLEAN DEFAULT FALSE"),
+        ]
+
+        for coluna, tipo in colunas_fv_questions:
+            if not column_exists('extraction_questions', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE extraction_questions ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em extraction_questions")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} extraction_questions: {e}")
+
+    # Migração: Adicionar colunas de fonte de verdade individual em extraction_variables
+    if table_exists('extraction_variables'):
+        colunas_fv_variables = [
+            ("fonte_verdade_tipo", "VARCHAR(100)"),
+            ("fonte_verdade_override", "BOOLEAN DEFAULT FALSE"),
+        ]
+
+        for coluna, tipo in colunas_fv_variables:
+            if not column_exists('extraction_variables', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE extraction_variables ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em extraction_variables")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} extraction_variables: {e}")
+
+    # Criar índices para otimizar consultas
+    try:
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_extraction_questions_categoria ON extraction_questions(categoria_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_extraction_models_categoria ON extraction_models(categoria_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_extraction_variables_categoria ON extraction_variables(categoria_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_extraction_variables_slug ON extraction_variables(slug)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_extraction_questions_depends ON extraction_questions(depends_on_variable)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_extraction_variables_depends ON extraction_variables(depends_on_variable)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_extraction_variables_conditional ON extraction_variables(is_conditional)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_prompt_variable_usage_prompt ON prompt_variable_usage(prompt_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_prompt_variable_usage_slug ON prompt_variable_usage(variable_slug)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_prompt_activation_logs_prompt ON prompt_activation_logs(prompt_id)"))
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_prompt_activation_logs_timestamp ON prompt_activation_logs(timestamp)"))
+        db.commit()
+        print("[OK] Índices de extração criados/verificados")
+    except Exception as e:
+        db.rollback()
+        print(f"[WARN] Criação de índices de extração: {e}")
+
+    # Migração: Adicionar colunas de namespace e fonte de verdade em categorias_resumo_json
+    if table_exists('categorias_resumo_json'):
+        colunas_namespace = [
+            ("namespace_prefix", "VARCHAR(50)"),
+            ("tipos_logicos_peca", "JSON" if not is_sqlite else "TEXT"),
+            ("fonte_verdade_tipo", "VARCHAR(100)"),
+            ("requer_classificacao", "BOOLEAN DEFAULT FALSE"),
+        ]
+
+        for coluna, tipo in colunas_namespace:
+            if not column_exists('categorias_resumo_json', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE categorias_resumo_json ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em categorias_resumo_json")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} categorias_resumo_json: {e}")
+
+    # Criar índice para namespace
+    try:
+        db.execute(text("CREATE INDEX IF NOT EXISTS idx_categorias_namespace ON categorias_resumo_json(namespace_prefix)"))
+        db.commit()
+        print("[OK] Índice de namespace criado/verificado")
+    except Exception as e:
+        db.rollback()
+        print(f"[WARN] Criação de índice namespace: {e}")
 
     seed_prompt_groups(db)
 

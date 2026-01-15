@@ -58,6 +58,9 @@ from sistemas.gerador_pecas.router_config_pecas import router as config_pecas_ro
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
 
+# Import do router de extração (perguntas, modelos, variáveis, regras determinísticas)
+from sistemas.gerador_pecas.router_extraction import router as extraction_router
+
 # Import do sistema de Pedido de Cálculo
 from sistemas.pedido_calculo.router import router as pedido_calculo_router
 from sistemas.pedido_calculo.router_admin import router as pedido_calculo_admin_router
@@ -324,6 +327,9 @@ app.include_router(prompts_modulos_router, prefix="/admin/api")
 # Router de Categorias de Formato JSON (admin)
 app.include_router(categorias_json_router, prefix="/admin/api")
 
+# Router de Extração (perguntas, modelos, variáveis, regras determinísticas)
+app.include_router(extraction_router, prefix="/admin/api/extraction")
+
 # Router de Configuração de Tipos de Peça e Categorias de Documentos (admin)
 app.include_router(config_pecas_router)
 
@@ -579,6 +585,12 @@ async def admin_feedbacks_page(request: Request):
 async def admin_categorias_json_page(request: Request):
     """Página de gerenciamento de categorias de formato de resumo JSON"""
     return templates.TemplateResponse("admin_categorias_json.html", {"request": request})
+
+
+@app.get("/admin/variaveis")
+async def admin_variaveis_page(request: Request):
+    """Página do painel de variáveis de extração"""
+    return templates.TemplateResponse("admin_variaveis.html", {"request": request})
 
 
 # ==================================================

@@ -62,7 +62,14 @@ class PromptModulo(Base):
     # Conteúdo
     condicao_ativacao = Column(Text, nullable=True)  # Situação em que o prompt deve ser ativado (para o Agente 2 - Detector)
     conteudo = Column(Text, nullable=False)  # O prompt em si (markdown) - enviado ao Agente 3 (Gerador)
-    
+
+    # Modo de ativação (llm = modo atual, deterministic = regra AST)
+    modo_ativacao = Column(String(20), nullable=True, default='llm')  # 'llm' | 'deterministic'
+
+    # Regra determinística (quando modo_ativacao = 'deterministic')
+    regra_deterministica = Column(JSON, nullable=True)  # AST JSON da regra gerada pela IA
+    regra_texto_original = Column(Text, nullable=True)  # Texto original em linguagem natural
+
     # Metadados
     palavras_chave = Column(JSON, nullable=True, default=list)  # Para detecção automática
     tags = Column(JSON, nullable=True, default=list)  # Organização/busca
@@ -111,6 +118,11 @@ class PromptModuloHistorico(Base):
     conteudo = Column(Text, nullable=False)
     palavras_chave = Column(JSON, nullable=True)
     tags = Column(JSON, nullable=True)
+
+    # Modo de ativação e regra determinística (histórico)
+    modo_ativacao = Column(String(20), nullable=True)
+    regra_deterministica = Column(JSON, nullable=True)
+    regra_texto_original = Column(Text, nullable=True)
     
     # Auditoria
     alterado_por = Column(Integer, ForeignKey("users.id"), nullable=True)

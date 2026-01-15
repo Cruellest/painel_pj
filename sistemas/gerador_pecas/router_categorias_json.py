@@ -35,7 +35,12 @@ class CategoriaResumoJSONBase(BaseModel):
     is_residual: bool = False
     ativo: bool = True
     ordem: int = 0
-    
+    # Campos de namespace e fonte de verdade
+    namespace_prefix: Optional[str] = None  # Prefixo para variáveis (ex: "peticao", "nat")
+    tipos_logicos_peca: Optional[List[str]] = None  # Tipos possíveis (ex: ["petição inicial", "contestação"])
+    fonte_verdade_tipo: Optional[str] = None  # Qual tipo é fonte de verdade
+    requer_classificacao: bool = False  # Se deve classificar antes de extrair
+
     @field_validator('formato_json')
     @classmethod
     def validar_formato_json(cls, v):
@@ -60,8 +65,13 @@ class CategoriaResumoJSONUpdate(BaseModel):
     is_residual: Optional[bool] = None
     ativo: Optional[bool] = None
     ordem: Optional[int] = None
+    # Campos de namespace e fonte de verdade
+    namespace_prefix: Optional[str] = None
+    tipos_logicos_peca: Optional[List[str]] = None
+    fonte_verdade_tipo: Optional[str] = None
+    requer_classificacao: Optional[bool] = None
     motivo: str  # Obrigatório para rastrear alterações
-    
+
     @field_validator('formato_json')
     @classmethod
     def validar_formato_json(cls, v):
@@ -86,11 +96,18 @@ class CategoriaResumoJSONResponse(BaseModel):
     is_residual: bool
     ativo: bool
     ordem: int
+    # Campos de namespace e fonte de verdade
+    namespace_prefix: Optional[str] = None
+    namespace: Optional[str] = None  # Namespace efetivo (calculado)
+    tipos_logicos_peca: Optional[List[str]] = None
+    fonte_verdade_tipo: Optional[str] = None
+    requer_classificacao: bool = False
+    # Auditoria
     criado_por: Optional[int]
     criado_em: datetime
     atualizado_por: Optional[int]
     atualizado_em: Optional[datetime]
-    
+
     class Config:
         from_attributes = True
 

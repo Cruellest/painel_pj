@@ -34,6 +34,12 @@ class PromptModuloBase(BaseModel):
     titulo: str
     condicao_ativacao: Optional[str] = None  # Situação em que o prompt deve ser ativado (para Agente 2)
     conteudo: str  # Conteúdo do prompt (para Agente 3)
+    # Modo de ativação: 'llm' (padrão) ou 'deterministic'
+    modo_ativacao: Optional[str] = 'llm'
+    # Regra determinística (AST JSON) - apenas quando modo_ativacao = 'deterministic'
+    regra_deterministica: Optional[dict] = None
+    # Texto original da regra em linguagem natural
+    regra_texto_original: Optional[str] = None
     tags: Optional[List[str]] = []
     ativo: bool = True
     ordem: int = 0
@@ -52,6 +58,12 @@ class PromptModuloUpdate(BaseModel):
     subcategoria_ids: Optional[List[int]] = None  # IDs das subcategorias (muitos-para-muitos)
     condicao_ativacao: Optional[str] = None  # Atualiza condição de ativação
     conteudo: Optional[str] = None
+    # Modo de ativação: 'llm' ou 'deterministic'
+    modo_ativacao: Optional[str] = None
+    # Regra determinística (AST JSON)
+    regra_deterministica: Optional[dict] = None
+    # Texto original da regra em linguagem natural
+    regra_texto_original: Optional[str] = None
     tags: Optional[List[str]] = None
     ativo: Optional[bool] = None
     ordem: Optional[int] = None
@@ -71,6 +83,12 @@ class PromptModuloResponse(BaseModel):
     titulo: str
     condicao_ativacao: Optional[str] = None
     conteudo: str
+    # Modo de ativação: 'llm' ou 'deterministic'
+    modo_ativacao: Optional[str] = 'llm'
+    # Regra determinística (AST JSON)
+    regra_deterministica: Optional[dict] = None
+    # Texto original da regra em linguagem natural
+    regra_texto_original: Optional[str] = None
     tags: Optional[List[str]] = []
     ativo: bool = True
     ordem: int = 0
@@ -300,6 +318,10 @@ async def listar_modulos(
             "titulo": modulo.titulo,
             "condicao_ativacao": modulo.condicao_ativacao,
             "conteudo": modulo.conteudo,
+            # Campos de modo determinístico
+            "modo_ativacao": modulo.modo_ativacao or 'llm',
+            "regra_deterministica": modulo.regra_deterministica,
+            "regra_texto_original": modulo.regra_texto_original,
             "palavras_chave": modulo.palavras_chave,
             "tags": modulo.tags,
             "ativo": modulo.ativo,
@@ -902,7 +924,7 @@ async def atualizar_modulo(
     diff_resumo = ""
     if modulo_data.conteudo and modulo_data.conteudo != modulo.conteudo:
         diff_resumo = gerar_diff_resumo(modulo.conteudo, modulo_data.conteudo)
-    
+
     historico = PromptModuloHistorico(
         modulo_id=modulo.id,
         versao=modulo.versao,
@@ -912,6 +934,10 @@ async def atualizar_modulo(
         conteudo=modulo.conteudo,
         palavras_chave=modulo.palavras_chave,
         tags=modulo.tags,
+        # Campos de modo determinístico
+        modo_ativacao=modulo.modo_ativacao,
+        regra_deterministica=modulo.regra_deterministica,
+        regra_texto_original=modulo.regra_texto_original,
         alterado_por=current_user.id,
         motivo=modulo_data.motivo,
         diff_resumo=diff_resumo
@@ -954,9 +980,29 @@ async def atualizar_modulo(
     db.commit()
     db.refresh(modulo)
 
+    # Sincroniza uso de variáveis se modo determinístico
+    if modulo.modo_ativacao == 'deterministic' and modulo.regra_deterministica:
+        try:
+            from sistemas.gerador_pecas.services_deterministic import PromptVariableUsageSync
+            sync = PromptVariableUsageSync(db)
+            sync.atualizar_uso(modulo.id, modulo.regra_deterministica)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Erro ao sincronizar uso de variáveis: {e}")
+    elif modulo.modo_ativacao == 'llm':
+        # Remove registros de uso se voltou para modo LLM
+        try:
+            from sistemas.gerador_pecas.services_deterministic import PromptVariableUsageSync
+            sync = PromptVariableUsageSync(db)
+            sync.atualizar_uso(modulo.id, None)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Erro ao limpar uso de variáveis: {e}")
+
     # Retorna com subcategoria_ids
     response = modulo.__dict__.copy()
     response["subcategoria_ids"] = [s.id for s in modulo.subcategorias]
+    response["subcategorias_nomes"] = [s.nome for s in modulo.subcategorias]
     return response
 
 

@@ -1,6 +1,6 @@
 # AGENTS.md - Guia para Agentes de IA
 
-> Ultima atualizacao: 14 Janeiro 2026
+> Ultima atualizacao: 15 Janeiro 2026
 
 ---
 
@@ -147,6 +147,55 @@ PROMPT_FINAL = BASE_SYSTEM + PROMPT_PEÇA + PROMPT_CONTEÚDO_1 + ... + PROMPT_CO
 **Admin (prompts modulares):**
 - /admin/api/prompts-modulos/grupos
 - /admin/api/prompts-modulos/grupos/{group_id}/subgrupos
+
+**Modo de Ativação de Prompts:**
+
+O sistema suporta dois modos de ativação de prompts:
+1. **LLM (padrão)**: IA decide se ativa o módulo
+2. **Determinístico**: Regras JSON avaliadas sem LLM
+
+**Geração de Regras via Linguagem Natural:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│ UI: Campo "Condição em linguagem natural"                   │
+│ Ex: "Ativar quando medicamento não estiver incorporado SUS" │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Backend: POST /admin/api/extraction/regras-deterministicas/gerar│
+│ - Chama Gemini 3 Flash Preview                              │
+│ - Gera AST JSON da regra                                    │
+│ - Valida variáveis existentes                               │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Resposta:                                                   │
+│ - success: true → regra AST + variáveis usadas              │
+│ - success: false → variaveis_faltantes + sugestões          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Arquivos de Regras Determinísticas:**
+- `services_deterministic.py` - DeterministicRuleGenerator, DeterministicRuleEvaluator
+- `router_extraction.py` - Endpoints de geração/validação/avaliação
+
+**Formato AST JSON:**
+```json
+{
+    "type": "and",
+    "conditions": [
+        {"type": "condition", "variable": "valor_causa", "operator": "greater_than", "value": 100000},
+        {"type": "condition", "variable": "autor_idoso", "operator": "equals", "value": true}
+    ]
+}
+```
+
+**Operadores suportados:**
+- equals, not_equals, contains, not_contains
+- greater_than, less_than, greater_or_equal, less_or_equal
+- exists, not_exists, is_empty, is_not_empty
+- in_list, not_in_list, matches_regex
+- and, or, not (lógicos)
 
 ---
 
