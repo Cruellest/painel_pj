@@ -55,6 +55,17 @@
                 </div>
             </div>
             <div class="flex items-center gap-1">
+                <!-- Navegacao -->
+                <div class="flex items-center bg-blue-50 rounded-lg p-1 gap-1 mr-2">
+                    <a href="/admin/categorias-resumo-json" class="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md flex items-center gap-2 transition-all" title="Categorias de extracao JSON">
+                        <i class="fas fa-file-code"></i>
+                        <span class="hidden lg:inline">Categorias</span>
+                    </a>
+                    <a href="/admin/variaveis" class="px-3 py-2 text-sm text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded-md flex items-center gap-2 transition-all" title="Painel de variaveis do sistema">
+                        <i class="fas fa-hashtag"></i>
+                        <span class="hidden lg:inline">Variaveis</span>
+                    </a>
+                </div>
                 <!-- Configuracoes -->
                 <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
                     <a href="/admin/modulos-tipo-peca" class="px-3 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-white rounded-md flex items-center gap-2 transition-all" title="Configurar modulos por tipo de peca">
@@ -311,15 +322,147 @@
 
                     <!-- Condição de Ativação (apenas para tipo conteudo) -->
                     <div id="condicao-ativacao-container">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            <i class="fas fa-bolt text-yellow-500 mr-1"></i>
-                            Condição de Ativação
-                            <span class="text-xs text-gray-400 ml-2">(Quando este prompt deve ser acionado? - usado pelo Agente Detector)</span>
-                        </label>
-                        <textarea id="modulo-condicao-ativacao" rows="4" 
-                            class="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm resize-y"
-                            placeholder="Descreva a situação em que este prompt deve ser ativado. Ex: 'Quando o processo envolve pedido de medicamento não incorporado ao SUS' ou 'Quando há alegação de dano moral'"></textarea>
-                        <p class="text-xs text-gray-500 mt-1">Esta descrição é usada APENAS pelo Agente Detector para decidir se ativa este módulo. Não é enviada ao gerador de peça.</p>
+                        <!-- Toggle Modo LLM/Determinístico -->
+                        <div class="flex items-center gap-4 mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                            <span class="text-sm font-medium text-gray-700">
+                                <i class="fas fa-bolt text-yellow-500 mr-1"></i>
+                                Modo de Ativação:
+                            </span>
+                            <div class="flex items-center gap-1 bg-white rounded-lg border border-gray-200 p-1">
+                                <button type="button" onclick="selecionarModoAtivacao('llm')" id="btn-modo-llm"
+                                    class="px-3 py-1.5 text-sm rounded-md bg-primary-100 text-primary-700 font-medium">
+                                    <i class="fas fa-brain mr-1"></i> LLM
+                                </button>
+                                <button type="button" onclick="selecionarModoAtivacao('deterministic')" id="btn-modo-deterministic"
+                                    class="px-3 py-1.5 text-sm rounded-md text-gray-500 hover:bg-gray-100">
+                                    <i class="fas fa-code-branch mr-1"></i> Determinístico
+                                </button>
+                            </div>
+                            <span id="modo-info" class="text-xs text-gray-500">
+                                A IA avalia a descrição para decidir se ativa este módulo
+                            </span>
+                        </div>
+
+                        <!-- Modo LLM: Descrição em linguagem natural -->
+                        <div id="modo-llm-content">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Condição de Ativação (Descrição)
+                                <span class="text-xs text-gray-400 ml-2">(Quando este prompt deve ser acionado?)</span>
+                            </label>
+                            <textarea id="modulo-condicao-ativacao" rows="4"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm resize-y"
+                                placeholder="Descreva a situação em que este prompt deve ser ativado. Ex: 'Quando o processo envolve pedido de medicamento não incorporado ao SUS' ou 'Quando há alegação de dano moral'"></textarea>
+                            <p class="text-xs text-gray-500 mt-1">Esta descrição é usada pelo Agente Detector (LLM) para decidir se ativa este módulo.</p>
+                        </div>
+
+                        <!-- Modo Determinístico: Editor de Regras -->
+                        <div id="modo-deterministic-content" class="hidden">
+                            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4 mb-4">
+                                <div class="flex items-start gap-3">
+                                    <i class="fas fa-info-circle text-indigo-500 mt-0.5"></i>
+                                    <div class="text-sm text-indigo-700">
+                                        <p class="font-medium mb-1">Modo Determinístico:</p>
+                                        <p>Configure regras baseadas em variáveis extraídas dos documentos. O módulo será ativado quando as condições forem satisfeitas, sem necessidade de avaliação por LLM.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- NOVO: Geracao via Linguagem Natural -->
+                            <div class="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                                <label class="block text-sm font-medium text-blue-700 mb-2">
+                                    <i class="fas fa-magic mr-1"></i>
+                                    Gerar Regra via IA (Linguagem Natural)
+                                </label>
+                                <div class="flex gap-2 mb-2">
+                                    <textarea id="regra-linguagem-natural" rows="2"
+                                        class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm resize-none"
+                                        placeholder="Ex: 'O valor da causa e maior que 100000 e o autor e idoso' ou 'O medicamento nao esta na lista RENAME'"></textarea>
+                                    <button type="button" onclick="gerarRegraIA()"
+                                        id="btn-gerar-regra-ia"
+                                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 whitespace-nowrap">
+                                        <i class="fas fa-wand-magic-sparkles"></i>
+                                        <span>Gerar Regra</span>
+                                    </button>
+                                </div>
+
+                                <!-- Preview da regra gerada -->
+                                <div id="preview-regra-gerada" class="hidden mt-3">
+                                    <div class="bg-white p-3 rounded-lg border border-blue-200">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <span class="text-sm font-medium text-gray-700">Regra Gerada:</span>
+                                            <span id="preview-status" class="text-xs px-2 py-1 rounded bg-green-100 text-green-700">Valida</span>
+                                        </div>
+                                        <div id="preview-regra-conteudo" class="text-sm text-gray-600 mb-3"></div>
+                                        <div class="flex gap-2">
+                                            <button type="button" onclick="aplicarRegraGerada()"
+                                                class="px-3 py-1.5 bg-green-600 text-white rounded-md text-sm hover:bg-green-700">
+                                                <i class="fas fa-check mr-1"></i> Aplicar Regra
+                                            </button>
+                                            <button type="button" onclick="descartarRegraGerada()"
+                                                class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-md text-sm hover:bg-gray-300">
+                                                <i class="fas fa-times mr-1"></i> Descartar
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Erros e variaveis faltantes -->
+                                <div id="erro-regra-gerada" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                    <div class="flex items-start gap-2">
+                                        <i class="fas fa-exclamation-circle text-red-500 mt-0.5"></i>
+                                        <div class="flex-1">
+                                            <p id="erro-regra-msg" class="text-sm text-red-700"></p>
+                                            <div id="variaveis-faltantes" class="mt-2 hidden">
+                                                <p class="text-xs text-red-600 font-medium mb-1">Variaveis nao encontradas:</p>
+                                                <div id="lista-variaveis-faltantes" class="space-y-1"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-gray-200 pt-4 mb-4">
+                                <p class="text-xs text-gray-500 text-center">
+                                    <i class="fas fa-arrow-down mr-1"></i>
+                                    Ou configure manualmente abaixo
+                                    <i class="fas fa-arrow-down ml-1"></i>
+                                </p>
+                            </div>
+
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-code-branch text-indigo-500 mr-1"></i>
+                                Regra de Ativacao (Manual)
+                            </label>
+
+                            <!-- Visualizador Humanizado -->
+                            <div id="regra-humanizada" class="mb-4 p-4 bg-white border border-gray-200 rounded-lg">
+                                <p class="text-gray-400 text-sm italic">Nenhuma regra configurada</p>
+                            </div>
+
+                            <!-- Editor de Condições -->
+                            <div id="editor-regras" class="space-y-3">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <label class="text-sm text-gray-600">Operador lógico:</label>
+                                    <select id="regra-operador" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm"
+                                        onchange="atualizarVisualizadorRegra()">
+                                        <option value="and">E (AND) - Todas as condições</option>
+                                        <option value="or">OU (OR) - Qualquer condição</option>
+                                    </select>
+                                </div>
+
+                                <div id="lista-condicoes" class="space-y-2">
+                                    <!-- Condições serão adicionadas aqui -->
+                                </div>
+
+                                <button type="button" onclick="adicionarCondicao()"
+                                    class="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 text-sm">
+                                    <i class="fas fa-plus mr-1"></i> Adicionar Condição
+                                </button>
+                            </div>
+
+                            <!-- JSON da regra (hidden para backend) -->
+                            <input type="hidden" id="modulo-regra-json">
+                        </div>
                     </div>
                     
                     <!-- Editor de Conteúdo -->
@@ -793,9 +936,14 @@
         let subcategoriasCache = [];
         let subcategoriasSelecionadas = [];
         let grupoSelecionadoId = null;
+        // Estado do modo de ativação
+        let modoAtivacaoAtual = 'llm'; // 'llm' ou 'deterministic'
+        let condicoesRegra = []; // Array de condições para modo determinístico
+        let variaveisDisponiveis = []; // Cache de variáveis para autocomplete
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {
+            carregarVariaveisDisponiveis();
             carregarModulos();
             carregarCategorias();
             carregarGrupos();
@@ -1791,6 +1939,577 @@
             }
         }
 
+        // ==========================================
+        // Funções do Modo de Ativação (LLM/Determinístico)
+        // ==========================================
+
+        // Carrega variáveis disponíveis para autocomplete
+        async function carregarVariaveisDisponiveis() {
+            try {
+                const response = await fetch('/admin/api/extraction/variaveis?apenas_ativos=true', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+                if (response.ok) {
+                    variaveisDisponiveis = await response.json();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar variáveis:', error);
+            }
+        }
+
+        // Seleciona modo de ativação (LLM ou Determinístico)
+        function selecionarModoAtivacao(modo) {
+            modoAtivacaoAtual = modo;
+
+            const btnLLM = document.getElementById('btn-modo-llm');
+            const btnDet = document.getElementById('btn-modo-deterministic');
+            const modoInfo = document.getElementById('modo-info');
+            const conteudoLLM = document.getElementById('modo-llm-content');
+            const conteudoDet = document.getElementById('modo-deterministic-content');
+
+            if (modo === 'llm') {
+                btnLLM.className = 'px-3 py-1.5 text-sm rounded-md bg-primary-100 text-primary-700 font-medium';
+                btnDet.className = 'px-3 py-1.5 text-sm rounded-md text-gray-500 hover:bg-gray-100';
+                modoInfo.textContent = 'A IA avalia a descrição para decidir se ativa este módulo';
+                conteudoLLM.classList.remove('hidden');
+                conteudoDet.classList.add('hidden');
+            } else {
+                btnLLM.className = 'px-3 py-1.5 text-sm rounded-md text-gray-500 hover:bg-gray-100';
+                btnDet.className = 'px-3 py-1.5 text-sm rounded-md bg-indigo-100 text-indigo-700 font-medium';
+                modoInfo.textContent = 'Regras baseadas em variáveis extraídas determinam a ativação';
+                conteudoLLM.classList.add('hidden');
+                conteudoDet.classList.remove('hidden');
+                renderizarCondicoes();
+            }
+        }
+
+        // Adiciona uma nova condição ao editor de regras
+        function adicionarCondicao() {
+            const id = Date.now();
+            condicoesRegra.push({
+                id: id,
+                variavel: '',
+                operador: 'equals',
+                valor: ''
+            });
+            renderizarCondicoes();
+        }
+
+        // Remove uma condição
+        function removerCondicao(id) {
+            condicoesRegra = condicoesRegra.filter(c => c.id !== id);
+            renderizarCondicoes();
+            atualizarVisualizadorRegra();
+        }
+
+        // Atualiza uma condição
+        function atualizarCondicao(id, campo, valor) {
+            const condicao = condicoesRegra.find(c => c.id === id);
+            if (condicao) {
+                condicao[campo] = valor;
+                atualizarVisualizadorRegra();
+            }
+        }
+
+        // Renderiza as condições no editor
+        function renderizarCondicoes() {
+            const container = document.getElementById('lista-condicoes');
+            if (!container) return;
+
+            if (condicoesRegra.length === 0) {
+                container.innerHTML = `
+                    <div class="text-gray-400 text-sm italic p-3 bg-gray-50 rounded-lg">
+                        Nenhuma condição adicionada. Clique em "Adicionar Condição" para começar.
+                    </div>`;
+                atualizarVisualizadorRegra();
+                return;
+            }
+
+            const operadores = [
+                { value: 'equals', label: 'é igual a' },
+                { value: 'not_equals', label: 'é diferente de' },
+                { value: 'contains', label: 'contém' },
+                { value: 'not_contains', label: 'não contém' },
+                { value: 'exists', label: 'existe (tem valor)' },
+                { value: 'not_exists', label: 'não existe (vazio)' },
+                { value: 'greater_than', label: 'é maior que' },
+                { value: 'less_than', label: 'é menor que' },
+                { value: 'in_list', label: 'está na lista' },
+                { value: 'not_in_list', label: 'não está na lista' }
+            ];
+
+            container.innerHTML = condicoesRegra.map(c => {
+                // Encontra informacoes da variavel selecionada
+                const varInfo = variaveisDisponiveis.find(v => v.slug === c.variavel);
+                const esconderValor = ['exists', 'not_exists'].includes(c.operador);
+
+                return `
+                <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200" data-id="${c.id}">
+                    <select class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        onchange="onVariavelChange(${c.id}, this.value)">
+                        <option value="">Selecione a variável...</option>
+                        ${variaveisDisponiveis.map(v => `
+                            <option value="${v.slug}" ${c.variavel === v.slug ? 'selected' : ''}>
+                                ${v.slug} (${v.tipo})
+                            </option>
+                        `).join('')}
+                    </select>
+                    <select class="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        onchange="atualizarCondicao(${c.id}, 'operador', this.value); toggleValorCondicao(${c.id}, this.value)">
+                        ${operadores.map(op => `
+                            <option value="${op.value}" ${c.operador === op.value ? 'selected' : ''}>
+                                ${op.label}
+                            </option>
+                        `).join('')}
+                    </select>
+                    <div id="valor-container-${c.id}" class="${esconderValor ? 'hidden' : ''}">
+                        ${renderizarCampoValor(c, varInfo)}
+                    </div>
+                    <button type="button" onclick="removerCondicao(${c.id})"
+                        class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                        <i class="fas fa-trash text-sm"></i>
+                    </button>
+                </div>
+            `}).join('');
+
+            atualizarVisualizadorRegra();
+        }
+
+        // Renderiza campo de valor baseado no tipo da variavel
+        function renderizarCampoValor(condicao, varInfo) {
+            const tipo = varInfo?.tipo || 'text';
+            const opcoes = varInfo?.opcoes || [];
+            const valor = condicao.valor || '';
+            const id = condicao.id;
+
+            switch (tipo) {
+                case 'boolean':
+                    return `
+                        <select id="valor-${id}"
+                            class="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-[120px]"
+                            onchange="atualizarCondicao(${id}, 'valor', this.value)">
+                            <option value="">Selecione...</option>
+                            <option value="true" ${valor === 'true' || valor === true ? 'selected' : ''}>Sim (true)</option>
+                            <option value="false" ${valor === 'false' || valor === false ? 'selected' : ''}>Nao (false)</option>
+                        </select>
+                    `;
+
+                case 'choice':
+                    if (opcoes && opcoes.length > 0) {
+                        return `
+                            <select id="valor-${id}"
+                                class="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-[150px]"
+                                onchange="atualizarCondicao(${id}, 'valor', this.value)">
+                                <option value="">Selecione...</option>
+                                ${opcoes.map(op => `
+                                    <option value="${op}" ${valor === op ? 'selected' : ''}>${op}</option>
+                                `).join('')}
+                            </select>
+                        `;
+                    }
+                    return renderizarInputTexto(id, valor);
+
+                case 'number':
+                case 'currency':
+                    return `
+                        <input type="number"
+                            id="valor-${id}"
+                            class="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            placeholder="${tipo === 'currency' ? 'R$ 0,00' : '0'}"
+                            value="${valor}"
+                            step="${tipo === 'currency' ? '0.01' : '1'}"
+                            onchange="atualizarCondicao(${id}, 'valor', this.value)">
+                    `;
+
+                case 'date':
+                    return `
+                        <input type="date"
+                            id="valor-${id}"
+                            class="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                            value="${valor}"
+                            onchange="atualizarCondicao(${id}, 'valor', this.value)">
+                    `;
+
+                case 'list':
+                    if (opcoes && opcoes.length > 0) {
+                        const valoresArray = Array.isArray(valor) ? valor : (valor ? valor.split(',') : []);
+                        return `
+                            <select id="valor-${id}"
+                                class="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-[150px]"
+                                multiple size="3"
+                                onchange="atualizarCondicaoLista(${id}, this)">
+                                ${opcoes.map(op => {
+                                    const selected = valoresArray.includes(op);
+                                    return `<option value="${op}" ${selected ? 'selected' : ''}>${op}</option>`;
+                                }).join('')}
+                            </select>
+                        `;
+                    }
+                    return renderizarInputTexto(id, valor, 'Valores (virgula)');
+
+                default:
+                    return renderizarInputTexto(id, valor);
+            }
+        }
+
+        // Input texto padrao
+        function renderizarInputTexto(id, valor, placeholder = 'Valor') {
+            return `
+                <input type="text"
+                    id="valor-${id}"
+                    class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-[150px]"
+                    placeholder="${placeholder}"
+                    value="${valor}"
+                    onchange="atualizarCondicao(${id}, 'valor', this.value)">
+            `;
+        }
+
+        // Handler para mudanca de variavel (re-renderiza campo de valor)
+        function onVariavelChange(id, slug) {
+            atualizarCondicao(id, 'variavel', slug);
+            // Re-renderiza para atualizar o tipo do campo de valor
+            renderizarCondicoes();
+        }
+
+        // Handler para lista multi-select
+        function atualizarCondicaoLista(id, selectEl) {
+            const valores = Array.from(selectEl.selectedOptions).map(opt => opt.value);
+            atualizarCondicao(id, 'valor', valores.join(','));
+        }
+
+        // Toggle visibilidade do campo de valor (para operadores exists/not_exists)
+        function toggleValorCondicao(id, operador) {
+            const valorContainer = document.getElementById(`valor-container-${id}`);
+            if (valorContainer) {
+                if (['exists', 'not_exists'].includes(operador)) {
+                    valorContainer.classList.add('hidden');
+                    atualizarCondicao(id, 'valor', '');
+                } else {
+                    valorContainer.classList.remove('hidden');
+                }
+            }
+        }
+
+        // Atualiza o visualizador humanizado da regra
+        function atualizarVisualizadorRegra() {
+            const container = document.getElementById('regra-humanizada');
+            if (!container) return;
+
+            if (condicoesRegra.length === 0) {
+                container.innerHTML = '<p class="text-gray-400 text-sm italic">Nenhuma regra configurada</p>';
+                document.getElementById('modulo-regra-json').value = '';
+                return;
+            }
+
+            const operador = document.getElementById('regra-operador')?.value || 'and';
+            const operadorTexto = operador === 'and' ? 'E' : 'OU';
+
+            const getOperadorTexto = (op) => {
+                const map = {
+                    'equals': '=',
+                    'not_equals': '≠',
+                    'contains': 'contém',
+                    'not_contains': 'não contém',
+                    'exists': 'existe',
+                    'not_exists': 'não existe',
+                    'greater_than': '>',
+                    'less_than': '<',
+                    'in_list': 'em',
+                    'not_in_list': 'não em'
+                };
+                return map[op] || op;
+            };
+
+            const condicoesHtml = condicoesRegra.map((c, index) => {
+                const varInfo = variaveisDisponiveis.find(v => v.slug === c.variavel);
+                const varLabel = varInfo ? `<span class="font-mono text-indigo-600">${c.variavel}</span>` :
+                    (c.variavel ? `<span class="font-mono text-gray-600">${c.variavel}</span>` : '<span class="text-red-400">[variável não selecionada]</span>');
+
+                let valorHtml = '';
+                if (!['exists', 'not_exists'].includes(c.operador)) {
+                    valorHtml = c.valor ? `<span class="font-semibold text-green-600">"${c.valor}"</span>` : '<span class="text-red-400">[valor não definido]</span>';
+                }
+
+                const opTexto = getOperadorTexto(c.operador);
+                const conectivo = index < condicoesRegra.length - 1 ?
+                    `<span class="mx-2 px-2 py-0.5 bg-gray-200 text-gray-600 rounded text-xs font-bold">${operadorTexto}</span>` : '';
+
+                return `<span class="inline-flex items-center gap-1">
+                    ${varLabel} <span class="text-gray-500">${opTexto}</span> ${valorHtml}
+                </span>${conectivo}`;
+            }).join('');
+
+            container.innerHTML = `
+                <div class="text-sm">
+                    <span class="text-gray-500 mr-2">Ativar quando:</span>
+                    ${condicoesHtml}
+                </div>`;
+
+            // Atualiza o JSON da regra para o backend
+            const regraJson = {
+                logic: operador,
+                conditions: condicoesRegra.map(c => ({
+                    variable: c.variavel,
+                    operator: c.operador,
+                    value: c.valor
+                }))
+            };
+            document.getElementById('modulo-regra-json').value = JSON.stringify(regraJson);
+        }
+
+        // Reseta o editor de regras
+        function resetarEditorRegras() {
+            modoAtivacaoAtual = 'llm';
+            condicoesRegra = [];
+            selecionarModoAtivacao('llm');
+        }
+
+        // Carrega regra existente do módulo
+        function carregarRegraModulo(regraJson) {
+            if (!regraJson) {
+                resetarEditorRegras();
+                return;
+            }
+
+            try {
+                const regra = typeof regraJson === 'string' ? JSON.parse(regraJson) : regraJson;
+
+                if (regra.conditions && regra.conditions.length > 0) {
+                    modoAtivacaoAtual = 'deterministic';
+                    document.getElementById('regra-operador').value = regra.logic || 'and';
+
+                    condicoesRegra = regra.conditions.map((c, index) => ({
+                        id: Date.now() + index,
+                        variavel: c.variable || '',
+                        operador: c.operator || 'equals',
+                        valor: c.value || ''
+                    }));
+
+                    selecionarModoAtivacao('deterministic');
+                } else {
+                    resetarEditorRegras();
+                }
+            } catch (e) {
+                console.error('Erro ao carregar regra:', e);
+                resetarEditorRegras();
+            }
+        }
+
+        // ============================================================================
+        // GERACAO VIA LINGUAGEM NATURAL (IA)
+        // ============================================================================
+
+        // Cache da ultima regra gerada pela IA
+        let ultimaRegraGerada = null;
+
+        // Gera regra via IA a partir de linguagem natural
+        async function gerarRegraIA() {
+            const texto = document.getElementById('regra-linguagem-natural').value.trim();
+            if (!texto) {
+                alert('Digite uma condicao em linguagem natural');
+                return;
+            }
+
+            const btn = document.getElementById('btn-gerar-regra-ia');
+            const btnHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando...';
+            btn.disabled = true;
+
+            // Esconde estados anteriores
+            document.getElementById('preview-regra-gerada').classList.add('hidden');
+            document.getElementById('erro-regra-gerada').classList.add('hidden');
+
+            try {
+                const grupoId = document.getElementById('modulo-grupo')?.value || '';
+                const response = await fetch('/admin/api/extraction/regras-deterministicas/gerar', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: JSON.stringify({
+                        condicao_texto: texto,
+                        contexto: `Grupo: ${grupoId || 'N/A'}`
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Mostra preview
+                    ultimaRegraGerada = {
+                        regra: data.regra,
+                        variaveis_usadas: data.variaveis_usadas,
+                        texto_original: texto
+                    };
+                    mostrarPreviewRegra(data);
+                } else {
+                    // Mostra erro
+                    mostrarErroRegra(data);
+                }
+
+            } catch (error) {
+                console.error('Erro ao gerar regra:', error);
+                document.getElementById('erro-regra-gerada').classList.remove('hidden');
+                document.getElementById('erro-regra-msg').textContent = 'Erro de conexao com o servidor: ' + error.message;
+            } finally {
+                btn.innerHTML = btnHtml;
+                btn.disabled = false;
+            }
+        }
+
+        // Mostra preview da regra gerada
+        function mostrarPreviewRegra(data) {
+            document.getElementById('preview-regra-gerada').classList.remove('hidden');
+
+            const statusEl = document.getElementById('preview-status');
+            statusEl.textContent = 'Valida';
+            statusEl.className = 'text-xs px-2 py-1 rounded bg-green-100 text-green-700';
+
+            // Renderiza regra humanizada
+            const conteudo = document.getElementById('preview-regra-conteudo');
+            conteudo.innerHTML = renderizarRegraHumanizadaIA(data.regra);
+        }
+
+        // Mostra erro de geracao
+        function mostrarErroRegra(data) {
+            document.getElementById('erro-regra-gerada').classList.remove('hidden');
+            document.getElementById('erro-regra-msg').textContent = data.erro || 'Erro ao gerar regra';
+
+            // Mostra variaveis faltantes com sugestao de criacao
+            if (data.variaveis_faltantes && data.variaveis_faltantes.length > 0) {
+                document.getElementById('variaveis-faltantes').classList.remove('hidden');
+                const lista = document.getElementById('lista-variaveis-faltantes');
+
+                lista.innerHTML = data.variaveis_faltantes.map((v, i) => {
+                    const sugestao = data.sugestoes_variaveis?.[i] || { slug: v, tipo_sugerido: 'text' };
+                    return `
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="font-mono bg-red-100 px-1.5 py-0.5 rounded">${v}</span>
+                            <span class="text-gray-500">-</span>
+                            <span class="text-xs text-gray-600">Tipo sugerido: ${sugestao.tipo_sugerido}</span>
+                            <button type="button"
+                                onclick="criarVariavelFaltante('${v}', '${sugestao.tipo_sugerido}', '${sugestao.label_sugerido || ''}')"
+                                class="text-xs text-blue-600 hover:underline ml-2">
+                                <i class="fas fa-plus-circle mr-1"></i>Criar variavel
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                document.getElementById('variaveis-faltantes').classList.add('hidden');
+            }
+        }
+
+        // Aplica regra gerada ao builder manual
+        function aplicarRegraGerada() {
+            if (!ultimaRegraGerada) return;
+
+            const regra = ultimaRegraGerada.regra;
+
+            // Converte AST para formato do builder
+            const condicoes = extrairCondicoesDoAST(regra);
+            const operadorLogico = regra.type === 'or' ? 'or' : 'and';
+
+            // Aplica ao builder
+            document.getElementById('regra-operador').value = operadorLogico;
+            condicoesRegra = condicoes.map((c, i) => ({
+                id: Date.now() + i,
+                variavel: c.variable,
+                operador: c.operator,
+                valor: c.value !== undefined ? String(c.value) : ''
+            }));
+
+            renderizarCondicoes();
+
+            // Limpa preview
+            document.getElementById('preview-regra-gerada').classList.add('hidden');
+            document.getElementById('regra-linguagem-natural').value = '';
+            ultimaRegraGerada = null;
+
+            // Feedback visual
+            const btn = document.querySelector('#modo-deterministic-content button[onclick="adicionarCondicao()"]');
+            if (btn) {
+                const originalClass = btn.className;
+                btn.className = btn.className.replace('bg-indigo-100', 'bg-green-100').replace('text-indigo-700', 'text-green-700');
+                setTimeout(() => { btn.className = originalClass; }, 1000);
+            }
+        }
+
+        // Extrai condicoes simples de um AST (flatten)
+        function extrairCondicoesDoAST(node) {
+            if (node.type === 'condition') {
+                return [node];
+            }
+            if (node.conditions) {
+                return node.conditions.flatMap(c => extrairCondicoesDoAST(c));
+            }
+            return [];
+        }
+
+        // Descarta regra gerada
+        function descartarRegraGerada() {
+            document.getElementById('preview-regra-gerada').classList.add('hidden');
+            ultimaRegraGerada = null;
+        }
+
+        // Renderiza regra em formato humanizado (para preview IA)
+        function renderizarRegraHumanizadaIA(regra) {
+            if (!regra) return '<span class="text-gray-400">Nenhuma regra</span>';
+
+            const getOperadorTexto = (op) => {
+                const map = {
+                    'equals': '=',
+                    'not_equals': '!=',
+                    'contains': 'contem',
+                    'not_contains': 'nao contem',
+                    'exists': 'existe',
+                    'not_exists': 'nao existe',
+                    'greater_than': '>',
+                    'less_than': '<',
+                    'greater_or_equal': '>=',
+                    'less_or_equal': '<=',
+                    'in_list': 'em',
+                    'not_in_list': 'nao em'
+                };
+                return map[op] || op;
+            };
+
+            function renderNode(node) {
+                if (node.type === 'condition') {
+                    const varHtml = `<span class="font-mono text-indigo-600">${node.variable}</span>`;
+                    const opHtml = `<span class="text-gray-500">${getOperadorTexto(node.operator)}</span>`;
+                    const valHtml = node.value !== undefined ?
+                        `<span class="font-semibold text-green-600">"${node.value}"</span>` : '';
+                    return `${varHtml} ${opHtml} ${valHtml}`;
+                }
+
+                if (node.type === 'and' || node.type === 'or') {
+                    const sep = node.type === 'and' ?
+                        '<span class="mx-1 px-1 bg-gray-200 text-gray-600 rounded text-xs">E</span>' :
+                        '<span class="mx-1 px-1 bg-yellow-200 text-yellow-700 rounded text-xs">OU</span>';
+                    return node.conditions.map(c => renderNode(c)).join(sep);
+                }
+
+                if (node.type === 'not') {
+                    return '<span class="text-red-600">NAO</span> (' +
+                        node.conditions.map(c => renderNode(c)).join(', ') + ')';
+                }
+
+                return JSON.stringify(node);
+            }
+
+            return `<div class="text-sm"><span class="text-gray-500 mr-2">Ativar quando:</span>${renderNode(regra)}</div>`;
+        }
+
+        // Abre tela para criar variavel faltante
+        function criarVariavelFaltante(slug, tipoSugerido, labelSugerido) {
+            const url = `/admin/variaveis?criar=1&slug=${encodeURIComponent(slug)}&tipo=${encodeURIComponent(tipoSugerido)}&label=${encodeURIComponent(labelSugerido || slug.replace(/_/g, ' '))}`;
+            if (confirm(`Deseja criar a variavel "${slug}"?\n\nTipo sugerido: ${tipoSugerido}\n\nVoce sera redirecionado para a pagina de variaveis.`)) {
+                window.open(url, '_blank');
+            }
+        }
+
         function criarModulo() {
             moduloAtualId = null;
             tagsAtuais = [];
@@ -1826,6 +2545,9 @@
             
             // Mostra/esconde campo de condição baseado no tipo
             toggleCondicaoAtivacao();
+
+            // Reseta o editor de regras para modo LLM
+            resetarEditorRegras();
 
             renderizarTags();
 
@@ -1925,6 +2647,13 @@
                 // Mostra/esconde campo de condição baseado no tipo
                 toggleCondicaoAtivacao();
 
+                // Carrega regra determinística se existir
+                if (modulo.modo_ativacao === 'deterministic' && modulo.regra_deterministica) {
+                    carregarRegraModulo(modulo.regra_deterministica);
+                } else {
+                    resetarEditorRegras();
+                }
+
                 renderizarTags();
 
                 document.getElementById('modal-editor').classList.remove('hidden');
@@ -1944,6 +2673,17 @@
             const grupoId = document.getElementById('modulo-grupo').value;
             const subgrupoId = document.getElementById('modulo-subgrupo').value;
             
+            // Obtém modo de ativação e regra
+            const regraJson = document.getElementById('modulo-regra-json')?.value || '';
+            let regraAtivacao = null;
+            if (modoAtivacaoAtual === 'deterministic' && regraJson) {
+                try {
+                    regraAtivacao = JSON.parse(regraJson);
+                } catch (e) {
+                    console.error('Erro ao parsear regra:', e);
+                }
+            }
+
             const dados = {
                 tipo: tipo,
                 categoria: document.getElementById('modulo-categoria').value || null,
@@ -1952,6 +2692,8 @@
                 nome: document.getElementById('modulo-nome').value,
                 titulo: document.getElementById('modulo-titulo').value,
                 condicao_ativacao: tipo === 'conteudo' ? (document.getElementById('modulo-condicao-ativacao').value || null) : null,
+                modo_ativacao: tipo === 'conteudo' ? modoAtivacaoAtual : null,
+                regra_deterministica: tipo === 'conteudo' && modoAtivacaoAtual === 'deterministic' ? regraAtivacao : null,
                 conteudo: document.getElementById('modulo-conteudo').value,
                 tags: tagsAtuais,
                 ativo: document.getElementById('modulo-ativo').checked,

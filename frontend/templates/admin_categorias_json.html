@@ -43,6 +43,12 @@
                 </div>
             </div>
             <div class="flex items-center gap-3">
+                <a href="/admin/variaveis" class="px-3 py-2 text-gray-600 hover:text-primary-600 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-sm">
+                    <i class="fas fa-hashtag"></i> Variaveis
+                </a>
+                <a href="/admin/prompts-modulos" class="px-3 py-2 text-gray-600 hover:text-primary-600 hover:bg-gray-100 rounded-lg flex items-center gap-2 text-sm">
+                    <i class="fas fa-puzzle-piece"></i> Prompts
+                </a>
                 <button onclick="criarCategoria()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
                     <i class="fas fa-plus"></i> Nova Categoria
                 </button>
@@ -62,6 +68,7 @@
                         <li>Associe códigos de documento TJ-MS a cada categoria</li>
                         <li>A categoria <span class="font-mono bg-blue-100 px-1 rounded">residual</span> é usada para documentos sem categoria específica</li>
                         <li>A IA extrairá informações seguindo a estrutura JSON definida</li>
+                        <li><strong>Fonte de Verdade:</strong> Defina por variável qual tipo de documento é a fonte (ex: "parecer NAT", "petição inicial")</li>
                     </ul>
                 </div>
             </div>
@@ -94,7 +101,7 @@
             <div class="flex-1 overflow-auto p-6">
                 <form id="form-categoria" class="space-y-6">
                     <input type="hidden" id="categoria-id">
-                    
+
                     <!-- Dados básicos -->
                     <div class="grid grid-cols-2 gap-4">
                         <div>
@@ -111,7 +118,7 @@
                                 placeholder="ex: Petições, Decisões Judiciais">
                         </div>
                     </div>
-                    
+
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
                         <textarea id="categoria-descricao" rows="2"
@@ -140,27 +147,138 @@
                         </div>
                     </div>
 
-                    <!-- Formato JSON -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Formato JSON Esperado
-                            <button type="button" onclick="validarJSON()" class="ml-2 text-primary-600 hover:text-primary-700 text-xs">
-                                <i class="fas fa-check-circle"></i> Validar JSON
+                    <!-- ABAS: Modo IA vs Modo Legado -->
+                    <div class="border-t border-gray-200 pt-6">
+                        <div class="flex items-center gap-2 mb-4">
+                            <i class="fas fa-robot text-primary-500"></i>
+                            <h3 class="text-md font-semibold text-gray-700">Modo de Extração</h3>
+                        </div>
+
+                        <!-- Seletor de Abas -->
+                        <div class="flex border-b border-gray-200 mb-4">
+                            <button type="button" onclick="selecionarModo('ia')" id="tab-modo-ia"
+                                class="px-4 py-2 text-sm font-medium border-b-2 border-primary-500 text-primary-600 bg-primary-50 rounded-t-lg">
+                                <i class="fas fa-brain mr-2"></i>Modo IA (Perguntas)
                             </button>
-                            <button type="button" onclick="formatarJSON()" class="ml-2 text-primary-600 hover:text-primary-700 text-xs">
-                                <i class="fas fa-indent"></i> Formatar
+                            <button type="button" onclick="selecionarModo('legado')" id="tab-modo-legado"
+                                class="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                                <i class="fas fa-code mr-2"></i>Modo Legado (JSON Manual)
                             </button>
-                        </label>
-                        <textarea id="categoria-formato-json" rows="15" required
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 json-editor text-sm"
-                            placeholder='{"tipo_documento": "string", "partes": {"autor": "string", "reu": "string"}, ...}'></textarea>
-                        <p id="json-status" class="text-xs mt-1"></p>
+                        </div>
+
+                        <!-- Conteúdo Modo IA -->
+                        <div id="conteudo-modo-ia" class="space-y-4">
+                            <div class="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4">
+                                <div class="flex items-start gap-3">
+                                    <i class="fas fa-magic text-purple-500 mt-1"></i>
+                                    <div class="text-sm text-purple-700">
+                                        <p class="font-medium mb-1">Como funciona o Modo IA:</p>
+                                        <ol class="list-decimal list-inside space-y-1">
+                                            <li>Escreva as perguntas que deseja extrair do documento</li>
+                                            <li>Clique em <strong>"Gerar JSON com IA"</strong></li>
+                                            <li>A IA (Gemini) gerará o schema JSON automaticamente</li>
+                                            <li>Revise e aprove o JSON gerado</li>
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Lista de Perguntas -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Perguntas de Extração
+                                        <span class="text-xs text-gray-400 ml-1" id="contador-perguntas">(0 perguntas)</span>
+                                    </label>
+                                    <button type="button" onclick="abrirModalPergunta()" class="px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm">
+                                        <i class="fas fa-plus mr-1"></i> Nova Pergunta
+                                    </button>
+                                </div>
+                                <div id="lista-perguntas" class="space-y-3 max-h-96 overflow-auto border border-gray-200 rounded-lg p-3 bg-gray-50">
+                                    <p class="text-gray-400 text-sm text-center py-8">
+                                        <i class="fas fa-question-circle text-2xl mb-2 block"></i>
+                                        Nenhuma pergunta adicionada ainda.<br>
+                                        <span class="text-xs">Clique em "Nova Pergunta" para começar.</span>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Botão Gerar JSON -->
+                            <div class="flex items-center gap-4">
+                                <button type="button" onclick="gerarJSONcomIA()" id="btn-gerar-ia"
+                                    class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 font-medium shadow-md hover:shadow-lg transition-all">
+                                    <i class="fas fa-magic mr-2"></i>Gerar JSON com IA
+                                </button>
+                                <span id="status-geracao" class="text-sm text-gray-500"></span>
+                            </div>
+
+                            <!-- Preview do JSON Gerado -->
+                            <div id="preview-json-gerado" class="hidden">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        <i class="fas fa-check-circle text-green-500 mr-1"></i>
+                                        JSON Gerado pela IA
+                                    </label>
+                                    <div class="flex gap-2">
+                                        <button type="button" onclick="aceitarJSONGerado()" class="px-3 py-1 bg-green-100 text-green-700 rounded text-sm hover:bg-green-200">
+                                            <i class="fas fa-check mr-1"></i>Aceitar
+                                        </button>
+                                        <button type="button" onclick="editarJSONGerado()" class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded text-sm hover:bg-yellow-200">
+                                            <i class="fas fa-edit mr-1"></i>Editar
+                                        </button>
+                                        <button type="button" onclick="descartarJSONGerado()" class="px-3 py-1 bg-red-100 text-red-700 rounded text-sm hover:bg-red-200">
+                                            <i class="fas fa-times mr-1"></i>Descartar
+                                        </button>
+                                    </div>
+                                </div>
+                                <pre id="json-gerado-preview" class="p-4 bg-gray-800 text-green-400 rounded-lg text-sm overflow-auto max-h-64 font-mono"></pre>
+                            </div>
+
+                            <!-- Variáveis Criadas -->
+                            <div id="variaveis-criadas" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i class="fas fa-tags text-blue-500 mr-1"></i>
+                                    Variáveis Criadas
+                                </label>
+                                <div id="lista-variaveis-criadas" class="flex flex-wrap gap-2"></div>
+                            </div>
+                        </div>
+
+                        <!-- Conteúdo Modo Legado -->
+                        <div id="conteudo-modo-legado" class="hidden space-y-4">
+                            <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                <div class="flex items-start gap-3">
+                                    <i class="fas fa-code text-amber-500 mt-1"></i>
+                                    <div class="text-sm text-amber-700">
+                                        <p class="font-medium mb-1">Modo Legado (JSON Manual):</p>
+                                        <p>Defina manualmente o schema JSON de extração. Use este modo se precisar de controle total sobre a estrutura.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Formato JSON Manual -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Formato JSON Esperado
+                                    <button type="button" onclick="validarJSON()" class="ml-2 text-primary-600 hover:text-primary-700 text-xs">
+                                        <i class="fas fa-check-circle"></i> Validar JSON
+                                    </button>
+                                    <button type="button" onclick="formatarJSON()" class="ml-2 text-primary-600 hover:text-primary-700 text-xs">
+                                        <i class="fas fa-indent"></i> Formatar
+                                    </button>
+                                </label>
+                                <textarea id="categoria-formato-json" rows="12"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 json-editor text-sm"
+                                    placeholder='{"tipo_documento": "string", "partes": {"autor": "string", "reu": "string"}, ...}'></textarea>
+                                <p id="json-status" class="text-xs mt-1"></p>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- Instruções de extração -->
+                    <!-- Instruções de extração (comum aos dois modos) -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Instruções de Extração (opcional)</label>
-                        <textarea id="categoria-instrucoes" rows="4"
+                        <textarea id="categoria-instrucoes" rows="3"
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500"
                             placeholder="Instruções adicionais para a IA sobre como preencher os campos..."></textarea>
                     </div>
@@ -220,12 +338,187 @@
         </div>
     </div>
 
+    <!-- Modal de Nova/Editar Pergunta -->
+    <div id="modal-pergunta" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col m-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-blue-50">
+                <h2 id="modal-pergunta-titulo" class="text-lg font-semibold text-gray-800">Nova Pergunta de Extração</h2>
+                <button onclick="fecharModalPergunta()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="flex-1 overflow-auto p-6 space-y-4">
+                <input type="hidden" id="pergunta-index" value="-1">
+
+                <!-- Pergunta em linguagem natural -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Pergunta em linguagem natural *</label>
+                    <textarea id="pergunta-texto" rows="2"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                        placeholder="Ex: Qual é o medicamento solicitado na petição?"></textarea>
+                    <p class="text-xs text-gray-400 mt-1">Escreva como se estivesse perguntando a um assistente humano.</p>
+                </div>
+
+                <div class="border-t border-gray-200 pt-4">
+                    <p class="text-sm text-gray-500 mb-3">
+                        <i class="fas fa-info-circle text-blue-400 mr-1"></i>
+                        Sugestões opcionais (a IA decide se não preencher)
+                    </p>
+
+                    <!-- Nome da variável sugerido -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Nome base da variável</label>
+                        <input type="text" id="pergunta-nome-variavel"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                            placeholder="ex: medicamento_solicitado">
+                        <p class="text-xs text-gray-400 mt-1">Apenas letras minúsculas, números e underscores. Prefixo do grupo será adicionado.</p>
+                    </div>
+
+                    <!-- Tipo de dado -->
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de dado sugerido</label>
+                            <select id="pergunta-tipo"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                                onchange="toggleOpcoesPergunta()">
+                                <option value="">Deixar IA decidir</option>
+                                <option value="text">Texto livre</option>
+                                <option value="number">Número inteiro</option>
+                                <option value="currency">Valor monetário</option>
+                                <option value="boolean">Sim/Não</option>
+                                <option value="date">Data</option>
+                                <option value="choice">Lista de opções</option>
+                                <option value="list">Lista de textos</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Ordem</label>
+                            <input type="number" id="pergunta-ordem" value="0" min="0"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                        </div>
+                    </div>
+
+                    <!-- Opções (para choice) -->
+                    <div id="opcoes-pergunta-container" class="hidden mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Opções (uma por linha)</label>
+                        <textarea id="pergunta-opcoes" rows="3"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                            placeholder="Deferido&#10;Indeferido&#10;Parcialmente deferido"></textarea>
+                    </div>
+                </div>
+
+                <!-- Dependência Condicional -->
+                <div class="border-t border-gray-200 pt-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <input type="checkbox" id="pergunta-tem-dependencia" class="rounded"
+                            onchange="toggleDependenciaPergunta()">
+                        <label for="pergunta-tem-dependencia" class="text-sm font-medium text-gray-700">
+                            <i class="fas fa-code-branch text-indigo-500 mr-1"></i>
+                            Esta pergunta depende de outra
+                        </label>
+                    </div>
+
+                    <div id="dependencia-pergunta-container" class="hidden space-y-3 bg-indigo-50 p-3 rounded-lg border border-indigo-200">
+                        <p class="text-xs text-indigo-600">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            A pergunta só será feita se a condição for satisfeita.
+                        </p>
+
+                        <!-- Seleção de variável -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Variável de dependência</label>
+                            <select id="pergunta-depends-on"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                                onchange="atualizarOperadoresDependencia()">
+                                <option value="">Selecione uma variável ou pergunta anterior...</option>
+                            </select>
+                            <p class="text-xs text-gray-400 mt-1">Pode ser uma variável existente ou o slug sugerido de uma pergunta anterior.</p>
+                        </div>
+
+                        <!-- Operador -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Condição</label>
+                                <select id="pergunta-dependency-operator"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                                    onchange="toggleValorDependencia()">
+                                    <option value="equals">é igual a</option>
+                                    <option value="not_equals">é diferente de</option>
+                                    <option value="exists">existe (tem valor)</option>
+                                    <option value="not_exists">não existe (vazio)</option>
+                                    <option value="contains">contém</option>
+                                    <option value="greater_than">é maior que</option>
+                                    <option value="less_than">é menor que</option>
+                                </select>
+                            </div>
+
+                            <!-- Valor -->
+                            <div id="dependencia-valor-container">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Valor</label>
+                                <input type="text" id="pergunta-dependency-value"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="ex: true, sim, medicamento">
+                            </div>
+                        </div>
+
+                        <!-- Preview humanizado -->
+                        <div id="dependencia-preview" class="p-2 bg-white rounded border border-indigo-200 text-sm text-gray-600">
+                            <span class="text-gray-400 italic">Configure a dependência acima</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fonte de Verdade Individual -->
+                <div class="border-t border-gray-200 pt-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <input type="checkbox" id="pergunta-fonte-override" class="rounded"
+                            onchange="toggleFonteVerdadePergunta()">
+                        <label for="pergunta-fonte-override" class="text-sm font-medium text-gray-700">
+                            Usar fonte de verdade específica para esta pergunta
+                        </label>
+                    </div>
+                    <div id="fonte-verdade-pergunta-container" class="hidden">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de documento fonte de verdade</label>
+                        <input type="text" id="pergunta-fonte-verdade"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                            placeholder="ex: petição inicial, parecer NAT">
+                        <p class="text-xs text-gray-400 mt-1">Esta pergunta só será extraída de documentos deste tipo.</p>
+                    </div>
+                </div>
+
+                <!-- Checkbox ativo -->
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="pergunta-ativa" class="rounded" checked>
+                    <label for="pergunta-ativa" class="text-sm text-gray-700">Pergunta ativa</label>
+                </div>
+            </div>
+
+            <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+                <button type="button" onclick="fecharModalPergunta()"
+                    class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                    Cancelar
+                </button>
+                <button type="button" onclick="salvarPerguntaModal()"
+                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                    <i class="fas fa-save mr-1"></i> Salvar Pergunta
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '/admin/api/categorias-resumo-json';
+        const API_EXTRACTION = '/admin/api/extraction';
         let categorias = [];
         let codigosDisponiveis = [];
         let codigosSelecionados = [];
+        let perguntasSelecionadas = [];
         let categoriaAtual = null;
+        let modoSelecionado = 'ia'; // 'ia' ou 'legado'
+        let jsonGerado = null;
+        let variaveisGeradas = [];
+        let perguntasExistentes = []; // Perguntas já salvas no banco
 
         // Autenticação
         function getToken() {
@@ -283,39 +576,44 @@
                 <div class="bg-white rounded-xl border ${cat.ativo ? 'border-gray-200' : 'border-red-200 bg-red-50'} shadow-sm p-4 hover:shadow-md transition-shadow">
                     <div class="flex items-start justify-between">
                         <div class="flex-1">
-                            <div class="flex items-center gap-3 mb-2">
+                            <div class="flex items-center gap-3 mb-2 flex-wrap">
                                 <h3 class="text-lg font-semibold ${cat.ativo ? 'text-gray-800' : 'text-gray-500'}">${cat.titulo}</h3>
                                 ${cat.is_residual ? '<span class="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700">RESIDUAL</span>' : ''}
                                 ${!cat.ativo ? '<span class="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">INATIVO</span>' : ''}
                             </div>
+                            <div class="flex items-center gap-2 mb-2">
+                                <button onclick="verPerguntas(${cat.id})" class="text-xs text-purple-600 hover:text-purple-800 hover:underline">
+                                    <i class="fas fa-brain mr-1"></i>Ver perguntas
+                                </button>
+                            </div>
                             <p class="text-sm text-gray-500 font-mono mb-2">${cat.nome}</p>
                             ${cat.descricao ? `<p class="text-sm text-gray-600 mb-3">${cat.descricao}</p>` : ''}
-                            
+
                             <div class="flex flex-wrap gap-2 mb-3">
-                                ${(cat.codigos_documento || []).slice(0, 10).map(cod => 
+                                ${(cat.codigos_documento || []).slice(0, 10).map(cod =>
                                     `<span class="codigo-pill">${cod}</span>`
                                 ).join('')}
-                                ${(cat.codigos_documento || []).length > 10 ? 
+                                ${(cat.codigos_documento || []).length > 10 ?
                                     `<span class="text-xs text-gray-500">+${cat.codigos_documento.length - 10} mais</span>` : ''}
-                                ${(cat.codigos_documento || []).length === 0 && !cat.is_residual ? 
+                                ${(cat.codigos_documento || []).length === 0 && !cat.is_residual ?
                                     '<span class="text-xs text-gray-400 italic">Nenhum código associado</span>' : ''}
                             </div>
                         </div>
-                        
+
                         <div class="flex items-center gap-2">
-                            <button onclick="editarCategoria(${cat.id})" 
+                            <button onclick="editarCategoria(${cat.id})"
                                 class="px-3 py-1.5 text-primary-600 hover:bg-primary-50 rounded-lg text-sm">
                                 <i class="fas fa-edit mr-1"></i> Editar
                             </button>
                             ${!cat.is_residual ? `
-                                <button onclick="confirmarExclusao(${cat.id}, '${cat.titulo}')" 
+                                <button onclick="confirmarExclusao(${cat.id}, '${cat.titulo}')"
                                     class="px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg text-sm">
                                     <i class="fas fa-trash mr-1"></i>
                                 </button>
                             ` : ''}
                         </div>
                     </div>
-                    
+
                     <!-- Preview do formato JSON -->
                     <details class="mt-3">
                         <summary class="text-sm text-primary-600 cursor-pointer hover:text-primary-700">
@@ -337,7 +635,11 @@
         function criarCategoria() {
             categoriaAtual = null;
             codigosSelecionados = [];
-            
+            perguntasSelecionadas = [];
+            perguntasExistentes = [];
+            jsonGerado = null;
+            variaveisGeradas = [];
+
             document.getElementById('modal-titulo').textContent = 'Nova Categoria';
             document.getElementById('modal-subtitulo').textContent = '';
             document.getElementById('categoria-id').value = '';
@@ -360,7 +662,14 @@
             document.getElementById('categoria-residual').checked = false;
             document.getElementById('categoria-ativo').checked = true;
             document.getElementById('campo-motivo').classList.add('hidden');
-            
+
+            // Reset modo IA
+            selecionarModo('ia');
+            atualizarListaPerguntas();
+            document.getElementById('preview-json-gerado').classList.add('hidden');
+            document.getElementById('variaveis-criadas').classList.add('hidden');
+            document.getElementById('status-geracao').textContent = '';
+
             atualizarListaCodigos();
             document.getElementById('modal-editor').classList.remove('hidden');
         }
@@ -370,10 +679,12 @@
             try {
                 const response = await fetch(`${API_BASE}/${id}`, { headers: getHeaders() });
                 const categoria = await response.json();
-                
+
                 categoriaAtual = categoria;
                 codigosSelecionados = categoria.codigos_documento || [];
-                
+                jsonGerado = null;
+                variaveisGeradas = [];
+
                 document.getElementById('modal-titulo').textContent = 'Editar Categoria';
                 document.getElementById('modal-subtitulo').textContent = `ID: ${categoria.id}`;
                 document.getElementById('categoria-id').value = categoria.id;
@@ -386,7 +697,22 @@
                 document.getElementById('categoria-ativo').checked = categoria.ativo;
                 document.getElementById('campo-motivo').classList.remove('hidden');
                 document.getElementById('categoria-motivo').value = '';
-                
+
+                // Carrega perguntas existentes da categoria
+                await carregarPerguntasCategoria(id);
+
+                // Se tem perguntas, mostra modo IA; senão, mostra legado
+                if (perguntasSelecionadas.length > 0) {
+                    selecionarModo('ia');
+                } else {
+                    selecionarModo('legado');
+                }
+
+                // Reset preview
+                document.getElementById('preview-json-gerado').classList.add('hidden');
+                document.getElementById('variaveis-criadas').classList.add('hidden');
+                document.getElementById('status-geracao').textContent = '';
+
                 atualizarListaCodigos();
                 document.getElementById('modal-editor').classList.remove('hidden');
             } catch (error) {
@@ -430,12 +756,12 @@
         // Atualizar lista visual de códigos
         function atualizarListaCodigos() {
             const container = document.getElementById('lista-codigos');
-            
+
             if (codigosSelecionados.length === 0) {
                 container.innerHTML = '<span class="text-gray-400 text-sm">Nenhum código adicionado</span>';
                 return;
             }
-            
+
             container.innerHTML = codigosSelecionados.map(cod => `
                 <span class="codigo-pill flex items-center gap-1">
                     ${cod}
@@ -445,6 +771,655 @@
                 </span>
             `).join('');
         }
+
+        // ==========================================
+        // Funções do Modo IA
+        // ==========================================
+
+        // Selecionar modo (ia ou legado)
+        function selecionarModo(modo) {
+            modoSelecionado = modo;
+
+            const tabIA = document.getElementById('tab-modo-ia');
+            const tabLegado = document.getElementById('tab-modo-legado');
+            const conteudoIA = document.getElementById('conteudo-modo-ia');
+            const conteudoLegado = document.getElementById('conteudo-modo-legado');
+
+            if (modo === 'ia') {
+                tabIA.className = 'px-4 py-2 text-sm font-medium border-b-2 border-primary-500 text-primary-600 bg-primary-50 rounded-t-lg';
+                tabLegado.className = 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300';
+                conteudoIA.classList.remove('hidden');
+                conteudoLegado.classList.add('hidden');
+            } else {
+                tabLegado.className = 'px-4 py-2 text-sm font-medium border-b-2 border-primary-500 text-primary-600 bg-primary-50 rounded-t-lg';
+                tabIA.className = 'px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300';
+                conteudoLegado.classList.remove('hidden');
+                conteudoIA.classList.add('hidden');
+            }
+        }
+
+        // Adicionar pergunta
+        function adicionarPergunta() {
+            const input = document.getElementById('nova-pergunta');
+            const texto = input.value.trim();
+
+            if (!texto) {
+                alert('Digite uma pergunta');
+                return;
+            }
+
+            // Verifica duplicata
+            if (perguntasSelecionadas.some(p => p.pergunta.toLowerCase() === texto.toLowerCase())) {
+                alert('Esta pergunta já foi adicionada');
+                return;
+            }
+
+            perguntasSelecionadas.push({
+                pergunta: texto,
+                ordem: perguntasSelecionadas.length
+            });
+
+            input.value = '';
+            atualizarListaPerguntas();
+        }
+
+        // Remover pergunta
+        function removerPergunta(index) {
+            perguntasSelecionadas.splice(index, 1);
+            // Reordena
+            perguntasSelecionadas.forEach((p, i) => p.ordem = i);
+            atualizarListaPerguntas();
+        }
+
+        // Atualizar lista visual de perguntas
+        function atualizarListaPerguntas() {
+            const container = document.getElementById('lista-perguntas');
+            const contador = document.getElementById('contador-perguntas');
+
+            // Atualiza contador
+            if (contador) {
+                contador.textContent = `(${perguntasSelecionadas.length} pergunta${perguntasSelecionadas.length !== 1 ? 's' : ''})`;
+            }
+
+            if (perguntasSelecionadas.length === 0) {
+                container.innerHTML = `
+                    <p class="text-gray-400 text-sm text-center py-8">
+                        <i class="fas fa-question-circle text-2xl mb-2 block"></i>
+                        Nenhuma pergunta adicionada ainda.<br>
+                        <span class="text-xs">Clique em "Nova Pergunta" para começar.</span>
+                    </p>`;
+                return;
+            }
+
+            // Helper para badge de tipo
+            const getTipoBadge = (tipo) => {
+                const tipos = {
+                    'text': { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Texto' },
+                    'number': { bg: 'bg-blue-100', text: 'text-blue-600', label: 'Número' },
+                    'currency': { bg: 'bg-green-100', text: 'text-green-600', label: 'Moeda' },
+                    'boolean': { bg: 'bg-purple-100', text: 'text-purple-600', label: 'Sim/Não' },
+                    'date': { bg: 'bg-orange-100', text: 'text-orange-600', label: 'Data' },
+                    'choice': { bg: 'bg-indigo-100', text: 'text-indigo-600', label: 'Lista' },
+                    'list': { bg: 'bg-teal-100', text: 'text-teal-600', label: 'Lista' }
+                };
+                if (!tipo) return '';
+                const t = tipos[tipo] || { bg: 'bg-gray-100', text: 'text-gray-600', label: tipo };
+                return `<span class="px-1.5 py-0.5 text-xs rounded ${t.bg} ${t.text}">${t.label}</span>`;
+            };
+
+            container.innerHTML = perguntasSelecionadas.map((p, index) => `
+                <div class="bg-white rounded-lg border ${p.ativo === false ? 'border-red-200 bg-red-50' : 'border-gray-200'} p-3 hover:border-primary-300 hover:shadow-sm transition-all">
+                    <div class="flex items-start gap-3">
+                        <!-- Número da ordem -->
+                        <span class="text-gray-400 text-xs font-mono mt-1 w-6 shrink-0">${index + 1}.</span>
+
+                        <!-- Conteúdo principal -->
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm text-gray-800 mb-1.5 ${p.ativo === false ? 'text-gray-500' : ''}">${escapeHtml(p.pergunta)}</div>
+
+                            <!-- Badges e info -->
+                            <div class="flex flex-wrap items-center gap-2">
+                                ${p.nome_variavel_sugerido ? `
+                                    <span class="px-1.5 py-0.5 text-xs rounded bg-amber-50 text-amber-700 font-mono">
+                                        <i class="fas fa-tag text-amber-400 mr-0.5"></i>${escapeHtml(p.nome_variavel_sugerido)}
+                                    </span>
+                                ` : ''}
+                                ${getTipoBadge(p.tipo_sugerido)}
+                                ${p.opcoes_sugeridas && p.opcoes_sugeridas.length > 0 ? `
+                                    <span class="text-xs text-gray-400">(${p.opcoes_sugeridas.length} opções)</span>
+                                ` : ''}
+                                ${p.depends_on_variable ? `
+                                    <span class="px-1.5 py-0.5 text-xs rounded bg-purple-50 text-purple-600" title="Depende de: ${escapeHtml(p.depends_on_variable)}">
+                                        <i class="fas fa-code-branch text-purple-400 mr-0.5"></i>${escapeHtml(p.depends_on_variable)}
+                                    </span>
+                                ` : ''}
+                                ${p.fonte_verdade_override && p.fonte_verdade_tipo ? `
+                                    <span class="px-1.5 py-0.5 text-xs rounded bg-indigo-50 text-indigo-600">
+                                        <i class="fas fa-bullseye text-indigo-400 mr-0.5"></i>${escapeHtml(p.fonte_verdade_tipo)}
+                                    </span>
+                                ` : ''}
+                                ${p.ativo === false ? `
+                                    <span class="px-1.5 py-0.5 text-xs rounded bg-red-100 text-red-600">INATIVA</span>
+                                ` : ''}
+                            </div>
+                        </div>
+
+                        <!-- Ações -->
+                        <div class="flex items-center gap-1 shrink-0">
+                            <button type="button" onclick="abrirModalPergunta(${index})"
+                                class="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded" title="Editar">
+                                <i class="fas fa-edit text-sm"></i>
+                            </button>
+                            <button type="button" onclick="removerPergunta(${index})"
+                                class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Remover">
+                                <i class="fas fa-trash text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Carregar perguntas existentes da categoria
+        async function carregarPerguntasCategoria(categoriaId) {
+            try {
+                const response = await fetch(`${API_EXTRACTION}/categorias/${categoriaId}/perguntas`, {
+                    headers: getHeaders()
+                });
+
+                if (!response.ok) return;
+
+                perguntasExistentes = await response.json();
+                perguntasSelecionadas = perguntasExistentes.map(p => ({
+                    id: p.id,
+                    pergunta: p.pergunta,
+                    nome_variavel_sugerido: p.nome_variavel_sugerido || null,
+                    tipo_sugerido: p.tipo_sugerido || null,
+                    opcoes_sugeridas: p.opcoes_sugeridas || null,
+                    ordem: p.ordem || 0,
+                    // Dependência
+                    depends_on_variable: p.depends_on_variable || null,
+                    dependency_operator: p.dependency_operator || null,
+                    dependency_value: p.dependency_value,
+                    dependency_inferred: p.dependency_inferred || false,
+                    // Fonte de verdade
+                    fonte_verdade_tipo: p.fonte_verdade_tipo || null,
+                    fonte_verdade_override: p.fonte_verdade_override || false,
+                    ativo: p.ativo !== false
+                }));
+
+                atualizarListaPerguntas();
+            } catch (error) {
+                console.error('Erro ao carregar perguntas:', error);
+            }
+        }
+
+        // Gerar JSON com IA
+        async function gerarJSONcomIA() {
+            const categoriaId = document.getElementById('categoria-id').value;
+
+            if (perguntasSelecionadas.length === 0) {
+                alert('Adicione pelo menos uma pergunta antes de gerar o JSON');
+                return;
+            }
+
+            // Se a categoria já existe, primeiro salva as perguntas
+            if (categoriaId) {
+                await salvarPerguntasNoServidor(categoriaId);
+            } else {
+                alert('Salve a categoria primeiro para poder gerar o JSON com IA');
+                return;
+            }
+
+            const btn = document.getElementById('btn-gerar-ia');
+            const status = document.getElementById('status-geracao');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Gerando...';
+            status.textContent = 'Aguarde, a IA está analisando as perguntas...';
+            status.className = 'text-sm text-blue-500';
+
+            try {
+                const response = await fetch(`${API_EXTRACTION}/categorias/${categoriaId}/gerar-schema`, {
+                    method: 'POST',
+                    headers: getHeaders()
+                });
+
+                const resultado = await response.json();
+
+                if (!resultado.success) {
+                    throw new Error(resultado.erro || 'Erro desconhecido');
+                }
+
+                // Armazena JSON gerado
+                jsonGerado = resultado.schema_json;
+                variaveisGeradas = resultado.variaveis_criadas || [];
+
+                // Mostra preview
+                document.getElementById('preview-json-gerado').classList.remove('hidden');
+                document.getElementById('json-gerado-preview').textContent = JSON.stringify(jsonGerado, null, 2);
+
+                // Mostra variáveis criadas
+                if (variaveisGeradas.length > 0) {
+                    document.getElementById('variaveis-criadas').classList.remove('hidden');
+                    document.getElementById('lista-variaveis-criadas').innerHTML = variaveisGeradas.map(v => `
+                        <span class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-700">
+                            <i class="fas fa-tag mr-1"></i>${v.slug} <span class="text-blue-400">(${v.tipo})</span>
+                        </span>
+                    `).join('');
+                }
+
+                status.textContent = 'JSON gerado com sucesso! Revise e clique em Aceitar.';
+                status.className = 'text-sm text-green-500';
+
+            } catch (error) {
+                console.error('Erro ao gerar JSON:', error);
+                status.textContent = `Erro: ${error.message}`;
+                status.className = 'text-sm text-red-500';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-magic mr-2"></i>Gerar JSON com IA';
+            }
+        }
+
+        // Salvar perguntas no servidor
+        async function salvarPerguntasNoServidor(categoriaId) {
+            for (const p of perguntasSelecionadas) {
+                const perguntaData = {
+                    categoria_id: parseInt(categoriaId),
+                    pergunta: p.pergunta,
+                    nome_variavel_sugerido: p.nome_variavel_sugerido || null,
+                    tipo_sugerido: p.tipo_sugerido || null,
+                    opcoes_sugeridas: p.opcoes_sugeridas || null,
+                    ordem: p.ordem || 0,
+                    // Dependência
+                    depends_on_variable: p.depends_on_variable || null,
+                    dependency_operator: p.dependency_operator || null,
+                    dependency_value: p.dependency_value,
+                    dependency_inferred: p.dependency_inferred || false,
+                    // Fonte de verdade
+                    fonte_verdade_tipo: p.fonte_verdade_tipo || null,
+                    fonte_verdade_override: p.fonte_verdade_override || false,
+                    ativo: p.ativo !== false
+                };
+
+                try {
+                    if (!p.id) {
+                        // Criar nova pergunta
+                        const response = await fetch(`${API_EXTRACTION}/perguntas`, {
+                            method: 'POST',
+                            headers: getHeaders(),
+                            body: JSON.stringify(perguntaData)
+                        });
+
+                        if (response.ok) {
+                            const nova = await response.json();
+                            p.id = nova.id;
+                        }
+                    } else {
+                        // Atualizar pergunta existente
+                        const response = await fetch(`${API_EXTRACTION}/perguntas/${p.id}`, {
+                            method: 'PUT',
+                            headers: getHeaders(),
+                            body: JSON.stringify(perguntaData)
+                        });
+
+                        if (!response.ok) {
+                            console.error('Erro ao atualizar pergunta:', p.id);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Erro ao salvar pergunta:', error);
+                }
+            }
+        }
+
+        // Aceitar JSON gerado
+        function aceitarJSONGerado() {
+            if (!jsonGerado) return;
+
+            // Coloca o JSON no campo de formato
+            document.getElementById('categoria-formato-json').value = JSON.stringify(jsonGerado, null, 2);
+
+            // Limpa preview
+            document.getElementById('preview-json-gerado').classList.add('hidden');
+            document.getElementById('status-geracao').textContent = 'JSON aceito e aplicado ao formulário!';
+            document.getElementById('status-geracao').className = 'text-sm text-green-500';
+
+            // Muda para modo legado para mostrar o JSON
+            selecionarModo('legado');
+        }
+
+        // Editar JSON gerado
+        function editarJSONGerado() {
+            if (!jsonGerado) return;
+
+            // Coloca o JSON no campo de formato para edição
+            document.getElementById('categoria-formato-json').value = JSON.stringify(jsonGerado, null, 2);
+
+            // Limpa preview
+            document.getElementById('preview-json-gerado').classList.add('hidden');
+            document.getElementById('status-geracao').textContent = 'JSON copiado para edição. Ajuste como necessário.';
+            document.getElementById('status-geracao').className = 'text-sm text-yellow-600';
+
+            // Muda para modo legado para edição
+            selecionarModo('legado');
+        }
+
+        // Descartar JSON gerado
+        function descartarJSONGerado() {
+            jsonGerado = null;
+            variaveisGeradas = [];
+
+            document.getElementById('preview-json-gerado').classList.add('hidden');
+            document.getElementById('variaveis-criadas').classList.add('hidden');
+            document.getElementById('status-geracao').textContent = 'JSON descartado. Gere novamente se necessário.';
+            document.getElementById('status-geracao').className = 'text-sm text-gray-500';
+        }
+
+        // Ver perguntas de uma categoria (abre direto no modo IA)
+        async function verPerguntas(categoriaId) {
+            await editarCategoria(categoriaId);
+            selecionarModo('ia');
+        }
+
+        // ==========================================
+        // Funções do Modal de Pergunta
+        // ==========================================
+
+        // Abre modal para nova pergunta ou edição
+        function abrirModalPergunta(index = -1) {
+            document.getElementById('pergunta-index').value = index;
+
+            if (index === -1) {
+                // Nova pergunta
+                document.getElementById('modal-pergunta-titulo').textContent = 'Nova Pergunta de Extração';
+                document.getElementById('pergunta-texto').value = '';
+                document.getElementById('pergunta-nome-variavel').value = '';
+                document.getElementById('pergunta-tipo').value = '';
+                document.getElementById('pergunta-ordem').value = perguntasSelecionadas.length;
+                document.getElementById('pergunta-opcoes').value = '';
+                // Dependência
+                document.getElementById('pergunta-tem-dependencia').checked = false;
+                document.getElementById('pergunta-depends-on').value = '';
+                document.getElementById('pergunta-dependency-operator').value = 'equals';
+                document.getElementById('pergunta-dependency-value').value = '';
+                // Fonte de verdade
+                document.getElementById('pergunta-fonte-override').checked = false;
+                document.getElementById('pergunta-fonte-verdade').value = '';
+                document.getElementById('pergunta-ativa').checked = true;
+            } else {
+                // Edição
+                const p = perguntasSelecionadas[index];
+                document.getElementById('modal-pergunta-titulo').textContent = 'Editar Pergunta';
+                document.getElementById('pergunta-texto').value = p.pergunta || '';
+                document.getElementById('pergunta-nome-variavel').value = p.nome_variavel_sugerido || '';
+                document.getElementById('pergunta-tipo').value = p.tipo_sugerido || '';
+                document.getElementById('pergunta-ordem').value = p.ordem || 0;
+                document.getElementById('pergunta-opcoes').value = (p.opcoes_sugeridas || []).join('\n');
+                // Dependência
+                const temDependencia = !!p.depends_on_variable;
+                document.getElementById('pergunta-tem-dependencia').checked = temDependencia;
+                document.getElementById('pergunta-depends-on').value = p.depends_on_variable || '';
+                document.getElementById('pergunta-dependency-operator').value = p.dependency_operator || 'equals';
+                document.getElementById('pergunta-dependency-value').value = p.dependency_value || '';
+                // Fonte de verdade
+                document.getElementById('pergunta-fonte-override').checked = p.fonte_verdade_override || false;
+                document.getElementById('pergunta-fonte-verdade').value = p.fonte_verdade_tipo || '';
+                document.getElementById('pergunta-ativa').checked = p.ativo !== false;
+            }
+
+            // Toggle visibilidades iniciais
+            toggleOpcoesPergunta();
+            toggleDependenciaPergunta();
+            toggleValorDependencia();
+            toggleFonteVerdadePergunta();
+            atualizarPreviewDependencia();
+
+            document.getElementById('modal-pergunta').classList.remove('hidden');
+        }
+
+        // Fecha modal de pergunta
+        function fecharModalPergunta() {
+            document.getElementById('modal-pergunta').classList.add('hidden');
+        }
+
+        // Salva pergunta do modal
+        function salvarPerguntaModal() {
+            const index = parseInt(document.getElementById('pergunta-index').value);
+            const texto = document.getElementById('pergunta-texto').value.trim();
+
+            if (!texto) {
+                alert('A pergunta é obrigatória');
+                return;
+            }
+
+            // Verifica duplicata (exceto se está editando a mesma)
+            const duplicata = perguntasSelecionadas.findIndex((p, i) =>
+                i !== index && p.pergunta.toLowerCase() === texto.toLowerCase()
+            );
+            if (duplicata !== -1) {
+                alert('Esta pergunta já existe');
+                return;
+            }
+
+            const tipo = document.getElementById('pergunta-tipo').value;
+            const opcoes = document.getElementById('pergunta-opcoes').value
+                .split('\n')
+                .map(o => o.trim())
+                .filter(o => o);
+
+            // Dependência
+            const temDependencia = document.getElementById('pergunta-tem-dependencia').checked;
+            const dependsOn = temDependencia ? document.getElementById('pergunta-depends-on').value.trim() : null;
+            const dependencyOperator = temDependencia ? document.getElementById('pergunta-dependency-operator').value : null;
+            let dependencyValue = temDependencia ? document.getElementById('pergunta-dependency-value').value.trim() : null;
+
+            // Converte valor para booleano se for "true" ou "false"
+            if (dependencyValue === 'true') dependencyValue = true;
+            else if (dependencyValue === 'false') dependencyValue = false;
+
+            // Para operadores exists/not_exists, o valor é null
+            if (['exists', 'not_exists'].includes(dependencyOperator)) {
+                dependencyValue = null;
+            }
+
+            const perguntaData = {
+                pergunta: texto,
+                nome_variavel_sugerido: document.getElementById('pergunta-nome-variavel').value.trim() || null,
+                tipo_sugerido: tipo || null,
+                opcoes_sugeridas: (tipo === 'choice' && opcoes.length > 0) ? opcoes : null,
+                ordem: parseInt(document.getElementById('pergunta-ordem').value) || 0,
+                // Dependência
+                depends_on_variable: dependsOn || null,
+                dependency_operator: dependsOn ? dependencyOperator : null,
+                dependency_value: dependsOn ? dependencyValue : null,
+                dependency_inferred: false,
+                // Fonte de verdade
+                fonte_verdade_override: document.getElementById('pergunta-fonte-override').checked,
+                fonte_verdade_tipo: document.getElementById('pergunta-fonte-override').checked
+                    ? document.getElementById('pergunta-fonte-verdade').value.trim() || null
+                    : null,
+                ativo: document.getElementById('pergunta-ativa').checked
+            };
+
+            if (index === -1) {
+                // Nova pergunta
+                perguntasSelecionadas.push(perguntaData);
+            } else {
+                // Edição - mantém o id se existir
+                perguntaData.id = perguntasSelecionadas[index].id;
+                perguntasSelecionadas[index] = perguntaData;
+            }
+
+            // Reordena por ordem
+            perguntasSelecionadas.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+
+            atualizarListaPerguntas();
+            fecharModalPergunta();
+        }
+
+        // Toggle visibilidade do campo de opções (para tipo choice)
+        function toggleOpcoesPergunta() {
+            const tipo = document.getElementById('pergunta-tipo').value;
+            const container = document.getElementById('opcoes-pergunta-container');
+
+            if (tipo === 'choice') {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+
+        // Toggle visibilidade do campo fonte de verdade
+        function toggleFonteVerdadePergunta() {
+            const checked = document.getElementById('pergunta-fonte-override').checked;
+            const container = document.getElementById('fonte-verdade-pergunta-container');
+
+            if (checked) {
+                container.classList.remove('hidden');
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+
+        // ==========================================
+        // Funções de Dependência entre Perguntas
+        // ==========================================
+
+        // Toggle visibilidade do container de dependência
+        function toggleDependenciaPergunta() {
+            const checked = document.getElementById('pergunta-tem-dependencia').checked;
+            const container = document.getElementById('dependencia-pergunta-container');
+
+            if (checked) {
+                container.classList.remove('hidden');
+                popularSelectDependencia();
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+
+        // Popula o select de variáveis de dependência
+        function popularSelectDependencia() {
+            const select = document.getElementById('pergunta-depends-on');
+            const indexAtual = parseInt(document.getElementById('pergunta-index').value);
+
+            // Mantém o valor atual se existir
+            const valorAtual = select.value;
+
+            select.innerHTML = '<option value="">Selecione uma variável ou pergunta anterior...</option>';
+
+            // Adiciona perguntas anteriores da mesma categoria (usando nome_variavel_sugerido como slug)
+            const perguntasAnteriores = perguntasSelecionadas.filter((p, i) =>
+                i !== indexAtual && p.nome_variavel_sugerido
+            );
+
+            if (perguntasAnteriores.length > 0) {
+                const groupPerguntas = document.createElement('optgroup');
+                groupPerguntas.label = 'Perguntas desta categoria';
+
+                perguntasAnteriores.forEach(p => {
+                    const option = document.createElement('option');
+                    option.value = p.nome_variavel_sugerido;
+                    option.textContent = `${p.nome_variavel_sugerido} - "${p.pergunta.substring(0, 40)}..."`;
+                    groupPerguntas.appendChild(option);
+                });
+
+                select.appendChild(groupPerguntas);
+            }
+
+            // Adiciona variáveis do sistema (se carregadas)
+            if (variaveisDisponiveis && variaveisDisponiveis.length > 0) {
+                const groupVars = document.createElement('optgroup');
+                groupVars.label = 'Variáveis do sistema';
+
+                variaveisDisponiveis.forEach(v => {
+                    const option = document.createElement('option');
+                    option.value = v.slug;
+                    option.textContent = `${v.slug} (${v.tipo})`;
+                    groupVars.appendChild(option);
+                });
+
+                select.appendChild(groupVars);
+            }
+
+            // Restaura valor anterior se existir
+            if (valorAtual) {
+                select.value = valorAtual;
+            }
+
+            atualizarPreviewDependencia();
+        }
+
+        // Atualiza operadores com base na variável selecionada
+        function atualizarOperadoresDependencia() {
+            atualizarPreviewDependencia();
+        }
+
+        // Toggle visibilidade do campo de valor
+        function toggleValorDependencia() {
+            const operador = document.getElementById('pergunta-dependency-operator').value;
+            const container = document.getElementById('dependencia-valor-container');
+
+            if (['exists', 'not_exists'].includes(operador)) {
+                container.classList.add('hidden');
+            } else {
+                container.classList.remove('hidden');
+            }
+
+            atualizarPreviewDependencia();
+        }
+
+        // Atualiza o preview humanizado da dependência
+        function atualizarPreviewDependencia() {
+            const preview = document.getElementById('dependencia-preview');
+            const variavel = document.getElementById('pergunta-depends-on').value;
+            const operador = document.getElementById('pergunta-dependency-operator').value;
+            const valor = document.getElementById('pergunta-dependency-value').value;
+
+            if (!variavel) {
+                preview.innerHTML = '<span class="text-gray-400 italic">Configure a dependência acima</span>';
+                return;
+            }
+
+            const operadorTexto = {
+                'equals': '=',
+                'not_equals': '≠',
+                'exists': 'existe',
+                'not_exists': 'não existe',
+                'contains': 'contém',
+                'greater_than': '>',
+                'less_than': '<'
+            };
+
+            let texto = `<span class="text-indigo-600">Esta pergunta será feita quando:</span> `;
+            texto += `<span class="font-mono font-semibold text-purple-600">${variavel}</span> `;
+            texto += `<span class="text-gray-600">${operadorTexto[operador] || operador}</span>`;
+
+            if (!['exists', 'not_exists'].includes(operador)) {
+                texto += ` <span class="font-semibold text-green-600">"${valor || '???'}"</span>`;
+            }
+
+            preview.innerHTML = texto;
+        }
+
+        // Carrega variáveis disponíveis do sistema
+        async function carregarVariaveisDisponiveis() {
+            try {
+                const response = await fetch(`${API_EXTRACTION}/variaveis?apenas_ativos=true`, {
+                    headers: getHeaders()
+                });
+                if (response.ok) {
+                    variaveisDisponiveis = await response.json();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar variáveis:', error);
+            }
+        }
+
+        // Variável global para variáveis disponíveis
+        let variaveisDisponiveis = [];
 
         // Validar JSON
         function validarJSON() {
@@ -477,16 +1452,26 @@
         async function salvarCategoria() {
             const id = document.getElementById('categoria-id').value;
             const isEdit = !!id;
-            
+
             // Valida JSON antes de salvar
-            const formatoJson = document.getElementById('categoria-formato-json').value;
+            let formatoJson = document.getElementById('categoria-formato-json').value.trim();
+
+            // Se estiver no modo IA e não tiver JSON, usa placeholder
+            if (modoSelecionado === 'ia' && (!formatoJson || formatoJson === '')) {
+                formatoJson = JSON.stringify({
+                    "_modo": "ia_pendente",
+                    "_info": "JSON será gerado pela IA após configurar as perguntas"
+                }, null, 2);
+                document.getElementById('categoria-formato-json').value = formatoJson;
+            }
+
             try {
                 JSON.parse(formatoJson);
             } catch (e) {
                 alert('O formato JSON é inválido. Corrija antes de salvar.');
                 return;
             }
-            
+
             const dados = {
                 nome: document.getElementById('categoria-nome').value.trim(),
                 titulo: document.getElementById('categoria-titulo').value.trim(),
@@ -497,31 +1482,38 @@
                 is_residual: document.getElementById('categoria-residual').checked,
                 ativo: document.getElementById('categoria-ativo').checked
             };
-            
+
             if (isEdit) {
                 dados.motivo = document.getElementById('categoria-motivo').value.trim() || 'Atualização via interface';
             }
-            
+
             if (!dados.nome || !dados.titulo) {
                 alert('Nome e título são obrigatórios');
                 return;
             }
-            
+
             try {
                 const url = isEdit ? `${API_BASE}/${id}` : API_BASE;
                 const method = isEdit ? 'PUT' : 'POST';
-                
+
                 const response = await fetch(url, {
                     method,
                     headers: getHeaders(),
                     body: JSON.stringify(dados)
                 });
-                
+
                 if (!response.ok) {
                     const error = await response.json();
                     throw new Error(error.detail || 'Erro ao salvar');
                 }
-                
+
+                const categoriaSalva = await response.json();
+
+                // Se tem perguntas novas, salva elas também
+                if (perguntasSelecionadas.length > 0) {
+                    await salvarPerguntasNoServidor(categoriaSalva.id);
+                }
+
                 fecharEditor();
                 carregarCategorias();
             } catch (error) {
@@ -629,6 +1621,7 @@
                 return;
             }
             carregarCategorias();
+            carregarVariaveisDisponiveis(); // Carrega variáveis para autocomplete de dependências
         });
     </script>
 </body>
