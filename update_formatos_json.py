@@ -182,13 +182,17 @@ if not parecer_nat:
         nome='parecer_nat',
         titulo='Parecer NAT/CATES/NATJus',
         descricao='Pareceres técnicos do Núcleo de Apoio Técnico (NAT), CATES e NATJus',
-        codigos_documento=[8451, 9636],  # Códigos do Parecer NAT
+        codigos_documento=[8451, 9636, 59, 8490],  # Códigos do Parecer NAT e Nota Técnica NATJus
         is_residual=False,
         ativo=True,
         ordem=4
     )
     db.add(parecer_nat)
     print('Categoria Parecer NAT criada!')
+else:
+    # Atualiza códigos para incluir Nota Técnica NATJus
+    parecer_nat.codigos_documento = [8451, 9636, 59, 8490]
+    print('Codigos do Parecer NAT atualizados!')
 
 if parecer_nat:
     parecer_nat.formato_json = """{
