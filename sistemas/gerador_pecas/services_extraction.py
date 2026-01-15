@@ -65,6 +65,9 @@ class ExtractionSchemaGenerator:
         """
         Gera um schema JSON de extração a partir das perguntas.
 
+        MODO INCREMENTAL: Se já existem variáveis vinculadas a perguntas,
+        apenas processa as perguntas NOVAS (sem variável), mantendo o schema existente.
+
         Args:
             categoria_id: ID da categoria de documento
             categoria_nome: Nome da categoria para contexto
@@ -75,11 +78,53 @@ class ExtractionSchemaGenerator:
             Dict com success, schema_json, mapeamento_variaveis, variaveis_criadas ou erro
         """
         try:
-            # 1. Monta o prompt para a IA
-            prompt = self._montar_prompt_geracao(categoria_nome, perguntas)
+            # 0. MODO INCREMENTAL: Separar perguntas novas das existentes
+            perguntas_novas = []
+            perguntas_existentes = []
 
-            # 2. Chama o Gemini para gerar o schema
-            logger.info(f"Gerando schema para categoria '{categoria_nome}' com {len(perguntas)} perguntas")
+            for p in perguntas:
+                # Verifica se já tem variável vinculada
+                variavel_existente = self.db.query(ExtractionVariable).filter(
+                    ExtractionVariable.source_question_id == p.id,
+                    ExtractionVariable.ativo == True
+                ).first()
+
+                if variavel_existente:
+                    perguntas_existentes.append((p, variavel_existente))
+                else:
+                    perguntas_novas.append(p)
+
+            logger.info(f"Geração incremental: {len(perguntas_existentes)} existentes, {len(perguntas_novas)} novas")
+
+            # Se não há perguntas novas, retorna o schema existente
+            if not perguntas_novas:
+                # Monta schema a partir das variáveis existentes
+                schema_existente = {}
+                mapeamento_existente = {}
+                for p, v in perguntas_existentes:
+                    schema_existente[v.slug] = {
+                        "type": v.tipo,
+                        "description": v.descricao or v.label
+                    }
+                    mapeamento_existente[str(p.id)] = {
+                        "slug": v.slug,
+                        "label": v.label,
+                        "tipo": v.tipo
+                    }
+
+                return {
+                    "success": True,
+                    "schema_json": schema_existente,
+                    "mapeamento_variaveis": mapeamento_existente,
+                    "variaveis_criadas": [],
+                    "mensagem": "Nenhuma pergunta nova para processar. Schema existente mantido."
+                }
+
+            # 1. Monta o prompt APENAS para as perguntas NOVAS
+            prompt = self._montar_prompt_geracao(categoria_nome, perguntas_novas)
+
+            # 2. Chama o Gemini para gerar o schema APENAS das perguntas novas
+            logger.info(f"Gerando schema incremental para categoria '{categoria_nome}' com {len(perguntas_novas)} perguntas NOVAS")
 
             response = await gemini_service.generate(
                 prompt=prompt,
@@ -99,39 +144,61 @@ class ExtractionSchemaGenerator:
                 logger.error(f"Resposta IA não é JSON válido: {response.content[:500]}")
                 return {"success": False, "erro": "A IA não retornou um JSON válido"}
 
-            schema_json = resultado_ia.get("schema")
-            mapeamento = resultado_ia.get("mapeamento_variaveis", {})
+            schema_novo = resultado_ia.get("schema", {})
+            mapeamento_novo = resultado_ia.get("mapeamento_variaveis", {})
 
-            if not schema_json:
+            if not schema_novo:
                 return {"success": False, "erro": "Schema não encontrado na resposta da IA"}
 
-            # 4. Valida e normaliza o schema
-            schema_validado = self._validar_schema(schema_json)
+            # 4. Valida e normaliza o schema novo
+            schema_novo_validado = self._validar_schema(schema_novo)
 
-            # 5. Cria as variáveis normalizadas
+            # 5. MERGE: Combina schema existente com o novo
+            schema_final = {}
+            mapeamento_final = {}
+
+            # Primeiro adiciona as variáveis existentes
+            for p, v in perguntas_existentes:
+                schema_final[v.slug] = {
+                    "type": v.tipo,
+                    "description": v.descricao or v.label
+                }
+                mapeamento_final[str(p.id)] = {
+                    "slug": v.slug,
+                    "label": v.label,
+                    "tipo": v.tipo
+                }
+
+            # Depois adiciona os campos novos
+            schema_final.update(schema_novo_validado)
+            mapeamento_final.update(mapeamento_novo)
+
+            # 6. Cria APENAS as variáveis NOVAS
             variaveis_criadas = await self._criar_variaveis(
                 categoria_id=categoria_id,
-                mapeamento=mapeamento,
-                perguntas=perguntas
+                mapeamento=mapeamento_novo,  # Apenas mapeamento novo
+                perguntas=perguntas_novas     # Apenas perguntas novas
             )
 
-            # 6. Salva o modelo de extração
+            # 7. Salva o modelo de extração (com schema completo)
             modelo = await self._salvar_modelo(
                 categoria_id=categoria_id,
-                schema_json=schema_validado,
-                mapeamento=mapeamento,
+                schema_json=schema_final,     # Schema completo (existente + novo)
+                mapeamento=mapeamento_final,  # Mapeamento completo
                 user_id=user_id
             )
 
-            logger.info(f"Schema gerado com sucesso: {len(variaveis_criadas)} variáveis criadas")
+            logger.info(f"Schema incremental gerado: {len(variaveis_criadas)} novas variáveis criadas, {len(perguntas_existentes)} mantidas")
 
             return {
                 "success": True,
-                "schema_json": schema_validado,
-                "mapeamento_variaveis": mapeamento,
+                "schema_json": schema_final,
+                "mapeamento_variaveis": mapeamento_final,
                 "variaveis_criadas": variaveis_criadas,
+                "variaveis_mantidas": len(perguntas_existentes),
                 "modelo_id": modelo.id,
-                "modelo_versao": modelo.versao
+                "modelo_versao": modelo.versao,
+                "modo": "incremental" if perguntas_existentes else "completo"
             }
 
         except Exception as e:

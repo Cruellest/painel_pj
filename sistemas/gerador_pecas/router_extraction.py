@@ -907,89 +907,100 @@ async def resumo_variaveis(
     - Variáveis mais usadas
     - Variáveis não utilizadas
     """
-    # Total de variáveis
-    total = db.query(ExtractionVariable).filter(ExtractionVariable.ativo == True).count()
+    try:
+        # Total de variáveis
+        total = db.query(ExtractionVariable).filter(ExtractionVariable.ativo == True).count()
 
-    # Por tipo
-    tipos = db.query(
-        ExtractionVariable.tipo,
-        func.count(ExtractionVariable.id)
-    ).filter(
-        ExtractionVariable.ativo == True
-    ).group_by(ExtractionVariable.tipo).all()
+        # Por tipo
+        tipos = db.query(
+            ExtractionVariable.tipo,
+            func.count(ExtractionVariable.id)
+        ).filter(
+            ExtractionVariable.ativo == True
+        ).group_by(ExtractionVariable.tipo).all()
 
-    distribuicao_tipos = {t[0]: t[1] for t in tipos}
+        distribuicao_tipos = {t[0]: t[1] for t in tipos}
 
-    # Variáveis com uso em prompts (regras determinísticas)
-    variaveis_com_uso_prompts = db.query(ExtractionVariable).join(
-        PromptVariableUsage,
-        PromptVariableUsage.variable_slug == ExtractionVariable.slug
-    ).filter(
-        ExtractionVariable.ativo == True
-    ).distinct().count()
-    
-    # Variáveis em uso no JSON de categorias com json_gerado_por_ia=True
-    variaveis_em_uso_json = db.query(ExtractionVariable).join(
-        CategoriaResumoJSON,
-        ExtractionVariable.categoria_id == CategoriaResumoJSON.id
-    ).filter(
-        ExtractionVariable.ativo == True,
-        CategoriaResumoJSON.json_gerado_por_ia == True
-    ).distinct().count()
-    
-    # Total de variáveis em uso (união dos dois conjuntos)
-    # Para evitar contagem dupla, usamos uma abordagem diferente
-    variaveis_ids_em_uso = set()
-    
-    # IDs de variáveis usadas em prompts
-    ids_prompts = db.query(ExtractionVariable.id).join(
-        PromptVariableUsage,
-        PromptVariableUsage.variable_slug == ExtractionVariable.slug
-    ).filter(ExtractionVariable.ativo == True).distinct().all()
-    variaveis_ids_em_uso.update(id[0] for id in ids_prompts)
-    
-    # IDs de variáveis em uso no JSON
-    ids_json = db.query(ExtractionVariable.id).join(
-        CategoriaResumoJSON,
-        ExtractionVariable.categoria_id == CategoriaResumoJSON.id
-    ).filter(
-        ExtractionVariable.ativo == True,
-        CategoriaResumoJSON.json_gerado_por_ia == True
-    ).distinct().all()
-    variaveis_ids_em_uso.update(id[0] for id in ids_json)
-    
-    variaveis_com_uso = len(variaveis_ids_em_uso)
+        # Variáveis com uso em prompts (regras determinísticas)
+        variaveis_com_uso_prompts = db.query(ExtractionVariable).join(
+            PromptVariableUsage,
+            PromptVariableUsage.variable_slug == ExtractionVariable.slug
+        ).filter(
+            ExtractionVariable.ativo == True
+        ).distinct().count()
 
-    # Variáveis mais usadas (top 10)
-    mais_usadas_query = db.query(
-        PromptVariableUsage.variable_slug,
-        func.count(PromptVariableUsage.id).label('uso_count')
-    ).group_by(
-        PromptVariableUsage.variable_slug
-    ).order_by(
-        func.count(PromptVariableUsage.id).desc()
-    ).limit(10).all()
+        # Variáveis em uso no JSON de categorias com json_gerado_por_ia=True
+        variaveis_em_uso_json = db.query(ExtractionVariable).join(
+            CategoriaResumoJSON,
+            ExtractionVariable.categoria_id == CategoriaResumoJSON.id
+        ).filter(
+            ExtractionVariable.ativo == True,
+            CategoriaResumoJSON.json_gerado_por_ia == True
+        ).distinct().count()
 
-    mais_usadas = []
-    for slug, count in mais_usadas_query:
-        variavel = db.query(ExtractionVariable).filter(
-            ExtractionVariable.slug == slug
-        ).first()
-        if variavel:
-            mais_usadas.append({
-                "slug": slug,
-                "label": variavel.label,
-                "tipo": variavel.tipo,
-                "uso_count": count
-            })
+        # Total de variáveis em uso (união dos dois conjuntos)
+        # Para evitar contagem dupla, usamos uma abordagem diferente
+        variaveis_ids_em_uso = set()
 
-    return {
-        "total": total,
-        "distribuicao_tipos": distribuicao_tipos,
-        "variaveis_com_uso": variaveis_com_uso,
-        "variaveis_sem_uso": total - variaveis_com_uso,
-        "mais_usadas": mais_usadas
-    }
+        # IDs de variáveis usadas em prompts
+        ids_prompts = db.query(ExtractionVariable.id).join(
+            PromptVariableUsage,
+            PromptVariableUsage.variable_slug == ExtractionVariable.slug
+        ).filter(ExtractionVariable.ativo == True).distinct().all()
+        variaveis_ids_em_uso.update(id[0] for id in ids_prompts)
+
+        # IDs de variáveis em uso no JSON
+        ids_json = db.query(ExtractionVariable.id).join(
+            CategoriaResumoJSON,
+            ExtractionVariable.categoria_id == CategoriaResumoJSON.id
+        ).filter(
+            ExtractionVariable.ativo == True,
+            CategoriaResumoJSON.json_gerado_por_ia == True
+        ).distinct().all()
+        variaveis_ids_em_uso.update(id[0] for id in ids_json)
+
+        variaveis_com_uso = len(variaveis_ids_em_uso)
+
+        # Variáveis mais usadas (top 10)
+        mais_usadas_query = db.query(
+            PromptVariableUsage.variable_slug,
+            func.count(PromptVariableUsage.id).label('uso_count')
+        ).group_by(
+            PromptVariableUsage.variable_slug
+        ).order_by(
+            func.count(PromptVariableUsage.id).desc()
+        ).limit(10).all()
+
+        mais_usadas = []
+        for slug, count in mais_usadas_query:
+            variavel = db.query(ExtractionVariable).filter(
+                ExtractionVariable.slug == slug
+            ).first()
+            if variavel:
+                mais_usadas.append({
+                    "slug": slug,
+                    "label": variavel.label,
+                    "tipo": variavel.tipo,
+                    "uso_count": count
+                })
+
+        return {
+            "total": total,
+            "distribuicao_tipos": distribuicao_tipos,
+            "variaveis_com_uso": variaveis_com_uso,
+            "variaveis_sem_uso": total - variaveis_com_uso,
+            "mais_usadas": mais_usadas
+        }
+    except Exception as e:
+        logger.error(f"Erro ao carregar resumo de variáveis: {e}")
+        # Retorna valores default em caso de erro
+        return {
+            "total": 0,
+            "distribuicao_tipos": {},
+            "variaveis_com_uso": 0,
+            "variaveis_sem_uso": 0,
+            "mais_usadas": []
+        }
 
 
 @router.get("/variaveis/{variavel_id}", response_model=VariableDetailResponse)
