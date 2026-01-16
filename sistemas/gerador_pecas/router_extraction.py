@@ -1256,10 +1256,12 @@ async def gerar_schema_ia(
         )
 
     except Exception as e:
-        logger.error(f"Erro ao gerar schema: {e}")
+        # SALVAGUARDA: Rollback explícito em caso de erro
+        db.rollback()
+        logger.error(f"Erro ao gerar schema (rollback realizado): {e}", exc_info=True)
         return GenerateSchemaResponse(
             success=False,
-            erro=str(e)
+            erro=f"Erro ao gerar schema: {str(e)}"
         )
 
 
@@ -1483,9 +1485,41 @@ async def listar_variaveis(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Lista todas as variáveis normalizadas do sistema"""
-    query = db.query(ExtractionVariable)
+    """
+    Lista todas as variáveis normalizadas do sistema.
 
+    OTIMIZADO: Usa JOINs e subqueries para evitar N+1 queries.
+    """
+    from sqlalchemy import func as sql_func, case
+    from sqlalchemy.orm import aliased
+
+    # 1. QUERY PRINCIPAL com JOINs (evita N+1)
+    # Subquery para contar uso de variáveis
+    uso_subquery = db.query(
+        PromptVariableUsage.variable_slug,
+        sql_func.count(PromptVariableUsage.id).label('uso_count')
+    ).group_by(PromptVariableUsage.variable_slug).subquery()
+
+    # Query principal com JOINs
+    query = db.query(
+        ExtractionVariable,
+        CategoriaResumoJSON.nome.label('categoria_nome'),
+        CategoriaResumoJSON.json_gerado_por_ia.label('json_gerado_por_ia'),
+        ExtractionQuestion.ordem.label('pergunta_ordem'),
+        ExtractionQuestion.depends_on_variable.label('pergunta_depends_on'),
+        sql_func.coalesce(uso_subquery.c.uso_count, 0).label('uso_count')
+    ).outerjoin(
+        CategoriaResumoJSON,
+        ExtractionVariable.categoria_id == CategoriaResumoJSON.id
+    ).outerjoin(
+        ExtractionQuestion,
+        ExtractionVariable.source_question_id == ExtractionQuestion.id
+    ).outerjoin(
+        uso_subquery,
+        ExtractionVariable.slug == uso_subquery.c.variable_slug
+    )
+
+    # Aplica filtros
     if categoria_id:
         query = query.filter(ExtractionVariable.categoria_id == categoria_id)
 
@@ -1505,72 +1539,76 @@ async def listar_variaveis(
     if apenas_ativos:
         query = query.filter(ExtractionVariable.ativo == True)
 
-    total = query.count()
-    
-    # Ordena por categoria, depois pela ordem da pergunta de origem
-    variaveis = query.outerjoin(
-        ExtractionQuestion,
-        ExtractionVariable.source_question_id == ExtractionQuestion.id
-    ).order_by(
+    # Ordena e pagina
+    query = query.order_by(
         ExtractionVariable.categoria_id,
         ExtractionQuestion.ordem.nulls_last(),
         ExtractionVariable.slug
-    ).offset(offset).limit(limit).all()
+    ).offset(offset).limit(limit)
 
-    # Busca contagem de uso e informações de dependência para cada variável
-    resultado = []
-    
-    # Mapa de slug para profundidade (para calcular recuo)
+    # Executa query principal (1 query apenas!)
+    resultados_query = query.all()
+
+    # 2. PRÉ-CALCULAR PROFUNDIDADES (sem queries adicionais)
+    # Primeiro, monta mapa de dependências a partir dos resultados
+    deps_map = {}
+    for row in resultados_query:
+        v = row[0]  # ExtractionVariable
+        pergunta_depends_on = row.pergunta_depends_on
+        depends_on = pergunta_depends_on if pergunta_depends_on else v.depends_on_variable
+        if depends_on:
+            deps_map[v.slug] = depends_on
+
+    # Calcula profundidades sem queries
     depth_map = {}
-    
-    def calcular_profundidade(var_slug: str, visitados: set = None) -> int:
+
+    def calcular_profundidade_local(slug: str, visitados: set = None) -> int:
         if visitados is None:
             visitados = set()
-        if var_slug in depth_map:
-            return depth_map[var_slug]
-        if var_slug in visitados:
+        if slug in depth_map:
+            return depth_map[slug]
+        if slug in visitados:
             return 0  # Evita ciclos
-        
-        # Busca a variável
-        var = db.query(ExtractionVariable).filter(ExtractionVariable.slug == var_slug).first()
-        if not var or not var.depends_on_variable:
-            depth_map[var_slug] = 0
+        if slug not in deps_map:
+            depth_map[slug] = 0
             return 0
-        
-        visitados.add(var_slug)
-        parent_depth = calcular_profundidade(var.depends_on_variable, visitados)
-        depth_map[var_slug] = parent_depth + 1
-        return depth_map[var_slug]
-    
-    for v in variaveis:
-        uso_count = db.query(PromptVariableUsage).filter(
-            PromptVariableUsage.variable_slug == v.slug
-        ).count()
 
-        categoria = None
-        em_uso_json = False
-        if v.categoria_id:
-            categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == v.categoria_id).first()
-            if categoria and categoria.json_gerado_por_ia:
-                em_uso_json = True
-        
-        # Busca info da pergunta de origem para ordem e dependência
-        ordem = 0
-        is_conditional = v.is_conditional
+        visitados.add(slug)
+        parent_depth = calcular_profundidade_local(deps_map[slug], visitados)
+        depth_map[slug] = parent_depth + 1
+        return depth_map[slug]
+
+    # Pré-calcula todas as profundidades
+    for slug in deps_map:
+        calcular_profundidade_local(slug)
+
+    # 3. MONTA RESPOSTA
+    resultado = []
+
+    for row in resultados_query:
+        v = row[0]  # ExtractionVariable
+        categoria_nome = row.categoria_nome
+        json_gerado_por_ia = row.json_gerado_por_ia
+        pergunta_ordem = row.pergunta_ordem
+        pergunta_depends_on = row.pergunta_depends_on
+        uso_count = row.uso_count or 0
+
+        # Determina dependência (prioriza pergunta sobre variável)
+        is_conditional = v.is_conditional or False
         depends_on = v.depends_on_variable
-        
-        if v.source_question_id:
-            pergunta = db.query(ExtractionQuestion).filter(
-                ExtractionQuestion.id == v.source_question_id
-            ).first()
-            if pergunta:
-                ordem = pergunta.ordem or 0
-                if pergunta.depends_on_variable:
-                    is_conditional = True
-                    depends_on = pergunta.depends_on_variable
-        
-        # Calcula profundidade para recuo
-        depth = calcular_profundidade(v.slug) if depends_on else 0
+
+        if pergunta_depends_on:
+            is_conditional = True
+            depends_on = pergunta_depends_on
+
+        # Usa ordem da pergunta ou 0
+        ordem = pergunta_ordem or 0
+
+        # Usa profundidade pré-calculada
+        depth = depth_map.get(v.slug, 0) if depends_on else 0
+
+        # Determina se está em uso no JSON
+        em_uso_json = bool(json_gerado_por_ia) if v.categoria_id else False
 
         resp = ExtractionVariableResponse(
             id=v.id,
@@ -1579,13 +1617,13 @@ async def listar_variaveis(
             descricao=v.descricao,
             tipo=v.tipo,
             categoria_id=v.categoria_id,
-            categoria_nome=categoria.nome if categoria else None,
+            categoria_nome=categoria_nome,
             opcoes=v.opcoes,
             fonte_verdade_codigo=v.fonte_verdade_codigo,
             fonte_verdade_tipo=v.fonte_verdade_tipo,
-            fonte_verdade_override=v.fonte_verdade_override,
+            fonte_verdade_override=v.fonte_verdade_override or False,
             source_question_id=v.source_question_id,
-            ativo=v.ativo,
+            ativo=v.ativo if v.ativo is not None else True,
             criado_em=v.criado_em,
             atualizado_em=v.atualizado_em,
             uso_count=uso_count,

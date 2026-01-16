@@ -664,14 +664,77 @@ INSTRUÇÕES OBRIGATÓRIAS:
         # Aplica o namespace
         return f"{namespace}_{slug}"
 
+    def _validar_slug(self, slug: str, namespace: str = "") -> tuple:
+        """
+        Valida um slug e retorna (slug_valido, erro).
+
+        Regras:
+        1. Máximo 100 caracteres
+        2. Apenas letras minúsculas, números e underscore
+        3. Não pode começar com número
+        4. Deve ter pelo menos 3 caracteres
+
+        Returns:
+            (slug_normalizado, None) se válido
+            (None, mensagem_erro) se inválido
+        """
+        import unicodedata
+
+        if not slug:
+            return None, "Slug vazio"
+
+        # Remove acentos
+        slug_norm = unicodedata.normalize('NFD', slug)
+        slug_norm = ''.join(c for c in slug_norm if unicodedata.category(c) != 'Mn')
+
+        # Converte para minúsculas e substitui espaços/hífens por underscore
+        slug_norm = slug_norm.lower().replace(' ', '_').replace('-', '_')
+
+        # Remove caracteres não permitidos
+        slug_norm = re.sub(r'[^a-z0-9_]', '', slug_norm)
+
+        # Remove underscores duplicados
+        slug_norm = re.sub(r'_+', '_', slug_norm)
+
+        # Remove underscores do início e fim
+        slug_norm = slug_norm.strip('_')
+
+        # Validações
+        if len(slug_norm) < 3:
+            return None, f"Slug muito curto: '{slug}' -> '{slug_norm}'"
+
+        if len(slug_norm) > 100:
+            # Trunca mantendo o namespace se existir
+            if namespace and slug_norm.startswith(f"{namespace}_"):
+                max_len = 100 - len(namespace) - 1
+                slug_sem_ns = slug_norm[len(namespace)+1:][:max_len]
+                slug_norm = f"{namespace}_{slug_sem_ns}"
+            else:
+                slug_norm = slug_norm[:100]
+            logger.warning(f"Slug truncado: '{slug}' -> '{slug_norm}'")
+
+        if slug_norm[0].isdigit():
+            slug_norm = f"var_{slug_norm}"
+
+        return slug_norm, None
+
     async def _criar_variaveis(
         self,
         categoria_id: int,
         mapeamento: Dict,
         perguntas: List[ExtractionQuestion]
     ) -> List[Dict]:
-        """Cria as variáveis normalizadas no banco com namespace do grupo."""
+        """
+        Cria as variáveis normalizadas no banco com namespace do grupo.
+
+        SALVAGUARDAS:
+        1. Valida e normaliza slugs antes de criar
+        2. Evita duplicatas verificando slugs já criados nesta operação
+        3. Limita tamanho máximo do slug a 100 caracteres
+        4. Registra erros de validação sem interromper a operação
+        """
         variaveis_criadas = []
+        slugs_criados_nesta_operacao = set()  # Evita duplicatas na mesma operação
         perguntas_map = {str(p.id): p for p in perguntas}
 
         # Busca a categoria para obter o namespace
@@ -685,10 +748,26 @@ INSTRUÇÕES OBRIGATÓRIAS:
         for pergunta_id, info in mapeamento.items():
             slug_base = info.get("slug")
             if not slug_base:
+                logger.warning(f"Pergunta {pergunta_id}: slug vazio, ignorando")
                 continue
+
+            # SALVAGUARDA: Valida e normaliza o slug
+            slug_validado, erro_validacao = self._validar_slug(slug_base, namespace)
+            if erro_validacao:
+                logger.warning(f"Pergunta {pergunta_id}: {erro_validacao}, ignorando")
+                continue
+
+            slug_base = slug_validado
 
             # Aplica namespace ao slug
             slug = self._aplicar_namespace(slug_base, namespace) if namespace else slug_base
+
+            # SALVAGUARDA: Verifica se já criamos este slug nesta operação
+            if slug in slugs_criados_nesta_operacao:
+                logger.warning(f"Slug duplicado nesta operação: '{slug}', ignorando pergunta {pergunta_id}")
+                continue
+
+            slugs_criados_nesta_operacao.add(slug)
 
             # Extrai informações de dependência
             is_conditional = info.get("is_conditional", False)
