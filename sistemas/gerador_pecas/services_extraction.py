@@ -718,7 +718,8 @@ INSTRUÇÕES OBRIGATÓRIAS:
                     "tipo": existente.tipo,
                     "is_conditional": is_conditional,
                     "depends_on": depends_on,
-                    "atualizado": True
+                    "atualizado": True,
+                    "pergunta_id": int(pergunta_id) if pergunta_id.isdigit() else None
                 })
             else:
                 # Cria nova variável
@@ -747,8 +748,34 @@ INSTRUÇÕES OBRIGATÓRIAS:
                     "tipo": variavel.tipo,
                     "is_conditional": is_conditional,
                     "depends_on": depends_on,
-                    "criado": True
+                    "criado": True,
+                    "pergunta_id": int(pergunta_id) if pergunta_id.isdigit() else None
                 })
+
+        # ============================================================
+        # CORREÇÃO: Atualiza nome_variavel_sugerido e tipo_sugerido
+        # das perguntas para refletir os slugs/tipos gerados pela IA
+        # ============================================================
+        for v in variaveis_criadas:
+            pergunta_id = v.get("pergunta_id")
+            if pergunta_id:
+                pergunta = self.db.query(ExtractionQuestion).filter(
+                    ExtractionQuestion.id == pergunta_id
+                ).first()
+                if pergunta:
+                    # Atualiza nome_variavel_sugerido com o slug base (sem namespace)
+                    # para manter compatibilidade com o frontend
+                    slug_base = v.get("slug_base")
+                    if slug_base and pergunta.nome_variavel_sugerido != slug_base:
+                        pergunta.nome_variavel_sugerido = slug_base
+                        pergunta.atualizado_em = datetime.utcnow()
+                        logger.info(f"Pergunta {pergunta_id}: nome_variavel_sugerido atualizado para '{slug_base}'")
+
+                    # Atualiza tipo_sugerido se estava vazio ou como ia_decide
+                    tipo_var = v.get("tipo")
+                    if tipo_var and (not pergunta.tipo_sugerido or pergunta.tipo_sugerido == "ia_decide"):
+                        pergunta.tipo_sugerido = tipo_var
+                        logger.info(f"Pergunta {pergunta_id}: tipo_sugerido atualizado para '{tipo_var}'")
 
         # ============================================================
         # CORREÇÃO: Atualiza depends_on_variable das perguntas para

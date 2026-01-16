@@ -2062,7 +2062,7 @@ Qual o valor da causa?"></textarea>
         }
 
         // Aceitar JSON gerado
-        function aceitarJSONGerado() {
+        async function aceitarJSONGerado() {
             if (!jsonGerado) return;
 
             // Coloca o JSON no campo de formato
@@ -2074,25 +2074,32 @@ Qual o valor da causa?"></textarea>
 
             // Limpa preview
             document.getElementById('preview-json-gerado').classList.add('hidden');
-            document.getElementById('status-geracao').textContent = 'JSON aceito e aplicado ao formulário!';
-            document.getElementById('status-geracao').className = 'text-sm text-green-500';
+            document.getElementById('status-geracao').textContent = 'Sincronizando perguntas...';
+            document.getElementById('status-geracao').className = 'text-sm text-blue-500';
 
-            // Sincroniza tipos das perguntas com o mapeamento da IA
-            sincronizarTiposPerguntas();
+            // Sincroniza tipos e slugs das perguntas com o mapeamento da IA
+            await sincronizarTiposPerguntas();
+
+            // Atualiza status
+            document.getElementById('status-geracao').textContent = 'JSON aceito e perguntas atualizadas!';
+            document.getElementById('status-geracao').className = 'text-sm text-green-500';
 
             // Muda para modo legado para mostrar o JSON
             selecionarModo('legado');
         }
 
-        // Sincroniza tipos das perguntas que estavam como "ia_decide"
+        // Sincroniza tipos e slugs das perguntas com o mapeamento gerado pela IA
         async function sincronizarTiposPerguntas() {
-            if (!mapeamentoVariaveis || Object.keys(mapeamentoVariaveis).length === 0) {
-                console.log('Nenhum mapeamento para sincronizar');
-                return;
-            }
-
             const categoriaId = document.getElementById('categoria-id').value;
             if (!categoriaId) return;
+
+            // Se não há mapeamento, apenas recarrega as perguntas do servidor
+            // (o backend já atualizou durante a geração)
+            if (!mapeamentoVariaveis || Object.keys(mapeamentoVariaveis).length === 0) {
+                console.log('Sem mapeamento local, recarregando perguntas do servidor...');
+                await carregarPerguntasCategoria(categoriaId);
+                return;
+            }
 
             try {
                 const response = await fetch('/admin/api/extraction/perguntas/sync-tipos', {
@@ -2108,13 +2115,20 @@ Qual o valor da causa?"></textarea>
                 });
 
                 const resultado = await response.json();
-                if (resultado.success && resultado.perguntas_atualizadas > 0) {
-                    console.log(`Tipos sincronizados: ${resultado.perguntas_atualizadas} perguntas`);
-                    // Recarrega perguntas para refletir os tipos atualizados
-                    await carregarPerguntas();
+                if (resultado.success) {
+                    console.log(`Sincronização concluída: ${resultado.perguntas_atualizadas} perguntas atualizadas`);
+                    if (resultado.detalhes && resultado.detalhes.length > 0) {
+                        console.log('Detalhes:', resultado.detalhes);
+                    }
                 }
+
+                // SEMPRE recarrega perguntas para refletir slugs e tipos atualizados
+                await carregarPerguntasCategoria(categoriaId);
+
             } catch (error) {
                 console.error('Erro ao sincronizar tipos:', error);
+                // Mesmo com erro, tenta recarregar perguntas
+                await carregarPerguntasCategoria(categoriaId);
             }
         }
 

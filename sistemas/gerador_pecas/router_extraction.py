@@ -15,7 +15,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from pydantic import BaseModel, Field
 
 from database.connection import get_db
@@ -263,6 +263,213 @@ class VariableDetailResponse(ExtractionVariableResponse):
 # ENDPOINTS - PERGUNTAS DE EXTRAÇÃO
 # ============================================================================
 
+
+def _slugify(texto: str) -> str:
+    """
+    Converte texto em slug válido para variável.
+
+    Exemplo: "O parecer analisou medicamento?" -> "o_parecer_analisou_medicamento"
+    """
+    import re
+    import unicodedata
+
+    # Remove acentos
+    texto = unicodedata.normalize('NFKD', texto)
+    texto = texto.encode('ascii', 'ignore').decode('ascii')
+
+    # Converte para minúsculas
+    texto = texto.lower()
+
+    # Remove caracteres especiais, mantém apenas letras, números e espaços
+    texto = re.sub(r'[^a-z0-9\s]', '', texto)
+
+    # Substitui espaços por underscores
+    texto = re.sub(r'\s+', '_', texto.strip())
+
+    # Remove underscores múltiplos
+    texto = re.sub(r'_+', '_', texto)
+
+    # Limita tamanho
+    return texto[:100]
+
+
+def _get_unique_slug(db: Session, base_slug: str, exclude_question_id: int = None) -> str:
+    """
+    Garante que o slug seja único, adicionando sufixo se necessário.
+
+    Args:
+        db: Sessão do banco
+        base_slug: Slug base
+        exclude_question_id: ID da pergunta a excluir da verificação (para updates)
+
+    Returns:
+        Slug único
+    """
+    slug = base_slug
+    contador = 1
+
+    while True:
+        query = db.query(ExtractionVariable).filter(ExtractionVariable.slug == slug)
+
+        # Se for update, exclui a variável da própria pergunta
+        if exclude_question_id:
+            query = query.filter(
+                or_(
+                    ExtractionVariable.source_question_id != exclude_question_id,
+                    ExtractionVariable.source_question_id.is_(None)
+                )
+            )
+
+        existente = query.first()
+
+        if not existente:
+            return slug
+
+        contador += 1
+        slug = f"{base_slug}_{contador}"
+
+
+def ensure_variable_for_question(
+    db: Session,
+    pergunta: ExtractionQuestion,
+    categoria: "CategoriaResumoJSON"
+) -> Optional[ExtractionVariable]:
+    """
+    Garante que existe uma variável correspondente à pergunta.
+
+    Esta função:
+    1. Verifica se a pergunta tem os campos mínimos (texto, tipo)
+    2. Determina o slug (usa nome_variavel_sugerido se existir, senão gera a partir do texto)
+    3. Verifica se já existe uma variável com esse slug
+    4. Se existir e pertencer a outra pergunta, usa sufixo para unicidade
+    5. Se não existir, cria uma nova variável
+    6. Atualiza a pergunta com o slug se foi gerado
+
+    Args:
+        db: Sessão do banco de dados
+        pergunta: Pergunta de extração
+        categoria: Categoria da pergunta
+
+    Returns:
+        ExtractionVariable criada/atualizada ou None se pergunta incompleta
+    """
+    # Verifica campos mínimos
+    if not pergunta.pergunta or not pergunta.pergunta.strip():
+        return None
+
+    if not pergunta.tipo_sugerido or not pergunta.tipo_sugerido.strip():
+        return None
+
+    # Determina o slug
+    if pergunta.nome_variavel_sugerido and pergunta.nome_variavel_sugerido.strip():
+        slug_base = pergunta.nome_variavel_sugerido.strip()
+    else:
+        # Gera slug a partir do texto da pergunta
+        slug_base = _slugify(pergunta.pergunta)
+        if not slug_base:
+            slug_base = f"variavel_{pergunta.id or 'nova'}"
+
+    # Verifica se já existe variável vinculada a esta pergunta
+    variavel_existente = db.query(ExtractionVariable).filter(
+        ExtractionVariable.source_question_id == pergunta.id
+    ).first() if pergunta.id else None
+
+    if variavel_existente:
+        # Atualiza variável existente
+        slug_antigo = variavel_existente.slug
+        novo_slug = slug_base
+
+        # Se mudou o slug, verifica unicidade
+        if slug_antigo != novo_slug:
+            novo_slug = _get_unique_slug(db, novo_slug, exclude_question_id=pergunta.id)
+
+        variavel_existente.slug = novo_slug
+        variavel_existente.label = pergunta.pergunta[:200] if pergunta.pergunta else slug_base
+        variavel_existente.tipo = pergunta.tipo_sugerido.lower()
+        variavel_existente.descricao = pergunta.descricao
+        variavel_existente.opcoes = pergunta.opcoes_sugeridas
+        variavel_existente.categoria_id = categoria.id
+
+        # Atualiza dependências
+        if pergunta.depends_on_variable:
+            variavel_existente.is_conditional = True
+            variavel_existente.depends_on_variable = pergunta.depends_on_variable
+            variavel_existente.dependency_config = {
+                "operator": pergunta.dependency_operator or "equals",
+                "value": pergunta.dependency_value
+            } if pergunta.dependency_operator else None
+        else:
+            variavel_existente.is_conditional = False
+            variavel_existente.depends_on_variable = None
+            variavel_existente.dependency_config = None
+
+        variavel_existente.atualizado_em = datetime.utcnow()
+
+        # Atualiza nome_variavel_sugerido da pergunta se mudou
+        if pergunta.nome_variavel_sugerido != novo_slug:
+            pergunta.nome_variavel_sugerido = novo_slug
+
+        logger.info(f"Variável atualizada: {variavel_existente.slug} (pergunta_id={pergunta.id})")
+        return variavel_existente
+
+    # Verifica se existe variável com o mesmo slug (de outra pergunta ou manual)
+    variavel_mesmo_slug = db.query(ExtractionVariable).filter(
+        ExtractionVariable.slug == slug_base
+    ).first()
+
+    if variavel_mesmo_slug:
+        # Já existe variável com esse slug
+        if variavel_mesmo_slug.source_question_id is None:
+            # Variável manual sem pergunta vinculada - vincula a esta pergunta
+            variavel_mesmo_slug.source_question_id = pergunta.id
+            variavel_mesmo_slug.categoria_id = categoria.id
+            variavel_mesmo_slug.label = pergunta.pergunta[:200] if pergunta.pergunta else slug_base
+            variavel_mesmo_slug.tipo = pergunta.tipo_sugerido.lower()
+            variavel_mesmo_slug.descricao = pergunta.descricao or variavel_mesmo_slug.descricao
+            variavel_mesmo_slug.opcoes = pergunta.opcoes_sugeridas or variavel_mesmo_slug.opcoes
+            variavel_mesmo_slug.atualizado_em = datetime.utcnow()
+
+            # Atualiza nome_variavel_sugerido da pergunta
+            if pergunta.nome_variavel_sugerido != slug_base:
+                pergunta.nome_variavel_sugerido = slug_base
+
+            logger.info(f"Variável existente vinculada: {variavel_mesmo_slug.slug} (pergunta_id={pergunta.id})")
+            return variavel_mesmo_slug
+        else:
+            # Variável já vinculada a outra pergunta - usa sufixo
+            slug_unico = _get_unique_slug(db, slug_base, exclude_question_id=pergunta.id)
+            slug_base = slug_unico
+
+    # Cria nova variável
+    variavel = ExtractionVariable(
+        slug=slug_base,
+        label=pergunta.pergunta[:200] if pergunta.pergunta else slug_base,
+        descricao=pergunta.descricao,
+        tipo=pergunta.tipo_sugerido.lower(),
+        categoria_id=categoria.id,
+        opcoes=pergunta.opcoes_sugeridas,
+        source_question_id=pergunta.id,
+        is_conditional=bool(pergunta.depends_on_variable),
+        depends_on_variable=pergunta.depends_on_variable,
+        dependency_config={
+            "operator": pergunta.dependency_operator or "equals",
+            "value": pergunta.dependency_value
+        } if pergunta.depends_on_variable and pergunta.dependency_operator else None,
+        ativo=True
+    )
+
+    db.add(variavel)
+    db.flush()  # Para obter o ID
+
+    # Atualiza nome_variavel_sugerido da pergunta se foi gerado
+    if pergunta.nome_variavel_sugerido != slug_base:
+        pergunta.nome_variavel_sugerido = slug_base
+
+    logger.info(f"Variável criada: {variavel.slug} (id={variavel.id}, pergunta_id={pergunta.id})")
+
+    return variavel
+
+
 @router.get("/categorias/{categoria_id}/perguntas", response_model=List[ExtractionQuestionResponse])
 async def listar_perguntas_categoria(
     categoria_id: int,
@@ -343,10 +550,16 @@ async def criar_pergunta(
         criado_por=current_user.id
     )
     db.add(pergunta)
+    db.flush()  # Obtém ID antes de criar variável
+
+    # Cria/atualiza variável correspondente (se pergunta tiver campos mínimos)
+    variavel = ensure_variable_for_question(db, pergunta, categoria)
+
     db.commit()
     db.refresh(pergunta)
 
-    logger.info(f"Pergunta de extração criada: id={pergunta.id}, categoria={categoria.nome}")
+    logger.info(f"Pergunta de extração criada: id={pergunta.id}, categoria={categoria.nome}"
+                f"{f', variavel={variavel.slug}' if variavel else ''}")
 
     return ExtractionQuestionResponse(
         id=pergunta.id,
@@ -795,12 +1008,17 @@ async def atualizar_pergunta(
     pergunta.atualizado_por = current_user.id
     pergunta.atualizado_em = datetime.utcnow()
 
+    # Busca categoria para criar/atualizar variável
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == pergunta.categoria_id).first()
+
+    # Cria/atualiza variável correspondente (se pergunta tiver campos mínimos)
+    variavel = ensure_variable_for_question(db, pergunta, categoria) if categoria else None
+
     db.commit()
     db.refresh(pergunta)
 
-    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == pergunta.categoria_id).first()
-
-    logger.info(f"Pergunta de extração atualizada: id={pergunta.id}")
+    logger.info(f"Pergunta de extração atualizada: id={pergunta.id}"
+                f"{f', variavel={variavel.slug}' if variavel else ''}")
 
     return ExtractionQuestionResponse(
         id=pergunta.id,
@@ -2492,11 +2710,12 @@ async def sincronizar_tipos_perguntas(
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Sincroniza tipos e opções das perguntas com o mapeamento gerado pela IA.
+    Sincroniza tipos, slugs e opções das perguntas com o mapeamento gerado pela IA.
 
     Chamado após "Aceitar e Usar" o JSON gerado pela IA para:
-    1. Atualizar tipo_sugerido das perguntas que estavam como "ia_decide"
-    2. Atualizar opcoes_sugeridas quando a IA definir options
+    1. Atualizar nome_variavel_sugerido (slug) das perguntas que não tinham
+    2. Atualizar tipo_sugerido das perguntas que estavam como "ia_decide"
+    3. Atualizar opcoes_sugeridas quando a IA definir options
     """
     # Verifica permissão
     if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
@@ -2505,6 +2724,12 @@ async def sincronizar_tipos_perguntas(
     try:
         perguntas_atualizadas = 0
         detalhes = []
+
+        # Busca namespace da categoria
+        categoria = db.query(CategoriaResumoJSON).filter(
+            CategoriaResumoJSON.id == data.categoria_id
+        ).first()
+        namespace = categoria.namespace if categoria else ""
 
         # Mapeamento de tipos da IA para tipos do modelo
         tipo_mapping = {
@@ -2540,6 +2765,16 @@ async def sincronizar_tipos_perguntas(
                 continue
 
             alteracoes = {}
+
+            # Atualiza slug (nome_variavel_sugerido) se não tinha
+            slug_ia = info.get("slug")
+            if slug_ia and not pergunta.nome_variavel_sugerido:
+                # Remove namespace se presente para armazenar slug base
+                slug_base = slug_ia
+                if namespace and slug_ia.startswith(f"{namespace}_"):
+                    slug_base = slug_ia[len(namespace) + 1:]
+                pergunta.nome_variavel_sugerido = slug_base
+                alteracoes["slug"] = slug_base
 
             # Só atualiza tipo se estava como "ia_decide" ou vazio
             tipo_ia = info.get("tipo") or info.get("type")
