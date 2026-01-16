@@ -1,0 +1,2029 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Testar Categorias JSON - Portal PGE-MS</title>
+    <!-- VERSAO: 2026-01-16-v7 - persistencia no banco de dados -->
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd',
+                            300: '#7dd3fc', 400: '#38bdf8', 500: '#0ea5e9',
+                            600: '#0284c7', 700: '#0369a1', 800: '#075985', 900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .tab-active {
+            border-bottom: 3px solid #0284c7;
+            color: #0284c7;
+            background: #f0f9ff;
+        }
+        .tab-inactive {
+            border-bottom: 3px solid transparent;
+            color: #6b7280;
+        }
+        .tab-inactive:hover {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        .processo-card {
+            transition: all 0.2s;
+        }
+        .processo-card:hover {
+            transform: translateX(4px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .processo-card.selected {
+            border-left: 4px solid #0284c7;
+            background: linear-gradient(90deg, #f0f9ff 0%, white 100%);
+        }
+        .json-section {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .json-field-card {
+            background: white;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            border-left: 4px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .json-field-card.has-value {
+            border-left-color: #10b981;
+        }
+        .json-field-card.is-null {
+            border-left-color: #f59e0b;
+            background: #fffbeb;
+        }
+        .json-field-card.is-bool-true {
+            border-left-color: #10b981;
+            background: #ecfdf5;
+        }
+        .json-field-card.is-bool-false {
+            border-left-color: #ef4444;
+            background: #fef2f2;
+        }
+        .json-array-item {
+            background: white;
+            border-radius: 6px;
+            padding: 8px 12px;
+            margin: 4px 0;
+            border: 1px solid #e5e7eb;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-error { background: #fee2e2; color: #991b1b; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+        .badge-neutral { background: #f3f4f6; color: #4b5563; }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 500;
+            background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+            color: #0369a1;
+            margin: 2px 4px 2px 0;
+        }
+        .status-pendente { background: #f3f4f6; color: #6b7280; }
+        .status-baixado { background: #dbeafe; color: #1e40af; }
+        .status-classificado { background: #dcfce7; color: #166534; }
+        .status-revisado { background: #f3e8ff; color: #7c3aed; }
+        .status-erro { background: #fee2e2; color: #991b1b; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm sticky top-0 z-40">
+        <div class="flex items-center justify-between max-w-full mx-auto">
+            <div class="flex items-center gap-4">
+                <a href="/admin/categorias-resumo-json" class="text-gray-500 hover:text-primary-600 p-2 rounded-lg hover:bg-gray-100" title="Voltar">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
+                <div>
+                    <h1 class="text-xl font-semibold text-gray-800">Ambiente de Teste de Categorias</h1>
+                    <p class="text-sm text-gray-500">Teste e valide a extracao de JSON por categoria</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <!-- Seletor de Categoria (OBRIGATORIO) -->
+                <div class="flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-lg border-2 border-amber-300">
+                    <i class="fas fa-tag text-amber-600"></i>
+                    <label class="text-sm font-medium text-amber-700">Categoria:</label>
+                    <select id="select-categoria" onchange="trocarCategoria()"
+                        class="px-4 py-2 border-2 border-amber-400 rounded-lg focus:ring-2 focus:ring-amber-500 font-semibold min-w-[280px] bg-white">
+                        <option value="">-- Selecione uma categoria --</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="p-4">
+        <div class="grid grid-cols-12 gap-4">
+            <!-- Painel Esquerdo -->
+            <div class="col-span-3 space-y-4">
+                <!-- Card: Adicionar Processos -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-primary-50 to-blue-50">
+                        <h3 class="font-semibold text-gray-700 flex items-center gap-2">
+                            <i class="fas fa-plus-circle text-primary-500"></i>
+                            Adicionar Processos
+                        </h3>
+                    </div>
+                    <div class="p-4">
+                        <textarea id="input-processos" rows="4"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm resize-none"
+                            placeholder="Cole os numeros aqui (um por linha)..."></textarea>
+                        <div id="erros-validacao" class="hidden mt-2 p-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600"></div>
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="adicionarProcessos()"
+                                class="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium text-sm">
+                                <i class="fas fa-plus mr-1"></i> Adicionar
+                            </button>
+                            <button onclick="limparPendentes()"
+                                class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-sm" title="Limpar pendentes">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Lista de Pendentes -->
+                    <div class="border-t border-gray-200">
+                        <div class="px-4 py-2 bg-gray-50 flex items-center justify-between">
+                            <span class="text-sm font-medium text-gray-600">
+                                <i class="fas fa-clock text-amber-500 mr-1"></i>
+                                Pendentes (<span id="count-pendentes">0</span>)
+                            </span>
+                            <button onclick="baixarTodosDocumentos()" id="btn-baixar"
+                                class="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-xs font-medium disabled:opacity-50">
+                                <i class="fas fa-download mr-1"></i> Baixar Todos
+                            </button>
+                        </div>
+                        <div id="lista-pendentes" class="max-h-[200px] overflow-y-auto p-2 space-y-1">
+                            <p class="text-center text-gray-400 text-sm py-4">Nenhum processo pendente</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card: Observacoes -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-amber-50 to-orange-50">
+                        <h3 class="font-semibold text-gray-700 flex items-center gap-2">
+                            <i class="fas fa-sticky-note text-amber-500"></i>
+                            Observacoes
+                        </h3>
+                    </div>
+                    <div class="p-3">
+                        <textarea id="observacoes-categoria" rows="5"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 resize-none"
+                            placeholder="Anote erros, ajustes no prompt, etc..."
+                            onchange="salvarObservacoes()"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Painel Central/Direito -->
+            <div class="col-span-9">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" style="height: calc(100vh - 140px);">
+                    <!-- Tabs -->
+                    <div class="flex border-b border-gray-200">
+                        <button onclick="mostrarAba('resultados')" id="tab-resultados"
+                            class="flex-1 px-6 py-3 text-sm font-medium tab-active flex items-center justify-center gap-2">
+                            <i class="fas fa-list"></i>
+                            Resultados (<span id="count-resultados">0</span>)
+                        </button>
+                        <button onclick="mostrarAba('visualizacao')" id="tab-visualizacao"
+                            class="flex-1 px-6 py-3 text-sm font-medium tab-inactive flex items-center justify-center gap-2">
+                            <i class="fas fa-eye"></i>
+                            Visualizacao
+                        </button>
+                        <button onclick="mostrarAba('progresso')" id="tab-progresso"
+                            class="flex-1 px-6 py-3 text-sm font-medium tab-inactive flex items-center justify-center gap-2">
+                            <i class="fas fa-tasks"></i>
+                            Progresso
+                        </button>
+                    </div>
+
+                    <!-- Aba: Resultados -->
+                    <div id="aba-resultados" class="h-full overflow-hidden flex flex-col">
+                        <!-- Toolbar de filtros -->
+                        <div class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-4 flex-wrap">
+                            <div class="flex items-center gap-2">
+                                <label class="text-sm text-gray-600">Status:</label>
+                                <select id="filtro-status" onchange="filtrarResultados()"
+                                    class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                                    <option value="todos">Todos</option>
+                                    <option value="baixado">Baixados</option>
+                                    <option value="classificado">Classificados</option>
+                                    <option value="revisado">Revisados</option>
+                                    <option value="nao_revisado">Nao Revisados</option>
+                                    <option value="erro">Com Erro</option>
+                                </select>
+                            </div>
+                            <div class="flex-1"></div>
+                            <button onclick="baixarPdfsExpirados()" id="btn-baixar-expirados"
+                                class="hidden px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm">
+                                <i class="fas fa-download mr-1"></i> <span id="btn-baixar-expirados-texto">Baixar Expirados</span>
+                            </button>
+                            <button onclick="reclassificarComErro()" id="btn-reclassificar-erros"
+                                class="hidden px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 text-sm">
+                                <i class="fas fa-redo mr-1"></i> <span id="btn-reclassificar-erros-texto">Reclassificar Erros</span>
+                            </button>
+                            <button onclick="classificarTodos()" id="btn-classificar"
+                                class="px-4 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i class="fas fa-robot mr-1"></i> <span id="btn-classificar-texto">Classificar Pendentes</span>
+                            </button>
+                            <button onclick="resetarErros()"
+                                class="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 text-sm">
+                                <i class="fas fa-redo mr-1"></i> Resetar Erros
+                            </button>
+                        </div>
+
+                        <!-- Lista de Resultados -->
+                        <div id="lista-resultados" class="flex-1 overflow-y-auto p-4">
+                            <div class="text-center py-12 text-gray-400">
+                                <i class="fas fa-inbox text-5xl mb-4"></i>
+                                <p class="text-lg">Nenhum documento processado</p>
+                                <p class="text-sm mt-2">Adicione processos e clique em "Baixar Todos"</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Aba: Visualizacao -->
+                    <div id="aba-visualizacao" class="hidden h-full overflow-hidden">
+                        <div id="placeholder-visualizacao" class="flex items-center justify-center h-full text-gray-400">
+                            <div class="text-center">
+                                <i class="fas fa-hand-pointer text-5xl mb-4"></i>
+                                <p class="text-lg">Selecione um documento na aba Resultados</p>
+                            </div>
+                        </div>
+
+                        <div id="conteudo-visualizacao" class="hidden h-full flex flex-col">
+                            <!-- Header do documento -->
+                            <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <span id="doc-titulo" class="font-semibold text-gray-800 font-mono"></span>
+                                    <span id="doc-status" class="badge"></span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="classificarAtual()" class="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm">
+                                        <i class="fas fa-robot mr-1"></i> Classificar
+                                    </button>
+                                    <button onclick="toggleRevisado()" id="btn-revisado" class="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm">
+                                        <i class="fas fa-check-double mr-1"></i> Marcar Revisado
+                                    </button>
+                                    <button onclick="excluirDocumento()" class="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Split View -->
+                            <div class="flex-1 grid grid-cols-2 gap-0 overflow-hidden">
+                                <!-- Resultado JSON -->
+                                <div class="border-r border-gray-200 flex flex-col overflow-hidden">
+                                    <div class="px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 border-b border-gray-200 flex items-center justify-between">
+                                        <span class="font-medium text-sm text-gray-700">
+                                            <i class="fas fa-code text-green-500 mr-2"></i>Resultado Extraido
+                                        </span>
+                                        <div class="flex items-center gap-2">
+                                            <select id="ordenacao-json" onchange="reordenarJSON()"
+                                                class="text-xs px-2 py-1 border border-gray-300 rounded bg-white" title="Ordenar campos">
+                                                <option value="extraidos">Extraidos primeiro</option>
+                                                <option value="original">Ordem original</option>
+                                                <option value="alfabetica">Alfabetica (A-Z)</option>
+                                                <option value="alfabetica-desc">Alfabetica (Z-A)</option>
+                                            </select>
+                                            <button onclick="copiarJSON()" class="text-gray-500 hover:text-gray-700 text-sm" title="Copiar JSON">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="resultado-json" class="flex-1 overflow-y-auto p-4 bg-gray-50">
+                                        <p class="text-center text-gray-400 py-8">Documento nao classificado</p>
+                                    </div>
+                                </div>
+
+                                <!-- PDF Viewer -->
+                                <div class="flex flex-col overflow-hidden">
+                                    <div class="px-4 py-2 bg-gradient-to-r from-red-50 to-orange-50 border-b border-gray-200">
+                                        <span class="font-medium text-sm text-gray-700">
+                                            <i class="fas fa-file-pdf text-red-500 mr-2"></i>Documento PDF
+                                        </span>
+                                    </div>
+                                    <div id="pdf-container" class="flex-1 bg-gray-200 flex items-center justify-center">
+                                        <div id="pdf-placeholder" class="text-center text-gray-500">
+                                            <i class="fas fa-file-pdf text-5xl mb-4 text-gray-400"></i>
+                                            <p>PDF sera exibido aqui</p>
+                                        </div>
+                                        <iframe id="pdf-embed" class="hidden w-full h-full border-0" title="Visualizador PDF"></iframe>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Aba: Progresso -->
+                    <div id="aba-progresso" class="hidden h-full overflow-y-auto p-4">
+                        <div id="lista-progresso">
+                            <div class="text-center py-12 text-gray-400">
+                                <i class="fas fa-tasks text-5xl mb-4"></i>
+                                <p class="text-lg">Nenhuma operacao em andamento</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // ==========================
+        // Estado Global
+        // ==========================
+        let categorias = [];
+        let categoriaAtual = null;
+        let formatoCategoria = {};  // { slug: { type, description } } - mapeamento de campos para perguntas
+        let documentosCategoria = [];  // Lista de documentos da categoria atual (do banco)
+        let pdfBase64Cache = {};  // { processo: base64 } - PDFs em base64 na memoria
+        let pdfBlobUrlCache = {};  // { processo: blobUrl } - Blob URLs para exibicao
+        let documentoSelecionado = null;
+        let salvandoEmBackground = false;  // Flag para evitar multiplos saves simultaneos
+
+        // Debounce para salvar observacoes
+        let observacaoTimeout = null;
+
+        // ==========================
+        // Autenticacao
+        // ==========================
+        function getToken() {
+            return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+        }
+
+        // ==========================
+        // Inicializacao
+        // ==========================
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = getToken();
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+            await carregarCategorias();
+            // Dados sao carregados do banco quando categoria e selecionada
+            atualizarListaPendentes();
+            atualizarListaResultados();
+        });
+
+        // ==========================
+        // API
+        // ==========================
+        async function apiCall(url, options = {}) {
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${getToken()}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return null;
+            }
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ detail: 'Erro desconhecido' }));
+                throw new Error(error.detail || 'Erro na requisicao');
+            }
+
+            return response.json();
+        }
+
+        // ==========================
+        // PDF Helpers
+        // ==========================
+        function base64ToBlobUrl(base64, mimeType = 'application/pdf') {
+            // Converte base64 para Blob URL para exibicao no iframe
+            try {
+                const byteCharacters = atob(base64);
+                const byteNumbers = new Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                }
+                const byteArray = new Uint8Array(byteNumbers);
+                const blob = new Blob([byteArray], { type: mimeType });
+                return URL.createObjectURL(blob);
+            } catch (e) {
+                console.error('Erro ao converter base64 para Blob:', e);
+                return null;
+            }
+        }
+
+        function getPdfBlobUrl(processo) {
+            // Retorna Blob URL do PDF (cria se necessario)
+            if (pdfBlobUrlCache[processo]) {
+                return pdfBlobUrlCache[processo];
+            }
+            if (pdfBase64Cache[processo]) {
+                const blobUrl = base64ToBlobUrl(pdfBase64Cache[processo]);
+                if (blobUrl) {
+                    pdfBlobUrlCache[processo] = blobUrl;
+                }
+                return blobUrl;
+            }
+            return null;
+        }
+
+        function armazenarPdf(processo, base64) {
+            // Armazena PDF no cache e cria Blob URL
+            pdfBase64Cache[processo] = base64;
+            // Revoga URL antiga se existir
+            if (pdfBlobUrlCache[processo]) {
+                URL.revokeObjectURL(pdfBlobUrlCache[processo]);
+                delete pdfBlobUrlCache[processo];
+            }
+        }
+
+        function temPdfDisponivel(processo) {
+            return !!pdfBase64Cache[processo];
+        }
+
+        // ==========================
+        // Categorias
+        // ==========================
+        async function carregarCategorias() {
+            try {
+                categorias = await apiCall('/admin/api/teste-categorias/categorias-ativas');
+                const select = document.getElementById('select-categoria');
+                select.innerHTML = '<option value="">-- Selecione uma categoria --</option>';
+
+                for (const cat of categorias) {
+                    const option = document.createElement('option');
+                    option.value = cat.id;
+                    option.textContent = `${cat.titulo} ${cat.is_residual ? '(Residual)' : ''}`;
+                    select.appendChild(option);
+                }
+
+                // Atualiza UI para mostrar que categoria e obrigatoria
+                atualizarListaPendentes();
+                atualizarListaResultados();
+            } catch (e) {
+                console.error('Erro ao carregar categorias:', e);
+                mostrarErro('Erro ao carregar categorias');
+            }
+        }
+
+        async function trocarCategoria() {
+            const catId = parseInt(document.getElementById('select-categoria').value);
+            categoriaAtual = catId ? categorias.find(c => c.id === catId) : null;
+            formatoCategoria = {};  // Reset
+            documentoSelecionado = null;  // Limpa selecao ao trocar categoria
+            documentosCategoria = [];  // Limpa documentos
+
+            // Limpa cache de PDFs (revoga Blob URLs para liberar memoria)
+            Object.values(pdfBlobUrlCache).forEach(url => URL.revokeObjectURL(url));
+            pdfBase64Cache = {};
+            pdfBlobUrlCache = {};
+
+            if (categoriaAtual) {
+                // Carrega formato e documentos em paralelo
+                await Promise.all([
+                    carregarFormatoCategoria(categoriaAtual.id),
+                    carregarDocumentosCategoria(categoriaAtual.id),
+                    carregarObservacoes()
+                ]);
+            }
+
+            // Atualiza UI
+            atualizarListaResultados();
+
+            // Limpa visualizacao
+            document.getElementById('placeholder-visualizacao').classList.remove('hidden');
+            document.getElementById('conteudo-visualizacao').classList.add('hidden');
+        }
+
+        async function carregarDocumentosCategoria(categoriaId) {
+            try {
+                documentosCategoria = await apiCall(`/admin/api/teste-categorias/documentos/${categoriaId}`);
+                console.log(`Carregados ${documentosCategoria.length} documentos da categoria ${categoriaId}`);
+            } catch (e) {
+                console.error('Erro ao carregar documentos:', e);
+                documentosCategoria = [];
+            }
+        }
+
+        async function carregarFormatoCategoria(categoriaId) {
+            try {
+                const data = await apiCall(`/admin/api/teste-categorias/categoria/${categoriaId}/formato`);
+                if (data && data.formato_parsed) {
+                    formatoCategoria = data.formato_parsed;
+                    console.log('Formato carregado:', formatoCategoria);
+                }
+            } catch (e) {
+                console.warn('Erro ao carregar formato da categoria:', e);
+            }
+        }
+
+        // ==========================
+        // Processos Pendentes (status = pendente no banco)
+        // ==========================
+
+        function getDocumentosPendentes() {
+            return documentosCategoria.filter(d => d.status === 'pendente');
+        }
+
+        async function adicionarProcessos() {
+            if (!categoriaAtual) {
+                mostrarErro('Selecione uma categoria primeiro');
+                return;
+            }
+
+            const texto = document.getElementById('input-processos').value.trim();
+            if (!texto) return;
+
+            const linhas = texto.split('\n').map(l => l.trim()).filter(l => l);
+
+            try {
+                const resultado = await apiCall('/admin/api/teste-categorias/validar-processos', {
+                    method: 'POST',
+                    body: JSON.stringify({ processos: linhas })
+                });
+
+                const invalidos = resultado.filter(r => !r.valido);
+                const validos = resultado.filter(r => r.valido);
+
+                if (invalidos.length > 0) {
+                    document.getElementById('erros-validacao').classList.remove('hidden');
+                    document.getElementById('erros-validacao').innerHTML = invalidos.map(i =>
+                        `<div><strong>${i.original}</strong>: ${i.erro}</div>`
+                    ).join('');
+                } else {
+                    document.getElementById('erros-validacao').classList.add('hidden');
+                }
+
+                // Adiciona validos como documentos pendentes (sem duplicar)
+                const existentes = new Set(documentosCategoria.map(d => d.processo));
+                const novos = validos.filter(p => !existentes.has(p.normalizado));
+
+                if (novos.length > 0) {
+                    // Salva no banco como pendentes
+                    const docsParaSalvar = novos.map(p => ({
+                        processo: p.normalizado,
+                        categoria_id: categoriaAtual.id,
+                        status: 'pendente',
+                        num_documentos: 0,
+                        revisado: false
+                    }));
+
+                    await apiCall('/admin/api/teste-categorias/documentos/lote', {
+                        method: 'POST',
+                        body: JSON.stringify(docsParaSalvar)
+                    });
+
+                    // Recarrega documentos
+                    await carregarDocumentosCategoria(categoriaAtual.id);
+                }
+
+                document.getElementById('input-processos').value = '';
+                atualizarListaPendentes();
+                atualizarListaResultados();
+
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao validar/salvar processos');
+            }
+        }
+
+        function atualizarListaPendentes() {
+            const container = document.getElementById('lista-pendentes');
+            const pendentes = getDocumentosPendentes();
+            document.getElementById('count-pendentes').textContent = pendentes.length;
+
+            if (!categoriaAtual) {
+                container.innerHTML = '<p class="text-center text-amber-500 text-sm py-4"><i class="fas fa-exclamation-triangle mr-1"></i>Selecione uma categoria</p>';
+                return;
+            }
+
+            if (pendentes.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-400 text-sm py-4">Nenhum processo pendente</p>';
+                return;
+            }
+
+            container.innerHTML = pendentes.map(d => `
+                <div class="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-sm">
+                    <span class="font-mono text-gray-600">${d.processo}</span>
+                    <button onclick="removerPendente(${d.id})" class="text-red-400 hover:text-red-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        async function removerPendente(docId) {
+            if (!categoriaAtual) return;
+
+            try {
+                await apiCall(`/admin/api/teste-categorias/documentos/${docId}`, {
+                    method: 'DELETE'
+                });
+
+                // Remove localmente
+                documentosCategoria = documentosCategoria.filter(d => d.id !== docId);
+                atualizarListaPendentes();
+            } catch (e) {
+                console.error('Erro ao remover:', e);
+                mostrarErro('Erro ao remover processo');
+            }
+        }
+
+        async function limparPendentes() {
+            if (!categoriaAtual) return;
+            const pendentes = getDocumentosPendentes();
+            if (pendentes.length === 0) return;
+
+            if (confirm('Limpar todos os processos pendentes desta categoria?')) {
+                try {
+                    // Remove cada pendente
+                    for (const d of pendentes) {
+                        await apiCall(`/admin/api/teste-categorias/documentos/${d.id}`, {
+                            method: 'DELETE'
+                        });
+                    }
+
+                    // Recarrega
+                    await carregarDocumentosCategoria(categoriaAtual.id);
+                    atualizarListaPendentes();
+                    mostrarSucesso('Pendentes removidos');
+                } catch (e) {
+                    console.error('Erro:', e);
+                    mostrarErro('Erro ao limpar pendentes');
+                }
+            }
+        }
+
+        // ==========================
+        // Download de Documentos
+        // ==========================
+
+        // Rebaixa PDF de um documento especifico (quando expirou)
+        async function rebaixarPdf(processo) {
+            const d = documentosCategoria.find(doc => doc.processo === processo);
+            if (!d || !categoriaAtual) return;
+
+            mostrarAviso(`Baixando PDF de ${processo}...`);
+
+            try {
+                const resultado = await apiCall('/admin/api/teste-categorias/baixar-documentos', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        processos: [processo],
+                        categoria_id: categoriaAtual.id
+                    })
+                });
+
+                const r = resultado[0];
+                if (r && r.status === 'ok' && r.pdf_unificado_base64) {
+                    // Armazena PDF no cache local (Blob URL)
+                    armazenarPdf(processo, r.pdf_unificado_base64);
+
+                    atualizarListaResultados();
+                    mostrarSucesso(`PDF de ${processo} baixado!`);
+
+                    // Se este documento esta selecionado, atualiza visualizacao
+                    if (documentoSelecionado === processo) {
+                        selecionarDocumento(processo);
+                    }
+                } else {
+                    mostrarErro(`Erro ao baixar PDF: ${r?.erro || 'Desconhecido'}`);
+                }
+            } catch (e) {
+                console.error('Erro ao rebaixar PDF:', e);
+                mostrarErro('Erro ao baixar PDF');
+            }
+        }
+
+        async function baixarTodosDocumentos() {
+            if (!categoriaAtual) {
+                mostrarErro('Selecione uma categoria primeiro');
+                return;
+            }
+
+            const pendentes = getDocumentosPendentes();
+            if (pendentes.length === 0) {
+                mostrarErro('Adicione processos primeiro');
+                return;
+            }
+
+            mostrarAba('progresso');
+            const listaProgresso = document.getElementById('lista-progresso');
+            listaProgresso.innerHTML = `
+                <div class="p-4 bg-blue-50 rounded-lg mb-4">
+                    <div class="flex items-center gap-2 text-blue-700">
+                        <i class="fas fa-download"></i>
+                        <span class="font-medium">Baixando documentos para "${categoriaAtual.titulo}"...</span>
+                    </div>
+                </div>
+            `;
+
+            const processosParaBaixar = pendentes.map(d => d.processo);
+            for (const p of processosParaBaixar) {
+                listaProgresso.innerHTML += `
+                    <div id="prog-${p.replace(/\./g, '-')}" class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg mb-2">
+                        <i class="fas fa-spinner fa-spin text-blue-500"></i>
+                        <span class="font-mono text-sm">${p}</span>
+                        <span class="text-sm text-gray-500">Baixando...</span>
+                    </div>
+                `;
+            }
+
+            try {
+                const resultado = await apiCall('/admin/api/teste-categorias/baixar-documentos', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        processos: processosParaBaixar,
+                        categoria_id: categoriaAtual.id
+                    })
+                });
+
+                // Prepara atualizacoes para o banco
+                const atualizacoes = [];
+
+                for (const r of resultado) {
+                    const itemEl = document.getElementById(`prog-${r.processo.replace(/\./g, '-')}`);
+
+                    if (r.status === 'ok' && r.pdf_unificado_base64) {
+                        // Armazena PDF no cache local (Blob URL)
+                        armazenarPdf(r.processo, r.pdf_unificado_base64);
+
+                        atualizacoes.push({
+                            processo: r.processo,
+                            categoria_id: categoriaAtual.id,
+                            status: 'baixado',
+                            num_documentos: r.documentos.length,
+                            revisado: false
+                        });
+
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-check-circle text-green-500"></i>
+                                <span class="font-mono text-sm">${r.processo}</span>
+                                <span class="text-sm text-green-600">${r.documentos.length} doc(s)</span>
+                            `;
+                        }
+                    } else {
+                        atualizacoes.push({
+                            processo: r.processo,
+                            categoria_id: categoriaAtual.id,
+                            status: 'erro',
+                            erro: r.erro,
+                            num_documentos: 0,
+                            revisado: false
+                        });
+
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-times-circle text-red-500"></i>
+                                <span class="font-mono text-sm">${r.processo}</span>
+                                <span class="text-sm text-red-600 truncate" title="${r.erro}">${r.erro?.substring(0, 50)}...</span>
+                            `;
+                        }
+                    }
+                }
+
+                // Salva todas as atualizacoes no banco
+                if (atualizacoes.length > 0) {
+                    await apiCall('/admin/api/teste-categorias/documentos/lote', {
+                        method: 'POST',
+                        body: JSON.stringify(atualizacoes)
+                    });
+                }
+
+                // Recarrega documentos
+                await carregarDocumentosCategoria(categoriaAtual.id);
+                atualizarListaPendentes();
+                atualizarListaResultados();
+
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao baixar documentos');
+            }
+        }
+
+        // ==========================
+        // Classificacao
+        // ==========================
+
+        // Retorna PDF base64 do cache para classificacao
+        function obterPdfBase64(processo) {
+            return pdfBase64Cache[processo] || null;
+        }
+
+        async function classificarTodos() {
+            if (!categoriaAtual) {
+                mostrarErro('Selecione uma categoria');
+                return;
+            }
+
+            // Filtra documentos baixados que tem PDF disponivel
+            const baixados = documentosCategoria.filter(d =>
+                d.status === 'baixado' && temPdfDisponivel(d.processo)
+            );
+
+            if (baixados.length === 0) {
+                mostrarErro('Nenhum documento para classificar (baixe PDFs primeiro)');
+                return;
+            }
+
+            mostrarAba('progresso');
+            const listaProgresso = document.getElementById('lista-progresso');
+            listaProgresso.innerHTML = `
+                <div class="p-4 bg-green-50 rounded-lg mb-4">
+                    <div class="flex items-center gap-2 text-green-700">
+                        <i class="fas fa-bolt"></i>
+                        <span class="font-medium">Classificando ${baixados.length} documento(s) de "${categoriaAtual.titulo}" em paralelo...</span>
+                    </div>
+                </div>
+            `;
+
+            for (const d of baixados) {
+                listaProgresso.innerHTML += `
+                    <div id="prog-${d.processo.replace(/\./g, '-')}" class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg mb-2">
+                        <i class="fas fa-spinner fa-spin text-green-500"></i>
+                        <span class="font-mono text-sm">${d.processo}</span>
+                        <span class="text-sm text-gray-500">Obtendo PDF...</span>
+                    </div>
+                `;
+            }
+
+            try {
+                // Obtem PDFs em paralelo
+                const itensPromises = baixados.map(async d => {
+                    const pdfBase64 = await obterPdfBase64(d.processo);
+                    const itemEl = document.getElementById(`prog-${d.processo.replace(/\./g, '-')}`);
+                    if (itemEl) {
+                        const span = itemEl.querySelector('.text-gray-500');
+                        if (span) span.textContent = 'Aguardando classificacao...';
+                    }
+                    return {
+                        processo: d.processo,
+                        pdf_base64: pdfBase64
+                    };
+                });
+
+                const itens = await Promise.all(itensPromises);
+                const itensValidos = itens.filter(i => i.pdf_base64);
+
+                if (itensValidos.length === 0) {
+                    mostrarErro('Nenhum PDF disponivel para classificar');
+                    return;
+                }
+
+                const resultados = await apiCall('/admin/api/teste-categorias/classificar-lote', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        categoria_id: categoriaAtual.id,
+                        itens: itensValidos.map(i => ({ processo: i.processo, pdf_base64: i.pdf_base64 })),
+                        max_paralelo: 5
+                    })
+                });
+
+                // Prepara atualizacoes para o banco
+                const atualizacoes = [];
+
+                for (const r of resultados) {
+                    const itemEl = document.getElementById(`prog-${r.processo.replace(/\./g, '-')}`);
+                    const docOriginal = baixados.find(d => d.processo === r.processo);
+
+                    if (r.sucesso) {
+                        atualizacoes.push({
+                            processo: r.processo,
+                            categoria_id: categoriaAtual.id,
+                            status: 'classificado',
+                            json_resultado: r.json_extraido,
+                            num_documentos: docOriginal?.num_documentos || 0,
+                            revisado: docOriginal?.revisado || false
+                        });
+
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-check-circle text-green-500"></i>
+                                <span class="font-mono text-sm">${r.processo}</span>
+                                <span class="text-sm text-green-600">${r.tempo_processamento_ms}ms</span>
+                            `;
+                        }
+                    } else {
+                        atualizacoes.push({
+                            processo: r.processo,
+                            categoria_id: categoriaAtual.id,
+                            status: 'baixado',  // Mantem como baixado mas com erro
+                            erro: r.erro,
+                            num_documentos: docOriginal?.num_documentos || 0,
+                            revisado: false
+                        });
+
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-times-circle text-red-500"></i>
+                                <span class="font-mono text-sm">${r.processo}</span>
+                                <span class="text-sm text-red-600">${r.erro}</span>
+                            `;
+                        }
+                    }
+                }
+
+                // Salva no banco
+                if (atualizacoes.length > 0) {
+                    await apiCall('/admin/api/teste-categorias/documentos/lote', {
+                        method: 'POST',
+                        body: JSON.stringify(atualizacoes)
+                    });
+                }
+
+                // Recarrega
+                await carregarDocumentosCategoria(categoriaAtual.id);
+                atualizarListaResultados();
+
+                const sucesso = resultados.filter(r => r.sucesso).length;
+                mostrarSucesso(`${sucesso} documento(s) classificado(s)!`);
+
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao classificar');
+            }
+        }
+
+        async function classificarAtual() {
+            if (!documentoSelecionado || !categoriaAtual) return;
+
+            const d = documentosCategoria.find(doc => doc.processo === documentoSelecionado);
+            if (!d) return;
+
+            if (!temPdfDisponivel(documentoSelecionado)) {
+                mostrarErro('PDF nao disponivel - baixe novamente');
+                return;
+            }
+
+            document.getElementById('resultado-json').innerHTML = `
+                <div class="text-center py-12">
+                    <i class="fas fa-spinner fa-spin text-4xl text-green-500 mb-4"></i>
+                    <p class="text-gray-600">Classificando...</p>
+                </div>
+            `;
+
+            try {
+                const pdfBase64 = await obterPdfBase64(documentoSelecionado);
+                if (!pdfBase64) {
+                    mostrarErro('Erro ao obter PDF');
+                    return;
+                }
+
+                const resultado = await apiCall('/admin/api/teste-categorias/classificar', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        processo: d.processo,
+                        categoria_id: categoriaAtual.id,
+                        pdf_base64: pdfBase64
+                    })
+                });
+
+                if (resultado.sucesso) {
+                    // Salva no banco
+                    await apiCall('/admin/api/teste-categorias/documentos', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            processo: d.processo,
+                            categoria_id: categoriaAtual.id,
+                            status: 'classificado',
+                            json_resultado: resultado.json_extraido,
+                            num_documentos: d.num_documentos || 0,
+                            revisado: d.revisado || false
+                        })
+                    });
+
+                    // Atualiza local
+                    d.json_resultado = resultado.json_extraido;
+                    d.status = 'classificado';
+
+                    renderizarJSON(d.json_resultado);
+                    atualizarListaResultados();
+                    mostrarSucesso(`Classificado em ${resultado.tempo_processamento_ms}ms`);
+                } else {
+                    document.getElementById('resultado-json').innerHTML = `
+                        <div class="text-center py-12 text-red-500">
+                            <i class="fas fa-times-circle text-4xl mb-4"></i>
+                            <p>${resultado.erro}</p>
+                        </div>
+                    `;
+                }
+
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao classificar');
+            }
+        }
+
+        // ==========================
+        // Lista de Resultados (do banco de dados)
+        // ==========================
+        function atualizarListaResultados() {
+            const container = document.getElementById('lista-resultados');
+            const filtro = document.getElementById('filtro-status').value;
+
+            // Atualiza botoes de acoes em lote
+            atualizarBotoesAcoesLote();
+
+            if (!categoriaAtual) {
+                document.getElementById('count-resultados').textContent = '0';
+                container.innerHTML = `
+                    <div class="text-center py-12 text-amber-500">
+                        <i class="fas fa-exclamation-triangle text-5xl mb-4"></i>
+                        <p class="text-lg">Selecione uma categoria</p>
+                        <p class="text-sm text-gray-400 mt-2">Os resultados sao exibidos por categoria</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Filtra documentos que nao sao pendentes
+            let lista = documentosCategoria.filter(d => d.status !== 'pendente');
+
+            // Filtro de status
+            if (filtro !== 'todos') {
+                if (filtro === 'nao_revisado') {
+                    lista = lista.filter(d => d.status === 'classificado' && !d.revisado);
+                } else if (filtro === 'revisado') {
+                    lista = lista.filter(d => d.revisado);
+                } else {
+                    lista = lista.filter(d => d.status === filtro);
+                }
+            }
+
+            document.getElementById('count-resultados').textContent = lista.length;
+
+            if (lista.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-inbox text-5xl mb-4"></i>
+                        <p class="text-lg">Nenhum documento ${filtro !== 'todos' ? 'com esse filtro' : 'para esta categoria'}</p>
+                        <p class="text-sm mt-2">Adicione processos e clique em "Baixar Todos"</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = lista.map(d => {
+                const pdfDisponivel = temPdfDisponivel(d.processo);
+                const precisaRebaixar = !pdfDisponivel && (d.status === 'baixado' || d.status === 'classificado');
+
+                return `
+                    <div class="processo-card p-4 bg-white border border-gray-200 rounded-lg mb-3 cursor-pointer ${documentoSelecionado === d.processo ? 'selected' : ''}"
+                         onclick="selecionarDocumento('${d.processo}')">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3 flex-wrap">
+                                <span class="font-mono font-medium text-gray-800">${d.processo}</span>
+                                <span class="badge ${getStatusClass(d)}">${getStatusLabel(d)}</span>
+                                ${d.revisado ? '<span class="badge badge-info"><i class="fas fa-check-double mr-1"></i>Revisado</span>' : ''}
+                                ${precisaRebaixar ? '<span class="badge badge-warning"><i class="fas fa-exclamation-triangle mr-1"></i>PDF expirado</span>' : ''}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                ${precisaRebaixar ? `<button onclick="event.stopPropagation(); rebaixarPdf('${d.processo}')" class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200" title="Baixar PDF novamente"><i class="fas fa-download"></i></button>` : ''}
+                                <span class="text-sm text-gray-500">${d.num_documentos ? `${d.num_documentos} doc(s)` : ''}</span>
+                                <button onclick="event.stopPropagation(); excluirDocumentoDaLista(${d.id}, '${d.processo}')" class="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200" title="Excluir processo"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </div>
+                        ${d.erro ? `<p class="text-xs text-red-500 mt-2 truncate" title="${d.erro}">${d.erro}</p>` : ''}
+                        ${d.json_resultado ? renderizarPreviewJSON(d.json_resultado) : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getStatusClass(d) {
+            if (d.status === 'erro') return 'status-erro';
+            if (d.status === 'classificado') return 'status-classificado';
+            if (d.status === 'baixado') return 'status-baixado';
+            return 'status-pendente';
+        }
+
+        function getStatusLabel(d) {
+            if (d.status === 'erro') return 'Erro';
+            if (d.status === 'classificado') return 'Classificado';
+            if (d.status === 'baixado') return 'Baixado';
+            return 'Pendente';
+        }
+
+        function renderizarPreviewJSON(json) {
+            if (!json || json.irrelevante) return '';
+
+            // Pega os 3 primeiros campos nao nulos
+            const campos = [];
+            for (const [k, v] of Object.entries(json)) {
+                if (v !== null && v !== undefined && k !== 'irrelevante' && k !== 'motivo' && campos.length < 3) {
+                    const label = k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    let valor = '';
+                    if (typeof v === 'boolean') {
+                        valor = v ? 'Sim' : 'Nao';
+                    } else if (typeof v === 'string') {
+                        valor = v.substring(0, 40) + (v.length > 40 ? '...' : '');
+                    } else if (Array.isArray(v)) {
+                        valor = `${v.length} item(s)`;
+                    } else {
+                        valor = String(v).substring(0, 30);
+                    }
+                    campos.push(`<span class="text-gray-500">${label}:</span> <span class="text-gray-700">${valor}</span>`);
+                }
+            }
+
+            if (campos.length === 0) return '';
+
+            return `<div class="mt-2 text-xs space-x-4">${campos.join(' | ')}</div>`;
+        }
+
+        function filtrarResultados() {
+            atualizarListaResultados();
+        }
+
+        async function resetarErros() {
+            if (!categoriaAtual) return;
+
+            try {
+                const result = await apiCall(`/admin/api/teste-categorias/documentos/categoria/${categoriaAtual.id}/erros`, {
+                    method: 'DELETE'
+                });
+
+                if (result.excluidos > 0) {
+                    await carregarDocumentosCategoria(categoriaAtual.id);
+                    atualizarListaResultados();
+                    mostrarSucesso(`${result.excluidos} erro(s) removido(s)`);
+                }
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao remover erros');
+            }
+        }
+
+        // ==========================
+        // Visualizacao
+        // ==========================
+        function selecionarDocumento(processo) {
+            documentoSelecionado = processo;
+            const d = documentosCategoria.find(doc => doc.processo === processo);
+
+            if (!d) {
+                console.error('Documento nao encontrado:', processo);
+                return;
+            }
+
+            atualizarListaResultados();
+            mostrarAba('visualizacao');
+
+            document.getElementById('placeholder-visualizacao').classList.add('hidden');
+            document.getElementById('conteudo-visualizacao').classList.remove('hidden');
+
+            // Header
+            document.getElementById('doc-titulo').textContent = d.processo;
+            document.getElementById('doc-status').textContent = getStatusLabel(d);
+            document.getElementById('doc-status').className = `badge ${getStatusClass(d)}`;
+
+            // Atualiza botao de revisado
+            atualizarBotaoRevisado(d.revisado);
+
+            // JSON
+            if (d.json_resultado) {
+                renderizarJSON(d.json_resultado);
+            } else {
+                document.getElementById('resultado-json').innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-robot text-4xl mb-4"></i>
+                        <p>Documento nao classificado</p>
+                        <p class="text-sm mt-2">Clique em "Classificar"</p>
+                    </div>
+                `;
+            }
+
+            // PDF - usa Blob URL (evita CSP)
+            const pdfContainer = document.getElementById('pdf-container');
+            const pdfEmbed = document.getElementById('pdf-embed');
+            const pdfPlaceholder = document.getElementById('pdf-placeholder');
+
+            const pdfBlobUrl = getPdfBlobUrl(processo);
+            if (pdfBlobUrl) {
+                // Usa iframe com Blob URL
+                pdfEmbed.src = pdfBlobUrl;
+                pdfEmbed.classList.remove('hidden');
+                pdfPlaceholder.classList.add('hidden');
+            } else {
+                pdfEmbed.classList.add('hidden');
+                pdfEmbed.src = '';
+                pdfPlaceholder.classList.remove('hidden');
+                pdfPlaceholder.innerHTML = `
+                    <div class="text-center text-gray-500">
+                        <i class="fas fa-file-pdf text-5xl mb-4 text-gray-400"></i>
+                        <p>PDF nao disponivel</p>
+                        <p class="text-sm">Baixe novamente o documento</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function toggleRevisado() {
+            if (!documentoSelecionado || !categoriaAtual) return;
+            const d = documentosCategoria.find(doc => doc.processo === documentoSelecionado);
+            if (!d) return;
+
+            d.revisado = !d.revisado;
+
+            // Atualiza botao imediatamente para feedback visual
+            atualizarBotaoRevisado(d.revisado);
+
+            try {
+                await apiCall('/admin/api/teste-categorias/documentos', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        processo: d.processo,
+                        categoria_id: categoriaAtual.id,
+                        status: d.status,
+                        json_resultado: d.json_resultado,
+                        num_documentos: d.num_documentos || 0,
+                        revisado: d.revisado
+                    })
+                });
+
+                atualizarListaResultados();
+                mostrarSucesso(d.revisado ? 'Marcado como revisado!' : 'Desmarcado revisado');
+            } catch (e) {
+                console.error('Erro:', e);
+                d.revisado = !d.revisado;  // Reverte
+                atualizarBotaoRevisado(d.revisado);
+                mostrarErro('Erro ao atualizar');
+            }
+        }
+
+        function atualizarBotaoRevisado(revisado) {
+            const btn = document.getElementById('btn-revisado');
+            if (!btn) return;
+
+            if (revisado) {
+                btn.className = 'px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm';
+                btn.innerHTML = '<i class="fas fa-check-double mr-1"></i> Revisado <i class="fas fa-check ml-1"></i>';
+            } else {
+                btn.className = 'px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 text-sm';
+                btn.innerHTML = '<i class="fas fa-check-double mr-1"></i> Marcar Revisado';
+            }
+        }
+
+        async function excluirDocumento() {
+            if (!documentoSelecionado) return;
+            const d = documentosCategoria.find(doc => doc.processo === documentoSelecionado);
+            if (!d) return;
+
+            if (confirm('Remover este documento?')) {
+                try {
+                    await apiCall(`/admin/api/teste-categorias/documentos/${d.id}`, {
+                        method: 'DELETE'
+                    });
+
+                    // Limpa cache do PDF
+                    delete pdfBase64Cache[documentoSelecionado];
+                    if (pdfBlobUrlCache[documentoSelecionado]) {
+                        URL.revokeObjectURL(pdfBlobUrlCache[documentoSelecionado]);
+                        delete pdfBlobUrlCache[documentoSelecionado];
+                    }
+                    documentoSelecionado = null;
+
+                    await carregarDocumentosCategoria(categoriaAtual.id);
+
+                    document.getElementById('placeholder-visualizacao').classList.remove('hidden');
+                    document.getElementById('conteudo-visualizacao').classList.add('hidden');
+
+                    atualizarListaResultados();
+                } catch (e) {
+                    console.error('Erro:', e);
+                    mostrarErro('Erro ao excluir');
+                }
+            }
+        }
+
+        async function excluirDocumentoDaLista(docId, processo) {
+            if (!confirm(`Excluir processo ${processo}?`)) return;
+
+            try {
+                await apiCall(`/admin/api/teste-categorias/documentos/${docId}`, {
+                    method: 'DELETE'
+                });
+
+                // Limpa cache do PDF
+                delete pdfBase64Cache[processo];
+                if (pdfBlobUrlCache[processo]) {
+                    URL.revokeObjectURL(pdfBlobUrlCache[processo]);
+                    delete pdfBlobUrlCache[processo];
+                }
+
+                // Se era o documento selecionado, limpa visualizacao
+                if (documentoSelecionado === processo) {
+                    documentoSelecionado = null;
+                    document.getElementById('placeholder-visualizacao').classList.remove('hidden');
+                    document.getElementById('conteudo-visualizacao').classList.add('hidden');
+                }
+
+                // Remove da lista local e atualiza
+                documentosCategoria = documentosCategoria.filter(d => d.id !== docId);
+                atualizarListaResultados();
+                atualizarListaPendentes();
+                mostrarSucesso('Processo excluido!');
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao excluir');
+            }
+        }
+
+        function copiarJSON() {
+            if (!documentoSelecionado) return;
+            const d = documentosCategoria.find(doc => doc.processo === documentoSelecionado);
+            if (d.json_resultado) {
+                navigator.clipboard.writeText(JSON.stringify(d.json_resultado, null, 2));
+                mostrarSucesso('JSON copiado!');
+            }
+        }
+
+        // ==========================
+        // Acoes em Lote (Resultados)
+        // ==========================
+
+        function atualizarBotoesAcoesLote() {
+            const btnBaixarExpirados = document.getElementById('btn-baixar-expirados');
+            const btnReclassificarErros = document.getElementById('btn-reclassificar-erros');
+            const btnClassificar = document.getElementById('btn-classificar');
+            const btnClassificarTexto = document.getElementById('btn-classificar-texto');
+
+            if (!categoriaAtual) {
+                btnBaixarExpirados.classList.add('hidden');
+                btnReclassificarErros.classList.add('hidden');
+                btnClassificar.disabled = true;
+                btnClassificarTexto.textContent = 'Classificar Pendentes';
+                return;
+            }
+
+            // Conta PDFs expirados (baixados ou classificados sem PDF no cache)
+            const expirados = documentosCategoria.filter(d =>
+                (d.status === 'baixado' || d.status === 'classificado') && !temPdfDisponivel(d.processo)
+            );
+
+            // Conta documentos com erro
+            const comErro = documentosCategoria.filter(d => d.status === 'erro');
+
+            // Conta documentos pendentes de classificacao (baixados com PDF disponivel)
+            const pendentesClassificacao = documentosCategoria.filter(d =>
+                d.status === 'baixado' && temPdfDisponivel(d.processo)
+            );
+
+            // Mostra/esconde botao de baixar expirados
+            if (expirados.length > 0) {
+                btnBaixarExpirados.classList.remove('hidden');
+                document.getElementById('btn-baixar-expirados-texto').textContent = `Baixar ${expirados.length} Expirado${expirados.length > 1 ? 's' : ''}`;
+            } else {
+                btnBaixarExpirados.classList.add('hidden');
+            }
+
+            // Mostra/esconde botao de reclassificar erros
+            if (comErro.length > 0) {
+                btnReclassificarErros.classList.remove('hidden');
+                document.getElementById('btn-reclassificar-erros-texto').textContent = `Reclassificar ${comErro.length} Erro${comErro.length > 1 ? 's' : ''}`;
+            } else {
+                btnReclassificarErros.classList.add('hidden');
+            }
+
+            // Atualiza botao de classificar pendentes
+            if (pendentesClassificacao.length > 0) {
+                btnClassificar.disabled = false;
+                btnClassificarTexto.textContent = `Classificar ${pendentesClassificacao.length} Pendente${pendentesClassificacao.length > 1 ? 's' : ''}`;
+            } else {
+                btnClassificar.disabled = true;
+                btnClassificarTexto.textContent = 'Nenhum Pendente';
+            }
+        }
+
+        async function baixarPdfsExpirados() {
+            if (!categoriaAtual) return;
+
+            // Documentos com PDF expirado
+            const expirados = documentosCategoria.filter(d =>
+                (d.status === 'baixado' || d.status === 'classificado') && !temPdfDisponivel(d.processo)
+            );
+
+            if (expirados.length === 0) {
+                mostrarAviso('Nenhum PDF expirado para baixar');
+                return;
+            }
+
+            mostrarAba('progresso');
+            const listaProgresso = document.getElementById('lista-progresso');
+            listaProgresso.innerHTML = `
+                <div class="p-4 bg-blue-50 rounded-lg mb-4">
+                    <div class="flex items-center gap-2 text-blue-700">
+                        <i class="fas fa-download"></i>
+                        <span class="font-medium">Baixando ${expirados.length} PDF(s) expirado(s)...</span>
+                    </div>
+                </div>
+                ${expirados.map(d => `
+                    <div id="prog-${d.processo.replace(/\./g, '-')}" class="flex items-center gap-3 p-2 bg-gray-50 rounded mb-1">
+                        <i class="fas fa-spinner fa-spin text-blue-500"></i>
+                        <span class="font-mono text-sm">${d.processo}</span>
+                        <span class="text-sm text-gray-500">Baixando...</span>
+                    </div>
+                `).join('')}
+            `;
+
+            try {
+                const resultado = await apiCall('/admin/api/teste-categorias/baixar-documentos', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        processos: expirados.map(d => d.processo),
+                        categoria_id: categoriaAtual.id
+                    })
+                });
+
+                let sucessos = 0;
+                let falhas = 0;
+
+                for (const r of resultado) {
+                    const itemEl = document.getElementById(`prog-${r.processo.replace(/\./g, '-')}`);
+
+                    if (r.status === 'ok' && r.pdf_unificado_base64) {
+                        armazenarPdf(r.processo, r.pdf_unificado_base64);
+                        sucessos++;
+
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-check-circle text-green-500"></i>
+                                <span class="font-mono text-sm">${r.processo}</span>
+                                <span class="text-sm text-green-600">PDF baixado!</span>
+                            `;
+                        }
+                    } else {
+                        falhas++;
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-times-circle text-red-500"></i>
+                                <span class="font-mono text-sm">${r.processo}</span>
+                                <span class="text-sm text-red-600">${r.erro || 'Erro'}</span>
+                            `;
+                        }
+                    }
+                }
+
+                atualizarListaResultados();
+                mostrarSucesso(`${sucessos} PDF(s) baixado(s)${falhas > 0 ? `, ${falhas} falha(s)` : ''}`);
+
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao baixar PDFs');
+            }
+        }
+
+        async function reclassificarComErro() {
+            if (!categoriaAtual) return;
+
+            // Documentos com erro
+            const comErro = documentosCategoria.filter(d => d.status === 'erro');
+
+            if (comErro.length === 0) {
+                mostrarAviso('Nenhum documento com erro para reclassificar');
+                return;
+            }
+
+            // Primeiro, precisa baixar os PDFs dos documentos com erro
+            const processosSemPdf = comErro.filter(d => !temPdfDisponivel(d.processo));
+
+            mostrarAba('progresso');
+            const listaProgresso = document.getElementById('lista-progresso');
+
+            if (processosSemPdf.length > 0) {
+                listaProgresso.innerHTML = `
+                    <div class="p-4 bg-blue-50 rounded-lg mb-4">
+                        <div class="flex items-center gap-2 text-blue-700">
+                            <i class="fas fa-download"></i>
+                            <span class="font-medium">Passo 1: Baixando ${processosSemPdf.length} PDF(s)...</span>
+                        </div>
+                    </div>
+                `;
+
+                try {
+                    const resultado = await apiCall('/admin/api/teste-categorias/baixar-documentos', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            processos: processosSemPdf.map(d => d.processo),
+                            categoria_id: categoriaAtual.id
+                        })
+                    });
+
+                    for (const r of resultado) {
+                        if (r.status === 'ok' && r.pdf_unificado_base64) {
+                            armazenarPdf(r.processo, r.pdf_unificado_base64);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Erro ao baixar PDFs:', e);
+                }
+            }
+
+            // Filtra apenas os que agora tem PDF disponivel
+            const paraClassificar = comErro.filter(d => temPdfDisponivel(d.processo));
+
+            if (paraClassificar.length === 0) {
+                mostrarErro('Nenhum PDF disponivel para classificar');
+                return;
+            }
+
+            listaProgresso.innerHTML = `
+                <div class="p-4 bg-orange-50 rounded-lg mb-4">
+                    <div class="flex items-center gap-2 text-orange-700">
+                        <i class="fas fa-robot"></i>
+                        <span class="font-medium">Reclassificando ${paraClassificar.length} documento(s) com erro...</span>
+                    </div>
+                </div>
+                ${paraClassificar.map(d => `
+                    <div id="prog-${d.processo.replace(/\./g, '-')}" class="flex items-center gap-3 p-2 bg-gray-50 rounded mb-1">
+                        <i class="fas fa-spinner fa-spin text-orange-500"></i>
+                        <span class="font-mono text-sm">${d.processo}</span>
+                        <span class="text-sm text-gray-500">Classificando...</span>
+                    </div>
+                `).join('')}
+            `;
+
+            try {
+                // Monta lista de itens para classificar
+                const itens = paraClassificar.map(d => ({
+                    processo: d.processo,
+                    pdf_base64: obterPdfBase64(d.processo)
+                })).filter(i => i.pdf_base64);
+
+                const resultado = await apiCall('/admin/api/teste-categorias/classificar-lote', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        itens: itens,
+                        categoria_id: categoriaAtual.id
+                    })
+                });
+
+                const atualizacoes = [];
+                let sucessos = 0;
+                let falhas = 0;
+
+                for (const r of resultado) {
+                    const itemEl = document.getElementById(`prog-${r.processo.replace(/\./g, '-')}`);
+
+                    if (r.sucesso) {
+                        sucessos++;
+                        atualizacoes.push({
+                            processo: r.processo,
+                            categoria_id: categoriaAtual.id,
+                            status: 'classificado',
+                            json_resultado: r.json_extraido,
+                            num_documentos: documentosCategoria.find(d => d.processo === r.processo)?.num_documentos || 0,
+                            revisado: false
+                        });
+
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-check-circle text-green-500"></i>
+                                <span class="font-mono text-sm">${r.processo}</span>
+                                <span class="text-sm text-green-600">Classificado!</span>
+                            `;
+                        }
+                    } else {
+                        falhas++;
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-times-circle text-red-500"></i>
+                                <span class="font-mono text-sm">${r.processo}</span>
+                                <span class="text-sm text-red-600">${r.erro || 'Erro'}</span>
+                            `;
+                        }
+                    }
+                }
+
+                // Salva no banco
+                if (atualizacoes.length > 0) {
+                    await apiCall('/admin/api/teste-categorias/documentos/lote', {
+                        method: 'POST',
+                        body: JSON.stringify(atualizacoes)
+                    });
+                }
+
+                await carregarDocumentosCategoria(categoriaAtual.id);
+                atualizarListaResultados();
+                mostrarSucesso(`${sucessos} reclassificado(s)${falhas > 0 ? `, ${falhas} falha(s)` : ''}`);
+
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao reclassificar');
+            }
+        }
+
+        // ==========================
+        // Renderizacao de JSON (BONITA)
+        // ==========================
+
+        // Verifica se um valor e "preenchido" (nao nulo/vazio)
+        function valorPreenchido(valor) {
+            if (valor === null || valor === undefined) return false;
+            if (valor === false) return true;  // false e considerado preenchido (tem valor)
+            if (typeof valor === 'string' && valor.trim() === '') return false;
+            if (Array.isArray(valor) && valor.length === 0) return false;
+            if (typeof valor === 'object' && !Array.isArray(valor) && Object.keys(valor).length === 0) return false;
+            return true;
+        }
+
+        // Retorna categoria de ordenacao:
+        // 0 = valor positivo (true, string, numero, lista com itens, objeto com conteudo)
+        // 1 = valor false
+        // 2 = valor vazio/nulo
+        function categoriaOrdenacao(valor) {
+            // Vazio/nulo
+            if (valor === null || valor === undefined) return 2;
+            if (typeof valor === 'string' && valor.trim() === '') return 2;
+            if (Array.isArray(valor) && valor.length === 0) return 2;
+            if (typeof valor === 'object' && !Array.isArray(valor) && Object.keys(valor).length === 0) return 2;
+
+            // False explicito
+            if (valor === false) return 1;
+
+            // Verifica se objeto tem todos os valores vazios/false
+            if (typeof valor === 'object' && !Array.isArray(valor)) {
+                const valores = Object.values(valor);
+                const todasCategoriasAltas = valores.every(v => categoriaOrdenacao(v) >= 1);
+                if (todasCategoriasAltas) {
+                    // Se todos sao false ou vazios, coloca como false
+                    const temFalse = valores.some(v => v === false);
+                    return temFalse ? 1 : 2;
+                }
+            }
+
+            // Valor positivo (true, string, numero, lista com itens, etc)
+            return 0;
+        }
+
+        // Ordena entries do JSON conforme criterio selecionado
+        function ordenarEntriesJSON(entries, ordenacao) {
+            switch (ordenacao) {
+                case 'extraidos':
+                    // Ordem: positivos (true, texto, lista) -> false -> vazios/nulos
+                    return entries.sort((a, b) => {
+                        const catA = categoriaOrdenacao(a[1]);
+                        const catB = categoriaOrdenacao(b[1]);
+                        return catA - catB;
+                    });
+
+                case 'alfabetica':
+                    return entries.sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
+
+                case 'alfabetica-desc':
+                    return entries.sort((a, b) => b[0].localeCompare(a[0], 'pt-BR'));
+
+                case 'original':
+                default:
+                    return entries;  // Mantem ordem original
+            }
+        }
+
+        function reordenarJSON() {
+            if (!documentoSelecionado) return;
+            const d = documentosCategoria.find(doc => doc.processo === documentoSelecionado);
+            if (d && d.json_resultado) {
+                renderizarJSON(d.json_resultado);
+            }
+        }
+
+        function renderizarJSON(json) {
+            const container = document.getElementById('resultado-json');
+            const ordenacao = document.getElementById('ordenacao-json')?.value || 'extraidos';
+
+            if (!json || Object.keys(json).length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-400 py-8">JSON vazio</p>';
+                return;
+            }
+
+            if (json.irrelevante === true) {
+                container.innerHTML = `
+                    <div class="json-section">
+                        <div class="flex items-center gap-3 text-amber-600">
+                            <i class="fas fa-ban text-2xl"></i>
+                            <div>
+                                <h3 class="font-semibold">Documento Irrelevante</h3>
+                                <p class="text-sm text-amber-500">${json.motivo || 'Sem motivo especificado'}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            // Filtra campos especiais e ordena
+            let entries = Object.entries(json).filter(([k]) => k !== 'irrelevante' && k !== 'motivo');
+            entries = ordenarEntriesJSON(entries, ordenacao);
+
+            // Conta estatisticas
+            const totalCampos = entries.length;
+            const camposPreenchidos = entries.filter(([k, v]) => valorPreenchido(v)).length;
+
+            // Header com estatisticas
+            let html = `
+                <div class="mb-4 px-3 py-2 bg-white rounded-lg border border-gray-200 flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="text-gray-600">Campos:</span>
+                        <span class="font-medium text-green-600">${camposPreenchidos} extraidos</span>
+                        <span class="text-gray-400">|</span>
+                        <span class="text-gray-500">${totalCampos - camposPreenchidos} vazios</span>
+                    </div>
+                    <div class="text-xs text-gray-400">
+                        ${Math.round((camposPreenchidos / totalCampos) * 100)}% preenchido
+                    </div>
+                </div>
+            `;
+
+            for (const [chave, valor] of entries) {
+                html += renderizarCampoJSON(chave, valor);
+            }
+
+            container.innerHTML = html || '<p class="text-gray-400">Nenhum campo</p>';
+        }
+
+        function renderizarCampoJSON(chave, valor, nivel = 0, contextoFormato = null) {
+            const label = formatarLabel(chave, contextoFormato);
+            const temPergunta = label !== chave && !label.includes(chave.replace(/_/g, ' '));
+
+            // Gera o header com pergunta + slug
+            function headerComSlug(labelText, chaveOriginal, extraClasses = '') {
+                if (temPergunta) {
+                    return `
+                        <div class="flex flex-col ${extraClasses}">
+                            <span class="text-sm font-medium text-gray-700">${labelText}</span>
+                            <span class="text-xs text-gray-400 font-mono">${chaveOriginal}</span>
+                        </div>
+                    `;
+                }
+                return `<span class="text-sm font-medium text-gray-600 ${extraClasses}">${labelText}</span>`;
+            }
+
+            // Null / undefined
+            if (valor === null || valor === undefined) {
+                return `
+                    <div class="json-field-card is-null">
+                        <div class="flex items-center justify-between">
+                            ${headerComSlug(label, chave)}
+                            <span class="badge badge-warning">
+                                <i class="fas fa-question-circle mr-1"></i>Nao identificado
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Boolean
+            if (typeof valor === 'boolean') {
+                return `
+                    <div class="json-field-card ${valor ? 'is-bool-true' : 'is-bool-false'}">
+                        <div class="flex items-center justify-between">
+                            ${headerComSlug(label, chave)}
+                            <span class="badge ${valor ? 'badge-success' : 'badge-error'}">
+                                <i class="fas fa-${valor ? 'check' : 'times'} mr-1"></i>${valor ? 'Sim' : 'Nao'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Array
+            if (Array.isArray(valor)) {
+                if (valor.length === 0) {
+                    return `
+                        <div class="json-field-card">
+                            <div class="flex items-center justify-between">
+                                ${headerComSlug(label, chave)}
+                                <span class="badge badge-neutral">Lista vazia</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Array de strings -> chips
+                if (valor.every(v => typeof v === 'string' || typeof v === 'number')) {
+                    return `
+                        <div class="json-field-card has-value">
+                            ${headerComSlug(label, chave, 'mb-2')}
+                            <div class="flex flex-wrap">
+                                ${valor.map(v => `<span class="chip">${v}</span>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Obtem contexto para itens do array (se existir schema aninhado)
+                const itemContexto = formatoCategoria[chave]?.items?.properties || null;
+
+                // Array de objetos
+                let html = `
+                    <div class="json-section">
+                        <div class="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                            <i class="fas fa-list text-primary-500"></i>
+                            ${headerComSlug(label, chave)}
+                            <span class="badge badge-info">${valor.length} item(s)</span>
+                        </div>
+                `;
+                for (let i = 0; i < valor.length; i++) {
+                    html += `<div class="json-array-item">`;
+                    if (typeof valor[i] === 'object') {
+                        for (const [k, v] of Object.entries(valor[i])) {
+                            html += renderizarCampoJSON(k, v, nivel + 1, itemContexto);
+                        }
+                    } else {
+                        html += `<span>${valor[i]}</span>`;
+                    }
+                    html += `</div>`;
+                }
+                html += `</div>`;
+                return html;
+            }
+
+            // Object
+            if (typeof valor === 'object') {
+                // Obtem contexto para propriedades do objeto
+                const objContexto = formatoCategoria[chave]?.properties || null;
+
+                let html = `
+                    <div class="json-section">
+                        <div class="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
+                            <i class="fas fa-cube text-indigo-500"></i>
+                            ${headerComSlug(label, chave)}
+                        </div>
+                `;
+                for (const [k, v] of Object.entries(valor)) {
+                    html += renderizarCampoJSON(k, v, nivel + 1, objContexto);
+                }
+                html += `</div>`;
+                return html;
+            }
+
+            // String longa
+            if (typeof valor === 'string' && valor.length > 150) {
+                return `
+                    <div class="json-field-card has-value">
+                        ${headerComSlug(label, chave, 'mb-2')}
+                        <div class="text-sm text-gray-700 bg-white p-3 rounded-lg border border-gray-200 whitespace-pre-wrap">
+                            ${escapeHtml(valor)}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // String / number simples
+            return `
+                <div class="json-field-card has-value">
+                    <div class="flex items-start justify-between gap-4">
+                        ${headerComSlug(label, chave)}
+                        <span class="text-sm text-gray-800 text-right">${escapeHtml(String(valor))}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        function formatarLabel(chave, contexto = null) {
+            // Primeiro, tenta buscar a descricao/pergunta do formato da categoria
+            let descricao = null;
+
+            // Busca no formato da categoria (nivel raiz)
+            if (formatoCategoria[chave]) {
+                descricao = formatoCategoria[chave].description;
+            }
+
+            // Se tiver contexto (para campos aninhados), tenta buscar no contexto
+            if (!descricao && contexto && contexto[chave]) {
+                descricao = contexto[chave].description;
+            }
+
+            // Se encontrou descricao, usa ela
+            if (descricao) {
+                return descricao;
+            }
+
+            // Fallback: formata o nome da variavel
+            return chave
+                .replace(/_/g, ' ')
+                .replace(/([A-Z])/g, ' $1')
+                .toLowerCase()
+                .replace(/^\w/, c => c.toUpperCase());
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ==========================
+        // Abas
+        // ==========================
+        function mostrarAba(aba) {
+            const abas = ['resultados', 'visualizacao', 'progresso'];
+            for (const a of abas) {
+                document.getElementById(`aba-${a}`).classList.toggle('hidden', a !== aba);
+                document.getElementById(`tab-${a}`).classList.toggle('tab-active', a === aba);
+                document.getElementById(`tab-${a}`).classList.toggle('tab-inactive', a !== aba);
+            }
+        }
+
+        // ==========================
+        // Observacoes (persistidas no banco)
+        // ==========================
+        async function carregarObservacoes() {
+            if (!categoriaAtual) {
+                document.getElementById('observacoes-categoria').value = '';
+                return;
+            }
+
+            try {
+                const data = await apiCall(`/admin/api/teste-categorias/observacao/${categoriaAtual.id}`);
+                document.getElementById('observacoes-categoria').value = data.texto || '';
+            } catch (e) {
+                console.warn('Erro ao carregar observacoes:', e);
+                document.getElementById('observacoes-categoria').value = '';
+            }
+        }
+
+        function salvarObservacoes() {
+            if (!categoriaAtual) return;
+
+            // Debounce - salva apos 500ms sem digitar
+            clearTimeout(observacaoTimeout);
+            observacaoTimeout = setTimeout(async () => {
+                const texto = document.getElementById('observacoes-categoria').value;
+                try {
+                    await apiCall(`/admin/api/teste-categorias/observacao/${categoriaAtual.id}?texto=${encodeURIComponent(texto)}`, {
+                        method: 'PUT'
+                    });
+                } catch (e) {
+                    console.warn('Erro ao salvar observacao:', e);
+                }
+            }, 500);
+        }
+
+        // ==========================
+        // Utilitarios de UI
+        // ==========================
+        function mostrarAviso(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 right-4 bg-amber-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
+            toast.innerHTML = `<i class="fas fa-info-circle"></i>${msg}`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        // ==========================
+        // Utilitarios
+        // ==========================
+        function mostrarErro(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 right-4 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
+            toast.innerHTML = `<i class="fas fa-times-circle"></i>${msg}`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 4000);
+        }
+
+        function mostrarSucesso(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-4 right-4 bg-green-600 text-white px-4 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2';
+            toast.innerHTML = `<i class="fas fa-check-circle"></i>${msg}`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+    </script>
+</body>
+</html>

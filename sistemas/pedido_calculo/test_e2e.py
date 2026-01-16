@@ -14,9 +14,105 @@ Simula o fluxo completo:
 import asyncio
 import sys
 import os
+import pytest
 
 # Adiciona o diretório raiz ao path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+XML_ENV_VAR = "PEDIDO_CALCULO_XML_PATH"
+pytestmark = pytest.mark.asyncio
+
+def _skip_if_missing_xml():
+    path = os.getenv(XML_ENV_VAR)
+    if not path:
+        pytest.skip(f"Defina {XML_ENV_VAR} com o caminho do XML para rodar este teste.")
+    if not os.path.exists(path):
+        pytest.skip(f"Arquivo XML nao encontrado: {path}")
+    return path
+
+def _skip_if_missing_soap():
+    url = os.getenv('URL_WSDL') or os.getenv('TJ_WSDL_URL') or os.getenv('TJ_URL_WSDL')
+    user = os.getenv('WS_USER') or os.getenv('TJ_WS_USER')
+    password = os.getenv('WS_PASS') or os.getenv('TJ_WS_PASS')
+    missing = []
+    if not url:
+        missing.append('URL_WSDL/TJ_WSDL_URL/TJ_URL_WSDL')
+    if not user:
+        missing.append('WS_USER/TJ_WS_USER')
+    if not password:
+        missing.append('WS_PASS/TJ_WS_PASS')
+    if missing:
+        pytest.skip('Variaveis de ambiente faltando para SOAP: ' + ', '.join(missing))
+    return True
+
+def _skip_if_missing_gemini():
+    if not os.getenv('GEMINI_KEY'):
+        pytest.skip('GEMINI_KEY nao definido; pulando testes de IA.')
+    return True
+
+@pytest.fixture(scope='session')
+def xml_path():
+    pytest.importorskip('pytest_asyncio')
+    return _skip_if_missing_xml()
+
+@pytest.fixture(scope='session')
+def soap_config():
+    return _skip_if_missing_soap()
+
+@pytest.fixture(scope='session')
+def gemini_config():
+    return _skip_if_missing_gemini()
+
+@pytest.fixture(scope='session')
+async def analise_xml_result(xml_path):
+    return await test_analise_xml(xml_path)
+
+@pytest.fixture(scope='session')
+def parser_xml(analise_xml_result):
+    return analise_xml_result[0]
+
+@pytest.fixture(scope='session')
+def documentos(analise_xml_result):
+    return analise_xml_result[1]
+
+@pytest.fixture(scope='session')
+def dados_basicos(analise_xml_result):
+    return analise_xml_result[2]
+
+@pytest.fixture(scope='session')
+def agente1_result(parser_xml, documentos, dados_basicos):
+    from sistemas.pedido_calculo.models import ResultadoAgente1
+    movimentos = parser_xml.extrair_movimentos_relevantes()
+    return ResultadoAgente1(
+        dados_basicos=dados_basicos,
+        documentos_para_download=documentos,
+        movimentos_relevantes=movimentos
+    )
+
+@pytest.fixture(scope='session')
+async def origem_result(soap_config, documentos, dados_basicos):
+    return await test_busca_origem(documentos, dados_basicos)
+
+@pytest.fixture(scope='session')
+def numero_origem(origem_result):
+    return origem_result[0]
+
+@pytest.fixture(scope='session')
+def docs_origem(origem_result):
+    return origem_result[1]
+
+@pytest.fixture(scope='session')
+async def textos_organizados(soap_config, documentos, dados_basicos, numero_origem, docs_origem):
+    return await test_download_documentos(documentos, dados_basicos, numero_origem, docs_origem)
+
+@pytest.fixture(scope='session')
+async def agente2_result(gemini_config, textos_organizados):
+    resultado = await test_extracao_ia(textos_organizados)
+    if not resultado:
+        pytest.skip('Extracao IA nao retornou resultado.')
+    if getattr(resultado, 'erro', None):
+        pytest.skip(f'Extracao IA retornou erro: {resultado.erro}')
+    return resultado
 
 from sistemas.pedido_calculo.xml_parser import XMLParser, CLASSES_CUMPRIMENTO_AUTONOMO
 from sistemas.pedido_calculo.services import PedidoCalculoService
@@ -100,7 +196,7 @@ async def test_analise_xml(xml_path: str):
     return parser, documentos, dados_basicos
 
 
-async def test_busca_origem(documentos, dados_basicos):
+async def test_busca_origem(documentos, dados_basicos, soap_config):
     """Testa busca do processo de origem (Etapa 1.5)"""
     print("\n" + "=" * 70)
     print("ETAPA 1.5: BUSCA DO PROCESSO DE ORIGEM")
@@ -187,7 +283,7 @@ async def test_busca_origem(documentos, dados_basicos):
     return None, None, None
 
 
-async def test_download_documentos(documentos, dados_basicos, numero_origem=None, docs_origem=None):
+async def test_download_documentos(documentos, dados_basicos, numero_origem, docs_origem, soap_config):
     """Testa download dos documentos (Etapa 2)"""
     print("\n" + "=" * 70)
     print("ETAPA 2: DOWNLOAD DE DOCUMENTOS")
@@ -300,7 +396,7 @@ async def test_download_documentos(documentos, dados_basicos, numero_origem=None
     return textos_organizados
 
 
-async def test_extracao_ia(textos_organizados):
+async def test_extracao_ia(textos_organizados, gemini_config):
     """Testa extração com IA (Etapa 3)"""
     print("\n" + "=" * 70)
     print("ETAPA 3: EXTRAÇÃO DE INFORMAÇÕES COM IA")
@@ -355,7 +451,7 @@ async def test_extracao_ia(textos_organizados):
     return resultado
 
 
-async def test_geracao_pedido(agente1_result, agente2_result):
+async def test_geracao_pedido(agente1_result, agente2_result, gemini_config):
     """Testa geração do pedido (Etapa 4)"""
     print("\n" + "=" * 70)
     print("ETAPA 4: GERAÇÃO DO PEDIDO DE CÁLCULO")

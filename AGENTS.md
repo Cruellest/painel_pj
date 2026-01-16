@@ -1,6 +1,6 @@
 # AGENTS.md - Guia para Agentes de IA
 
-> Ultima atualizacao: 15 Janeiro 2026
+> Ultima atualizacao: 16 Janeiro 2026
 
 ---
 
@@ -268,6 +268,30 @@ A IA é uma **ferramenta de criação**, não um "modo de operação" separado. 
 - `services_dependencies.py` - Análise de dependências com IA
 - `models_resumo_json.py` - CategoriaResumoJSON
 - `models_extraction.py` - ExtractionQuestion, ExtractionModel, ExtractionVariable
+
+### Ambiente de Teste de Categorias (`/admin/categorias-resumo-json/teste`)
+
+**Objetivo:** Testar e validar a extração de JSON por categoria antes de colocar em produção.
+
+**Funcionalidades:**
+- Inserção de múltiplos processos para teste (normalização automática CNJ)
+- Download de documentos filtrados por categoria (baixa apenas docs da categoria selecionada)
+- Unificação automática de múltiplos PDFs por processo
+- Classificação individual ou em lote usando IA
+- Split view: PDF à direita + resultado JSON formatado à esquerda
+- Renderização visual do JSON (booleanos como badges, arrays como chips, etc.)
+- Observações persistentes por categoria (localStorage)
+- Controle de status: pendente → baixado → classificado → revisado
+
+**Arquivos-chave:**
+- `router_teste_categorias.py` - Endpoints de teste (validar processos, baixar docs, classificar)
+- `admin_teste_categorias_json.html` - Interface de teste com split view
+
+**Endpoints:**
+- `POST /admin/api/teste-categorias/validar-processos` - Valida e normaliza números CNJ
+- `POST /admin/api/teste-categorias/baixar-documentos` - Baixa documentos filtrados por categoria
+- `POST /admin/api/teste-categorias/classificar` - Classifica documento usando IA
+- `GET /admin/api/teste-categorias/categorias-ativas` - Lista categorias para seleção
 
 ---
 
@@ -551,7 +575,9 @@ if resultado.status == "ok":
 TJMS_PROXY_URL=https://proxytjms.fly.dev          # Fly.io - para SOAP
 TJMS_PROXY_LOCAL_URL=https://xxx.ngrok-free.dev   # PC local - para subconta
 
-# Credenciais SOAP (MNI)
+# Credenciais SOAP (MNI) - aceita qualquer uma dessas variáveis:
+# MNI_USER, TJ_USER, TJ_WS_USER, ou WS_USER
+# MNI_PASS, TJ_PASS, TJ_WS_PASS, ou WS_PASS
 MNI_USER=usuario_mni
 MNI_PASS=senha_mni
 
@@ -619,13 +645,57 @@ Cada sistema tem seu próprio SPA em `sistemas/<modulo>/templates/`:
 - `index.html` - Entry point
 - `app.js` - Lógica JavaScript
 
+### IMPORTANTE: Autenticação no Frontend
+
+**NUNCA use `localStorage.getItem('token')`!** O token JWT é salvo como `access_token` e pode estar em `localStorage` OU `sessionStorage`.
+
+**Padrão obrigatório para novos templates:**
+```javascript
+// Função para obter token (COPIE EXATAMENTE ISSO)
+function getToken() {
+    return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+}
+
+// Verificar autenticação no início
+document.addEventListener('DOMContentLoaded', async () => {
+    const token = getToken();
+    if (!token) {
+        window.location.href = '/login';
+        return;
+    }
+    // ... inicialização
+});
+
+// Usar em todas as chamadas de API
+async function apiCall(url, options = {}) {
+    const response = await fetch(url, {
+        ...options,
+        headers: {
+            'Authorization': `Bearer ${getToken()}`,
+            'Content-Type': 'application/json',
+            ...options.headers
+        }
+    });
+
+    if (response.status === 401) {
+        window.location.href = '/login';
+        return null;
+    }
+    // ...
+}
+```
+
+**Erro comum:** Usar `localStorage.getItem('token')` faz a página redirecionar para login imediatamente (parece "entrar e sair" sem mostrar nada).
+
 ### Padrões de Comunicação
 ```javascript
-// Fetch com autenticação (cookies JWT)
+// Fetch com autenticação (Bearer token)
 const response = await fetch('/gerador-pecas/api/processar', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getToken()}`
+    },
     body: JSON.stringify({ numero_cnj: '0000000-00.2024.8.12.0001' })
 });
 
