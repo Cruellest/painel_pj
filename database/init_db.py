@@ -839,6 +839,20 @@ def run_migrations():
                     db.rollback()
                     print(f"[WARN] Migração {coluna} geracoes_prestacao_contas: {e}")
 
+    # Migração: Alterar tamanho da coluna numero_cnj_formatado de VARCHAR(20) para VARCHAR(30)
+    if table_exists('geracoes_prestacao_contas'):
+        try:
+            if not is_sqlite:
+                # PostgreSQL: altera o tipo da coluna
+                db.execute(text("ALTER TABLE geracoes_prestacao_contas ALTER COLUMN numero_cnj_formatado TYPE VARCHAR(30)"))
+                db.commit()
+                print("[OK] Migração: coluna numero_cnj_formatado alterada para VARCHAR(30) em geracoes_prestacao_contas")
+        except Exception as e:
+            db.rollback()
+            # Ignora erro se a coluna já tiver o tamanho correto
+            if "already" not in str(e).lower() and "nothing to alter" not in str(e).lower():
+                print(f"[WARN] Migração numero_cnj_formatado VARCHAR(30): {e}")
+
     # =====================================================================
     # MIGRAÇÕES PARA SISTEMA DE EXTRAÇÃO BASEADO EM IA
     # =====================================================================
