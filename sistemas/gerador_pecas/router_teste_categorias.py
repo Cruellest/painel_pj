@@ -401,7 +401,8 @@ async def classificar_documento_com_ia(
     from services.gemini_service import gemini_service
     from sistemas.gerador_pecas.extrator_resumo_json import (
         FormatoResumo, gerar_prompt_extracao_json,
-        gerar_prompt_extracao_json_imagem, parsear_resposta_json
+        gerar_prompt_extracao_json_imagem, parsear_resposta_json,
+        normalizar_json_com_schema
     )
 
     try:
@@ -476,7 +477,10 @@ async def classificar_documento_com_ia(
         if erro_parse:
             return None, erro_parse, response.content
 
-        return json_dict, None, response.content
+        # Normaliza JSON garantindo que todas as chaves do schema estejam presentes
+        json_normalizado = normalizar_json_com_schema(json_dict, categoria.formato_json)
+
+        return json_normalizado, None, response.content
 
     except Exception as e:
         logger.error(f"Erro ao classificar documento: {e}")

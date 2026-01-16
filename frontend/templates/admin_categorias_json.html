@@ -287,11 +287,16 @@
                                 </div>
                             </div>
 
-                            <!-- Botão Gerar JSON -->
+                            <!-- Botões Gerar JSON -->
                             <div class="flex items-center gap-4 flex-wrap">
                                 <button type="button" onclick="gerarJSONcomIA()" id="btn-gerar-ia"
                                     class="px-6 py-2.5 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 font-medium shadow-md hover:shadow-lg transition-all">
                                     <i class="fas fa-magic mr-2"></i>Gerar JSON com IA
+                                </button>
+                                <button type="button" onclick="atualizarJSON()" id="btn-atualizar-json"
+                                    class="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium shadow-md hover:shadow-lg transition-all"
+                                    title="Sincroniza o JSON com as perguntas cadastradas, sem usar IA. Adiciona novas variáveis e preserva as existentes.">
+                                    <i class="fas fa-sync-alt mr-2"></i>Atualizar JSON
                                 </button>
                                 <span id="status-geracao" class="text-sm text-gray-500"></span>
                             </div>
@@ -1925,6 +1930,85 @@ Qual o valor da causa?"></textarea>
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-magic mr-2"></i>Gerar JSON com IA';
+            }
+        }
+
+        // Atualizar JSON sem IA - sincroniza perguntas com o JSON
+        async function atualizarJSON() {
+            const categoriaId = document.getElementById('categoria-id').value;
+
+            // Se a categoria já existe, primeiro salva as perguntas
+            if (categoriaId) {
+                await salvarPerguntasNoServidor(categoriaId);
+            } else {
+                alert('Salve a categoria primeiro para poder atualizar o JSON');
+                return;
+            }
+
+            const btn = document.getElementById('btn-atualizar-json');
+            const status = document.getElementById('status-geracao');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Atualizando...';
+            status.textContent = 'Sincronizando JSON com as perguntas...';
+            status.className = 'text-sm text-blue-500';
+
+            try {
+                const response = await fetch(`${API_EXTRACTION}/categorias/${categoriaId}/sincronizar-json`, {
+                    method: 'POST',
+                    headers: getHeaders()
+                });
+
+                const resultado = await response.json();
+
+                if (!resultado.success) {
+                    // Verifica se há perguntas incompletas
+                    if (resultado.perguntas_incompletas && resultado.perguntas_incompletas.length > 0) {
+                        let msgErro = 'Perguntas incompletas:\n\n';
+                        resultado.perguntas_incompletas.forEach((p, i) => {
+                            msgErro += `${i + 1}. ${p.pergunta}\n   → ${p.problema}\n`;
+                        });
+                        alert(msgErro);
+                    }
+                    throw new Error(resultado.erro || 'Erro desconhecido');
+                }
+
+                // Atualiza o textarea do JSON com o resultado
+                const jsonAtualizado = resultado.schema_json;
+                document.getElementById('categoria-formato-json').value = JSON.stringify(jsonAtualizado, null, 2);
+
+                // Também mostra no preview se estiver visível
+                if (resultado.variaveis_adicionadas > 0) {
+                    jsonGerado = jsonAtualizado;
+
+                    // Mostra preview
+                    document.getElementById('preview-json-gerado').classList.remove('hidden');
+                    document.getElementById('json-gerado-preview').textContent = JSON.stringify(jsonAtualizado, null, 2);
+
+                    // Mostra variáveis adicionadas
+                    if (resultado.variaveis_adicionadas_lista && resultado.variaveis_adicionadas_lista.length > 0) {
+                        document.getElementById('variaveis-criadas').classList.remove('hidden');
+                        document.getElementById('lista-variaveis-criadas').innerHTML = resultado.variaveis_adicionadas_lista.map(slug => `
+                            <span class="px-2 py-1 text-xs rounded-full bg-emerald-100 text-emerald-700">
+                                <i class="fas fa-plus-circle mr-1"></i>${slug}
+                            </span>
+                        `).join('');
+                    }
+                }
+
+                status.textContent = resultado.mensagem || 'JSON atualizado com sucesso!';
+                status.className = resultado.variaveis_adicionadas > 0 ? 'text-sm text-green-500' : 'text-sm text-blue-500';
+
+                // Valida o JSON atualizado
+                validarJSON();
+
+            } catch (error) {
+                console.error('Erro ao atualizar JSON:', error);
+                status.textContent = `Erro: ${error.message}`;
+                status.className = 'text-sm text-red-500';
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sync-alt mr-2"></i>Atualizar JSON';
             }
         }
 

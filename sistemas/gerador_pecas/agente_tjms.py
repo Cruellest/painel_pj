@@ -1651,7 +1651,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 parsear_resposta_json,
                 verificar_irrelevante_json,
                 extrair_tipo_documento_json,
-                extrair_processo_origem_json
+                extrair_processo_origem_json,
+                normalizar_json_com_schema
             )
 
             json_dict, erro = parsear_resposta_json(resposta)
@@ -1667,6 +1668,14 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
                 return
 
+            # Normaliza JSON garantindo que todas as chaves do schema estejam presentes
+            gerenciador = self._obter_gerenciador_json()
+            if gerenciador:
+                codigo = int(doc.tipo_documento) if doc.tipo_documento else 0
+                formato = gerenciador.obter_formato(codigo, doc_id=doc.id)
+                if formato and formato.formato_json:
+                    json_dict = normalizar_json_com_schema(json_dict, formato.formato_json)
+
             is_irrelevante, conteudo = verificar_irrelevante_json(json_dict)
 
             if is_irrelevante:
@@ -1676,7 +1685,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 # Armazena o JSON como string no resumo
                 doc.resumo = conteudo  # já é JSON string formatado
                 doc.descricao_ia = extrair_tipo_documento_json(json_dict)
-                
+
                 # Tenta extrair processo de origem (para Agravos)
                 processo_origem = extrair_processo_origem_json(json_dict)
                 if processo_origem and hasattr(doc, '_processo_origem_extraido'):

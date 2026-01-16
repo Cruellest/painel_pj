@@ -136,6 +136,19 @@ class GenerateSchemaResponse(BaseModel):
     erro: Optional[str] = None
 
 
+# --- Sincronização de JSON (sem IA) ---
+
+class SyncJsonResponse(BaseModel):
+    """Schema de resposta para sincronização de JSON sem IA"""
+    success: bool
+    schema_json: Optional[dict] = None
+    variaveis_adicionadas: int = 0
+    variaveis_adicionadas_lista: Optional[List[str]] = None
+    perguntas_incompletas: Optional[List[dict]] = None
+    mensagem: Optional[str] = None
+    erro: Optional[str] = None
+
+
 # --- Criação em Lote de Perguntas (com análise de dependências por IA) ---
 
 class BulkQuestionInput(BaseModel):
@@ -1037,6 +1050,153 @@ async def gerar_schema_ia(
             success=False,
             erro=str(e)
         )
+
+
+@router.post("/categorias/{categoria_id}/sincronizar-json", response_model=SyncJsonResponse)
+async def sincronizar_json_sem_ia(
+    categoria_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Sincroniza o JSON da categoria com as perguntas cadastradas, SEM usar IA.
+
+    Este endpoint:
+    1. Carrega todas as perguntas ativas da categoria (ordenadas)
+    2. Carrega o JSON atual da categoria
+    3. Valida que perguntas tenham slug e tipo definidos
+    4. Faz merge das perguntas no JSON (adiciona novas, preserva existentes)
+    5. Ordena o JSON conforme a ordem das perguntas
+    6. Retorna o JSON atualizado (não salva automaticamente)
+
+    Regras:
+    - Não remove campos existentes do JSON
+    - Não sobrescreve valores já definidos
+    - Só adiciona perguntas "prontas" (com slug e tipo)
+    - Preserva a ordem das perguntas como fonte da verdade
+    """
+    import json
+
+    # Verifica permissão
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissão para sincronizar JSON")
+
+    # Verifica se a categoria existe
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    # Busca perguntas ativas da categoria, ordenadas
+    perguntas = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.categoria_id == categoria_id,
+        ExtractionQuestion.ativo == True
+    ).order_by(ExtractionQuestion.ordem, ExtractionQuestion.id).all()
+
+    if not perguntas:
+        return SyncJsonResponse(
+            success=True,
+            schema_json={},
+            variaveis_adicionadas=0,
+            mensagem="Nenhuma pergunta ativa encontrada para esta categoria"
+        )
+
+    # Carrega JSON atual da categoria
+    try:
+        json_atual = json.loads(categoria.formato_json) if categoria.formato_json else {}
+    except json.JSONDecodeError:
+        json_atual = {}
+
+    # Valida perguntas e identifica incompletas
+    perguntas_incompletas = []
+    perguntas_validas = []
+
+    for p in perguntas:
+        slug = p.nome_variavel_sugerido
+        tipo = p.tipo_sugerido
+
+        if not slug or not slug.strip():
+            perguntas_incompletas.append({
+                "id": p.id,
+                "pergunta": p.pergunta[:100] + "..." if len(p.pergunta) > 100 else p.pergunta,
+                "problema": "Falta nome/slug da variável"
+            })
+            continue
+
+        if not tipo or not tipo.strip():
+            perguntas_incompletas.append({
+                "id": p.id,
+                "pergunta": p.pergunta[:100] + "..." if len(p.pergunta) > 100 else p.pergunta,
+                "slug": slug,
+                "problema": "Falta tipo da variável"
+            })
+            continue
+
+        perguntas_validas.append(p)
+
+    # Se há perguntas incompletas, retorna erro
+    if perguntas_incompletas:
+        return SyncJsonResponse(
+            success=False,
+            perguntas_incompletas=perguntas_incompletas,
+            erro=f"Não foi possível atualizar: {len(perguntas_incompletas)} pergunta(s) incompleta(s)"
+        )
+
+    # Faz merge: cria novo JSON ordenado conforme perguntas
+    json_novo = {}
+    variaveis_adicionadas = []
+
+    for p in perguntas_validas:
+        slug = p.nome_variavel_sugerido.strip()
+        tipo = p.tipo_sugerido.strip().lower()
+
+        if slug in json_atual:
+            # Campo já existe - preserva configuração existente
+            json_novo[slug] = json_atual[slug]
+        else:
+            # Campo novo - cria com defaults mínimos
+            config = {
+                "type": tipo,
+                "description": p.pergunta
+            }
+
+            # Adiciona dependências se configuradas
+            if p.depends_on_variable:
+                config["conditional"] = True
+                config["depends_on"] = p.depends_on_variable
+
+                if p.dependency_operator:
+                    config["dependency_operator"] = p.dependency_operator
+
+                if p.dependency_value is not None:
+                    config["dependency_value"] = p.dependency_value
+
+            # Adiciona opções se tipo choice e há opções
+            if tipo == "choice" and p.opcoes_sugeridas:
+                config["options"] = p.opcoes_sugeridas
+
+            json_novo[slug] = config
+            variaveis_adicionadas.append(slug)
+
+    # Adiciona campos do JSON original que não estão nas perguntas (preserva campos manuais)
+    for chave, valor in json_atual.items():
+        if chave not in json_novo:
+            json_novo[chave] = valor
+
+    # Monta resposta
+    if variaveis_adicionadas:
+        mensagem = f"JSON atualizado: {len(variaveis_adicionadas)} variável(is) adicionada(s)"
+    else:
+        mensagem = "Nada para atualizar - todas as perguntas já estão no JSON"
+
+    logger.info(f"Sincronização JSON categoria {categoria_id}: {len(variaveis_adicionadas)} adicionadas")
+
+    return SyncJsonResponse(
+        success=True,
+        schema_json=json_novo,
+        variaveis_adicionadas=len(variaveis_adicionadas),
+        variaveis_adicionadas_lista=variaveis_adicionadas if variaveis_adicionadas else None,
+        mensagem=mensagem
+    )
 
 
 @router.post("/modelos", response_model=ExtractionModelResponse, status_code=201)

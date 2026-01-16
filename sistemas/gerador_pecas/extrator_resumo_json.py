@@ -529,20 +529,117 @@ def parsear_resposta_json(resposta: str) -> Tuple[Dict[str, Any], Optional[str]]
 def verificar_irrelevante_json(json_dict: Dict[str, Any]) -> Tuple[bool, str]:
     """
     Verifica se o JSON indica documento irrelevante.
-    
+
     Returns:
         Tupla (is_irrelevante, motivo_ou_json_string)
     """
     if not json_dict:
         return False, "{}"
-    
+
     is_irrelevante = json_dict.get("irrelevante", False)
-    
+
     if is_irrelevante:
         motivo = json_dict.get("motivo", "Documento irrelevante")
         return True, motivo
-    
+
     return False, json.dumps(json_dict, ensure_ascii=False, indent=2)
+
+
+def _obter_valor_default_por_tipo(tipo: str) -> Any:
+    """
+    Retorna o valor default para um campo baseado no seu tipo.
+
+    Args:
+        tipo: Tipo do campo (boolean, list, text, number, date, choice, etc.)
+
+    Returns:
+        Valor default apropriado para o tipo
+    """
+    tipo_lower = (tipo or "").lower()
+
+    if tipo_lower == "boolean":
+        return False
+    elif tipo_lower == "list":
+        return []
+    else:
+        # text, number, date, choice, etc.
+        return None
+
+
+def normalizar_json_com_schema(
+    json_resposta: Dict[str, Any],
+    schema_str: str
+) -> Dict[str, Any]:
+    """
+    Normaliza a resposta JSON da IA garantindo que TODAS as chaves do schema
+    estejam presentes no resultado final.
+
+    Esta função resolve o problema onde a IA retorna apenas campos "aplicáveis",
+    omitindo campos que deveriam estar presentes com valores default.
+
+    Args:
+        json_resposta: Dicionário JSON retornado pela IA
+        schema_str: String JSON do schema cadastrado na categoria
+
+    Returns:
+        Dicionário JSON com todas as chaves do schema preenchidas:
+        - Campos presentes na resposta: mantém o valor da IA
+        - Campos ausentes: preenche com valor default baseado no tipo:
+            - boolean: False
+            - list: []
+            - outros (text, number, date, choice): None
+
+    Exemplo:
+        >>> schema = '{"ativo": {"type": "boolean"}, "itens": {"type": "list"}, "nome": {"type": "text"}}'
+        >>> resposta = {"ativo": True}
+        >>> normalizar_json_com_schema(resposta, schema)
+        {"ativo": True, "itens": [], "nome": None}
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Caso especial: documento irrelevante - retorna sem modificações
+    if json_resposta.get("irrelevante", False):
+        return json_resposta
+
+    # Parseia o schema
+    try:
+        schema = json.loads(schema_str)
+    except json.JSONDecodeError as e:
+        logger.warning(f"Erro ao parsear schema para normalização: {e}")
+        return json_resposta
+
+    if not isinstance(schema, dict):
+        logger.warning("Schema não é um dicionário, retornando resposta sem normalização")
+        return json_resposta
+
+    # Cria resultado com todas as chaves do schema
+    resultado = {}
+    chaves_adicionadas = []
+
+    for chave, config in schema.items():
+        if chave in json_resposta:
+            # Campo presente na resposta da IA - usa o valor retornado
+            resultado[chave] = json_resposta[chave]
+        else:
+            # Campo ausente - adiciona com valor default
+            if isinstance(config, dict):
+                tipo = config.get("type", "text")
+            else:
+                # Config simples (apenas tipo)
+                tipo = str(config) if config else "text"
+
+            valor_default = _obter_valor_default_por_tipo(tipo)
+            resultado[chave] = valor_default
+            chaves_adicionadas.append(chave)
+
+    if chaves_adicionadas:
+        logger.info(
+            f"Normalização JSON: {len(chaves_adicionadas)} campos adicionados com defaults: "
+            f"{chaves_adicionadas[:10]}{'...' if len(chaves_adicionadas) > 10 else ''}"
+        )
+
+    return resultado
 
 
 def extrair_tipo_documento_json(json_dict: Dict[str, Any]) -> Optional[str]:
