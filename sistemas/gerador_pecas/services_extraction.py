@@ -112,6 +112,19 @@ class ExtractionSchemaGenerator:
                         "tipo": v.tipo
                     }
 
+                # Injeta dependências mesmo no schema existente
+                categoria = self.db.query(CategoriaResumoJSON).filter(
+                    CategoriaResumoJSON.id == categoria_id
+                ).first()
+                namespace = categoria.namespace if categoria else ""
+
+                schema_existente = self._injetar_dependencias_no_schema(
+                    schema_existente,
+                    mapeamento_existente,
+                    [p for p, v in perguntas_existentes],
+                    namespace
+                )
+
                 return {
                     "success": True,
                     "schema_json": schema_existente,
@@ -169,9 +182,38 @@ class ExtractionSchemaGenerator:
                     "tipo": v.tipo
                 }
 
+            # 5.0 APLICA NAMESPACE: aos slugs do schema novo (antes de fazer merge)
+            # Busca categoria para obter namespace
+            categoria = self.db.query(CategoriaResumoJSON).filter(
+                CategoriaResumoJSON.id == categoria_id
+            ).first()
+            namespace = categoria.namespace if categoria else ""
+
+            # Aplica namespace aos slugs do schema novo e mapeamento
+            if namespace:
+                schema_novo_com_namespace = {}
+                for slug, config in schema_novo_validado.items():
+                    slug_com_ns = self._aplicar_namespace(slug, namespace)
+                    schema_novo_com_namespace[slug_com_ns] = config
+                schema_novo_validado = schema_novo_com_namespace
+
+                # Também atualiza o mapeamento
+                for pergunta_id, info in mapeamento_novo.items():
+                    if info.get("slug") and not info["slug"].startswith(f"{namespace}_"):
+                        info["slug"] = self._aplicar_namespace(info["slug"], namespace)
+
             # Depois adiciona os campos novos
             schema_final.update(schema_novo_validado)
             mapeamento_final.update(mapeamento_novo)
+
+            # 5.1 INJEÇÃO DE DEPENDÊNCIAS: Garante que dependências das perguntas sejam
+            # refletidas no schema, independentemente do que a IA retornou
+            schema_final = self._injetar_dependencias_no_schema(
+                schema_final,
+                mapeamento_final,
+                perguntas,  # Todas as perguntas (existentes + novas)
+                namespace
+            )
 
             # 6. Cria APENAS as variáveis NOVAS
             variaveis_criadas = await self._criar_variaveis(
@@ -394,6 +436,82 @@ INSTRUÇÕES OBRIGATÓRIAS:
 
         return schema_validado
 
+    def _injetar_dependencias_no_schema(
+        self,
+        schema: Dict,
+        mapeamento: Dict,
+        perguntas: List[ExtractionQuestion],
+        namespace: str
+    ) -> Dict:
+        """
+        Injeta dependências das perguntas no schema JSON.
+
+        Garante que as dependências configuradas nas perguntas sejam refletidas
+        no schema final, independentemente do que a IA retornou.
+
+        Args:
+            schema: Schema JSON gerado
+            mapeamento: Mapeamento pergunta_id -> info da variável
+            perguntas: Lista de perguntas
+            namespace: Namespace da categoria
+
+        Returns:
+            Schema com dependências injetadas
+        """
+        # Cria mapeamento de pergunta_id -> slug no schema
+        pergunta_id_to_slug = {}
+        for pergunta_id, info in mapeamento.items():
+            slug = info.get("slug")
+            if slug:
+                # Aplica namespace se necessário
+                if namespace and not slug.startswith(f"{namespace}_"):
+                    slug = self._aplicar_namespace(slug, namespace)
+                pergunta_id_to_slug[str(pergunta_id)] = slug
+
+        # Cria mapeamento de nome_variavel_sugerido -> slug (para resolver dependências)
+        nome_sugerido_to_slug = {}
+        for p in perguntas:
+            if p.nome_variavel_sugerido:
+                slug_info = mapeamento.get(str(p.id), {})
+                slug = slug_info.get("slug")
+                if slug:
+                    if namespace and not slug.startswith(f"{namespace}_"):
+                        slug = self._aplicar_namespace(slug, namespace)
+                    nome_sugerido_to_slug[p.nome_variavel_sugerido] = slug
+
+        # Para cada pergunta com dependência, injeta no schema
+        for p in perguntas:
+            if not p.depends_on_variable:
+                continue
+
+            # Encontra o slug desta pergunta no schema
+            slug_pergunta = pergunta_id_to_slug.get(str(p.id))
+            if not slug_pergunta or slug_pergunta not in schema:
+                logger.warning(f"Pergunta {p.id} não encontrada no schema para injetar dependência")
+                continue
+
+            # Resolve o slug da variável de dependência
+            depends_on_slug = p.depends_on_variable
+
+            # Se é um nome_variavel_sugerido, converte para slug
+            if depends_on_slug in nome_sugerido_to_slug:
+                depends_on_slug = nome_sugerido_to_slug[depends_on_slug]
+            # Se não tem namespace, aplica
+            elif namespace and not depends_on_slug.startswith(f"{namespace}_"):
+                depends_on_slug = self._aplicar_namespace(depends_on_slug, namespace)
+
+            # Injeta campos de dependência no schema
+            schema[slug_pergunta]["conditional"] = True
+            schema[slug_pergunta]["depends_on"] = depends_on_slug
+            if p.dependency_operator:
+                schema[slug_pergunta]["dependency_operator"] = p.dependency_operator
+            if p.dependency_value is not None:
+                schema[slug_pergunta]["dependency_value"] = p.dependency_value
+
+            logger.info(f"Dependência injetada no schema: {slug_pergunta} -> {depends_on_slug}")
+
+        return schema
+
     def _normalizar_slug(self, nome: str) -> str:
         """Normaliza um nome para slug snake_case."""
         # Remove acentos
@@ -546,6 +664,78 @@ INSTRUÇÕES OBRIGATÓRIAS:
                     "depends_on": depends_on,
                     "criado": True
                 })
+
+        # ============================================================
+        # CORREÇÃO: Atualiza depends_on_variable das perguntas para
+        # usar o slug com namespace (sincroniza pergunta ↔ variável)
+        # ============================================================
+
+        # Cria mapeamento de slug_base → slug_com_namespace
+        slug_mapping = {}
+        for v in variaveis_criadas:
+            slug_base = v.get("slug_base")
+            slug_final = v.get("slug")
+            if slug_base and slug_final:
+                slug_mapping[slug_base] = slug_final
+                # Também mapeia o nome_variavel_sugerido das perguntas
+                # (que é usado no select de dependência do frontend)
+
+        # Busca TODAS as perguntas da categoria (incluindo as existentes)
+        todas_perguntas = self.db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.categoria_id == categoria_id,
+            ExtractionQuestion.ativo == True
+        ).all()
+
+        perguntas_atualizadas = 0
+        for pergunta in todas_perguntas:
+            if pergunta.depends_on_variable:
+                dep_original = pergunta.depends_on_variable
+
+                # Tenta encontrar o slug com namespace correspondente
+                slug_com_namespace = None
+
+                # 1. Busca direta no mapeamento
+                if dep_original in slug_mapping:
+                    slug_com_namespace = slug_mapping[dep_original]
+                else:
+                    # 2. Tenta encontrar variável pelo nome_variavel_sugerido
+                    # da pergunta que tem esse slug (busca pela pergunta âncora)
+                    pergunta_ancora = self.db.query(ExtractionQuestion).filter(
+                        ExtractionQuestion.categoria_id == categoria_id,
+                        ExtractionQuestion.nome_variavel_sugerido == dep_original,
+                        ExtractionQuestion.ativo == True
+                    ).first()
+
+                    if pergunta_ancora:
+                        # Busca a variável vinculada à pergunta âncora
+                        variavel_ancora = self.db.query(ExtractionVariable).filter(
+                            ExtractionVariable.source_question_id == pergunta_ancora.id,
+                            ExtractionVariable.ativo == True
+                        ).first()
+
+                        if variavel_ancora:
+                            slug_com_namespace = variavel_ancora.slug
+                    else:
+                        # 3. Tenta aplicar namespace diretamente
+                        if namespace and not dep_original.startswith(f"{namespace}_"):
+                            slug_com_namespace = self._aplicar_namespace(dep_original, namespace)
+                            # Verifica se essa variável existe
+                            variavel_existe = self.db.query(ExtractionVariable).filter(
+                                ExtractionVariable.slug == slug_com_namespace,
+                                ExtractionVariable.ativo == True
+                            ).first()
+                            if not variavel_existe:
+                                slug_com_namespace = None
+
+                # Atualiza a pergunta se encontrou o slug correto
+                if slug_com_namespace and slug_com_namespace != dep_original:
+                    pergunta.depends_on_variable = slug_com_namespace
+                    pergunta.atualizado_em = datetime.utcnow()
+                    perguntas_atualizadas += 1
+                    logger.info(f"Pergunta {pergunta.id}: depends_on atualizado de '{dep_original}' para '{slug_com_namespace}'")
+
+        if perguntas_atualizadas > 0:
+            logger.info(f"Total de {perguntas_atualizadas} perguntas tiveram depends_on_variable atualizado para usar namespace")
 
         self.db.commit()
         return variaveis_criadas

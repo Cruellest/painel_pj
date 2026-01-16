@@ -92,6 +92,7 @@
                         <option value="matriculas">Matrículas Confrontantes</option>
                         <option value="gerador_pecas">Gerador de Peças</option>
                         <option value="pedido_calculo">Pedido de Cálculo</option>
+                        <option value="prestacao_contas">Prestação de Contas</option>
                     </select>
                 </div>
                 <button onclick="limparFiltros()" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
@@ -513,7 +514,8 @@
                     'assistencia_judiciaria': 'Assistência',
                     'matriculas': 'Matrículas',
                     'gerador_pecas': 'Gerador de Peças',
-                    'pedido_calculo': 'Pedido de Cálculo'
+                    'pedido_calculo': 'Pedido de Cálculo',
+                    'prestacao_contas': 'Prestação de Contas'
                 };
                 partes.push(sistemaNomes[sistema] || sistema);
             }
@@ -617,7 +619,8 @@
                     'assistencia_judiciaria': '<span class="text-blue-600"><i class="fas fa-gavel mr-1"></i>Assist. Jud.</span>',
                     'matriculas': '<span class="text-green-600"><i class="fas fa-file-contract mr-1"></i>Matrículas</span>',
                     'gerador_pecas': '<span class="text-purple-600"><i class="fas fa-file-alt mr-1"></i>Ger. Peças</span>',
-                    'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>'
+                    'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>',
+                    'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>'
                 };
                 tabelaPendentes.innerHTML = (data.pendentes_feedback || []).map(p => {
                     const dataFormatada = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
@@ -690,7 +693,8 @@
                         'assistencia_judiciaria': '<span class="text-blue-600"><i class="fas fa-gavel mr-1"></i>Assist. Jud.</span>',
                         'matriculas': '<span class="text-green-600"><i class="fas fa-file-contract mr-1"></i>Matrículas</span>',
                         'gerador_pecas': '<span class="text-purple-600"><i class="fas fa-file-alt mr-1"></i>Ger. Peças</span>',
-                        'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>'
+                        'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>',
+                        'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>'
                     };
                     const dataFormatada = fb.criado_em ? new Date(fb.criado_em).toLocaleDateString('pt-BR') : '-';
                     const modeloFormatado = fb.modelo ? `<span class="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-mono">${fb.modelo}</span>` : '<span class="text-gray-400">N/A</span>';
@@ -821,7 +825,8 @@
                     'assistencia_judiciaria': 'Assistência Judiciária',
                     'matriculas': 'Matrículas Confrontantes',
                     'gerador_pecas': 'Gerador de Peças',
-                    'pedido_calculo': 'Pedido de Cálculo'
+                    'pedido_calculo': 'Pedido de Cálculo',
+                    'prestacao_contas': 'Prestação de Contas'
                 };
                 const sistemaLabel = sistemaNomes[sistema] || sistema;
                 document.getElementById('modal-titulo').textContent = `Relatório - ${sistemaLabel}`;

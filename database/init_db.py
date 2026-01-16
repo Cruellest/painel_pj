@@ -22,6 +22,7 @@ from sistemas.gerador_pecas.models_extraction import (
     ExtractionQuestion, ExtractionModel, ExtractionVariable,
     PromptVariableUsage, PromptActivationLog
 )
+from sistemas.gerador_pecas.models_teste_categorias import TesteDocumento, TesteObservacao
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from admin.models import PromptConfig, ConfiguracaoIA

@@ -54,6 +54,7 @@ from sistemas.gerador_pecas.router import router as gerador_pecas_router
 from sistemas.gerador_pecas.router_admin import router as gerador_pecas_admin_router
 from sistemas.gerador_pecas.router_categorias_json import router as categorias_json_router
 from sistemas.gerador_pecas.router_config_pecas import router as config_pecas_router
+from sistemas.gerador_pecas.router_teste_categorias import router as teste_categorias_router
 
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
@@ -146,6 +147,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: blob: https:",
             "connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai",
+            "frame-src 'self' blob:",  # Permite iframes com blob URLs (PDFs)
+            "object-src 'self' blob:",  # Permite objetos/plugins com blob URLs (PDFs)
             "frame-ancestors 'none'",
             "form-action 'self'",
             "base-uri 'self'",
@@ -326,6 +329,9 @@ app.include_router(prompts_modulos_router, prefix="/admin/api")
 
 # Router de Categorias de Formato JSON (admin)
 app.include_router(categorias_json_router, prefix="/admin/api")
+
+# Router de Teste de Categorias JSON (admin)
+app.include_router(teste_categorias_router, prefix="/admin/api")
 
 # Router de Extração (perguntas, modelos, variáveis, regras determinísticas)
 app.include_router(extraction_router, prefix="/admin/api/extraction")
@@ -585,6 +591,12 @@ async def admin_feedbacks_page(request: Request):
 async def admin_categorias_json_page(request: Request):
     """Página de gerenciamento de categorias de formato de resumo JSON"""
     return templates.TemplateResponse("admin_categorias_json.html", {"request": request})
+
+
+@app.get("/admin/categorias-resumo-json/teste")
+async def admin_teste_categorias_json_page(request: Request):
+    """Página de teste/validação de categorias de resumo JSON"""
+    return templates.TemplateResponse("admin_teste_categorias_json.html", {"request": request})
 
 
 @app.get("/admin/variaveis")

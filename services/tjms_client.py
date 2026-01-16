@@ -61,8 +61,8 @@ class TJMSConfig:
         return cls(
             proxy_local_url=os.getenv("TJMS_PROXY_LOCAL_URL", "").strip().rstrip("/"),
             proxy_flyio_url=os.getenv("TJMS_PROXY_URL", "").strip().rstrip("/"),
-            soap_user=os.getenv("MNI_USER", "") or os.getenv("TJ_USER", ""),
-            soap_pass=os.getenv("MNI_PASS", "") or os.getenv("TJ_PASS", ""),
+            soap_user=os.getenv("MNI_USER", "") or os.getenv("TJ_USER", "") or os.getenv("TJ_WS_USER", "") or os.getenv("WS_USER", ""),
+            soap_pass=os.getenv("MNI_PASS", "") or os.getenv("TJ_PASS", "") or os.getenv("TJ_WS_PASS", "") or os.getenv("WS_PASS", ""),
             web_user=os.getenv("TJMS_USUARIO", ""),
             web_pass=os.getenv("TJMS_SENHA", ""),
             soap_timeout=float(os.getenv("TJMS_SOAP_TIMEOUT", "60")),

@@ -264,7 +264,10 @@
                                     </label>
                                     <div class="flex gap-2">
                                         <button type="button" onclick="reordenarComIA()" id="btn-reordenar-ia" class="px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm flex items-center gap-1" title="Usar IA para reordenar as perguntas logicamente">
-                                            <i class="fas fa-robot"></i> Reordenar com IA
+                                            <i class="fas fa-robot"></i> Reordenar
+                                        </button>
+                                        <button type="button" onclick="criarDependenciasComIA()" id="btn-dependencias-ia" class="px-3 py-1.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm flex items-center gap-1" title="Usar IA para criar/recriar dependências entre perguntas">
+                                            <i class="fas fa-code-branch"></i> Dependências IA
                                         </button>
                                         <button type="button" onclick="abrirModalPerguntasLote()" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm">
                                             <i class="fas fa-list-ul mr-1"></i> Várias Perguntas
@@ -1603,7 +1606,112 @@ Qual o valor da causa?"></textarea>
                 }
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-robot"></i> Reordenar com IA';
+                btn.innerHTML = '<i class="fas fa-robot"></i> Reordenar';
+            }
+        }
+
+        // Cria/recria dependências entre perguntas usando IA
+        async function criarDependenciasComIA() {
+            const categoriaId = document.getElementById('categoria-id').value;
+
+            if (!categoriaId) {
+                alert('Salve a categoria primeiro para criar dependências com IA');
+                return;
+            }
+
+            if (perguntasSelecionadas.length < 2) {
+                alert('São necessárias pelo menos 2 perguntas para criar dependências');
+                return;
+            }
+
+            const btn = document.getElementById('btn-dependencias-ia');
+            const statusEl = document.getElementById('status-geracao');
+
+            // Confirma com o usuário
+            if (!confirm('A IA vai analisar as perguntas e criar/substituir dependências entre elas.\n\nDependências existentes serão substituídas.\n\nDeseja continuar?')) {
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Analisando...';
+            if (statusEl) {
+                statusEl.textContent = 'Analisando perguntas para identificar dependências...';
+                statusEl.className = 'text-sm text-blue-500';
+            }
+
+            try {
+                // Primeiro salva as perguntas atuais
+                await salvarPerguntasNoServidor(categoriaId);
+
+                // 1. Chama a API para inferir dependências
+                const inferResponse = await fetch(`${API_EXTRACTION}/dependencias/inferir`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({ categoria_id: parseInt(categoriaId) })
+                });
+
+                const inferResult = await inferResponse.json();
+
+                if (!inferResult.success) {
+                    throw new Error(inferResult.erro || 'Erro ao inferir dependências');
+                }
+
+                const dependenciasInferidas = inferResult.dependencias_inferidas || [];
+
+                if (dependenciasInferidas.length === 0) {
+                    if (statusEl) {
+                        statusEl.textContent = 'Nenhuma dependência identificada pela IA. As perguntas parecem ser independentes.';
+                        statusEl.className = 'text-sm text-yellow-600';
+                    }
+                    return;
+                }
+
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Aplicando...';
+                if (statusEl) {
+                    statusEl.textContent = `Aplicando ${dependenciasInferidas.length} dependência(s) identificada(s)...`;
+                    statusEl.className = 'text-sm text-blue-500';
+                }
+
+                // 2. Aplica as dependências
+                const applyResponse = await fetch(`${API_EXTRACTION}/dependencias/aplicar`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({
+                        categoria_id: parseInt(categoriaId),
+                        dependencias: dependenciasInferidas
+                    })
+                });
+
+                const applyResult = await applyResponse.json();
+
+                if (!applyResult.success) {
+                    throw new Error(applyResult.erro || 'Erro ao aplicar dependências');
+                }
+
+                // 3. Recarrega as perguntas para mostrar as dependências
+                await carregarPerguntasCategoria(categoriaId);
+
+                // Mostra resumo das dependências criadas
+                const resumoDeps = dependenciasInferidas.map(d =>
+                    `• Pergunta ${d.pergunta_id} → depende de "${d.depends_on_variable}"`
+                ).join('\n');
+
+                if (statusEl) {
+                    statusEl.textContent = `✓ ${dependenciasInferidas.length} dependência(s) criada(s) com sucesso!`;
+                    statusEl.className = 'text-sm text-green-600';
+                }
+
+                console.log('Dependências criadas pela IA:\n' + resumoDeps);
+
+            } catch (error) {
+                console.error('Erro ao criar dependências com IA:', error);
+                if (statusEl) {
+                    statusEl.textContent = `Erro: ${error.message}`;
+                    statusEl.className = 'text-sm text-red-500';
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-code-branch"></i> Dependências IA';
             }
         }
 
@@ -1928,13 +2036,23 @@ Qual o valor da causa?"></textarea>
                 document.getElementById('pergunta-opcoes').value = (p.opcoes_sugeridas || []).join('\n');
                 // IA decide ordem - desmarca em edição
                 document.getElementById('pergunta-ordem-ia').checked = false;
-                // Dependência
+                // Dependência - guarda valores para aplicar depois de popular o select
                 const temDependencia = !!p.depends_on_variable;
+                const dependsOnValue = p.depends_on_variable || '';
+                const dependencyOperatorValue = p.dependency_operator || 'equals';
+                const dependencyValueValue = p.dependency_value !== undefined && p.dependency_value !== null ? String(p.dependency_value) : '';
+
                 document.getElementById('pergunta-tem-dependencia').checked = temDependencia;
-                document.getElementById('pergunta-depends-on').value = p.depends_on_variable || '';
-                document.getElementById('pergunta-dependency-operator').value = p.dependency_operator || 'equals';
-                document.getElementById('pergunta-dependency-value').value = p.dependency_value || '';
+                document.getElementById('pergunta-dependency-operator').value = dependencyOperatorValue;
+                document.getElementById('pergunta-dependency-value').value = dependencyValueValue;
                 document.getElementById('pergunta-ativa').checked = p.ativo !== false;
+
+                // Popula o select de dependência ANTES de tentar definir o valor
+                if (temDependencia) {
+                    popularSelectDependencia();
+                    // Agora define o valor com fallback depois que o select foi populado
+                    definirValorDependenciaComFallback(dependsOnValue);
+                }
 
                 // Busca variável vinculada (se a pergunta foi salva)
                 if (p.id) {
@@ -2268,10 +2386,43 @@ Qual o valor da causa?"></textarea>
 
             // Restaura valor anterior se existir
             if (valorAtual) {
-                select.value = valorAtual;
+                definirValorDependenciaComFallback(valorAtual);
             }
 
             atualizarPreviewDependencia();
+        }
+
+        // Define o valor do select de dependência com fallback para match parcial
+        function definirValorDependenciaComFallback(valor) {
+            if (!valor) return;
+
+            const select = document.getElementById('pergunta-depends-on');
+            select.value = valor;
+
+            // Se encontrou match direto, ok
+            if (select.value === valor) return;
+
+            // Se não encontrou match direto, tenta fallback sem namespace
+            const opcoes = Array.from(select.options);
+            const matchParcial = opcoes.find(opt => {
+                if (!opt.value) return false;
+                // Verifica se o valor salvo é sufixo do slug (ex: "incorporado_sus" match "medicamento_incorporado_sus")
+                return opt.value.endsWith('_' + valor) || opt.value === valor;
+            });
+
+            if (matchParcial) {
+                select.value = matchParcial.value;
+                console.log(`Dependência: fallback de "${valor}" para "${matchParcial.value}"`);
+            } else {
+                // Se ainda não encontrou, adiciona a opção temporariamente para não perder o valor
+                const optionTemp = document.createElement('option');
+                optionTemp.value = valor;
+                optionTemp.textContent = `${valor} (não encontrada)`;
+                optionTemp.style.color = '#f97316'; // laranja para indicar problema
+                select.insertBefore(optionTemp, select.firstChild.nextSibling);
+                select.value = valor;
+                console.warn(`Dependência: variável "${valor}" não encontrada no sistema`);
+            }
         }
 
         // Atualiza operadores com base na variável selecionada

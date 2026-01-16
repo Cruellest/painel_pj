@@ -26,6 +26,7 @@ from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAna
 from sistemas.matriculas_confrontantes.models import Analise, FeedbackMatricula
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo
+from sistemas.prestacao_contas.models import GeracaoAnalise, FeedbackPrestacao
 
 
 router = APIRouter(prefix="/admin", tags=["Administração"])
@@ -553,6 +554,7 @@ async def dashboard_feedbacks(
         incluir_mat = sistema is None or sistema == 'matriculas'
         incluir_gp = sistema is None or sistema == 'gerador_pecas'
         incluir_pc = sistema is None or sistema == 'pedido_calculo'
+        incluir_prest = sistema is None or sistema == 'prestacao_contas'
 
         total_consultas_aj = 0
         total_feedbacks_aj = 0
@@ -569,6 +571,10 @@ async def dashboard_feedbacks(
         total_geracoes_pc = 0
         total_feedbacks_pc = 0
         feedbacks_por_avaliacao_pc = []
+
+        total_geracoes_prest = 0
+        total_feedbacks_prest = 0
+        feedbacks_por_avaliacao_prest = []
         
         # === Sistema Assistência Judiciária ===
         if incluir_aj:
@@ -710,10 +716,45 @@ async def dashboard_feedbacks(
                 )
             feedbacks_por_avaliacao_pc = query_avaliacoes_pc.group_by(FeedbackPedidoCalculo.avaliacao).all()
 
+        # === Sistema Prestação de Contas ===
+        if incluir_prest:
+            query_total_prest = db.query(GeracaoAnalise)
+            if ids_excluir:
+                query_total_prest = query_total_prest.filter(~GeracaoAnalise.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_total_prest = query_total_prest.filter(
+                    GeracaoAnalise.criado_em >= data_inicio,
+                    GeracaoAnalise.criado_em < data_fim
+                )
+            total_geracoes_prest = query_total_prest.count()
+
+            query_feedbacks_prest = db.query(FeedbackPrestacao)
+            if ids_excluir:
+                query_feedbacks_prest = query_feedbacks_prest.filter(~FeedbackPrestacao.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_feedbacks_prest = query_feedbacks_prest.filter(
+                    FeedbackPrestacao.criado_em >= data_inicio,
+                    FeedbackPrestacao.criado_em < data_fim
+                )
+            total_feedbacks_prest = query_feedbacks_prest.count()
+
+            query_avaliacoes_prest = db.query(
+                FeedbackPrestacao.avaliacao,
+                func.count(FeedbackPrestacao.id).label('count')
+            )
+            if ids_excluir:
+                query_avaliacoes_prest = query_avaliacoes_prest.filter(~FeedbackPrestacao.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_avaliacoes_prest = query_avaliacoes_prest.filter(
+                    FeedbackPrestacao.criado_em >= data_inicio,
+                    FeedbackPrestacao.criado_em < data_fim
+                )
+            feedbacks_por_avaliacao_prest = query_avaliacoes_prest.group_by(FeedbackPrestacao.avaliacao).all()
+
         # === Totais combinados ===
-        total_consultas = total_consultas_aj + total_analises_mat + total_geracoes_gp + total_geracoes_pc
-        total_feedbacks = total_feedbacks_aj + total_feedbacks_mat + total_feedbacks_gp + total_feedbacks_pc
-        
+        total_consultas = total_consultas_aj + total_analises_mat + total_geracoes_gp + total_geracoes_pc + total_geracoes_prest
+        total_feedbacks = total_feedbacks_aj + total_feedbacks_mat + total_feedbacks_gp + total_feedbacks_pc + total_feedbacks_prest
+
         # Combinar avaliações
         avaliacoes = {
             'correto': 0,
@@ -733,7 +774,10 @@ async def dashboard_feedbacks(
         for avaliacao, count in feedbacks_por_avaliacao_pc:
             if avaliacao in avaliacoes:
                 avaliacoes[avaliacao] += count
-        
+        for avaliacao, count in feedbacks_por_avaliacao_prest:
+            if avaliacao in avaliacoes:
+                avaliacoes[avaliacao] += count
+
         # Taxa de acerto (correto / total feedbacks)
         taxa_acerto = 0
         if total_feedbacks > 0:
@@ -751,6 +795,7 @@ async def dashboard_feedbacks(
         feedbacks_recentes_mat = []
         feedbacks_recentes_gp = []
         feedbacks_recentes_pc = []
+        feedbacks_recentes_prest = []
 
         if incluir_aj:
             query_recentes_aj = db.query(
@@ -800,6 +845,18 @@ async def dashboard_feedbacks(
                 query_recentes_pc = query_recentes_pc.filter(~FeedbackPedidoCalculo.usuario_id.in_(ids_excluir))
             feedbacks_recentes_pc = query_recentes_pc.group_by(func.date(FeedbackPedidoCalculo.criado_em)).all()
 
+        if incluir_prest:
+            query_recentes_prest = db.query(
+                func.date(FeedbackPrestacao.criado_em).label('data'),
+                func.count(FeedbackPrestacao.id).label('count')
+            ).filter(
+                FeedbackPrestacao.criado_em >= data_limite_recentes,
+                FeedbackPrestacao.criado_em < data_fim_recentes
+            )
+            if ids_excluir:
+                query_recentes_prest = query_recentes_prest.filter(~FeedbackPrestacao.usuario_id.in_(ids_excluir))
+            feedbacks_recentes_prest = query_recentes_prest.group_by(func.date(FeedbackPrestacao.criado_em)).all()
+
         # Combina feedbacks recentes por data
         feedbacks_por_data = {}
         for data, count in feedbacks_recentes_aj:
@@ -810,7 +867,9 @@ async def dashboard_feedbacks(
             feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
         for data, count in feedbacks_recentes_pc:
             feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
-        
+        for data, count in feedbacks_recentes_prest:
+            feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
+
         feedbacks_recentes = [{"data": data, "count": count} for data, count in sorted(feedbacks_por_data.items())]
         
         # Feedbacks por usuário (top 10) - combinando sistemas selecionados
@@ -818,6 +877,7 @@ async def dashboard_feedbacks(
         feedbacks_por_usuario_mat = []
         feedbacks_por_usuario_gp = []
         feedbacks_por_usuario_pc = []
+        feedbacks_por_usuario_prest = []
         
         if incluir_aj:
             query_usuarios_aj = db.query(
@@ -883,6 +943,22 @@ async def dashboard_feedbacks(
                 )
             feedbacks_por_usuario_pc = query_usuarios_pc.group_by(User.id, User.username, User.full_name).all()
 
+        if incluir_prest:
+            query_usuarios_prest = db.query(
+                User.username,
+                User.full_name,
+                func.count(FeedbackPrestacao.id).label('total'),
+                func.sum(case((FeedbackPrestacao.avaliacao == 'correto', 1), else_=0)).label('corretos')
+            ).join(FeedbackPrestacao, FeedbackPrestacao.usuario_id == User.id)
+            if ids_excluir:
+                query_usuarios_prest = query_usuarios_prest.filter(~User.id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_usuarios_prest = query_usuarios_prest.filter(
+                    FeedbackPrestacao.criado_em >= data_inicio,
+                    FeedbackPrestacao.criado_em < data_fim
+                )
+            feedbacks_por_usuario_prest = query_usuarios_prest.group_by(User.id, User.username, User.full_name).all()
+
         # Combina por usuário
         usuarios_stats = {}
         for username, full_name, total, corretos in feedbacks_por_usuario_aj:
@@ -905,7 +981,12 @@ async def dashboard_feedbacks(
                 usuarios_stats[username] = {"nome": full_name or username, "total": 0, "corretos": 0}
             usuarios_stats[username]["total"] += total
             usuarios_stats[username]["corretos"] += corretos or 0
-        
+        for username, full_name, total, corretos in feedbacks_por_usuario_prest:
+            if username not in usuarios_stats:
+                usuarios_stats[username] = {"nome": full_name or username, "total": 0, "corretos": 0}
+            usuarios_stats[username]["total"] += total
+            usuarios_stats[username]["corretos"] += corretos or 0
+
         feedbacks_por_usuario = sorted(
             [{"username": k, **v} for k, v in usuarios_stats.items()],
             key=lambda x: x["total"],
@@ -917,6 +998,7 @@ async def dashboard_feedbacks(
         analises_sem_feedback_mat = []
         geracoes_sem_feedback_gp = []
         geracoes_sem_feedback_pc = []
+        geracoes_sem_feedback_prest = []
         
         # Assistência Judiciária
         if incluir_aj:
@@ -1022,6 +1104,32 @@ async def dashboard_feedbacks(
                 )
             geracoes_sem_feedback_pc = query_pendentes_pc.order_by(GeracaoPedidoCalculo.criado_em.desc()).limit(20).all()
 
+        # Prestação de Contas
+        if incluir_prest:
+            query_pendentes_prest = db.query(
+                GeracaoAnalise.id,
+                GeracaoAnalise.numero_cnj_formatado,
+                GeracaoAnalise.numero_cnj,
+                GeracaoAnalise.criado_em,
+                User.username,
+                User.full_name
+            ).outerjoin(
+                FeedbackPrestacao, FeedbackPrestacao.geracao_id == GeracaoAnalise.id
+            ).join(
+                User, GeracaoAnalise.usuario_id == User.id
+            ).filter(
+                FeedbackPrestacao.id == None,
+                GeracaoAnalise.fundamentacao.isnot(None)
+            )
+            if ids_excluir:
+                query_pendentes_prest = query_pendentes_prest.filter(~GeracaoAnalise.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_pendentes_prest = query_pendentes_prest.filter(
+                    GeracaoAnalise.criado_em >= data_inicio,
+                    GeracaoAnalise.criado_em < data_fim
+                )
+            geracoes_sem_feedback_prest = query_pendentes_prest.order_by(GeracaoAnalise.criado_em.desc()).limit(20).all()
+
         # Combina e formata
         pendentes_feedback = []
         for id, cnj_fmt, cnj, consultado_em, username, full_name in consultas_sem_feedback_aj:
@@ -1056,7 +1164,15 @@ async def dashboard_feedbacks(
                 "usuario": full_name or username,
                 "data": criado_em.isoformat() if criado_em else None
             })
-        
+        for id, numero_cnj_fmt, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_prest:
+            pendentes_feedback.append({
+                "id": id,
+                "sistema": "prestacao_contas",
+                "identificador": numero_cnj_fmt or numero_cnj,
+                "usuario": full_name or username,
+                "data": criado_em.isoformat() if criado_em else None
+            })
+
         # Ordena por data (mais recentes primeiro)
         pendentes_feedback.sort(key=lambda x: x.get('data') or '', reverse=True)
         pendentes_feedback = pendentes_feedback[:20]
@@ -1091,6 +1207,10 @@ async def dashboard_feedbacks(
                 "pedido_calculo": {
                     "total": total_geracoes_pc,
                     "feedbacks": total_feedbacks_pc
+                },
+                "prestacao_contas": {
+                    "total": total_geracoes_prest,
+                    "feedbacks": total_feedbacks_prest
                 }
             }
         }
@@ -1317,6 +1437,59 @@ async def listar_feedbacks(
                     "avaliacao": fb.avaliacao,
                     "comentario": fb.comentario,
                     "campos_incorretos": fb.campos_incorretos,
+                    "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
+                    "criado_em_dt": fb.criado_em
+                })
+
+        # Feedbacks de Prestação de Contas
+        if sistema is None or sistema == 'prestacao_contas':
+            query_prest = db.query(
+                FeedbackPrestacao,
+                GeracaoAnalise.numero_cnj_formatado,
+                GeracaoAnalise.numero_cnj,
+                GeracaoAnalise.modelo_usado,
+                User.username,
+                User.full_name
+            ).join(
+                GeracaoAnalise, FeedbackPrestacao.geracao_id == GeracaoAnalise.id
+            ).join(
+                User, FeedbackPrestacao.usuario_id == User.id
+            )
+
+            if ids_excluir:
+                query_prest = query_prest.filter(~FeedbackPrestacao.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_prest = query_prest.filter(
+                    FeedbackPrestacao.criado_em >= data_inicio,
+                    FeedbackPrestacao.criado_em < data_fim
+                )
+            if avaliacao:
+                query_prest = query_prest.filter(FeedbackPrestacao.avaliacao == avaliacao)
+            if usuario_id:
+                query_prest = query_prest.filter(FeedbackPrestacao.usuario_id == usuario_id)
+
+            for fb, numero_cnj_fmt, numero_cnj, modelo_usado, username, full_name in query_prest.all():
+                # Constrói campos_incorretos a partir dos booleanos específicos
+                campos_incorretos = []
+                if fb.parecer_correto is False:
+                    campos_incorretos.append("parecer")
+                if fb.valores_corretos is False:
+                    campos_incorretos.append("valores")
+                if fb.medicamento_correto is False:
+                    campos_incorretos.append("medicamento")
+
+                feedbacks_combinados.append({
+                    "id": fb.id,
+                    "consulta_id": fb.geracao_id,
+                    "sistema": "prestacao_contas",
+                    "identificador": numero_cnj_fmt or numero_cnj,
+                    "cnj": numero_cnj,
+                    "modelo": modelo_usado or "gemini-2.0-flash",
+                    "usuario": full_name or username,
+                    "username": username,
+                    "avaliacao": fb.avaliacao,
+                    "comentario": fb.comentario,
+                    "campos_incorretos": campos_incorretos if campos_incorretos else None,
                     "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
                     "criado_em_dt": fb.criado_em
                 })

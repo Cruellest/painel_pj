@@ -421,13 +421,44 @@ async def atualizar_categoria(
     if categoria_data.json_gerado_por_ia:
         categoria.json_gerado_em = datetime.utcnow()
         categoria.json_gerado_por = current_user.id
-    
+
     categoria.atualizado_por = current_user.id
     categoria.atualizado_em = datetime.utcnow()
-    
+
+    # Sincroniza variáveis se o JSON foi alterado
+    if categoria_data.formato_json is not None:
+        try:
+            import json
+            from .models_extraction import ExtractionVariable
+
+            schema = json.loads(categoria_data.formato_json)
+
+            # Para cada campo no JSON, atualiza a variável correspondente
+            for slug, campo_info in schema.items():
+                if isinstance(campo_info, dict):
+                    variavel = db.query(ExtractionVariable).filter(
+                        ExtractionVariable.slug == slug,
+                        ExtractionVariable.categoria_id == categoria_id
+                    ).first()
+
+                    if variavel:
+                        tipo_json = campo_info.get("type")
+                        descricao_json = campo_info.get("description")
+
+                        if tipo_json and variavel.tipo != tipo_json:
+                            variavel.tipo = tipo_json
+                            variavel.atualizado_em = datetime.utcnow()
+
+                        if descricao_json and variavel.descricao != descricao_json:
+                            variavel.descricao = descricao_json
+                            variavel.atualizado_em = datetime.utcnow()
+
+        except Exception as e:
+            logger.warning(f"Não foi possível sincronizar variáveis com JSON: {e}")
+
     db.commit()
     db.refresh(categoria)
-    
+
     return categoria
 
 

@@ -225,21 +225,156 @@ def gerar_prompt_extracao_json_imagem(
     return prompt
 
 
+def _corrigir_json_malformado(json_str: str) -> str:
+    """
+    Tenta corrigir problemas comuns de JSON malformado retornado pela LLM.
+
+    Corrige:
+    - Trailing commas (vírgulas antes de } ou ])
+    - Vírgulas faltando entre elementos
+    - Quebras de linha dentro de strings
+    - Comentários // ou /* */
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    original = json_str
+
+    # Remove comentários de linha única (// ...)
+    # Cuidado para não remover // dentro de strings
+    # Abordagem simples: remove linhas que começam com //
+    lines = json_str.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('//'):
+            continue
+        # Remove comentário no final da linha (fora de strings)
+        # Heurística simples: se tem // e não está dentro de aspas
+        if '//' in line:
+            # Conta aspas antes do //
+            pos = line.find('//')
+            aspas_antes = line[:pos].count('"') - line[:pos].count('\\"')
+            if aspas_antes % 2 == 0:  # Número par = fora de string
+                line = line[:pos]
+        cleaned_lines.append(line)
+    json_str = '\n'.join(cleaned_lines)
+
+    # Remove trailing commas antes de } ou ]
+    # Padrão: vírgula seguida de espaços/quebras e então } ou ]
+    json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+
+    # Adiciona vírgulas faltando entre elementos JSON
+    # Aplica em loop até não haver mais mudanças (para pegar múltiplas ocorrências)
+    padroes_virgula = [
+        # === Padrões com quebra de linha ===
+        # Padrão 1: string seguida de nova chave
+        (r'(")\s*\n(\s*"[^"]+"\s*:)', r'\1,\n\2', 0),
+        # Padrão 2: número seguido de nova chave
+        (r'(\d)\s*\n(\s*"[^"]+"\s*:)', r'\1,\n\2', 0),
+        # Padrão 3: true/false/null seguido de nova chave
+        (r'(true|false|null)\s*\n(\s*"[^"]+"\s*:)', r'\1,\n\2', re.IGNORECASE),
+        # Padrão 4: } ou ] seguido de nova chave
+        (r'([}\]])\s*\n(\s*"[^"]+"\s*:)', r'\1,\n\2', 0),
+        # Padrão 5: string seguida de { ou [
+        (r'(")\s*\n(\s*[{\[])', r'\1,\n\2', 0),
+        # Padrão 6: } ou ] seguido de { ou [
+        (r'([}\]])\s*\n(\s*[{\[])', r'\1,\n\2', 0),
+        # Padrão 7: string seguida de string
+        (r'(")\s*\n(\s*")', r'\1,\n\2', 0),
+        # Padrão 8: número seguido de número
+        (r'(\d)\s*\n(\s*\d)', r'\1,\n\2', 0),
+        # Padrão 9: número seguido de string
+        (r'(\d)\s*\n(\s*")', r'\1,\n\2', 0),
+        # Padrão 10: string seguida de número
+        (r'(")\s*\n(\s*\d)', r'\1,\n\2', 0),
+        # Padrão 11: true/false/null seguido de valor
+        (r'(true|false|null)\s*\n(\s*["\d\[{tfn])', r'\1,\n\2', re.IGNORECASE),
+        # Padrão 12: valor seguido de true/false/null
+        (r'(["\d}\]])\s*\n(\s*(?:true|false|null))', r'\1,\n\2', re.IGNORECASE),
+
+        # === Padrões na mesma linha (sem quebra) ===
+        # Padrão 13: string seguida de chave na mesma linha (ex: "valor" "chave":)
+        (r'(")\s+("(?:[^"\\]|\\.)*"\s*:)', r'\1, \2', 0),
+        # Padrão 14: número seguido de chave na mesma linha
+        (r'(\d)\s+("(?:[^"\\]|\\.)*"\s*:)', r'\1, \2', 0),
+        # Padrão 15: } seguido de chave na mesma linha
+        (r'(\})\s+("(?:[^"\\]|\\.)*"\s*:)', r'\1, \2', 0),
+        # Padrão 16: ] seguido de chave na mesma linha
+        (r'(\])\s+("(?:[^"\\]|\\.)*"\s*:)', r'\1, \2', 0),
+        # Padrão 17: true/false/null seguido de chave na mesma linha
+        (r'(true|false|null)\s+("(?:[^"\\]|\\.)*"\s*:)', r'\1, \2', re.IGNORECASE),
+    ]
+
+    # Aplica padrões em loop até estabilizar
+    max_iteracoes = 10
+    for _ in range(max_iteracoes):
+        json_anterior = json_str
+        for padrao, substituicao, flags in padroes_virgula:
+            json_str = re.sub(padrao, substituicao, json_str, flags=flags)
+        if json_str == json_anterior:
+            break
+
+    # Corrige quebras de linha dentro de strings
+    # Isso é mais complexo - vamos tentar uma abordagem conservadora
+    # Substitui quebras de linha por \n quando parecem estar dentro de strings
+
+    # Primeiro, vamos tentar parsear e ver se funciona
+    try:
+        json.loads(json_str)
+        return json_str  # Já está ok após correções básicas
+    except json.JSONDecodeError:
+        pass
+
+    # Se ainda falhou, tenta corrigir strings multilinha
+    # Abordagem: encontra strings e escapa quebras de linha dentro delas
+    resultado = []
+    i = 0
+    dentro_string = False
+
+    while i < len(json_str):
+        char = json_str[i]
+
+        if char == '"' and (i == 0 or json_str[i-1] != '\\'):
+            dentro_string = not dentro_string
+            resultado.append(char)
+        elif dentro_string and char == '\n':
+            resultado.append('\\n')
+        elif dentro_string and char == '\r':
+            pass  # Ignora \r
+        elif dentro_string and char == '\t':
+            resultado.append('\\t')
+        else:
+            resultado.append(char)
+
+        i += 1
+
+    json_str = ''.join(resultado)
+
+    # Tenta novamente remover trailing commas (pode ter surgido novos casos)
+    json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+
+    if json_str != original:
+        logger.debug(f"JSON corrigido de {len(original)} para {len(json_str)} chars")
+
+    return json_str
+
+
 def parsear_resposta_json(resposta: str) -> Tuple[Dict[str, Any], Optional[str]]:
     """
     Parseia a resposta da IA e extrai o JSON.
-    
+
     Args:
         resposta: Texto de resposta da IA
-        
+
     Returns:
         Tupla (json_dict, erro) - erro é None se parse bem-sucedido
     """
     if not resposta:
         return {}, "Resposta vazia"
-    
+
     resposta = resposta.strip()
-    
+
     # Tenta extrair JSON de bloco de código markdown
     match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', resposta)
     if match:
@@ -247,29 +382,43 @@ def parsear_resposta_json(resposta: str) -> Tuple[Dict[str, Any], Optional[str]]
     else:
         # Tenta usar resposta direta (pode começar com { ou [)
         json_str = resposta
-        
+
         # Remove texto antes do primeiro { ou [
         first_brace = json_str.find('{')
         first_bracket = json_str.find('[')
-        
+
         if first_brace >= 0 and (first_bracket < 0 or first_brace < first_bracket):
             json_str = json_str[first_brace:]
         elif first_bracket >= 0:
             json_str = json_str[first_bracket:]
-    
+
     # Remove texto após o último } ou ]
     last_brace = json_str.rfind('}')
     last_bracket = json_str.rfind(']')
-    
+
     if last_brace >= 0 and (last_bracket < 0 or last_brace > last_bracket):
         json_str = json_str[:last_brace + 1]
     elif last_bracket >= 0:
         json_str = json_str[:last_bracket + 1]
-    
+
+    # Primeira tentativa: parse direto
     try:
         resultado = json.loads(json_str)
         return resultado, None
+    except json.JSONDecodeError:
+        pass
+
+    # Segunda tentativa: corrige JSON malformado
+    json_str_corrigido = _corrigir_json_malformado(json_str)
+
+    try:
+        resultado = json.loads(json_str_corrigido)
+        return resultado, None
     except json.JSONDecodeError as e:
+        # Log do JSON problemático para debug
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"JSON malformado (primeiros 500 chars): {json_str_corrigido[:500]}")
         return {}, f"Erro ao parsear JSON: {e}"
 
 
