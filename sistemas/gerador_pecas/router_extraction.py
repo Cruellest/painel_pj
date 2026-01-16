@@ -337,13 +337,14 @@ def ensure_variable_for_question(
     """
     Garante que existe uma variável correspondente à pergunta.
 
+    IMPORTANTE: Esta função PRESERVA variáveis existentes vinculadas à pergunta.
+    Não altera o slug de variáveis já criadas - apenas preenche nome_variavel_sugerido
+    da pergunta para exibição na UI.
+
     Esta função:
     1. Verifica se a pergunta tem os campos mínimos (texto, tipo)
-    2. Determina o slug (usa nome_variavel_sugerido se existir, senão gera a partir do texto)
-    3. Verifica se já existe uma variável com esse slug
-    4. Se existir e pertencer a outra pergunta, usa sufixo para unicidade
-    5. Se não existir, cria uma nova variável
-    6. Atualiza a pergunta com o slug se foi gerado
+    2. Se já existe variável vinculada, PRESERVA o slug e sincroniza com pergunta
+    3. Se não existe, cria nova variável (usando nome_variavel_sugerido ou gerando slug)
 
     Args:
         db: Sessão do banco de dados
@@ -351,7 +352,7 @@ def ensure_variable_for_question(
         categoria: Categoria da pergunta
 
     Returns:
-        ExtractionVariable criada/atualizada ou None se pergunta incompleta
+        ExtractionVariable existente/criada ou None se pergunta incompleta
     """
     # Verifica campos mínimos
     if not pergunta.pergunta or not pergunta.pergunta.strip():
@@ -360,33 +361,20 @@ def ensure_variable_for_question(
     if not pergunta.tipo_sugerido or not pergunta.tipo_sugerido.strip():
         return None
 
-    # Determina o slug
-    if pergunta.nome_variavel_sugerido and pergunta.nome_variavel_sugerido.strip():
-        slug_base = pergunta.nome_variavel_sugerido.strip()
-    else:
-        # Gera slug a partir do texto da pergunta
-        slug_base = _slugify(pergunta.pergunta)
-        if not slug_base:
-            slug_base = f"variavel_{pergunta.id or 'nova'}"
-
     # Verifica se já existe variável vinculada a esta pergunta
     variavel_existente = db.query(ExtractionVariable).filter(
         ExtractionVariable.source_question_id == pergunta.id
     ).first() if pergunta.id else None
 
     if variavel_existente:
-        # Atualiza variável existente
-        slug_antigo = variavel_existente.slug
-        novo_slug = slug_base
+        # PRESERVA variável existente - NÃO altera o slug!
+        # Apenas sincroniza nome_variavel_sugerido da pergunta para exibição na UI
+        if not pergunta.nome_variavel_sugerido or pergunta.nome_variavel_sugerido != variavel_existente.slug:
+            pergunta.nome_variavel_sugerido = variavel_existente.slug
+            logger.info(f"Pergunta {pergunta.id}: sincronizado nome_variavel_sugerido = '{variavel_existente.slug}'")
 
-        # Se mudou o slug, verifica unicidade
-        if slug_antigo != novo_slug:
-            novo_slug = _get_unique_slug(db, novo_slug, exclude_question_id=pergunta.id)
-
-        variavel_existente.slug = novo_slug
-        variavel_existente.label = pergunta.pergunta[:200] if pergunta.pergunta else slug_base
+        # Atualiza apenas campos não-identificadores da variável (tipo, opções, dependências)
         variavel_existente.tipo = pergunta.tipo_sugerido.lower()
-        variavel_existente.descricao = pergunta.descricao
         variavel_existente.opcoes = pergunta.opcoes_sugeridas
         variavel_existente.categoria_id = categoria.id
 
@@ -405,12 +393,17 @@ def ensure_variable_for_question(
 
         variavel_existente.atualizado_em = datetime.utcnow()
 
-        # Atualiza nome_variavel_sugerido da pergunta se mudou
-        if pergunta.nome_variavel_sugerido != novo_slug:
-            pergunta.nome_variavel_sugerido = novo_slug
-
-        logger.info(f"Variável atualizada: {variavel_existente.slug} (pergunta_id={pergunta.id})")
+        logger.info(f"Variável preservada: {variavel_existente.slug} (pergunta_id={pergunta.id})")
         return variavel_existente
+
+    # Não existe variável vinculada - determina o slug para criar nova
+    if pergunta.nome_variavel_sugerido and pergunta.nome_variavel_sugerido.strip():
+        slug_base = pergunta.nome_variavel_sugerido.strip()
+    else:
+        # Gera slug a partir do texto da pergunta
+        slug_base = _slugify(pergunta.pergunta)
+        if not slug_base:
+            slug_base = f"variavel_{pergunta.id or 'nova'}"
 
     # Verifica se existe variável com o mesmo slug (de outra pergunta ou manual)
     variavel_mesmo_slug = db.query(ExtractionVariable).filter(

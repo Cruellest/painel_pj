@@ -82,15 +82,40 @@ class ExtractionSchemaGenerator:
             perguntas_novas = []
             perguntas_existentes = []
 
+            # Busca a categoria para obter o namespace
+            categoria = self.db.query(CategoriaResumoJSON).filter(
+                CategoriaResumoJSON.id == categoria_id
+            ).first()
+            namespace = categoria.namespace if categoria else ""
+
             for p in perguntas:
-                # Verifica se já tem variável vinculada
+                # Verifica se já tem variável vinculada (por source_question_id)
                 variavel_existente = self.db.query(ExtractionVariable).filter(
                     ExtractionVariable.source_question_id == p.id,
                     ExtractionVariable.ativo == True
                 ).first()
 
+                # Se não encontrou por source_question_id, tenta por slug
+                if not variavel_existente and p.nome_variavel_sugerido:
+                    # Tenta encontrar variável pelo slug (com e sem namespace)
+                    slug_base = p.nome_variavel_sugerido.strip()
+                    slug_com_namespace = self._aplicar_namespace(slug_base, namespace) if namespace else slug_base
+
+                    variavel_existente = self.db.query(ExtractionVariable).filter(
+                        ExtractionVariable.slug.in_([slug_base, slug_com_namespace]),
+                        ExtractionVariable.ativo == True
+                    ).first()
+
+                    if variavel_existente:
+                        # Vincula a variável à pergunta para futuras consultas
+                        variavel_existente.source_question_id = p.id
+                        logger.info(f"Variável '{variavel_existente.slug}' vinculada à pergunta {p.id}")
+
                 if variavel_existente:
                     perguntas_existentes.append((p, variavel_existente))
+                    # Sincroniza nome_variavel_sugerido da pergunta com o slug da variável
+                    if not p.nome_variavel_sugerido or p.nome_variavel_sugerido != variavel_existente.slug:
+                        p.nome_variavel_sugerido = variavel_existente.slug
                 else:
                     perguntas_novas.append(p)
 
