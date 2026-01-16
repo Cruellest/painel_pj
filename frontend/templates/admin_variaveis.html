@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel de Variaveis - Portal PGE-MS</title>
-    <!-- VERSAO: 2026-01-15-v2 - fonte_verdade_codigo + ajuda -->
+    <!-- VERSAO: 2026-01-16-v1 - agrupamento por categoria + slug sem prefixo -->
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
@@ -26,6 +26,50 @@
             }
         }
     </script>
+    <style>
+        /* Animacoes para categorias colapsiveis */
+        .categoria-icon {
+            transition: transform 0.2s ease-in-out;
+        }
+        .categoria-conteudo {
+            transition: all 0.2s ease-in-out;
+        }
+        .categoria-grupo:hover > div:first-child {
+            filter: brightness(0.97);
+        }
+        /* Tooltip para slug completo */
+        .slug-display {
+            position: relative;
+        }
+        .slug-display:hover .slug-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+        .slug-tooltip {
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            background: #1f2937;
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s;
+            z-index: 10;
+            margin-bottom: 4px;
+        }
+        .slug-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 12px;
+            border: 5px solid transparent;
+            border-top-color: #1f2937;
+        }
+    </style>
 </head>
 <body class="min-h-screen bg-gray-50">
 
@@ -128,7 +172,7 @@
                         <input
                             type="text"
                             id="busca-variavel"
-                            placeholder="Buscar por slug ou label..."
+                            placeholder="Buscar por slug (com ou sem prefixo) ou label..."
                             class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                         >
                     </div>
@@ -160,13 +204,28 @@
                     </button>
                 </div>
             </div>
+            <!-- Controles de Expandir/Recolher -->
+            <div id="controles-grupos" class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between hidden">
+                <div class="flex items-center gap-2 text-sm text-gray-500">
+                    <i class="fas fa-layer-group"></i>
+                    <span id="info-grupos">Agrupado por categoria</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="expandirTodosGrupos()" class="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded transition-colors">
+                        <i class="fas fa-expand-alt mr-1"></i> Expandir todas
+                    </button>
+                    <button onclick="recolherTodosGrupos()" class="px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 rounded transition-colors">
+                        <i class="fas fa-compress-alt mr-1"></i> Recolher todas
+                    </button>
+                </div>
+            </div>
         </div>
 
-        <!-- Tabela de Variaveis -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <!-- Container de Variaveis (agrupado por categoria) -->
+        <div id="variaveis-container" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <style>
                 .variaveis-table td { white-space: nowrap; vertical-align: middle; }
-                .variaveis-table .col-slug { min-width: 200px; max-width: 320px; }
+                .variaveis-table .col-slug { min-width: 180px; max-width: 280px; }
                 .variaveis-table .col-label { min-width: 150px; max-width: 250px; }
                 .variaveis-table .col-slug .slug-text,
                 .variaveis-table .col-label .label-text {
@@ -175,26 +234,13 @@
                     display: block;
                 }
             </style>
-            <table class="w-full variaveis-table">
-                <thead class="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider col-slug">Slug</th>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider col-label">Label</th>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
-                        <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Uso</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
-                    </tr>
-                </thead>
-                <tbody id="variaveis-table" class="divide-y divide-gray-200">
-                    <tr>
-                        <td colspan="6" class="px-4 py-8 text-center text-gray-400">
-                            <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                            <p>Carregando variaveis...</p>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+            <!-- Conteudo sera renderizado via JS -->
+            <div id="variaveis-content" class="divide-y divide-gray-100">
+                <div class="px-4 py-8 text-center text-gray-400">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>Carregando variaveis...</p>
+                </div>
+            </div>
         </div>
 
         <!-- Paginacao -->
@@ -703,43 +749,261 @@
                 atualizarPaginacao();
             } catch (error) {
                 console.error('Erro ao carregar variaveis:', error);
-                document.getElementById('variaveis-table').innerHTML = `
-                    <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-red-400">
-                            <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
-                            <p>Erro ao carregar variaveis</p>
-                        </td>
-                    </tr>
+                document.getElementById('variaveis-content').innerHTML = `
+                    <div class="px-6 py-12 text-center text-red-400">
+                        <i class="fas fa-exclamation-triangle text-2xl mb-2"></i>
+                        <p>Erro ao carregar variaveis</p>
+                    </div>
                 `;
             }
         }
 
-        // Renderizar tabela
+        // ==========================================
+        // Agrupamento por Categoria
+        // ==========================================
+
+        // Chave para persistencia do estado de colapso no localStorage
+        const STORAGE_KEY_GRUPOS = 'variaveis_grupos_expandidos';
+
+        // Carrega estado de colapso do localStorage
+        function carregarEstadoGrupos() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY_GRUPOS);
+                return saved ? JSON.parse(saved) : {};
+            } catch {
+                return {};
+            }
+        }
+
+        // Salva estado de colapso no localStorage
+        function salvarEstadoGrupos(estado) {
+            try {
+                localStorage.setItem(STORAGE_KEY_GRUPOS, JSON.stringify(estado));
+            } catch {
+                // Ignora erros de localStorage
+            }
+        }
+
+        // Remove o prefixo da categoria do slug para exibicao
+        function removerPrefixoSlug(slug, categoriaNome) {
+            if (!slug || !categoriaNome) return slug;
+
+            // Normaliza o nome da categoria para o formato do prefixo (snake_case)
+            const prefixoEsperado = categoriaNome.toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove acentos
+                .replace(/[^a-z0-9]+/g, '_') // Substitui nao-alfanumericos por _
+                .replace(/^_+|_+$/g, '') // Remove _ do inicio/fim
+                + '_';
+
+            // Verifica se o slug comeca com o prefixo
+            if (slug.toLowerCase().startsWith(prefixoEsperado)) {
+                return slug.substring(prefixoEsperado.length);
+            }
+
+            // Fallback: tenta com o nome direto
+            const prefixoSimples = categoriaNome.toLowerCase().replace(/\s+/g, '_') + '_';
+            if (slug.toLowerCase().startsWith(prefixoSimples)) {
+                return slug.substring(prefixoSimples.length);
+            }
+
+            return slug; // Retorna slug completo se nao bater
+        }
+
+        // Copia o slug completo para a area de transferencia
+        function copiarSlug(slug) {
+            navigator.clipboard.writeText(slug).then(() => {
+                // Feedback visual opcional
+                const tooltip = event.target.closest('.slug-display')?.querySelector('.slug-tooltip');
+                if (tooltip) {
+                    const textoOriginal = tooltip.textContent;
+                    tooltip.textContent = 'Copiado!';
+                    setTimeout(() => { tooltip.textContent = textoOriginal; }, 1000);
+                }
+            }).catch(err => {
+                console.error('Erro ao copiar:', err);
+            });
+        }
+
+        // Cores para categorias
+        const coresCategoria = [
+            'blue', 'purple', 'teal', 'pink', 'cyan', 'amber', 'lime', 'rose', 'indigo', 'emerald'
+        ];
+
+        // Renderiza variaveis agrupadas por categoria
         function renderizarTabela() {
-            const tbody = document.getElementById('variaveis-table');
+            const container = document.getElementById('variaveis-content');
+            const busca = document.getElementById('busca-variavel').value.toLowerCase().trim();
+            const filtroCategoria = document.getElementById('filtro-categoria').value;
 
             if (variaveis.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-gray-400">
-                            <i class="fas fa-search text-2xl mb-2"></i>
-                            <p>Nenhuma variavel encontrada</p>
-                        </td>
-                    </tr>
+                container.innerHTML = `
+                    <div class="px-6 py-12 text-center text-gray-400">
+                        <i class="fas fa-search text-2xl mb-2"></i>
+                        <p>Nenhuma variavel encontrada</p>
+                    </div>
                 `;
+                document.getElementById('controles-grupos').classList.add('hidden');
                 return;
             }
 
-            tbody.innerHTML = variaveis.map(v => {
-                // Recuo horizontal fixo por nivel de dependencia (16px por nivel)
+            // Agrupa variaveis por categoria
+            const grupos = {};
+            const semCategoria = [];
+
+            variaveis.forEach(v => {
+                const catNome = v.categoria_nome || '';
+                if (catNome) {
+                    if (!grupos[catNome]) {
+                        grupos[catNome] = {
+                            nome: catNome,
+                            id: v.categoria_id,
+                            variaveis: [],
+                            emUso: 0,
+                            semUso: 0
+                        };
+                    }
+                    grupos[catNome].variaveis.push(v);
+                    if (v.em_uso_json || v.uso_count > 0) {
+                        grupos[catNome].emUso++;
+                    } else {
+                        grupos[catNome].semUso++;
+                    }
+                } else {
+                    semCategoria.push(v);
+                }
+            });
+
+            // Se tem filtro de categoria especifico, nao agrupa
+            if (filtroCategoria) {
+                container.innerHTML = renderizarTabelaSimples(variaveis, true);
+                document.getElementById('controles-grupos').classList.add('hidden');
+                return;
+            }
+
+            // Ordena categorias alfabeticamente
+            const categoriasOrdenadas = Object.keys(grupos).sort((a, b) =>
+                a.localeCompare(b, 'pt-BR')
+            );
+
+            // Se so tem variaveis sem categoria, renderiza tabela simples
+            if (categoriasOrdenadas.length === 0) {
+                container.innerHTML = renderizarTabelaSimples(variaveis, false);
+                document.getElementById('controles-grupos').classList.add('hidden');
+                return;
+            }
+
+            // Carrega estado de colapso salvo
+            const estadoGrupos = carregarEstadoGrupos();
+
+            // Se ha busca ativa, todos os grupos com match devem estar expandidos
+            const temBusca = busca.length > 0;
+
+            let html = '';
+
+            categoriasOrdenadas.forEach((catNome, idx) => {
+                const grupo = grupos[catNome];
+                const cor = coresCategoria[idx % coresCategoria.length];
+                const catId = `cat-${catNome.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+                // Determina se o grupo deve estar expandido
+                let expandido = estadoGrupos[catId] !== false; // Padrao: expandido
+                if (temBusca) {
+                    // Com busca ativa, expande automaticamente
+                    expandido = true;
+                }
+
+                html += `
+                    <div class="categoria-grupo" data-categoria="${catNome}">
+                        <div class="px-4 py-3 bg-${cor}-50 border-b border-${cor}-100 cursor-pointer hover:bg-${cor}-100 transition-colors flex items-center justify-between"
+                             onclick="toggleGrupo('${catId}')">
+                            <div class="flex items-center gap-3">
+                                <i class="fas fa-chevron-down text-${cor}-500 transition-transform categoria-icon"
+                                   id="icon-${catId}"
+                                   style="transform: rotate(${expandido ? '0' : '-90'}deg)"></i>
+                                <span class="font-medium text-${cor}-800">${catNome}</span>
+                                <span class="px-2 py-0.5 text-xs bg-${cor}-200 text-${cor}-800 rounded-full">
+                                    ${grupo.variaveis.length} ${grupo.variaveis.length === 1 ? 'variavel' : 'variaveis'}
+                                </span>
+                            </div>
+                            <div class="flex items-center gap-3 text-xs">
+                                <span class="flex items-center gap-1 text-green-600" title="Em uso">
+                                    <i class="fas fa-check-circle"></i> ${grupo.emUso}
+                                </span>
+                                <span class="flex items-center gap-1 text-gray-400" title="Sem uso">
+                                    <i class="fas fa-times-circle"></i> ${grupo.semUso}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="categoria-conteudo" id="${catId}" style="display: ${expandido ? 'block' : 'none'}">
+                            ${renderizarTabelaSimples(grupo.variaveis, true)}
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Adiciona variaveis sem categoria no final
+            if (semCategoria.length > 0) {
+                const catId = 'cat-sem-categoria';
+                const expandido = estadoGrupos[catId] !== false;
+
+                html += `
+                    <div class="categoria-grupo" data-categoria="">
+                        <div class="px-4 py-3 bg-gray-100 border-b border-gray-200 cursor-pointer hover:bg-gray-200 transition-colors flex items-center justify-between"
+                             onclick="toggleGrupo('${catId}')">
+                            <div class="flex items-center gap-3">
+                                <i class="fas fa-chevron-down text-gray-500 transition-transform categoria-icon"
+                                   id="icon-${catId}"
+                                   style="transform: rotate(${expandido ? '0' : '-90'}deg)"></i>
+                                <span class="font-medium text-gray-700">Sem categoria</span>
+                                <span class="px-2 py-0.5 text-xs bg-gray-200 text-gray-700 rounded-full">
+                                    ${semCategoria.length} ${semCategoria.length === 1 ? 'variavel' : 'variaveis'}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="categoria-conteudo" id="${catId}" style="display: ${expandido ? 'block' : 'none'}">
+                            ${renderizarTabelaSimples(semCategoria, false)}
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+
+            // Mostra controles de expandir/recolher
+            const numGrupos = categoriasOrdenadas.length + (semCategoria.length > 0 ? 1 : 0);
+            document.getElementById('info-grupos').textContent = `${numGrupos} ${numGrupos === 1 ? 'categoria' : 'categorias'}`;
+            document.getElementById('controles-grupos').classList.remove('hidden');
+        }
+
+        // Renderiza tabela simples (dentro de um grupo ou quando nao ha agrupamento)
+        function renderizarTabelaSimples(vars, ocultarCategoria) {
+            if (vars.length === 0) return '';
+
+            let html = `
+                <table class="w-full variaveis-table">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider col-slug">Slug</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider col-label">Label</th>
+                            <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
+                            ${!ocultarCategoria ? '<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>' : ''}
+                            <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Uso</th>
+                            <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acoes</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+            `;
+
+            vars.forEach(v => {
+                // Recuo horizontal por nivel de dependencia
                 const indentPx = v.depth > 0 ? (v.depth * 16) : 0;
 
-                // Indicador discreto de dependencia (apenas seta)
+                // Indicador de dependencia
                 const depIcon = v.depth > 0
                     ? `<i class="fas fa-caret-right text-gray-300 text-xs" title="Depende de: ${v.depends_on_variable || 'pai'}"></i>`
                     : '';
 
-                // Indicador de uso - apenas icone com tooltip
+                // Indicador de uso
                 const emUso = v.em_uso_json || v.uso_count > 0;
                 let usoIcon;
                 if (emUso) {
@@ -749,50 +1013,111 @@
                     usoIcon = `<i class="fas fa-times-circle text-red-400" title="Sem uso"></i>`;
                 }
 
-                // Badge de inativa (compacto)
+                // Badge de inativa
                 const inativaBadge = !v.ativo
                     ? `<span class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-red-100 text-red-600">OFF</span>`
                     : '';
 
-                return `
-                <tr class="hover:bg-gray-50 transition-colors ${!v.ativo ? 'bg-red-50/50' : ''}">
-                    <td class="px-4 py-2 col-slug">
-                        <div class="flex items-center gap-1" style="padding-left: ${indentPx}px;">
-                            ${depIcon}
-                            <span class="slug-text font-mono text-sm bg-gray-100 px-2 py-0.5 rounded" title="${v.slug}">${v.slug}</span>
-                            ${inativaBadge}
-                        </div>
-                    </td>
-                    <td class="px-4 py-2 col-label">
-                        <span class="label-text text-gray-800 text-sm" title="${v.label}">${v.label}</span>
-                    </td>
-                    <td class="px-4 py-2">
-                        <span class="px-2 py-0.5 text-xs rounded-full ${getTipoBadgeClass(v.tipo)}">${getTipoLabel(v.tipo)}</span>
-                    </td>
-                    <td class="px-4 py-2 text-gray-500 text-xs">${v.categoria_nome || '-'}</td>
-                    <td class="px-4 py-2 text-center">${usoIcon}</td>
-                    <td class="px-4 py-2 text-right">
-                        <button onclick="verDetalhes(${v.id})" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Ver detalhes">
-                            <i class="fas fa-eye text-sm"></i>
-                        </button>
-                        ${v.ativo ? `
-                            <button onclick="editarVariavel(${v.id})" class="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded transition-colors" title="Editar">
-                                <i class="fas fa-edit text-sm"></i>
+                // Slug exibido (sem prefixo quando agrupado)
+                const slugExibido = ocultarCategoria
+                    ? removerPrefixoSlug(v.slug, v.categoria_nome)
+                    : v.slug;
+                const slugCompleto = v.slug;
+                const mostrarTooltip = slugExibido !== slugCompleto;
+
+                html += `
+                    <tr class="hover:bg-gray-50 transition-colors ${!v.ativo ? 'bg-red-50/50' : ''}">
+                        <td class="px-4 py-2 col-slug">
+                            <div class="flex items-center gap-1" style="padding-left: ${indentPx}px;">
+                                ${depIcon}
+                                <div class="slug-display">
+                                    <span class="slug-text font-mono text-sm bg-gray-100 px-2 py-0.5 rounded cursor-pointer hover:bg-gray-200"
+                                          onclick="copiarSlug('${slugCompleto}')"
+                                          title="Clique para copiar">${slugExibido}</span>
+                                    ${mostrarTooltip ? `<span class="slug-tooltip">${slugCompleto}</span>` : ''}
+                                </div>
+                                ${inativaBadge}
+                            </div>
+                        </td>
+                        <td class="px-4 py-2 col-label">
+                            <span class="label-text text-gray-800 text-sm" title="${v.label}">${v.label}</span>
+                        </td>
+                        <td class="px-4 py-2">
+                            <span class="px-2 py-0.5 text-xs rounded-full ${getTipoBadgeClass(v.tipo)}">${getTipoLabel(v.tipo)}</span>
+                        </td>
+                        ${!ocultarCategoria ? `<td class="px-4 py-2 text-gray-500 text-xs">${v.categoria_nome || '-'}</td>` : ''}
+                        <td class="px-4 py-2 text-center">${usoIcon}</td>
+                        <td class="px-4 py-2 text-right">
+                            <button onclick="verDetalhes(${v.id})" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Ver detalhes">
+                                <i class="fas fa-eye text-sm"></i>
                             </button>
-                            <button onclick="excluirVariavel(${v.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Desativar" ${v.uso_count > 0 || v.em_uso_json ? 'disabled' : ''}>
-                                <i class="fas fa-ban text-sm"></i>
-                            </button>
-                        ` : `
-                            <button onclick="reativarVariavel(${v.id})" class="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" title="Reativar">
-                                <i class="fas fa-undo text-sm"></i>
-                            </button>
-                            <button onclick="excluirPermanente(${v.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir permanentemente">
-                                <i class="fas fa-trash text-sm"></i>
-                            </button>
-                        `}
-                    </td>
-                </tr>
-            `}).join('');
+                            ${v.ativo ? `
+                                <button onclick="editarVariavel(${v.id})" class="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded transition-colors" title="Editar">
+                                    <i class="fas fa-edit text-sm"></i>
+                                </button>
+                                <button onclick="excluirVariavel(${v.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Desativar" ${v.uso_count > 0 || v.em_uso_json ? 'disabled' : ''}>
+                                    <i class="fas fa-ban text-sm"></i>
+                                </button>
+                            ` : `
+                                <button onclick="reativarVariavel(${v.id})" class="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" title="Reativar">
+                                    <i class="fas fa-undo text-sm"></i>
+                                </button>
+                                <button onclick="excluirPermanente(${v.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir permanentemente">
+                                    <i class="fas fa-trash text-sm"></i>
+                                </button>
+                            `}
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            return html;
+        }
+
+        // Toggle de um grupo individual
+        function toggleGrupo(catId) {
+            const conteudo = document.getElementById(catId);
+            const icon = document.getElementById('icon-' + catId);
+            const estadoGrupos = carregarEstadoGrupos();
+
+            if (conteudo.style.display === 'none') {
+                conteudo.style.display = 'block';
+                icon.style.transform = 'rotate(0deg)';
+                estadoGrupos[catId] = true;
+            } else {
+                conteudo.style.display = 'none';
+                icon.style.transform = 'rotate(-90deg)';
+                estadoGrupos[catId] = false;
+            }
+
+            salvarEstadoGrupos(estadoGrupos);
+        }
+
+        // Expandir todos os grupos
+        function expandirTodosGrupos() {
+            const estadoGrupos = carregarEstadoGrupos();
+            document.querySelectorAll('.categoria-conteudo').forEach(el => {
+                el.style.display = 'block';
+                estadoGrupos[el.id] = true;
+            });
+            document.querySelectorAll('.categoria-icon').forEach(el => {
+                el.style.transform = 'rotate(0deg)';
+            });
+            salvarEstadoGrupos(estadoGrupos);
+        }
+
+        // Recolher todos os grupos
+        function recolherTodosGrupos() {
+            const estadoGrupos = carregarEstadoGrupos();
+            document.querySelectorAll('.categoria-conteudo').forEach(el => {
+                el.style.display = 'none';
+                estadoGrupos[el.id] = false;
+            });
+            document.querySelectorAll('.categoria-icon').forEach(el => {
+                el.style.transform = 'rotate(-90deg)';
+            });
+            salvarEstadoGrupos(estadoGrupos);
         }
 
         function getTipoBadgeClass(tipo) {
