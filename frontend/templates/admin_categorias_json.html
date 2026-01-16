@@ -720,6 +720,7 @@ Qual o valor da causa?"></textarea>
         let modoSelecionado = 'legado'; // 'ia' ou 'legado' - LEGADO é o padrão
         let jsonGeradoPorIA = false; // Se o JSON atual foi gerado por IA
         let jsonGerado = null;
+        let mapeamentoVariaveis = {}; // Mapeamento pergunta_id -> info da variável
         let variaveisGeradas = [];
         let perguntasExistentes = []; // Perguntas já salvas no banco
 
@@ -921,6 +922,7 @@ Qual o valor da causa?"></textarea>
             perguntasSelecionadas = [];
             perguntasExistentes = [];
             jsonGerado = null;
+            mapeamentoVariaveis = {};
             variaveisGeradas = [];
             jsonGeradoPorIA = false;
 
@@ -979,6 +981,7 @@ Qual o valor da causa?"></textarea>
                 categoriaAtual = categoria;
                 codigosSelecionados = categoria.codigos_documento || [];
                 jsonGerado = null;
+                mapeamentoVariaveis = {};
                 variaveisGeradas = [];
                 jsonGeradoPorIA = categoria.json_gerado_por_ia || false;
 
@@ -1852,8 +1855,9 @@ Qual o valor da causa?"></textarea>
                     throw new Error(resultado.erro || 'Erro desconhecido');
                 }
 
-                // Armazena JSON gerado
+                // Armazena JSON gerado e mapeamento
                 jsonGerado = resultado.schema_json;
+                mapeamentoVariaveis = resultado.mapeamento_variaveis || {};
                 variaveisGeradas = resultado.variaveis_criadas || [];
 
                 // Mostra preview
@@ -1948,8 +1952,45 @@ Qual o valor da causa?"></textarea>
             document.getElementById('status-geracao').textContent = 'JSON aceito e aplicado ao formulário!';
             document.getElementById('status-geracao').className = 'text-sm text-green-500';
 
+            // Sincroniza tipos das perguntas com o mapeamento da IA
+            sincronizarTiposPerguntas();
+
             // Muda para modo legado para mostrar o JSON
             selecionarModo('legado');
+        }
+
+        // Sincroniza tipos das perguntas que estavam como "ia_decide"
+        async function sincronizarTiposPerguntas() {
+            if (!mapeamentoVariaveis || Object.keys(mapeamentoVariaveis).length === 0) {
+                console.log('Nenhum mapeamento para sincronizar');
+                return;
+            }
+
+            const categoriaId = document.getElementById('categoria-id').value;
+            if (!categoriaId) return;
+
+            try {
+                const response = await fetch('/admin/api/extraction/perguntas/sync-tipos', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: JSON.stringify({
+                        categoria_id: parseInt(categoriaId),
+                        mapeamento_variaveis: mapeamentoVariaveis
+                    })
+                });
+
+                const resultado = await response.json();
+                if (resultado.success && resultado.perguntas_atualizadas > 0) {
+                    console.log(`Tipos sincronizados: ${resultado.perguntas_atualizadas} perguntas`);
+                    // Recarrega perguntas para refletir os tipos atualizados
+                    await carregarPerguntas();
+                }
+            } catch (error) {
+                console.error('Erro ao sincronizar tipos:', error);
+            }
         }
 
         // Editar JSON gerado
@@ -1975,6 +2016,7 @@ Qual o valor da causa?"></textarea>
         // Descartar JSON gerado
         function descartarJSONGerado() {
             jsonGerado = null;
+            mapeamentoVariaveis = {};
             variaveisGeradas = [];
 
             document.getElementById('preview-json-gerado').classList.add('hidden');

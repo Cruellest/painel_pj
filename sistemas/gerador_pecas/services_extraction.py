@@ -125,6 +125,14 @@ class ExtractionSchemaGenerator:
                     namespace
                 )
 
+                # Injeta opções mesmo no schema existente
+                schema_existente = self._injetar_opcoes_no_schema(
+                    schema_existente,
+                    mapeamento_existente,
+                    [p for p, v in perguntas_existentes],
+                    namespace
+                )
+
                 return {
                     "success": True,
                     "schema_json": schema_existente,
@@ -212,6 +220,15 @@ class ExtractionSchemaGenerator:
                 schema_final,
                 mapeamento_final,
                 perguntas,  # Todas as perguntas (existentes + novas)
+                namespace
+            )
+
+            # 5.2 INJEÇÃO DE OPÇÕES: Garante que opções definidas pelo usuário sejam
+            # refletidas no schema, independentemente do que a IA retornou
+            schema_final = self._injetar_opcoes_no_schema(
+                schema_final,
+                mapeamento_final,
+                perguntas,  # Todas as perguntas
                 namespace
             )
 
@@ -509,6 +526,74 @@ INSTRUÇÕES OBRIGATÓRIAS:
                 schema[slug_pergunta]["dependency_value"] = p.dependency_value
 
             logger.info(f"Dependência injetada no schema: {slug_pergunta} -> {depends_on_slug}")
+
+        return schema
+
+    def _injetar_opcoes_no_schema(
+        self,
+        schema: Dict,
+        mapeamento: Dict,
+        perguntas: List[ExtractionQuestion],
+        namespace: str
+    ) -> Dict:
+        """
+        Injeta opções das perguntas no schema JSON e no mapeamento.
+
+        Garante que as opções definidas pelo usuário sejam refletidas
+        no schema final e no mapeamento, independentemente do que a IA retornou.
+
+        Args:
+            schema: Schema JSON gerado
+            mapeamento: Mapeamento pergunta_id -> info da variável (modificado in-place)
+            perguntas: Lista de perguntas
+            namespace: Namespace da categoria
+
+        Returns:
+            Schema com opções injetadas
+        """
+        # Cria mapeamento de pergunta_id -> slug no schema
+        pergunta_id_to_slug = {}
+        for pergunta_id, info in mapeamento.items():
+            slug = info.get("slug")
+            if slug:
+                if namespace and not slug.startswith(f"{namespace}_"):
+                    slug = self._aplicar_namespace(slug, namespace)
+                pergunta_id_to_slug[str(pergunta_id)] = slug
+
+        # Para cada pergunta com opções definidas, injeta no schema
+        for p in perguntas:
+            if not p.opcoes_sugeridas or len(p.opcoes_sugeridas) == 0:
+                continue
+
+            # Encontra o slug desta pergunta no schema
+            slug_pergunta = pergunta_id_to_slug.get(str(p.id))
+            if not slug_pergunta or slug_pergunta not in schema:
+                logger.warning(f"Pergunta {p.id} não encontrada no schema para injetar opções")
+                continue
+
+            # Verifica se é tipo choice ou list
+            tipo_atual = schema[slug_pergunta].get("type", "text")
+
+            # Se o tipo sugerido é choice/list ou o tipo no schema é choice/list
+            tipo_sugerido = p.tipo_sugerido or ""
+            eh_tipo_opcoes = tipo_atual in ("choice", "list") or tipo_sugerido in ("choice", "list")
+
+            # Se tem opções definidas e não tem opções no schema, ou se é tipo de opções
+            if eh_tipo_opcoes or (p.opcoes_sugeridas and "options" not in schema[slug_pergunta]):
+                # Força tipo para choice se tem opções mas tipo é text
+                if tipo_atual == "text" and p.opcoes_sugeridas:
+                    schema[slug_pergunta]["type"] = "choice"
+                    tipo_atual = "choice"
+
+                # Injeta opções no schema
+                schema[slug_pergunta]["options"] = p.opcoes_sugeridas
+                logger.info(f"Opções injetadas no schema: {slug_pergunta} -> {p.opcoes_sugeridas}")
+
+                # Também atualiza o mapeamento para que o frontend receba as opções
+                pergunta_id_str = str(p.id)
+                if pergunta_id_str in mapeamento:
+                    mapeamento[pergunta_id_str]["options"] = p.opcoes_sugeridas
+                    mapeamento[pergunta_id_str]["tipo"] = tipo_atual
 
         return schema
 

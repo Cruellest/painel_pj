@@ -1885,6 +1885,27 @@ class DependentQuestionsResponse(BaseModel):
     perguntas: List[dict] = []
 
 
+class SyncPerguntaTipo(BaseModel):
+    """Dados para sincronizar tipo de uma pergunta"""
+    pergunta_id: int = Field(..., description="ID da pergunta")
+    tipo: str = Field(..., description="Tipo inferido pela IA")
+    opcoes: Optional[List[str]] = Field(None, description="Opções se tipo for choice/list")
+
+
+class SyncTiposRequest(BaseModel):
+    """Request para sincronizar tipos das perguntas com o schema gerado"""
+    categoria_id: int = Field(..., description="ID da categoria")
+    mapeamento_variaveis: dict = Field(..., description="Mapeamento de pergunta_id para info da variável")
+
+
+class SyncTiposResponse(BaseModel):
+    """Response da sincronização de tipos"""
+    success: bool = True
+    perguntas_atualizadas: int = 0
+    detalhes: List[dict] = []
+    erro: Optional[str] = None
+
+
 @router.get("/operadores-dependencia")
 async def listar_operadores_dependencia(
     current_user: User = Depends(get_current_active_user)
@@ -2202,3 +2223,104 @@ async def avaliar_visibilidade_pergunta(
     except Exception as e:
         logger.error(f"Erro ao avaliar visibilidade: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/perguntas/sync-tipos", response_model=SyncTiposResponse)
+async def sincronizar_tipos_perguntas(
+    data: SyncTiposRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Sincroniza tipos e opções das perguntas com o mapeamento gerado pela IA.
+
+    Chamado após "Aceitar e Usar" o JSON gerado pela IA para:
+    1. Atualizar tipo_sugerido das perguntas que estavam como "ia_decide"
+    2. Atualizar opcoes_sugeridas quando a IA definir options
+    """
+    # Verifica permissão
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissão para editar perguntas")
+
+    try:
+        perguntas_atualizadas = 0
+        detalhes = []
+
+        # Mapeamento de tipos da IA para tipos do modelo
+        tipo_mapping = {
+            "text": "text",
+            "string": "text",
+            "number": "number",
+            "integer": "number",
+            "float": "number",
+            "date": "date",
+            "datetime": "date",
+            "boolean": "boolean",
+            "bool": "boolean",
+            "choice": "choice",
+            "enum": "choice",
+            "list": "list",
+            "array": "list",
+            "currency": "currency",
+            "money": "currency"
+        }
+
+        for pergunta_id_str, info in data.mapeamento_variaveis.items():
+            try:
+                pergunta_id = int(pergunta_id_str)
+            except ValueError:
+                continue
+
+            pergunta = db.query(ExtractionQuestion).filter(
+                ExtractionQuestion.id == pergunta_id,
+                ExtractionQuestion.categoria_id == data.categoria_id
+            ).first()
+
+            if not pergunta:
+                continue
+
+            alteracoes = {}
+
+            # Só atualiza tipo se estava como "ia_decide" ou vazio
+            tipo_ia = info.get("tipo") or info.get("type")
+            tipo_normalizado = tipo_mapping.get(tipo_ia, tipo_ia) if tipo_ia else None
+
+            if tipo_normalizado and (not pergunta.tipo_sugerido or pergunta.tipo_sugerido == "ia_decide"):
+                pergunta.tipo_sugerido = tipo_normalizado
+                alteracoes["tipo"] = tipo_normalizado
+
+            # Atualiza opções se a IA definiu e a pergunta não tinha
+            opcoes_ia = info.get("options") or info.get("opcoes")
+            if opcoes_ia and isinstance(opcoes_ia, list):
+                # Se não tinha opções ou estava vazio, usa as da IA
+                if not pergunta.opcoes_sugeridas or len(pergunta.opcoes_sugeridas) == 0:
+                    pergunta.opcoes_sugeridas = opcoes_ia
+                    alteracoes["opcoes"] = opcoes_ia
+
+            if alteracoes:
+                pergunta.atualizado_por = current_user.id
+                pergunta.atualizado_em = datetime.utcnow()
+                perguntas_atualizadas += 1
+                detalhes.append({
+                    "pergunta_id": pergunta_id,
+                    "pergunta": pergunta.pergunta[:50],
+                    "alteracoes": alteracoes
+                })
+
+        db.commit()
+
+        logger.info(f"Tipos sincronizados: {perguntas_atualizadas} perguntas atualizadas")
+
+        return SyncTiposResponse(
+            success=True,
+            perguntas_atualizadas=perguntas_atualizadas,
+            detalhes=detalhes
+        )
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Erro ao sincronizar tipos: {e}")
+        return SyncTiposResponse(
+            success=False,
+            erro=str(e)
+        )

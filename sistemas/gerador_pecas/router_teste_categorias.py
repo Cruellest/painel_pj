@@ -350,9 +350,15 @@ def filtrar_documentos_por_categoria(
         resolver = get_source_resolver()
         result = resolver.resolve(categoria.source_special_type, docs_info)
 
+        logger.info(f"Resultado resolver fonte especial '{categoria.source_special_type}': sucesso={result.sucesso}, motivo={result.motivo}")
+
         if result.sucesso and result.documento_id:
             # Retorna apenas o documento identificado
-            return [d for d in documentos if d.get('id') == result.documento_id]
+            doc_encontrado = [d for d in documentos if d.get('id') == result.documento_id]
+            logger.info(f"Documento especial encontrado: {doc_encontrado}")
+            return doc_encontrado
+
+        logger.warning(f"Fonte especial '{categoria.source_special_type}' não encontrou documento: {result.motivo}")
         return []
 
     else:
@@ -574,17 +580,28 @@ async def baixar_documentos_categoria(
 
             if not docs_filtrados:
                 # Monta mensagem de erro detalhada
-                codigos_processo = list(set(str(d.get('tipo_documento', '?')) for d in docs_dict))
+                # Cria mapa de códigos -> descrições para diagnóstico
+                codigos_com_desc = {}
+                for d in docs_dict:
+                    tipo = str(d.get('tipo_documento', '?'))
+                    desc = d.get('descricao', '')
+                    if tipo not in codigos_com_desc:
+                        codigos_com_desc[tipo] = desc
+
+                # Formata lista de códigos com descrição
+                codigos_lista = [f"{k}({v})" if v else k for k, v in list(codigos_com_desc.items())[:15]]
                 codigos_categoria = categoria.codigos_documento or []
 
                 if categoria.usa_fonte_especial:
-                    erro_msg = f"Nenhum documento da categoria '{categoria.titulo}' encontrado (fonte especial: {categoria.source_special_type}). Códigos no processo: {', '.join(codigos_processo[:15])}"
+                    erro_msg = f"Nenhum documento encontrado para '{categoria.titulo}' (fonte especial: {categoria.source_special_type}). Códigos no processo: {', '.join(codigos_lista)}"
                 else:
-                    erro_msg = f"Nenhum documento da categoria '{categoria.titulo}' encontrado. Códigos esperados: {codigos_categoria}. Códigos no processo: {', '.join(codigos_processo[:15])}"
+                    erro_msg = f"Nenhum documento encontrado para '{categoria.titulo}'. Códigos configurados: {codigos_categoria}. Códigos no processo: {', '.join(codigos_lista)}"
+
+                logger.warning(f"Processo {processo}: {erro_msg}")
 
                 resultados.append(ProcessoDocumentos(
                     processo=processo,
-                    status="erro",  # Mudado de sem_documentos para erro para permitir retry
+                    status="erro",
                     erro=erro_msg
                 ))
                 continue
@@ -634,8 +651,27 @@ async def baixar_documentos_categoria(
                         num_paginas=num_paginas
                     ))
 
-            # 6. Unifica PDFs se necessário
-            pdf_unificado = unificar_pdfs(pdfs_base64) if pdfs_base64 else None
+            # 6. Verifica se há PDFs disponíveis
+            if not pdfs_base64:
+                # Documentos foram encontrados mas não têm conteúdo PDF
+                codigos_docs = [d.get('tipo_documento', '?') for d in docs_filtrados]
+                resultados.append(ProcessoDocumentos(
+                    processo=processo,
+                    status="erro",
+                    erro=f"Documentos encontrados ({len(docs_filtrados)}) mas sem conteúdo PDF disponível. Códigos: {codigos_docs}"
+                ))
+                continue
+
+            # 7. Unifica PDFs
+            pdf_unificado = unificar_pdfs(pdfs_base64)
+
+            if not pdf_unificado:
+                resultados.append(ProcessoDocumentos(
+                    processo=processo,
+                    status="erro",
+                    erro=f"Erro ao unificar {len(pdfs_base64)} PDFs"
+                ))
+                continue
 
             resultados.append(ProcessoDocumentos(
                 processo=processo,

@@ -1,1 +1,15 @@
-{"permissions":{"allow":["Bash","Edit","Write","Read"],"deny":[]}}
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "Bash(git push:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: correct UTF-8 encoding in orquestrador_agentes.py\n\nReplace broken emoji characters with ASCII text to fix Railway build\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ],
+    "deny": []
+  }
+}

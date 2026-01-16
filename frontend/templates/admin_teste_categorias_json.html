@@ -798,11 +798,12 @@
                             `;
                         }
                     } else {
+                        const erroMsg = r.erro || 'Documento nao encontrado na categoria';
                         atualizacoes.push({
                             processo: r.processo,
                             categoria_id: categoriaAtual.id,
                             status: 'erro',
-                            erro: r.erro,
+                            erro: erroMsg,
                             num_documentos: 0,
                             revisado: false
                         });
@@ -811,7 +812,7 @@
                             itemEl.innerHTML = `
                                 <i class="fas fa-times-circle text-red-500"></i>
                                 <span class="font-mono text-sm">${r.processo}</span>
-                                <span class="text-sm text-red-600 truncate" title="${r.erro}">${r.erro?.substring(0, 50)}...</span>
+                                <span class="text-sm text-red-600 truncate" title="${erroMsg}">${erroMsg.substring(0, 50)}...</span>
                             `;
                         }
                     }
@@ -939,11 +940,12 @@
                             `;
                         }
                     } else {
+                        const erroClass = r.erro || 'Erro na classificacao';
                         atualizacoes.push({
                             processo: r.processo,
                             categoria_id: categoriaAtual.id,
-                            status: 'baixado',  // Mantem como baixado mas com erro
-                            erro: r.erro,
+                            status: 'erro',  // Erro na classificacao
+                            erro: erroClass,
                             num_documentos: docOriginal?.num_documentos || 0,
                             revisado: false
                         });
@@ -952,7 +954,7 @@
                             itemEl.innerHTML = `
                                 <i class="fas fa-times-circle text-red-500"></i>
                                 <span class="font-mono text-sm">${r.processo}</span>
-                                <span class="text-sm text-red-600">${r.erro}</span>
+                                <span class="text-sm text-red-600">${erroClass}</span>
                             `;
                         }
                     }
