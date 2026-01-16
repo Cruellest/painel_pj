@@ -7,17 +7,159 @@ Este serviço é usado por todos os sistemas do Portal PGE-MS:
 - Matrículas Confrontantes
 - Assistência Judiciária
 
+OTIMIZAÇÕES DE LATÊNCIA (2026-01-16):
+- HTTP Client reutilizável (connection pooling)
+- Instrumentação de métricas de latência
+- Retry com backoff exponencial
+- Timeouts granulares (connect vs read)
+- Cache hash-based para prompts idênticos
+- Logging estruturado
+
 Autor: LAB/PGE-MS
 """
 
 import os
+import asyncio
 import aiohttp
 import httpx
-from typing import List, Optional, Dict, Any
-from dataclasses import dataclass
+import hashlib
+import logging
+import time
+from typing import List, Optional, Dict, Any, Tuple
+from dataclasses import dataclass, field
+from functools import lru_cache
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================
+# INSTRUMENTAÇÃO DE MÉTRICAS
+# ============================================
+
+@dataclass
+class GeminiMetrics:
+    """Métricas de uma chamada ao Gemini para diagnóstico de latência"""
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    model: str = ""
+    prompt_chars: int = 0
+    prompt_tokens_estimated: int = 0
+    response_tokens: int = 0
+
+    # Tempos em milissegundos
+    time_prepare_ms: float = 0      # Tempo preparando payload
+    time_connect_ms: float = 0      # Tempo conectando (TCP + TLS)
+    time_ttft_ms: float = 0         # Time to First Token (ou first byte)
+    time_generation_ms: float = 0   # Tempo gerando resposta
+    time_total_ms: float = 0        # Tempo total
+
+    # Status
+    success: bool = True
+    cached: bool = False
+    retry_count: int = 0
+    error: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "model": self.model,
+            "prompt_chars": self.prompt_chars,
+            "prompt_tokens_est": self.prompt_tokens_estimated,
+            "response_tokens": self.response_tokens,
+            "time_prepare_ms": round(self.time_prepare_ms, 2),
+            "time_connect_ms": round(self.time_connect_ms, 2),
+            "time_ttft_ms": round(self.time_ttft_ms, 2),
+            "time_generation_ms": round(self.time_generation_ms, 2),
+            "time_total_ms": round(self.time_total_ms, 2),
+            "success": self.success,
+            "cached": self.cached,
+            "retry_count": self.retry_count,
+            "error": self.error
+        }
+
+    def log(self):
+        """Log estruturado das métricas"""
+        if self.success:
+            logger.info(
+                f"[Gemini] model={self.model} "
+                f"prompt={self.prompt_chars}chars "
+                f"response={self.response_tokens}tok "
+                f"prepare={self.time_prepare_ms:.0f}ms "
+                f"ttft={self.time_ttft_ms:.0f}ms "
+                f"total={self.time_total_ms:.0f}ms "
+                f"cached={self.cached}"
+            )
+        else:
+            logger.warning(
+                f"[Gemini] ERRO model={self.model} "
+                f"total={self.time_total_ms:.0f}ms "
+                f"retries={self.retry_count} "
+                f"error={self.error[:100]}"
+            )
+
+
+# ============================================
+# CACHE DE RESPOSTAS
+# ============================================
+
+class ResponseCache:
+    """Cache LRU com TTL para respostas do Gemini"""
+
+    def __init__(self, max_size: int = 100, ttl_seconds: int = 300):
+        self._cache: Dict[str, Tuple[Any, datetime]] = {}
+        self._max_size = max_size
+        self._ttl = timedelta(seconds=ttl_seconds)
+        self._hits = 0
+        self._misses = 0
+
+    def _make_key(self, prompt: str, system_prompt: str, model: str, temperature: float) -> str:
+        """Gera chave hash do prompt"""
+        content = f"{model}:{temperature}:{system_prompt}:{prompt}"
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+    def get(self, prompt: str, system_prompt: str, model: str, temperature: float) -> Optional[Any]:
+        """Busca no cache, retorna None se não encontrado ou expirado"""
+        key = self._make_key(prompt, system_prompt, model, temperature)
+
+        if key in self._cache:
+            value, timestamp = self._cache[key]
+            if datetime.utcnow() - timestamp < self._ttl:
+                self._hits += 1
+                return value
+            else:
+                del self._cache[key]
+
+        self._misses += 1
+        return None
+
+    def set(self, prompt: str, system_prompt: str, model: str, temperature: float, value: Any):
+        """Armazena no cache"""
+        # Evict se cheio (remove mais antigo)
+        if len(self._cache) >= self._max_size:
+            oldest_key = min(self._cache, key=lambda k: self._cache[k][1])
+            del self._cache[oldest_key]
+
+        key = self._make_key(prompt, system_prompt, model, temperature)
+        self._cache[key] = (value, datetime.utcnow())
+
+    def stats(self) -> Dict[str, Any]:
+        """Retorna estatísticas do cache"""
+        total = self._hits + self._misses
+        hit_rate = (self._hits / total * 100) if total > 0 else 0
+        return {
+            "size": len(self._cache),
+            "max_size": self._max_size,
+            "hits": self._hits,
+            "misses": self._misses,
+            "hit_rate": f"{hit_rate:.1f}%"
+        }
+
+
+# Cache global (singleton)
+_response_cache = ResponseCache(max_size=100, ttl_seconds=300)
 
 
 @dataclass
@@ -27,6 +169,73 @@ class GeminiResponse:
     content: str = ""
     error: Optional[str] = None
     tokens_used: int = 0
+    metrics: Optional[GeminiMetrics] = None  # Métricas de latência
+
+
+# ============================================
+# CONFIGURAÇÃO DE TIMEOUTS E RETRY
+# ============================================
+
+# Timeouts granulares (em segundos)
+TIMEOUT_CONNECT = 10.0      # Tempo máximo para estabelecer conexão
+TIMEOUT_READ = 120.0        # Tempo máximo para ler resposta
+TIMEOUT_TOTAL = 180.0       # Tempo máximo total (menor que 300s original)
+
+# Retry com backoff exponencial
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 1.0      # Delay inicial em segundos
+RETRY_MAX_DELAY = 10.0      # Delay máximo
+RETRY_ERRORS = (
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.ConnectError,
+    aiohttp.ClientConnectorError,
+    aiohttp.ServerDisconnectedError,
+)
+
+# HTTP Client singleton
+_http_client: Optional[httpx.AsyncClient] = None
+_http_client_lock = asyncio.Lock()
+
+
+async def get_http_client() -> httpx.AsyncClient:
+    """
+    Retorna HTTP client singleton com connection pooling.
+
+    PERFORMANCE: Reutiliza conexões TCP/TLS entre chamadas.
+    """
+    global _http_client
+
+    if _http_client is None or _http_client.is_closed:
+        async with _http_client_lock:
+            # Double-check após adquirir lock
+            if _http_client is None or _http_client.is_closed:
+                _http_client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(
+                        connect=TIMEOUT_CONNECT,
+                        read=TIMEOUT_READ,
+                        write=30.0,
+                        pool=10.0
+                    ),
+                    limits=httpx.Limits(
+                        max_keepalive_connections=10,
+                        max_connections=20,
+                        keepalive_expiry=30.0
+                    ),
+                    http2=True  # HTTP/2 para multiplexação
+                )
+                logger.info("[Gemini] HTTP client criado com connection pooling e HTTP/2")
+
+    return _http_client
+
+
+async def close_http_client():
+    """Fecha o HTTP client (para shutdown graceful)"""
+    global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
+        logger.info("[Gemini] HTTP client fechado")
 
 
 class GeminiService:
@@ -134,7 +343,8 @@ class GeminiService:
         model: str = None,
         task: str = None,
         max_tokens: int = None,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        use_cache: bool = True
     ) -> GeminiResponse:
         """
         Gera texto usando o Gemini.
@@ -146,22 +356,23 @@ class GeminiService:
             task: Tipo de tarefa para selecionar modelo automaticamente
             max_tokens: Limite de tokens na resposta (None = sem limite, usa máximo do modelo)
             temperature: Temperatura (0-2)
+            use_cache: Se True, usa cache para respostas idênticas (padrão: True)
 
         Returns:
-            GeminiResponse com o resultado
+            GeminiResponse com o resultado e métricas de latência
         """
-        import time
-        inicio = time.time()
-        print(f"[GeminiService.generate] Iniciando chamada...")
+        metrics = GeminiMetrics()
+        t_start = time.perf_counter()
 
         if not self._api_key:
-            print(f"[GeminiService.generate] ERRO: GEMINI_KEY não configurada")
-            return GeminiResponse(
-                success=False,
-                error="GEMINI_KEY não configurada"
-            )
+            metrics.success = False
+            metrics.error = "GEMINI_KEY não configurada"
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+            metrics.log()
+            return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
         # Determina o modelo
+        t_prepare = time.perf_counter()
         if model:
             model = self.normalize_model(model)
         elif task:
@@ -169,11 +380,24 @@ class GeminiService:
         else:
             model = self.DEFAULT_MODELS["analise"]
 
-        print(f"[GeminiService.generate] Modelo: {model}")
-        print(f"[GeminiService.generate] Tamanho prompt: {len(prompt)} chars")
+        metrics.model = model
+        metrics.prompt_chars = len(prompt)
+        metrics.prompt_tokens_estimated = len(prompt) // 4  # Estimativa ~4 chars/token
 
-        # Monta URL
-        url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key[:8]}..."
+        # Verifica cache
+        if use_cache and temperature <= 0.3:  # Só cacheia respostas determinísticas
+            cached = _response_cache.get(prompt, system_prompt, model, temperature)
+            if cached is not None:
+                metrics.cached = True
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.response_tokens = cached.tokens_used
+                metrics.log()
+                return GeminiResponse(
+                    success=True,
+                    content=cached.content,
+                    tokens_used=cached.tokens_used,
+                    metrics=metrics
+                )
 
         # Monta payload
         payload = self._build_payload(
@@ -182,35 +406,80 @@ class GeminiService:
             max_tokens=max_tokens,
             temperature=temperature
         )
+        metrics.time_prepare_ms = (time.perf_counter() - t_prepare) * 1000
 
-        try:
-            print(f"[GeminiService.generate] Enviando request para API...")
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                response = await client.post(f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}", json=payload)
-                print(f"[GeminiService.generate] Response status: {response.status_code}")
+        # URL da API
+        url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}"
+
+        # Executa com retry e backoff
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                t_connect = time.perf_counter()
+
+                # Usa HTTP client singleton com connection pooling
+                client = await get_http_client()
+                response = await client.post(url, json=payload)
+
+                metrics.time_ttft_ms = (time.perf_counter() - t_connect) * 1000
                 response.raise_for_status()
+
+                t_parse = time.perf_counter()
                 data = response.json()
-                print(f"[GeminiService.generate] Resposta recebida em {time.time() - inicio:.2f}s")
-                
+
                 content = self._extract_content(data)
                 tokens = self._extract_tokens(data)
-                
-                return GeminiResponse(
+
+                metrics.time_generation_ms = (time.perf_counter() - t_parse) * 1000
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.response_tokens = tokens
+                metrics.retry_count = attempt
+                metrics.log()
+
+                result = GeminiResponse(
                     success=True,
                     content=content,
-                    tokens_used=tokens
+                    tokens_used=tokens,
+                    metrics=metrics
                 )
-                
-        except httpx.HTTPStatusError as e:
-            return GeminiResponse(
-                success=False,
-                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
-            )
-        except Exception as e:
-            return GeminiResponse(
-                success=False,
-                error=f"Erro: {str(e)}"
-            )
+
+                # Salva no cache
+                if use_cache and temperature <= 0.3:
+                    _response_cache.set(prompt, system_prompt, model, temperature, result)
+
+                return result
+
+            except RETRY_ERRORS as e:
+                last_error = e
+                metrics.retry_count = attempt + 1
+
+                if attempt < MAX_RETRIES - 1:
+                    delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                    logger.warning(
+                        f"[Gemini] Retry {attempt + 1}/{MAX_RETRIES} após {delay:.1f}s: {type(e).__name__}"
+                    )
+                    await asyncio.sleep(delay)
+
+            except httpx.HTTPStatusError as e:
+                metrics.success = False
+                metrics.error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.log()
+                return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
+
+            except Exception as e:
+                metrics.success = False
+                metrics.error = str(e)
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.log()
+                return GeminiResponse(success=False, error=f"Erro: {str(e)}", metrics=metrics)
+
+        # Todas as tentativas falharam
+        metrics.success = False
+        metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
+        metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+        metrics.log()
+        return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
     
     async def generate_with_session(
         self,
@@ -287,7 +556,7 @@ class GeminiService:
     ) -> GeminiResponse:
         """
         Gera texto analisando imagens.
-        
+
         Args:
             prompt: Prompt do usuário
             images_base64: Lista de imagens em base64
@@ -295,25 +564,30 @@ class GeminiService:
             model: Nome do modelo (opcional)
             max_tokens: Limite de tokens na resposta
             temperature: Temperatura (0-2)
-            
+
         Returns:
             GeminiResponse com o resultado
         """
+        metrics = GeminiMetrics()
+        t_start = time.perf_counter()
+
         if not self._api_key:
-            return GeminiResponse(
-                success=False, 
-                error="GEMINI_KEY não configurada"
-            )
-        
+            metrics.success = False
+            metrics.error = "GEMINI_KEY não configurada"
+            return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
+
         # Modelo padrão para visão
         if model:
             model = self.normalize_model(model)
         else:
             model = self.DEFAULT_MODELS["visao"]
-        
+
+        metrics.model = model
+        metrics.prompt_chars = len(prompt)
+
         # Monta URL
         url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}"
-        
+
         # Monta payload com imagens
         payload = self._build_payload_with_images(
             prompt=prompt,
@@ -322,32 +596,59 @@ class GeminiService:
             max_tokens=max_tokens,
             temperature=temperature
         )
-        
-        try:
-            async with httpx.AsyncClient(timeout=300.0) as client:
+
+        # Retry com backoff
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                t_connect = time.perf_counter()
+
+                # Usa HTTP client singleton
+                client = await get_http_client()
                 response = await client.post(url, json=payload)
+
+                metrics.time_ttft_ms = (time.perf_counter() - t_connect) * 1000
                 response.raise_for_status()
                 data = response.json()
-                
+
                 content = self._extract_content(data)
                 tokens = self._extract_tokens(data)
-                
+
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.response_tokens = tokens
+                metrics.log()
+
                 return GeminiResponse(
                     success=True,
                     content=content,
-                    tokens_used=tokens
+                    tokens_used=tokens,
+                    metrics=metrics
                 )
-                
-        except httpx.HTTPStatusError as e:
-            return GeminiResponse(
-                success=False,
-                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
-            )
-        except Exception as e:
-            return GeminiResponse(
-                success=False,
-                error=f"Erro: {str(e)}"
-            )
+
+            except RETRY_ERRORS as e:
+                last_error = e
+                metrics.retry_count = attempt + 1
+                if attempt < MAX_RETRIES - 1:
+                    delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                    await asyncio.sleep(delay)
+
+            except httpx.HTTPStatusError as e:
+                metrics.success = False
+                metrics.error = f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
+
+            except Exception as e:
+                metrics.success = False
+                metrics.error = str(e)
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                return GeminiResponse(success=False, error=f"Erro: {str(e)}", metrics=metrics)
+
+        # Todas as tentativas falharam
+        metrics.success = False
+        metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
+        metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+        return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
     
     async def generate_with_images_session(
         self,
@@ -761,7 +1062,7 @@ async def chamar_gemini_com_imagens(
 ) -> str:
     """
     Função de conveniência para chamadas com imagens.
-    
+
     Retorna apenas o texto (para compatibilidade).
     """
     response = await gemini_service.generate_with_images(
@@ -772,8 +1073,67 @@ async def chamar_gemini_com_imagens(
         max_tokens=max_tokens,
         temperature=temperature
     )
-    
+
     if not response.success:
         raise ValueError(response.error)
-    
+
     return response.content
+
+
+# ============================================
+# FUNÇÕES DE DIAGNÓSTICO E MONITORAMENTO
+# ============================================
+
+def get_cache_stats() -> Dict[str, Any]:
+    """Retorna estatísticas do cache de respostas"""
+    return _response_cache.stats()
+
+
+def clear_cache():
+    """Limpa o cache de respostas"""
+    global _response_cache
+    _response_cache = ResponseCache(max_size=100, ttl_seconds=300)
+    logger.info("[Gemini] Cache limpo")
+
+
+async def get_service_status() -> Dict[str, Any]:
+    """
+    Retorna status do serviço Gemini para diagnóstico.
+
+    Útil para endpoints de health check e monitoramento.
+    """
+    global _http_client
+
+    return {
+        "configured": gemini_service.is_configured(),
+        "http_client_active": _http_client is not None and not _http_client.is_closed,
+        "cache": _response_cache.stats(),
+        "config": {
+            "timeout_connect": TIMEOUT_CONNECT,
+            "timeout_read": TIMEOUT_READ,
+            "max_retries": MAX_RETRIES,
+            "default_model": gemini_service.DEFAULT_MODELS["analise"],
+        }
+    }
+
+
+# Exports para outros módulos
+__all__ = [
+    # Classes
+    "GeminiService",
+    "GeminiResponse",
+    "GeminiMetrics",
+    "ResponseCache",
+    # Singleton
+    "gemini_service",
+    # Funções de conveniência
+    "chamar_gemini",
+    "chamar_gemini_com_imagens",
+    # HTTP Client
+    "get_http_client",
+    "close_http_client",
+    # Diagnóstico
+    "get_cache_stats",
+    "clear_cache",
+    "get_service_status",
+]
