@@ -4,7 +4,7 @@ Router para gerenciamento de prompts modulares
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -302,9 +302,12 @@ async def listar_modulos(
             (PromptModulo.conteudo.ilike(busca_like))
         )
     
+    # Eager loading para evitar N+1 queries nas subcategorias
+    query = query.options(joinedload(PromptModulo.subcategorias))
+
     modulos = query.order_by(PromptModulo.tipo, PromptModulo.categoria, PromptModulo.ordem).all()
 
-    # Adiciona subcategoria_ids e subcategorias_nomes a cada modulo
+    # Adiciona subcategoria_ids e subcategorias_nomes a cada modulo (agora sem queries extras)
     result = []
     for modulo in modulos:
         modulo_dict = {
@@ -408,12 +411,13 @@ async def resumo_configuracao_tipos_peca(
     Mostra quantos módulos estão ativos para cada tipo.
     O group_id filtra apenas os módulos de conteúdo, não os tipos de peça.
     """
+    from sqlalchemy import func, case
+
     # Busca tipos de peça (são globais, não filtra por grupo)
-    query_tipos = db.query(PromptModulo).filter(
+    tipos_peca = db.query(PromptModulo).filter(
         PromptModulo.tipo == "peca",
         PromptModulo.ativo == True
-    )
-    tipos_peca = query_tipos.all()
+    ).all()
 
     # Conta total de módulos de conteúdo
     query_conteudo = db.query(PromptModulo).filter(
@@ -424,19 +428,21 @@ async def resumo_configuracao_tipos_peca(
         query_conteudo = query_conteudo.filter(PromptModulo.group_id == group_id)
     total_modulos = query_conteudo.count()
 
+    # Query única para contar ativos/inativos por tipo_peca (evita N+1)
+    contagens = db.query(
+        ModuloTipoPeca.tipo_peca,
+        func.sum(case((ModuloTipoPeca.ativo == True, 1), else_=0)).label('ativos'),
+        func.sum(case((ModuloTipoPeca.ativo == False, 1), else_=0)).label('inativos')
+    ).group_by(ModuloTipoPeca.tipo_peca).all()
+
+    # Mapeia resultados
+    contagens_map = {c.tipo_peca: {'ativos': c.ativos or 0, 'inativos': c.inativos or 0} for c in contagens}
+
     resultado = []
     for tipo in tipos_peca:
-        # Conta associações ativas
-        ativos = db.query(ModuloTipoPeca).filter(
-            ModuloTipoPeca.tipo_peca == tipo.categoria,
-            ModuloTipoPeca.ativo == True
-        ).count()
-
-        # Conta associações inativas
-        inativos = db.query(ModuloTipoPeca).filter(
-            ModuloTipoPeca.tipo_peca == tipo.categoria,
-            ModuloTipoPeca.ativo == False
-        ).count()
+        contagem = contagens_map.get(tipo.categoria, {'ativos': 0, 'inativos': 0})
+        ativos = contagem['ativos']
+        inativos = contagem['inativos']
 
         # Módulos sem associação (considerados ativos por padrão)
         sem_config = total_modulos - ativos - inativos

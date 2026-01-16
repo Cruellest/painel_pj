@@ -953,11 +953,14 @@
         let contadorIdCondicao = 0; // Contador para IDs únicos
 
         // Inicialização
-        document.addEventListener('DOMContentLoaded', () => {
-            carregarVariaveisDisponiveis();
-            carregarModulos();
-            carregarCategorias();
-            carregarGrupos();
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Carrega dados em paralelo para melhor performance
+            await Promise.all([
+                carregarVariaveisDisponiveis(),
+                carregarModulos(),
+                carregarCategorias(),
+                carregarGrupos()
+            ]);
         });
 
         async function carregarModulos() {

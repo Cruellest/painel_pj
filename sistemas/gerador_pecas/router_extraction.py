@@ -486,6 +486,242 @@ async def criar_perguntas_lote(
         )
 
 
+# ============================================================================
+# ORDENAÇÃO DE PERGUNTAS POR IA
+# ============================================================================
+
+class PerguntaOrdenarItem(BaseModel):
+    """Item para ordenação de pergunta"""
+    id: Optional[int] = None
+    pergunta: str
+    tipo_sugerido: Optional[str] = None
+    nome_variavel_sugerido: Optional[str] = None
+    depends_on_variable: Optional[str] = None  # Slug da variável da qual depende
+
+
+class OrdenarPerguntasRequest(BaseModel):
+    """Request para ordenar perguntas com IA"""
+    categoria_nome: str
+    perguntas: List[PerguntaOrdenarItem]
+
+
+class PosicionarPerguntaRequest(BaseModel):
+    """Request para posicionar uma nova pergunta"""
+    categoria_nome: str
+    nova_pergunta: PerguntaOrdenarItem
+    perguntas_existentes: List[dict]
+
+
+@router.post("/perguntas/ordenar-ia")
+async def ordenar_perguntas_ia(
+    data: OrdenarPerguntasRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Reordena todas as perguntas usando IA para determinar a ordem mais lógica.
+    Usa gemini-3-flash-preview para análise semântica.
+    """
+    from services.gemini_service import gemini_service
+
+    if len(data.perguntas) < 2:
+        return {"success": False, "erro": "Necessário pelo menos 2 perguntas para ordenar"}
+
+    # Monta prompt para IA com informações de dependência
+    perguntas_texto = "\n".join([
+        f"- {p.pergunta}" +
+        (f" (tipo: {p.tipo_sugerido})" if p.tipo_sugerido else "") +
+        (f" [CONDICIONAL: depende de '{p.depends_on_variable}']" if p.depends_on_variable else "")
+        for p in data.perguntas
+    ])
+
+    prompt = f"""Você é um especialista em extração de dados de documentos jurídicos.
+
+TAREFA: Reordenar as perguntas de extração para a categoria "{data.categoria_nome}" na ordem mais lógica.
+
+REGRA CENTRAL DE ORDENAÇÃO (MUITO IMPORTANTE):
+⚠️ Perguntas condicionais NÃO devem ser jogadas todas para o final.
+A regra correta é:
+- Cada pergunta CONDICIONAL deve ficar LOGO ABAIXO da sua pergunta âncora (a pergunta da qual depende)
+- A estrutura deve seguir este padrão:
+  * Pergunta âncora (pergunta principal)
+  * Suas perguntas condicionais imediatas (logo abaixo)
+  * Próxima pergunta âncora
+  * Condicionais dela (logo abaixo)
+  * E assim por diante...
+- Apenas perguntas realmente residuais ou finais ficam no final do fluxo
+
+CRITÉRIOS ADICIONAIS DE ORDENAÇÃO:
+1. Informações de identificação primeiro (partes, número do processo, tipo de ação, datas)
+2. Informações gerais/estruturais antes de específicas
+3. Para perguntas âncora: seguir fluxo lógico de leitura do documento
+4. Para perguntas condicionais: sempre imediatamente após sua âncora
+5. Valores monetários e cálculos geralmente no final
+6. Não separar uma pergunta condicional da sua âncora - elas devem estar adjacentes
+
+EXEMPLO CONCEITUAL:
+- "Existe pedido de tutela de urgência?" (âncora)
+- "Quais são os detalhes da tutela?" (condicional - logo abaixo)
+- "Existe pedido alternativo?" (âncora)
+- "Qual é o pedido alternativo?" (condicional - logo abaixo)
+- "Qual o valor da causa?" (pergunta final)
+
+PERGUNTAS PARA ORDENAR:
+{perguntas_texto}
+
+RESPONDA APENAS com um JSON válido no formato:
+{{"ordered_question_ids": ["pergunta exata 1", "pergunta exata 2", ...]}}
+
+REGRAS DE RESPOSTA:
+- Use EXATAMENTE o texto das perguntas fornecidas, sem modificar
+- Não adicione, remova ou modifique perguntas
+- Não inclua markdown, apenas JSON puro
+- O campo deve ser "ordered_question_ids" com array de strings"""
+
+    try:
+        response = await gemini_service.generate(
+            prompt=prompt,
+            system_prompt="Você reordena perguntas de extração de dados. Responda APENAS com JSON válido.",
+            model="gemini-3-flash-preview",
+            temperature=0.1
+        )
+
+        if not response.success:
+            return {"success": False, "erro": f"Erro na IA: {response.error}"}
+
+        # Parseia resposta
+        import json
+        import re
+
+        content = response.content.strip()
+        # Remove markdown se houver
+        if content.startswith("```"):
+            content = re.sub(r'^```\w*\n?', '', content)
+            content = re.sub(r'\n?```$', '', content)
+
+        resultado = json.loads(content)
+        # Suporta ambos os formatos: "ordered_question_ids" (novo) e "ordem" (legado)
+        ordem = resultado.get("ordered_question_ids", resultado.get("ordem", []))
+
+        # Mapeia perguntas originais para a nova ordem
+        pergunta_map = {p.pergunta.strip().lower(): p for p in data.perguntas}
+        ordem_final = []
+
+        for pergunta_texto in ordem:
+            p = pergunta_map.get(pergunta_texto.strip().lower())
+            if p:
+                ordem_final.append({
+                    "id": p.id,
+                    "pergunta": p.pergunta
+                })
+
+        # Adiciona perguntas que não foram incluídas na ordem (fallback)
+        incluidas = {o["pergunta"].strip().lower() for o in ordem_final}
+        for p in data.perguntas:
+            if p.pergunta.strip().lower() not in incluidas:
+                ordem_final.append({
+                    "id": p.id,
+                    "pergunta": p.pergunta
+                })
+
+        logger.info(f"Perguntas reordenadas por IA para categoria '{data.categoria_nome}'")
+
+        return {
+            "success": True,
+            "ordem": ordem_final
+        }
+
+    except Exception as e:
+        logger.error(f"Erro ao ordenar perguntas com IA: {e}")
+        return {"success": False, "erro": str(e)}
+
+
+@router.post("/perguntas/posicionar-ia")
+async def posicionar_pergunta_ia(
+    data: PosicionarPerguntaRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Determina a melhor posição para uma nova pergunta usando IA.
+    Usa gemini-3-flash-preview para análise semântica.
+    """
+    from services.gemini_service import gemini_service
+
+    if not data.perguntas_existentes:
+        return {"success": True, "posicao": 0}
+
+    # Monta lista de perguntas existentes com suas posições
+    perguntas_existentes = "\n".join([
+        f"{i}. {p.get('pergunta', '')}"
+        for i, p in enumerate(data.perguntas_existentes)
+    ])
+
+    prompt = f"""Você é um especialista em extração de dados de documentos jurídicos.
+
+TAREFA: Determinar a melhor posição para inserir uma NOVA pergunta na lista existente.
+
+CATEGORIA: {data.categoria_nome}
+
+NOVA PERGUNTA: {data.nova_pergunta.pergunta}
+{f"Tipo sugerido: {data.nova_pergunta.tipo_sugerido}" if data.nova_pergunta.tipo_sugerido else ""}
+
+PERGUNTAS EXISTENTES (ordenadas):
+{perguntas_existentes}
+
+REGRA CENTRAL:
+- Se a nova pergunta é CONDICIONAL (depende de outra), deve ficar LOGO APÓS a pergunta âncora
+- Se a nova pergunta é uma ÂNCORA (pode ter condicionais), considere onde ela se encaixa no fluxo
+
+CRITÉRIOS DE POSICIONAMENTO:
+1. Identificação primeiro (partes, número, tipo de ação, datas)
+2. Informações gerais/estruturais antes de específicas
+3. Se condicional: imediatamente após sua âncora (pergunta da qual depende)
+4. Valores monetários e cálculos geralmente no final
+5. Mantenha o fluxo lógico de leitura do documento
+
+RESPONDA APENAS com um JSON: {{"posicao": N}}
+Onde N é o índice onde inserir (0 = primeira posição, antes de todas).
+Se a posição sugerida estiver fora dos limites (0 a {len(data.perguntas_existentes)}), será ajustada automaticamente."""
+
+    try:
+        response = await gemini_service.generate(
+            prompt=prompt,
+            system_prompt="Você posiciona perguntas de extração. Responda APENAS com JSON válido.",
+            model="gemini-3-flash-preview",
+            temperature=0.1
+        )
+
+        if not response.success:
+            return {"success": False, "posicao": len(data.perguntas_existentes)}
+
+        # Parseia resposta
+        import json
+        import re
+
+        content = response.content.strip()
+        if content.startswith("```"):
+            content = re.sub(r'^```\w*\n?', '', content)
+            content = re.sub(r'\n?```$', '', content)
+
+        resultado = json.loads(content)
+        posicao = resultado.get("posicao", len(data.perguntas_existentes))
+
+        # Garante que posição está dentro dos limites
+        posicao = max(0, min(posicao, len(data.perguntas_existentes)))
+
+        logger.info(f"IA posicionou nova pergunta em {posicao} para categoria '{data.categoria_nome}'")
+
+        return {
+            "success": True,
+            "posicao": posicao
+        }
+
+    except Exception as e:
+        logger.error(f"Erro ao posicionar pergunta com IA: {e}")
+        return {"success": False, "posicao": len(data.perguntas_existentes)}
+
+
 @router.get("/perguntas/{pergunta_id}", response_model=ExtractionQuestionResponse)
 async def obter_pergunta(
     pergunta_id: int,
@@ -1132,17 +1368,40 @@ async def atualizar_variavel(
 
     # Atualiza campos fornecidos
     update_data = data.model_dump(exclude_unset=True)
+
+    # Guarda valores antigos para detectar mudanças relevantes
+    tipo_antigo = variavel.tipo
+    descricao_antiga = variavel.descricao
+
     for field, value in update_data.items():
         setattr(variavel, field, value)
 
     variavel.atualizado_em = datetime.utcnow()
 
-    db.commit()
-    db.refresh(variavel)
-
+    # Se tipo ou descrição mudou, atualiza o JSON da categoria
     categoria = None
     if variavel.categoria_id:
         categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == variavel.categoria_id).first()
+
+        # Sincroniza JSON da categoria se tipo ou descrição mudou
+        if categoria and categoria.formato_json and (variavel.tipo != tipo_antigo or variavel.descricao != descricao_antiga):
+            try:
+                import json
+                schema = json.loads(categoria.formato_json)
+
+                # Atualiza o campo correspondente ao slug da variável
+                if variavel.slug in schema:
+                    schema[variavel.slug]["type"] = variavel.tipo
+                    if variavel.descricao:
+                        schema[variavel.slug]["description"] = variavel.descricao
+
+                    categoria.formato_json = json.dumps(schema, ensure_ascii=False, indent=2)
+                    logger.info(f"JSON da categoria {categoria.id} atualizado para refletir mudança na variável {variavel.slug}")
+            except Exception as e:
+                logger.warning(f"Não foi possível atualizar JSON da categoria: {e}")
+
+    db.commit()
+    db.refresh(variavel)
 
     uso_count = db.query(PromptVariableUsage).filter(
         PromptVariableUsage.variable_slug == variavel.slug

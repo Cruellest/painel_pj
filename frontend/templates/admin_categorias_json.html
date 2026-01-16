@@ -4,10 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Categorias de Resumo JSON - Portal PGE-MS</title>
-    <!-- VERSAO: 2026-01-15-v4 - fix duplicata ao editar -->
+    <!-- VERSAO: 2026-01-16-v3 - modal nao fecha ao salvar, feedback visual, fix performance -->
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- SortableJS para drag & drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -27,6 +29,13 @@
         .json-editor { font-family: 'Fira Code', 'Monaco', 'Consolas', monospace; }
         .codigo-pill { @apply px-2 py-1 text-xs rounded-full bg-green-100 text-green-700 font-mono; }
         .codigo-pill-usado { @apply px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-700 font-mono; }
+        /* Estilos para drag & drop */
+        .sortable-ghost { opacity: 0.4; background-color: #dbeafe; }
+        .sortable-chosen { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .sortable-drag { opacity: 0.9; }
+        .drag-handle { cursor: grab; opacity: 0.5; transition: opacity 0.2s; }
+        .drag-handle:hover { opacity: 1; }
+        .drag-handle:active { cursor: grabbing; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -53,6 +62,9 @@
                 <button onclick="abrirAjudaFonteVerdade()" class="px-3 py-2 text-indigo-600 hover:bg-indigo-50 rounded-lg flex items-center gap-2 text-sm" title="Ajuda sobre conceitos">
                     <i class="fas fa-question-circle"></i> Ajuda
                 </button>
+                <a href="/admin/categorias-resumo-json/teste" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 flex items-center gap-2">
+                    <i class="fas fa-flask"></i> Testar Categorias
+                </a>
                 <button onclick="criarCategoria()" class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 flex items-center gap-2">
                     <i class="fas fa-plus"></i> Nova Categoria
                 </button>
@@ -72,7 +84,6 @@
                         <li>Associe códigos de documento TJ-MS a cada categoria</li>
                         <li>A categoria <span class="font-mono bg-blue-100 px-1 rounded">residual</span> é usada para documentos sem categoria específica</li>
                         <li>A IA extrairá informações seguindo a estrutura JSON definida</li>
-                        <li><strong>Fonte de Verdade:</strong> Defina por variável qual tipo de documento é a fonte (ex: "parecer NAT", "petição inicial")</li>
                     </ul>
                 </div>
             </div>
@@ -87,9 +98,9 @@
         </div>
     </main>
 
-    <!-- Modal de Edição -->
+    <!-- Modal de Edição (não fecha ao clicar fora) -->
     <div id="modal-editor" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col m-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col m-4" onclick="event.stopPropagation()">
             <!-- Header do Modal -->
             <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-primary-50 to-green-50">
                 <div>
@@ -195,42 +206,9 @@
                         </div>
                     </div>
 
-                    <!-- Fonte de Verdade (configuracao do grupo) -->
-                    <div id="secao-fonte-verdade" class="border-t border-gray-200 pt-4 mt-4">
-                        <div class="flex items-center gap-2 mb-3">
-                            <i class="fas fa-crosshairs text-indigo-500"></i>
-                            <h4 class="text-sm font-semibold text-gray-700">Fonte de Verdade</h4>
-                            <span class="text-xs text-gray-400">(documento de onde extrair variaveis)</span>
-                        </div>
-
-                        <div class="grid grid-cols-2 gap-4">
-                            <!-- Campo 1: Codigo especifico -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">
-                                    Codigo especifico
-                                    <span class="text-xs text-gray-400">(opcional)</span>
-                                </label>
-                                <select id="categoria-fonte-codigo"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
-                                    <option value="">Todos os codigos do grupo</option>
-                                    <!-- Populado dinamicamente com codigos vinculados -->
-                                </select>
-                                <p class="text-xs text-gray-400 mt-1">Filtra por codigo de documento</p>
-                            </div>
-
-                            <!-- Campo 2: Tipo logico para LLM -->
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-1">
-                                    Tipo logico (LLM)
-                                    <span class="text-xs text-gray-400">(quando codigo e ambiguo)</span>
-                                </label>
-                                <input type="text" id="categoria-fonte-tipo-llm"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                                    placeholder="ex: peticao inicial, parecer NAT">
-                                <p class="text-xs text-gray-400 mt-1">LLM classifica semanticamente qual documento e este tipo</p>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Campos ocultos para fonte de verdade (legacy, mantido para compatibilidade) -->
+                    <input type="hidden" id="categoria-fonte-codigo" value="">
+                    <input type="hidden" id="categoria-fonte-tipo-llm" value="">
 
                     <!-- ABAS: Ferramenta IA para gerar JSON -->
                     <div class="border-t border-gray-200 pt-6">
@@ -285,6 +263,9 @@
                                         <span class="text-xs text-gray-400 ml-1" id="contador-perguntas">(0 perguntas)</span>
                                     </label>
                                     <div class="flex gap-2">
+                                        <button type="button" onclick="reordenarComIA()" id="btn-reordenar-ia" class="px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm flex items-center gap-1" title="Usar IA para reordenar as perguntas logicamente">
+                                            <i class="fas fa-robot"></i> Reordenar com IA
+                                        </button>
                                         <button type="button" onclick="abrirModalPerguntasLote()" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm">
                                             <i class="fas fa-list-ul mr-1"></i> Várias Perguntas
                                         </button>
@@ -293,6 +274,7 @@
                                         </button>
                                     </div>
                                 </div>
+                                <p class="text-xs text-gray-400 mb-2"><i class="fas fa-grip-vertical mr-1"></i>Arraste as perguntas para reordenar manualmente</p>
                                 <div id="lista-perguntas" class="space-y-3 max-h-96 overflow-auto border border-gray-200 rounded-lg p-3 bg-gray-50">
                                     <p class="text-gray-400 text-sm text-center py-8">
                                         <i class="fas fa-question-circle text-2xl mb-2 block"></i>
@@ -406,10 +388,17 @@
 
             <!-- Footer do Modal -->
             <div class="px-6 py-4 border-t border-gray-200 flex justify-between items-center bg-gray-50">
-                <button type="button" onclick="fecharEditor()" class="px-4 py-2 text-gray-600 hover:text-gray-800">
-                    Cancelar
-                </button>
-                <button type="button" onclick="salvarCategoria()" class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">
+                <div class="flex items-center gap-3">
+                    <button type="button" onclick="fecharEditor()" id="btn-cancelar-categoria" class="px-4 py-2 text-gray-600 hover:text-gray-800">
+                        Fechar
+                    </button>
+                    <!-- Feedback de erro inline -->
+                    <span id="save-error-msg" class="text-sm text-red-600 hidden">
+                        <i class="fas fa-exclamation-circle mr-1"></i>
+                        <span id="save-error-text"></span>
+                    </span>
+                </div>
+                <button type="button" onclick="salvarCategoria()" id="btn-salvar-categoria" class="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px] transition-all">
                     <i class="fas fa-save mr-2"></i> Salvar
                 </button>
             </div>
@@ -439,7 +428,7 @@
 
     <!-- Modal de Nova/Editar Pergunta -->
     <div id="modal-pergunta" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col m-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-hidden flex flex-col m-4">
             <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-50 to-blue-50">
                 <h2 id="modal-pergunta-titulo" class="text-lg font-semibold text-gray-800">Nova Pergunta de Extração</h2>
                 <button onclick="fecharModalPergunta()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
@@ -493,8 +482,20 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Ordem</label>
-                            <input type="number" id="pergunta-ordem" value="0" min="0"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                            <div class="flex items-center gap-2">
+                                <input type="number" id="pergunta-ordem" value="0" min="0"
+                                    class="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                                <button type="button" id="btn-ordem-ia" onclick="toggleOrdemIABtn()"
+                                    class="px-2.5 py-2 border-2 border-amber-300 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 hover:border-amber-400 transition-all flex items-center gap-1.5"
+                                    title="Deixar a IA decidir a melhor posição para esta pergunta">
+                                    <i class="fas fa-robot"></i>
+                                    <span class="text-sm">IA decide</span>
+                                </button>
+                                <input type="checkbox" id="pergunta-ordem-ia" class="hidden">
+                            </div>
+                            <p id="ordem-ia-info" class="text-xs text-amber-600 mt-1 hidden flex items-center gap-1">
+                                <i class="fas fa-robot"></i> A IA sugere a melhor posição ao salvar
+                            </p>
                         </div>
                     </div>
 
@@ -1039,6 +1040,24 @@ Qual o valor da causa?"></textarea>
         function fecharEditor() {
             document.getElementById('modal-editor').classList.add('hidden');
             categoriaAtual = null;
+
+            // Reseta estado do botão salvar
+            const btnSalvar = document.getElementById('btn-salvar-categoria');
+            const btnCancelar = document.getElementById('btn-cancelar-categoria');
+            const errorMsg = document.getElementById('save-error-msg');
+
+            if (btnSalvar) {
+                btnSalvar.innerHTML = '<i class="fas fa-save mr-2"></i> Salvar';
+                btnSalvar.classList.add('bg-primary-600', 'hover:bg-primary-700');
+                btnSalvar.classList.remove('bg-green-600');
+                btnSalvar.disabled = false;
+            }
+            if (btnCancelar) {
+                btnCancelar.disabled = false;
+            }
+            if (errorMsg) {
+                errorMsg.classList.add('hidden');
+            }
         }
 
         // Adicionar código
@@ -1359,8 +1378,13 @@ Qual o valor da causa?"></textarea>
             };
 
             container.innerHTML = perguntasSelecionadas.map((p, index) => `
-                <div class="bg-white rounded-lg border ${p.ativo === false ? 'border-red-200 bg-red-50' : 'border-gray-200'} p-3 hover:border-primary-300 hover:shadow-sm transition-all">
+                <div class="pergunta-item bg-white rounded-lg border ${p.ativo === false ? 'border-red-200 bg-red-50' : 'border-gray-200'} p-3 hover:border-primary-300 hover:shadow-sm transition-all" data-index="${index}" data-id="${p.id || ''}">
                     <div class="flex items-start gap-3">
+                        <!-- Drag handle -->
+                        <div class="drag-handle text-gray-300 hover:text-gray-500 mt-1 shrink-0" title="Arraste para reordenar">
+                            <i class="fas fa-grip-vertical"></i>
+                        </div>
+
                         <!-- Número da ordem -->
                         <span class="text-gray-400 text-xs font-mono mt-1 w-6 shrink-0">${index + 1}.</span>
 
@@ -1404,6 +1428,252 @@ Qual o valor da causa?"></textarea>
                     </div>
                 </div>
             `).join('');
+
+            // Inicializa drag-and-drop com Sortable
+            inicializarSortablePerguntas();
+        }
+
+        // Instância do Sortable para perguntas
+        let sortablePerguntasInstance = null;
+
+        // Inicializa o Sortable para drag-and-drop de perguntas
+        function inicializarSortablePerguntas() {
+            const container = document.getElementById('lista-perguntas');
+            if (!container || perguntasSelecionadas.length === 0) return;
+
+            // Destroy instância anterior se existir
+            if (sortablePerguntasInstance) {
+                sortablePerguntasInstance.destroy();
+                sortablePerguntasInstance = null;
+            }
+
+            sortablePerguntasInstance = new Sortable(container, {
+                animation: 150,
+                handle: '.drag-handle',
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                dragClass: 'sortable-drag',
+                onEnd: async function(evt) {
+                    // Reordena o array local
+                    const [movedItem] = perguntasSelecionadas.splice(evt.oldIndex, 1);
+                    perguntasSelecionadas.splice(evt.newIndex, 0, movedItem);
+
+                    // Atualiza a ordem de cada item
+                    perguntasSelecionadas.forEach((p, i) => {
+                        p.ordem = i;
+                    });
+
+                    // Re-renderiza para atualizar números
+                    atualizarListaPerguntas();
+
+                    // Reordena o JSON para seguir a nova ordem das perguntas
+                    reordenarJSONComPerguntas();
+
+                    // Salva a nova ordem no servidor se a categoria já existe
+                    const categoriaId = document.getElementById('categoria-id').value;
+                    if (categoriaId) {
+                        await salvarOrdemPerguntas(categoriaId);
+                    }
+                }
+            });
+        }
+
+        // Salva a ordem das perguntas no servidor
+        async function salvarOrdemPerguntas(categoriaId) {
+            try {
+                for (let i = 0; i < perguntasSelecionadas.length; i++) {
+                    const p = perguntasSelecionadas[i];
+                    if (p.id) {
+                        await fetch(`${API_EXTRACTION}/perguntas/${p.id}`, {
+                            method: 'PUT',
+                            headers: getHeaders(),
+                            body: JSON.stringify({
+                                categoria_id: parseInt(categoriaId),
+                                pergunta: p.pergunta,
+                                nome_variavel_sugerido: p.nome_variavel_sugerido,
+                                tipo_sugerido: p.tipo_sugerido,
+                                opcoes_sugeridas: p.opcoes_sugeridas,
+                                ordem: i,
+                                depends_on_variable: p.depends_on_variable,
+                                dependency_operator: p.dependency_operator,
+                                dependency_value: p.dependency_value,
+                                ativo: p.ativo
+                            })
+                        });
+                    }
+                }
+                console.log('Ordem das perguntas salva com sucesso');
+            } catch (error) {
+                console.error('Erro ao salvar ordem das perguntas:', error);
+            }
+        }
+
+        // Reordena perguntas usando IA
+        async function reordenarComIA() {
+            const categoriaId = document.getElementById('categoria-id').value;
+            const categoriaNome = document.getElementById('categoria-nome').value || 'categoria';
+
+            if (perguntasSelecionadas.length < 2) {
+                alert('Adicione pelo menos 2 perguntas para reordenar');
+                return;
+            }
+
+            // Se categoria existe, salva perguntas primeiro
+            if (categoriaId) {
+                await salvarPerguntasNoServidor(categoriaId);
+            }
+
+            const btn = document.getElementById('btn-reordenar-ia');
+            const statusEl = document.getElementById('status-geracao');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Reordenando...';
+            if (statusEl) {
+                statusEl.textContent = 'Aguarde, a IA está analisando a melhor ordem...';
+                statusEl.className = 'text-sm text-blue-500';
+            }
+
+            try {
+                const perguntas = perguntasSelecionadas.map(p => ({
+                    id: p.id || null,
+                    pergunta: p.pergunta,
+                    tipo_sugerido: p.tipo_sugerido || null,
+                    depends_on_variable: p.depends_on_variable || null
+                }));
+
+                const response = await fetch(`${API_EXTRACTION}/perguntas/ordenar-ia`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({
+                        categoria_nome: categoriaNome,
+                        perguntas: perguntas
+                    })
+                });
+
+                const resultado = await response.json();
+
+                if (!resultado.success) {
+                    throw new Error(resultado.erro || 'Erro ao reordenar');
+                }
+
+                // Aplica a nova ordem
+                const novaOrdem = resultado.ordem;
+                const perguntasMap = new Map(perguntasSelecionadas.map(p => [p.pergunta.toLowerCase().trim(), p]));
+                const novasPerguntas = [];
+
+                for (const item of novaOrdem) {
+                    const p = perguntasMap.get(item.pergunta.toLowerCase().trim());
+                    if (p) {
+                        novasPerguntas.push(p);
+                    }
+                }
+
+                // Adiciona perguntas que não foram incluídas (fallback)
+                const incluidas = new Set(novasPerguntas.map(p => p.pergunta.toLowerCase().trim()));
+                for (const p of perguntasSelecionadas) {
+                    if (!incluidas.has(p.pergunta.toLowerCase().trim())) {
+                        novasPerguntas.push(p);
+                    }
+                }
+
+                // Atualiza ordem
+                perguntasSelecionadas = novasPerguntas;
+                perguntasSelecionadas.forEach((p, i) => p.ordem = i);
+
+                atualizarListaPerguntas();
+
+                // Reordena o JSON para seguir a ordem das perguntas
+                reordenarJSONComPerguntas();
+
+                // Salva no servidor
+                if (categoriaId) {
+                    await salvarOrdemPerguntas(categoriaId);
+                }
+
+                if (statusEl) {
+                    statusEl.textContent = 'Perguntas e JSON reordenados com sucesso pela IA!';
+                    statusEl.className = 'text-sm text-green-600';
+                }
+
+            } catch (error) {
+                console.error('Erro ao reordenar com IA:', error);
+                if (statusEl) {
+                    statusEl.textContent = `Erro: ${error.message}`;
+                    statusEl.className = 'text-sm text-red-500';
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-robot"></i> Reordenar com IA';
+            }
+        }
+
+        // Reordena o JSON para seguir a ordem das perguntas
+        function reordenarJSONComPerguntas() {
+            const textarea = document.getElementById('categoria-formato-json');
+            if (!textarea || !textarea.value.trim()) return;
+
+            try {
+                const jsonAtual = JSON.parse(textarea.value);
+
+                // Se é um objeto simples, reordena as chaves com base nas perguntas
+                if (typeof jsonAtual === 'object' && !Array.isArray(jsonAtual)) {
+                    // Mapeia variáveis sugeridas para suas posições
+                    const ordemVariaveis = new Map();
+                    perguntasSelecionadas.forEach((p, index) => {
+                        if (p.nome_variavel_sugerido) {
+                            ordemVariaveis.set(p.nome_variavel_sugerido.toLowerCase(), index);
+                        }
+                    });
+
+                    // Separa chaves que têm ordem definida e chaves que não têm
+                    const chavesOrdenadas = [];
+                    const chavesNaoOrdenadas = [];
+
+                    for (const chave of Object.keys(jsonAtual)) {
+                        const chaveNorm = chave.toLowerCase().replace(/_/g, '');
+                        let encontrada = false;
+
+                        // Tenta encontrar correspondência com variáveis sugeridas
+                        for (const [varNome, ordem] of ordemVariaveis.entries()) {
+                            const varNorm = varNome.toLowerCase().replace(/_/g, '');
+                            if (chaveNorm === varNorm || chaveNorm.includes(varNorm) || varNorm.includes(chaveNorm)) {
+                                chavesOrdenadas.push({ chave, ordem });
+                                encontrada = true;
+                                break;
+                            }
+                        }
+
+                        if (!encontrada) {
+                            chavesNaoOrdenadas.push(chave);
+                        }
+                    }
+
+                    // Ordena as chaves que têm ordem
+                    chavesOrdenadas.sort((a, b) => a.ordem - b.ordem);
+
+                    // Reconstrói o JSON na nova ordem
+                    const novoJson = {};
+
+                    // Primeiro as chaves ordenadas
+                    for (const item of chavesOrdenadas) {
+                        novoJson[item.chave] = jsonAtual[item.chave];
+                    }
+
+                    // Depois as chaves não ordenadas (mantém ordem original)
+                    for (const chave of chavesNaoOrdenadas) {
+                        novoJson[chave] = jsonAtual[chave];
+                    }
+
+                    // Atualiza o textarea
+                    textarea.value = JSON.stringify(novoJson, null, 2);
+                    validarJSON();
+
+                    console.log('JSON reordenado para seguir ordem das perguntas');
+                }
+            } catch (error) {
+                console.error('Erro ao reordenar JSON:', error);
+                // Não interrompe se falhar - JSON pode estar inválido ou em formato diferente
+            }
         }
 
         // Carregar perguntas existentes da categoria
@@ -1635,6 +1905,8 @@ Qual o valor da causa?"></textarea>
                 document.getElementById('pergunta-tipo').value = '';
                 document.getElementById('pergunta-ordem').value = perguntasSelecionadas.length;
                 document.getElementById('pergunta-opcoes').value = '';
+                // IA decide ordem - desmarca e reseta estado
+                document.getElementById('pergunta-ordem-ia').checked = false;
                 // Dependência
                 document.getElementById('pergunta-tem-dependencia').checked = false;
                 document.getElementById('pergunta-depends-on').value = '';
@@ -1654,6 +1926,8 @@ Qual o valor da causa?"></textarea>
                 document.getElementById('pergunta-tipo').value = p.tipo_sugerido || '';
                 document.getElementById('pergunta-ordem').value = p.ordem || 0;
                 document.getElementById('pergunta-opcoes').value = (p.opcoes_sugeridas || []).join('\n');
+                // IA decide ordem - desmarca em edição
+                document.getElementById('pergunta-ordem-ia').checked = false;
                 // Dependência
                 const temDependencia = !!p.depends_on_variable;
                 document.getElementById('pergunta-tem-dependencia').checked = temDependencia;
@@ -1670,6 +1944,9 @@ Qual o valor da causa?"></textarea>
                     document.getElementById('fonte-verdade-campos').classList.add('hidden');
                 }
             }
+
+            // Reset visual do toggle IA decide
+            toggleOrdemIA();
 
             // Toggle visibilidades iniciais
             toggleOpcoesPergunta();
@@ -1748,8 +2025,42 @@ Qual o valor da causa?"></textarea>
             }
         }
 
+        // Toggle para opção "IA decide" na ordem (botão clicável)
+        function toggleOrdemIABtn() {
+            const checkbox = document.getElementById('pergunta-ordem-ia');
+            checkbox.checked = !checkbox.checked;
+            atualizarEstadoOrdemIA();
+        }
+
+        // Atualiza estado visual do botão "IA decide"
+        function atualizarEstadoOrdemIA() {
+            const checkbox = document.getElementById('pergunta-ordem-ia');
+            const inputOrdem = document.getElementById('pergunta-ordem');
+            const infoEl = document.getElementById('ordem-ia-info');
+            const btn = document.getElementById('btn-ordem-ia');
+
+            if (checkbox.checked) {
+                inputOrdem.disabled = true;
+                inputOrdem.classList.add('bg-gray-100', 'text-gray-400');
+                infoEl.classList.remove('hidden');
+                btn.classList.remove('bg-amber-50', 'border-amber-300', 'text-amber-700');
+                btn.classList.add('bg-amber-500', 'border-amber-500', 'text-white');
+            } else {
+                inputOrdem.disabled = false;
+                inputOrdem.classList.remove('bg-gray-100', 'text-gray-400');
+                infoEl.classList.add('hidden');
+                btn.classList.add('bg-amber-50', 'border-amber-300', 'text-amber-700');
+                btn.classList.remove('bg-amber-500', 'border-amber-500', 'text-white');
+            }
+        }
+
+        // Alias para compatibilidade
+        function toggleOrdemIA() {
+            atualizarEstadoOrdemIA();
+        }
+
         // Salva pergunta do modal
-        function salvarPerguntaModal() {
+        async function salvarPerguntaModal() {
             const index = parseInt(document.getElementById('pergunta-index').value);
             const texto = document.getElementById('pergunta-texto').value.trim();
 
@@ -1794,12 +2105,58 @@ Qual o valor da causa?"></textarea>
                 dependencyValue = null;
             }
 
+            // Verifica se IA deve decidir a ordem
+            const iaDecideOrdem = document.getElementById('pergunta-ordem-ia').checked;
+            let ordem = parseInt(document.getElementById('pergunta-ordem').value) || 0;
+
+            // Se IA deve decidir e é nova pergunta, chama API para sugerir posição
+            if (iaDecideOrdem && isNovaPergunta && perguntasSelecionadas.length > 0) {
+                const categoriaNome = document.getElementById('categoria-nome').value || 'categoria';
+                const statusEl = document.getElementById('status-geracao');
+
+                if (statusEl) {
+                    statusEl.textContent = 'Consultando IA para determinar a melhor posição...';
+                    statusEl.className = 'text-sm text-blue-500';
+                }
+
+                try {
+                    const response = await fetch(`${API_EXTRACTION}/perguntas/posicionar-ia`, {
+                        method: 'POST',
+                        headers: getHeaders(),
+                        body: JSON.stringify({
+                            categoria_nome: categoriaNome,
+                            nova_pergunta: {
+                                pergunta: texto,
+                                tipo_sugerido: tipo || null
+                            },
+                            perguntas_existentes: perguntasSelecionadas.map((p, i) => ({
+                                ordem: i,
+                                pergunta: p.pergunta
+                            }))
+                        })
+                    });
+
+                    const resultado = await response.json();
+
+                    if (resultado.success) {
+                        ordem = resultado.posicao;
+                        if (statusEl) {
+                            statusEl.textContent = `IA sugeriu posição ${ordem + 1}`;
+                            statusEl.className = 'text-sm text-green-600';
+                        }
+                    }
+                } catch (error) {
+                    console.error('Erro ao consultar IA para posição:', error);
+                    ordem = perguntasSelecionadas.length; // fallback: final
+                }
+            }
+
             const perguntaData = {
                 pergunta: texto,
                 nome_variavel_sugerido: document.getElementById('pergunta-nome-variavel').value.trim() || null,
                 tipo_sugerido: tipo || null,
                 opcoes_sugeridas: (tipo === 'choice' && opcoes.length > 0) ? opcoes : null,
-                ordem: parseInt(document.getElementById('pergunta-ordem').value) || 0,
+                ordem: ordem,
                 // Dependência
                 depends_on_variable: dependsOn || null,
                 dependency_operator: dependsOn ? dependencyOperator : null,
@@ -1809,8 +2166,15 @@ Qual o valor da causa?"></textarea>
             };
 
             if (index === -1) {
-                // Nova pergunta
-                perguntasSelecionadas.push(perguntaData);
+                // Nova pergunta - insere na posição sugerida
+                if (iaDecideOrdem && perguntasSelecionadas.length > 0) {
+                    // Insere na posição sugerida pela IA
+                    perguntasSelecionadas.splice(ordem, 0, perguntaData);
+                    // Atualiza ordem de todas as perguntas
+                    perguntasSelecionadas.forEach((p, i) => p.ordem = i);
+                } else {
+                    perguntasSelecionadas.push(perguntaData);
+                }
             } else {
                 // Edição - mantém o id se existir
                 perguntaData.id = perguntasSelecionadas[index].id;
@@ -1820,8 +2184,10 @@ Qual o valor da causa?"></textarea>
                 salvarFonteVerdadeVariavel();
             }
 
-            // Reordena por ordem
-            perguntasSelecionadas.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+            // Reordena por ordem (se não usou IA para posicionar)
+            if (!iaDecideOrdem || index !== -1) {
+                perguntasSelecionadas.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+            }
 
             atualizarListaPerguntas();
             fecharModalPergunta();
@@ -2004,10 +2370,18 @@ Qual o valor da causa?"></textarea>
             }
         }
 
-        // Salvar categoria
+        // Salvar categoria (sem fechar o modal)
         async function salvarCategoria() {
             const id = document.getElementById('categoria-id').value;
             const isEdit = !!id;
+
+            const btnSalvar = document.getElementById('btn-salvar-categoria');
+            const btnCancelar = document.getElementById('btn-cancelar-categoria');
+            const errorMsg = document.getElementById('save-error-msg');
+            const errorText = document.getElementById('save-error-text');
+
+            // Esconde mensagem de erro anterior
+            errorMsg.classList.add('hidden');
 
             // Valida JSON antes de salvar
             let formatoJson = document.getElementById('categoria-formato-json').value.trim();
@@ -2024,7 +2398,8 @@ Qual o valor da causa?"></textarea>
             try {
                 JSON.parse(formatoJson);
             } catch (e) {
-                alert('O formato JSON é inválido. Corrija antes de salvar.');
+                errorText.textContent = 'JSON inválido. Corrija antes de salvar.';
+                errorMsg.classList.remove('hidden');
                 return;
             }
 
@@ -2055,9 +2430,15 @@ Qual o valor da causa?"></textarea>
             }
 
             if (!dados.nome || !dados.titulo) {
-                alert('Nome e título são obrigatórios');
+                errorText.textContent = 'Nome e título são obrigatórios';
+                errorMsg.classList.remove('hidden');
                 return;
             }
+
+            // Estado de loading
+            btnSalvar.disabled = true;
+            btnCancelar.disabled = true;
+            btnSalvar.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Salvando...';
 
             try {
                 const url = isEdit ? `${API_BASE}/${id}` : API_BASE;
@@ -2076,16 +2457,45 @@ Qual o valor da causa?"></textarea>
 
                 const categoriaSalva = await response.json();
 
-                // Se tem perguntas novas, salva elas também
+                // Atualiza o ID se era uma criação (agora é edição)
+                if (!isEdit) {
+                    document.getElementById('categoria-id').value = categoriaSalva.id;
+                    document.getElementById('editor-titulo').textContent = 'Editar Categoria';
+                }
+
+                // Se tem perguntas, salva elas também
                 if (perguntasSelecionadas.length > 0) {
                     await salvarPerguntasNoServidor(categoriaSalva.id);
                 }
 
-                fecharEditor();
+                // Sucesso - mostra feedback
+                btnSalvar.innerHTML = '<i class="fas fa-check mr-2"></i> Salvo!';
+                btnSalvar.classList.remove('bg-primary-600', 'hover:bg-primary-700');
+                btnSalvar.classList.add('bg-green-600');
+
+                // Atualiza lista em background (sem fechar modal)
                 carregarCategorias();
+
+                // Volta ao estado normal após 2.5 segundos
+                setTimeout(() => {
+                    btnSalvar.innerHTML = '<i class="fas fa-save mr-2"></i> Salvar';
+                    btnSalvar.classList.add('bg-primary-600', 'hover:bg-primary-700');
+                    btnSalvar.classList.remove('bg-green-600');
+                    btnSalvar.disabled = false;
+                    btnCancelar.disabled = false;
+                }, 2500);
+
             } catch (error) {
                 console.error('Erro ao salvar:', error);
-                alert(`Erro ao salvar: ${error.message}`);
+
+                // Mostra erro inline
+                errorText.textContent = error.message;
+                errorMsg.classList.remove('hidden');
+
+                // Restaura botão
+                btnSalvar.innerHTML = '<i class="fas fa-save mr-2"></i> Salvar';
+                btnSalvar.disabled = false;
+                btnCancelar.disabled = false;
             }
         }
 
@@ -2191,122 +2601,100 @@ Qual o valor da causa?"></textarea>
         }
 
         // Inicialização
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             if (!getToken()) {
                 window.location.href = '/login?redirect=/admin/categorias-resumo-json';
                 return;
             }
-            carregarCategorias();
-            carregarVariaveisDisponiveis(); // Carrega variáveis para autocomplete de dependências
-            carregarFontesEspeciais(); // Carrega fontes especiais disponíveis
+            // Carrega dados em paralelo para melhor performance
+            await Promise.all([
+                carregarCategorias(),
+                carregarVariaveisDisponiveis(),
+                carregarFontesEspeciais()
+            ]);
         });
     </script>
 
-    <!-- Modal de Ajuda: Fonte de Verdade -->
+    <!-- Modal de Ajuda: Conceitos -->
     <div id="modal-ajuda-fonte-verdade" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col m-4">
             <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-indigo-50 to-purple-50">
                 <div class="flex items-center gap-2">
                     <i class="fas fa-book-open text-indigo-500"></i>
-                    <h2 class="text-lg font-semibold text-gray-800">Conceitos: Fonte de Verdade e Extração</h2>
+                    <h2 class="text-lg font-semibold text-gray-800">Conceitos: Categorias e Extração</h2>
                 </div>
                 <button onclick="fecharAjudaFonteVerdade()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="flex-1 overflow-auto p-6 space-y-5">
-                <!-- Grupo -->
+                <!-- Categoria -->
                 <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <h3 class="font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                        <i class="fas fa-layer-group"></i> Grupo (Categoria de Resumo JSON)
+                        <i class="fas fa-layer-group"></i> Categoria (Grupo de Documentos)
                     </h3>
                     <p class="text-sm text-blue-700">
-                        Um <strong>grupo</strong> agrupa documentos pelo código TJ-MS (ex: 500, 510, 9500).
-                        Todos os documentos com esses códigos serão processados e terão suas variáveis extraídas
-                        conforme as perguntas configuradas.
+                        Uma <strong>categoria</strong> agrupa documentos pelo código TJ-MS (ex: 500, 510, 9500).
+                        Define apenas a <strong>estrutura de extração</strong> (perguntas e formato JSON).
                     </p>
                     <p class="text-xs text-blue-600 mt-2">
-                        <strong>Exemplo:</strong> Grupo "Petições" com códigos 500, 510, 9500, 8320, 8326
+                        <strong>Exemplo:</strong> Categoria "Petições" com códigos 500, 510, 9500, 8320, 8326
+                    </p>
+                </div>
+
+                <!-- Perguntas -->
+                <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                    <h3 class="font-semibold text-purple-800 mb-2 flex items-center gap-2">
+                        <i class="fas fa-question-circle"></i> Perguntas de Extração
+                    </h3>
+                    <p class="text-sm text-purple-700">
+                        As <strong>perguntas</strong> definem o que será extraído dos documentos.
+                        Podem ter dependências condicionais (só são feitas se outra pergunta tiver certo valor).
+                    </p>
+                    <p class="text-xs text-purple-600 mt-2">
+                        <strong>Dica:</strong> Use o botão "Reordenar com IA" para organizar as perguntas automaticamente.
+                    </p>
+                </div>
+
+                <!-- Variáveis -->
+                <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <h3 class="font-semibold text-green-800 mb-2 flex items-center gap-2">
+                        <i class="fas fa-hashtag"></i> Variáveis
+                    </h3>
+                    <p class="text-sm text-green-700">
+                        As <strong>variáveis</strong> são geradas a partir das perguntas.
+                        Cada variável pode ter sua própria <strong>fonte de verdade</strong>.
+                    </p>
+                    <p class="text-xs text-green-600 mt-2">
+                        <strong>Acesse:</strong> <a href="/admin/variaveis" class="underline">Admin de Variáveis</a> para configurar fontes de verdade.
                     </p>
                 </div>
 
                 <!-- Fonte de Verdade -->
                 <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
                     <h3 class="font-semibold text-indigo-800 mb-2 flex items-center gap-2">
-                        <i class="fas fa-crosshairs"></i> Fonte de Verdade
+                        <i class="fas fa-crosshairs"></i> Fonte de Verdade (Variáveis)
                     </h3>
                     <p class="text-sm text-indigo-700">
-                        A <strong>fonte de verdade</strong> define DE QUAL documento do grupo as variáveis serão extraídas.
-                        É opcional - se não definida, extrai de todos os documentos do grupo.
+                        A <strong>fonte de verdade</strong> é um conceito <strong>exclusivo das variáveis</strong>.
+                        Define DE QUAL documento específico a variável será extraída.
                     </p>
                     <p class="text-xs text-indigo-600 mt-2">
-                        <strong>Útil quando:</strong> Você quer extrair dados apenas da petição inicial, não das outras petições do processo.
+                        <strong>Exemplo:</strong> Extrair "medicamento" apenas do "parecer NAT", não de outros documentos.
                     </p>
                 </div>
 
-                <!-- Código Específico -->
-                <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <h3 class="font-semibold text-green-800 mb-2 flex items-center gap-2">
-                        <i class="fas fa-hashtag"></i> Código Específico
-                    </h3>
-                    <p class="text-sm text-green-700">
-                        Filtra documentos por um código específico do grupo.
-                        Se o código identifica unicamente o tipo de documento, use apenas este campo.
-                    </p>
-                    <p class="text-xs text-green-600 mt-2">
-                        <strong>Exemplo:</strong> Código 500 = apenas petições iniciais
-                    </p>
-                </div>
-
-                <!-- Tipo Lógico (LLM) -->
-                <div class="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                    <h3 class="font-semibold text-purple-800 mb-2 flex items-center gap-2">
-                        <i class="fas fa-brain"></i> Tipo Lógico (LLM)
-                    </h3>
-                    <p class="text-sm text-purple-700">
-                        Quando o código é <strong>ambíguo</strong> (vários tipos usam o mesmo código),
-                        a LLM classifica semanticamente qual documento é do tipo desejado.
-                    </p>
-                    <p class="text-xs text-purple-600 mt-2">
-                        <strong>Exemplo:</strong> Código 9500 pode ser "petição inicial" ou "contestação" - a LLM identifica qual é qual.
-                    </p>
-                </div>
-
-                <!-- Override por Pergunta -->
+                <!-- Ordenação -->
                 <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
                     <h3 class="font-semibold text-amber-800 mb-2 flex items-center gap-2">
-                        <i class="fas fa-code-branch"></i> Override por Pergunta/Variável
+                        <i class="fas fa-sort"></i> Ordenação de Perguntas
                     </h3>
                     <p class="text-sm text-amber-700">
-                        Cada pergunta ou variável pode ter sua <strong>própria fonte de verdade</strong>,
-                        sobrepondo a configuração do grupo.
+                        Perguntas <strong>condicionais</strong> devem ficar logo abaixo de suas âncoras.
+                        Use drag-and-drop ou "Reordenar com IA" para organizar.
                     </p>
                     <p class="text-xs text-amber-600 mt-2">
-                        <strong>Exemplo:</strong> O grupo extrai da "petição inicial", mas uma pergunta específica extrai do "parecer NAT".
-                    </p>
-                </div>
-
-                <!-- Fluxo Visual -->
-                <div class="bg-gray-50 border border-gray-300 rounded-lg p-4">
-                    <h3 class="font-semibold text-gray-800 mb-3">Hierarquia de Configuração</h3>
-                    <div class="flex items-center justify-center gap-2 text-sm">
-                        <div class="px-3 py-2 bg-blue-100 text-blue-700 rounded-lg text-center">
-                            <div class="font-semibold">Grupo</div>
-                            <div class="text-xs">Padrão</div>
-                        </div>
-                        <i class="fas fa-chevron-right text-gray-400"></i>
-                        <div class="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg text-center">
-                            <div class="font-semibold">Pergunta</div>
-                            <div class="text-xs">Override</div>
-                        </div>
-                        <i class="fas fa-chevron-right text-gray-400"></i>
-                        <div class="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg text-center">
-                            <div class="font-semibold">Variável</div>
-                            <div class="text-xs">Override</div>
-                        </div>
-                    </div>
-                    <p class="text-xs text-gray-500 text-center mt-3">
-                        Cada nível pode sobrepor o anterior. Se não configurado, herda do nível acima.
+                        <strong>Regra:</strong> Pergunta âncora → Suas condicionais → Próxima âncora → Suas condicionais...
                     </p>
                 </div>
             </div>
