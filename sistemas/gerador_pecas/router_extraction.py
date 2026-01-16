@@ -2812,3 +2812,169 @@ async def sincronizar_tipos_perguntas(
             success=False,
             erro=str(e)
         )
+
+
+# ============================================================================
+# ENDPOINT PARA RESTAURAR SLUGS A PARTIR DE JSON DE BACKUP
+# ============================================================================
+
+class RestaurarSlugsRequest(BaseModel):
+    """Request para restaurar slugs de variáveis."""
+    categoria_id: int
+    json_backup: dict = Field(..., description="JSON com slugs corretos como chaves")
+
+
+class RestaurarSlugsResponse(BaseModel):
+    """Response da restauração de slugs."""
+    success: bool
+    variaveis_atualizadas: int = 0
+    variaveis_removidas: int = 0
+    perguntas_sincronizadas: int = 0
+    detalhes: List[dict] = []
+    erro: Optional[str] = None
+
+
+@router.post("/restaurar-slugs", response_model=RestaurarSlugsResponse)
+async def restaurar_slugs_de_backup(
+    data: RestaurarSlugsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Restaura slugs das variáveis a partir de um JSON de backup.
+
+    Este endpoint:
+    1. Recebe o JSON antigo com os slugs corretos
+    2. Mapeia variáveis existentes por descrição
+    3. Atualiza os slugs para os valores do JSON
+    4. Remove variáveis duplicadas
+    5. Sincroniza nome_variavel_sugerido nas perguntas
+    """
+    # Apenas admin pode restaurar
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem restaurar slugs")
+
+    try:
+        categoria = db.query(CategoriaResumoJSON).filter(
+            CategoriaResumoJSON.id == data.categoria_id
+        ).first()
+
+        if not categoria:
+            return RestaurarSlugsResponse(
+                success=False,
+                erro=f"Categoria ID={data.categoria_id} não encontrada"
+            )
+
+        # Busca variáveis e perguntas da categoria
+        variaveis = db.query(ExtractionVariable).filter(
+            ExtractionVariable.categoria_id == categoria.id
+        ).all()
+
+        perguntas = db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.categoria_id == categoria.id,
+            ExtractionQuestion.ativo == True
+        ).all()
+
+        # Cria índice de descrições para matching
+        desc_to_slug = {}
+        for slug, info in data.json_backup.items():
+            desc = info.get("description", "").lower()
+            desc_key = desc.split("?")[0].strip() if "?" in desc else desc[:60]
+            if desc_key:
+                desc_to_slug[desc_key] = slug
+
+        detalhes = []
+        variaveis_atualizadas = 0
+        variaveis_removidas = 0
+        slugs_usados = set()
+
+        # Processa variáveis
+        for variavel in variaveis:
+            slug_antigo = variavel.slug
+
+            # Se já está no JSON, mantém
+            if slug_antigo in data.json_backup:
+                slugs_usados.add(slug_antigo)
+                continue
+
+            # Tenta encontrar por descrição
+            desc_var = (variavel.descricao or variavel.label or "").lower()
+            desc_key = desc_var.split("?")[0].strip() if "?" in desc_var else desc_var[:60]
+
+            slug_correto = None
+            for desc_json, slug_json in desc_to_slug.items():
+                if desc_key and len(desc_key) > 10:
+                    if desc_key in desc_json or desc_json in desc_key:
+                        slug_correto = slug_json
+                        break
+
+            if slug_correto:
+                if slug_correto in slugs_usados:
+                    # Duplicata - remove
+                    detalhes.append({
+                        "acao": "remover",
+                        "slug_antigo": slug_antigo,
+                        "motivo": f"duplicata de {slug_correto}"
+                    })
+                    db.delete(variavel)
+                    variaveis_removidas += 1
+                else:
+                    detalhes.append({
+                        "acao": "atualizar",
+                        "slug_antigo": slug_antigo,
+                        "slug_novo": slug_correto
+                    })
+                    variavel.slug = slug_correto
+                    variavel.tipo = data.json_backup[slug_correto].get("type", variavel.tipo)
+                    slugs_usados.add(slug_correto)
+                    variaveis_atualizadas += 1
+
+        # Sincroniza perguntas
+        perguntas_sincronizadas = 0
+        for pergunta in perguntas:
+            variavel = db.query(ExtractionVariable).filter(
+                ExtractionVariable.source_question_id == pergunta.id
+            ).first()
+
+            if variavel:
+                if pergunta.nome_variavel_sugerido != variavel.slug:
+                    pergunta.nome_variavel_sugerido = variavel.slug
+                    perguntas_sincronizadas += 1
+            else:
+                # Tenta vincular por descrição
+                desc_pergunta = (pergunta.pergunta or "").lower()
+                desc_key = desc_pergunta.split("?")[0].strip() if "?" in desc_pergunta else desc_pergunta[:60]
+
+                for desc_json, slug_json in desc_to_slug.items():
+                    if desc_key and len(desc_key) > 10:
+                        if desc_key in desc_json or desc_json in desc_key:
+                            variavel = db.query(ExtractionVariable).filter(
+                                ExtractionVariable.slug == slug_json
+                            ).first()
+                            if variavel and not variavel.source_question_id:
+                                variavel.source_question_id = pergunta.id
+                                pergunta.nome_variavel_sugerido = slug_json
+                                perguntas_sincronizadas += 1
+                            break
+
+        db.commit()
+
+        logger.info(f"Slugs restaurados para categoria {categoria.id}: "
+                   f"{variaveis_atualizadas} atualizadas, {variaveis_removidas} removidas, "
+                   f"{perguntas_sincronizadas} perguntas sincronizadas")
+
+        return RestaurarSlugsResponse(
+            success=True,
+            variaveis_atualizadas=variaveis_atualizadas,
+            variaveis_removidas=variaveis_removidas,
+            perguntas_sincronizadas=perguntas_sincronizadas,
+            detalhes=detalhes
+        )
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Erro ao restaurar slugs: {e}")
+        return RestaurarSlugsResponse(
+            success=False,
+            erro=str(e)
+        )
