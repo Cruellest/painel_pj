@@ -56,3 +56,16 @@ htmlcov/
 # IDE/Editor
 *.sublime-*
 *.code-workspace
+
+# SQLite temporary files
+*.db-shm
+*.db-wal
+
+# Local/temporary files
+nul
+prompt.md
+prompt2.md
+run_teste.bat
+
+# Claude local settings
+.claude/settings.local.json
