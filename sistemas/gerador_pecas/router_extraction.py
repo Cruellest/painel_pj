@@ -810,6 +810,106 @@ async def atualizar_pergunta(
     )
 
 
+# --- Schema para atualização de ordem em lote ---
+class OrdemPerguntaItem(BaseModel):
+    """Item para atualização de ordem de uma pergunta"""
+    id: int = Field(..., description="ID da pergunta")
+    ordem: int = Field(..., description="Nova ordem (0-indexed)")
+
+
+class AtualizarOrdemLoteRequest(BaseModel):
+    """Request para atualizar ordem de múltiplas perguntas de uma vez"""
+    categoria_id: int = Field(..., description="ID da categoria (para validação)")
+    perguntas: List[OrdemPerguntaItem] = Field(..., min_length=1, description="Lista de perguntas com nova ordem")
+
+
+class AtualizarOrdemLoteResponse(BaseModel):
+    """Response da atualização em lote"""
+    success: bool
+    atualizadas: int
+    message: str
+
+
+@router.put("/perguntas/ordem-lote", response_model=AtualizarOrdemLoteResponse)
+async def atualizar_ordem_perguntas_lote(
+    data: AtualizarOrdemLoteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Atualiza a ordem de múltiplas perguntas em uma única requisição.
+
+    PERFORMANCE: Este endpoint substitui N requisições PUT individuais por uma única
+    requisição batch, reduzindo drasticamente a latência em conexões de alta latência.
+
+    Exemplo de uso:
+    ```json
+    {
+        "categoria_id": 1,
+        "perguntas": [
+            {"id": 10, "ordem": 0},
+            {"id": 15, "ordem": 1},
+            {"id": 12, "ordem": 2}
+        ]
+    }
+    ```
+    """
+    # Verifica permissão
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissão para editar perguntas")
+
+    # Verifica se a categoria existe
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == data.categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    # Extrai IDs para buscar todas as perguntas de uma vez
+    ids_perguntas = [p.id for p in data.perguntas]
+
+    # Busca todas as perguntas em uma única query
+    perguntas_db = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.id.in_(ids_perguntas),
+        ExtractionQuestion.categoria_id == data.categoria_id
+    ).all()
+
+    # Cria mapa id -> pergunta para acesso O(1)
+    perguntas_map = {p.id: p for p in perguntas_db}
+
+    # Valida que todas as perguntas existem e pertencem à categoria
+    ids_encontrados = set(perguntas_map.keys())
+    ids_solicitados = set(ids_perguntas)
+    ids_faltantes = ids_solicitados - ids_encontrados
+
+    if ids_faltantes:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Perguntas não encontradas ou não pertencem à categoria: {list(ids_faltantes)}"
+        )
+
+    # Atualiza ordem de todas as perguntas
+    now = datetime.utcnow()
+    atualizadas = 0
+
+    for item in data.perguntas:
+        pergunta = perguntas_map[item.id]
+        if pergunta.ordem != item.ordem:  # Só atualiza se mudou
+            pergunta.ordem = item.ordem
+            pergunta.atualizado_por = current_user.id
+            pergunta.atualizado_em = now
+            atualizadas += 1
+
+    # Commit único para todas as mudanças
+    db.commit()
+
+    logger.info(f"Ordem de {atualizadas} perguntas atualizada em lote para categoria {categoria.nome}")
+
+    return AtualizarOrdemLoteResponse(
+        success=True,
+        atualizadas=atualizadas,
+        message=f"{atualizadas} perguntas reordenadas com sucesso"
+    )
+
+
 @router.delete("/perguntas/{pergunta_id}")
 async def excluir_pergunta(
     pergunta_id: int,

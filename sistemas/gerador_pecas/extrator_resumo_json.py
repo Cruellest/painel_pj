@@ -233,16 +233,30 @@ def _corrigir_json_malformado(json_str: str) -> str:
     - Trailing commas (vírgulas antes de } ou ])
     - Vírgulas faltando entre elementos
     - Quebras de linha dentro de strings
-    - Comentários // ou /* */
+    - Comentários // e /* */
+    - Aspas "inteligentes" (curly quotes)
+    - Caracteres de controle inválidos
+    - JSON truncado (strings/chaves não fechadas)
     """
     import logging
     logger = logging.getLogger(__name__)
 
     original = json_str
 
-    # Remove comentários de linha única (// ...)
+    # 0. Normaliza aspas "inteligentes" para aspas normais
+    json_str = json_str.replace('"', '"').replace('"', '"')
+    json_str = json_str.replace(''', "'").replace(''', "'")
+
+    # 1. Remove caracteres de controle inválidos (exceto \n, \r, \t)
+    # Esses caracteres causam erro de parse mesmo dentro de strings
+    json_str = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', json_str)
+
+    # 2. Remove comentários multilinha /* ... */
+    # Usa abordagem não-gulosa para pegar cada bloco
+    json_str = re.sub(r'/\*[\s\S]*?\*/', '', json_str)
+
+    # 3. Remove comentários de linha única (// ...)
     # Cuidado para não remover // dentro de strings
-    # Abordagem simples: remove linhas que começam com //
     lines = json_str.split('\n')
     cleaned_lines = []
     for line in lines:
@@ -360,6 +374,79 @@ def _corrigir_json_malformado(json_str: str) -> str:
     return json_str
 
 
+def _reparar_json_truncado(json_str: str) -> str:
+    """
+    Tenta reparar JSON truncado (strings não terminadas, chaves não fechadas).
+
+    Problemas comuns de truncamento:
+    - Strings não terminadas (falta aspas de fechamento)
+    - Chaves/colchetes não fechados
+    - JSON cortado no meio de um valor
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    texto = json_str.strip()
+
+    # 1. Repara strings não terminadas
+    # Reconstrói linha por linha, fechando strings abertas
+    linhas = texto.split('\n')
+    texto_reconstruido = []
+
+    for linha in linhas:
+        linha_stripped = linha.rstrip()
+        if not linha_stripped:
+            continue
+
+        # Conta aspas na linha (excluindo aspas escapadas)
+        aspas_na_linha = linha_stripped.count('"') - linha_stripped.count('\\"')
+
+        if aspas_na_linha % 2 == 0:
+            # Número par de aspas = linha completa
+            texto_reconstruido.append(linha_stripped)
+        else:
+            # Linha com string não terminada - tenta fechar
+            # Padrão: "chave": "valor_incompleto
+            match = re.search(r'^(.*"[^"]*:\s*")([^"]*?)$', linha_stripped)
+            if match:
+                texto_reconstruido.append(match.group(1) + '[TRUNCADO]"')
+            else:
+                # Pode ser item de array: "valor_incompleto
+                match2 = re.search(r'^(\s*")([^"]*?)$', linha_stripped)
+                if match2:
+                    texto_reconstruido.append(match2.group(1) + '[TRUNCADO]"')
+                else:
+                    # Ignora linha problemática
+                    pass
+
+    texto = '\n'.join(texto_reconstruido)
+
+    # 2. Fecha estruturas abertas (chaves e colchetes)
+    abre_chaves = texto.count('{')
+    fecha_chaves = texto.count('}')
+    abre_colchetes = texto.count('[')
+    fecha_colchetes = texto.count(']')
+
+    # Adiciona fechamentos faltando
+    # (ordem importa: fecha arrays antes de objetos se estiverem aninhados)
+    faltam_colchetes = abre_colchetes - fecha_colchetes
+    faltam_chaves = abre_chaves - fecha_chaves
+
+    if faltam_colchetes > 0 or faltam_chaves > 0:
+        # Remove trailing comma antes de fechar
+        texto = texto.rstrip()
+        if texto.endswith(','):
+            texto = texto[:-1]
+
+        # Fecha estruturas (assume ordem: colchetes internos, depois chaves)
+        texto += ']' * faltam_colchetes
+        texto += '}' * faltam_chaves
+
+        logger.debug(f"JSON truncado reparado: +{faltam_colchetes} colchetes, +{faltam_chaves} chaves")
+
+    return texto
+
+
 def parsear_resposta_json(resposta: str) -> Tuple[Dict[str, Any], Optional[str]]:
     """
     Parseia a resposta da IA e extrai o JSON.
@@ -401,25 +488,42 @@ def parsear_resposta_json(resposta: str) -> Tuple[Dict[str, Any], Optional[str]]
     elif last_bracket >= 0:
         json_str = json_str[:last_bracket + 1]
 
+    import logging
+    logger = logging.getLogger(__name__)
+
     # Primeira tentativa: parse direto
     try:
         resultado = json.loads(json_str)
         return resultado, None
-    except json.JSONDecodeError:
-        pass
+    except json.JSONDecodeError as e1:
+        logger.debug(f"Parse direto falhou: {e1}")
 
     # Segunda tentativa: corrige JSON malformado
     json_str_corrigido = _corrigir_json_malformado(json_str)
 
     try:
         resultado = json.loads(json_str_corrigido)
+        logger.debug("Parse bem-sucedido após correção de JSON malformado")
         return resultado, None
-    except json.JSONDecodeError as e:
-        # Log do JSON problemático para debug
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"JSON malformado (primeiros 500 chars): {json_str_corrigido[:500]}")
-        return {}, f"Erro ao parsear JSON: {e}"
+    except json.JSONDecodeError as e2:
+        logger.debug(f"Parse após correção falhou: {e2}")
+
+    # Terceira tentativa: repara JSON truncado
+    json_str_reparado = _reparar_json_truncado(json_str_corrigido)
+
+    try:
+        resultado = json.loads(json_str_reparado)
+        logger.info("Parse bem-sucedido após reparo de JSON truncado")
+        return resultado, None
+    except json.JSONDecodeError as e3:
+        # Log detalhado do JSON problemático para debug
+        logger.warning(
+            f"JSON não parseável após todas as tentativas.\n"
+            f"Erro final: {e3}\n"
+            f"Tamanho original: {len(json_str)} chars\n"
+            f"JSON (primeiros 1000 chars):\n{json_str_reparado[:1000]}"
+        )
+        return {}, f"Erro ao parsear JSON: {e3}"
 
 
 def verificar_irrelevante_json(json_dict: Dict[str, Any]) -> Tuple[bool, str]:
