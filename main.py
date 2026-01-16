@@ -605,6 +605,12 @@ async def admin_variaveis_page(request: Request):
     return templates.TemplateResponse("admin_variaveis.html", {"request": request})
 
 
+@app.get("/admin/restaurar-slugs")
+async def admin_restaurar_slugs_page(request: Request):
+    """Página para restaurar slugs de variáveis a partir de backup"""
+    return templates.TemplateResponse("admin_restaurar_slugs.html", {"request": request})
+
+
 # ==================================================
 # EXECUÇÃO DIRETA
 # ==================================================

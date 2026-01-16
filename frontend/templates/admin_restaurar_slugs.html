@@ -1,0 +1,163 @@
+{% extends "admin_base.html" %}
+
+{% block title %}Restaurar Slugs - Admin{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-4">
+            <i class="fas fa-tools text-amber-500 mr-2"></i>
+            Restaurar Slugs de Variáveis
+        </h1>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+            <p class="text-amber-800">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                <strong>Atenção:</strong> Esta ferramenta restaura os slugs das variáveis da categoria "Pareceres"
+                para os valores originais do JSON de backup.
+            </p>
+        </div>
+
+        <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+                Categoria ID:
+            </label>
+            <input type="number" id="categoria-id" value="5"
+                   class="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div class="flex gap-4 mb-6">
+            <button onclick="restaurarSlugs()" id="btn-restaurar"
+                    class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                <i class="fas fa-magic mr-2"></i>
+                Restaurar Slugs
+            </button>
+        </div>
+
+        <div id="resultado" class="hidden">
+            <h3 class="text-lg font-semibold text-gray-700 mb-2">Resultado:</h3>
+            <pre id="resultado-json" class="bg-gray-900 text-green-400 p-4 rounded-lg overflow-auto max-h-96 text-sm"></pre>
+        </div>
+
+        <div id="loading" class="hidden">
+            <div class="flex items-center gap-3 text-blue-600">
+                <i class="fas fa-spinner fa-spin text-2xl"></i>
+                <span>Processando...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const JSON_BACKUP = {
+    "pareceres_analisou_medicamento": {"type": "boolean", "description": "O parecer analisou medicamento?"},
+    "pareceres_medicamento_sem_anvisa": {"type": "boolean", "description": "O parecer analisou pedido de medicamento sem registro na ANVISA?"},
+    "pareceres_medicamentos_sem_anvisa_lista": {"type": "list", "description": "Quais medicamentos sem registro na ANVISA foram analisados no parecer?"},
+    "pareceres_medicamento_nao_incorporado_sus": {"type": "boolean", "description": "O parecer analisou pedido de medicamento não incorporado ao SUS?"},
+    "pareceres_medicamentos_nao_incorporados_lista": {"type": "list", "description": "Quais medicamentos não incorporados ao SUS foram analisados no parecer?"},
+    "pareceres_evidencias_cientificas_alto_nivel": {"type": "boolean", "description": "Existe evidências científicas de alto nível que justifique o fornecimento?"},
+    "pareceres_recomendacao_negativa_conitec": {"type": "text", "description": "Algum medicamento não incorporado já teve recomendação negativa da CONITEC (resposta em texto indicando o relatório de análise, conclusão, etc)?"},
+    "pareceres_medicamento_oncologico": {"type": "boolean", "description": "O parecer analisou pedido de medicamento oncológico?"},
+    "pareceres_medicamentos_oncologicos_lista": {"type": "list", "description": "Quais medicamentos oncológicos foram analisados no parecer?"},
+    "pareceres_medicamento_oncologico_incorporado": {"type": "boolean", "description": "Trata-se de medicamento oncológico incorporado (Alfainterferona, Cloridrato de Erlotinibe, Gefitinibe, Antirretroviral Zidovudina, Sunitinibe, Pazopanibe, Abiraterona, Brentuximabe, Bortezomibe, Vemurafenibe, Dabrafenibe, Cobimetinibe, Trametinibe, Ipilimumabe, Nivolumabe, Pembrolizumabe, Abemaciclibe, Palbociclibe, Succinato de Ribociclibe, Trastuzumabe Entansina ou Blinatumomabe)?"},
+    "pareceres_medicamento_oncologico_compra_centralizada": {"type": "boolean", "description": "Trata-se de medicamento oncológico de compra centralizada (Trastuzumabe, Talidomida, Rituximabe, Mesilato de Imatinibe, Pertuzumabe, Dasatinibe ou Nilotinibe)?"},
+    "pareceres_medicamento_incorporado_sus": {"type": "boolean", "description": "O parecer analisou pedido de medicamento incorporado ao SUS?"},
+    "pareceres_medicamento_cbaf": {"type": "boolean", "description": "O parecer analisou medicamentos do CBAF?"},
+    "pareceres_medicamentos_cbaf_lista": {"type": "list", "description": "Quais medicamentos do CBAF foram analisados no parecer?"},
+    "pareceres_medicamento_ceaf": {"type": "boolean", "description": "O parecer analisou medicamentos do CEAF?"},
+    "pareceres_medicamentos_ceaf_lista": {"type": "list", "description": "Quais medicamentos do CEAF foram analisados no parecer?"},
+    "pareceres_medicamento_cesaf": {"type": "boolean", "description": "O parecer analisou medicamento do CESAF?"},
+    "pareceres_medicamentos_cesaf_lista": {"type": "list", "description": "Quais medicamentos do CESAF foram analisados no parecer?"},
+    "pareceres_patologia_diversa_incorporada": {"type": "boolean", "description": "O parecer analisou medicamento incorporado para patologia diversa?"},
+    "pareceres_medicamentos_patologia_diversa_lista": {"type": "list", "description": "Quais medicamentos incorporados para patologia diversa foram analisados?"},
+    "pareceres_dosagem_diversa_incorporada": {"type": "boolean", "description": "O parecer analisou medicamento incorporado com dosagem diversa?"},
+    "pareceres_medicamentos_dosagem_diversa_lista": {"type": "list", "description": "Quais medicamentos incorporados com dosagem diversa foram analisados?"},
+    "pareceres_dispensacao_diversa_incorporada": {"type": "boolean", "description": "O parecer analisou medicamento incorporado com forma de dispensação diversa?"},
+    "pareceres_medicamentos_dispensacao_diversa_lista": {"type": "list", "description": "Quais medicamentos incorporados com forma de dispensação diversa foram analisados?"},
+    "pareceres_tratamento_autismo": {"type": "boolean", "description": "O parecer analisou pedido de tratamento específico para autismo?"},
+    "pareceres_tratamentos_autismo_lista": {"type": "list", "description": "Quais foram os tratamentos solicitados para autismo?"},
+    "pareceres_terapia_especifica_autismo": {"type": "boolean", "description": "O parecer analisou solicitação de terapia específica para autismo?"},
+    "pareceres_patologias_parte_autora": {"type": "list", "description": "Quais patologias da parte autora foram consideradas pelo parecer?"},
+    "pareceres_analisou_canabidiol": {"type": "boolean", "description": "O parecer analisou pedido de canabidiol?"},
+    "pareceres_autorizacao_sanitaria_canabidiol": {"type": "boolean", "description": "O parecer informou se a parte tem autorização sanitária para importar o canabidiol?"},
+    "pareceres_analisou_insulina": {"type": "boolean", "description": "O parecer analisou pedido de insulina?"},
+    "pareceres_tipo_insulina": {"type": "choice", "description": "O parecer identificou solicitação de qual tipo de insulina?", "options": ["regular", "rapida", "lenta", "outra"]},
+    "pareceres_paciente_diabetico": {"type": "boolean", "description": "O paciente é portador de diabetes?"},
+    "pareceres_tipo_diabetes": {"type": "choice", "description": "Qual o tipo de diabetes?"},
+    "pareceres_medicamento_off_label": {"type": "boolean", "description": "O parecer analisou pedido de medicamento off-label?"},
+    "pareceres_nome_medicamento_off_label": {"type": "text", "description": "Liste o nome do medicamento off-label"},
+    "pareceres_analisou_cirurgia": {"type": "boolean", "description": "O parecer analisou pedido de cirurgia?"},
+    "pareceres_qual_cirurgia": {"type": "text", "description": "Qual cirurgia foi analisada no parecer?"},
+    "pareceres_natureza_cirurgia": {"type": "choice", "description": "A cirurgia é eletiva ou de urgência?"},
+    "pareceres_laudo_medico_sus": {"type": "boolean", "description": "O laudo analisado foi emitido por médico vinculado ao SUS?"},
+    "pareceres_cirurgia_ofertada_sus": {"type": "boolean", "description": "A cirurgia é ofertada pelo SUS?"},
+    "pareceres_analisou_exame": {"type": "boolean", "description": "O parecer analisou pedido de exame?"},
+    "pareceres_qual_exame": {"type": "text", "description": "Qual exame foi analisado no parecer?"},
+    "pareceres_exame_ofertado_sus": {"type": "boolean", "description": "O exame é ofertado pelo SUS?"},
+    "pareceres_analisou_consulta": {"type": "boolean", "description": "O parecer analisou pedido de consulta médica?"},
+    "pareceres_especialidade_consulta": {"type": "text", "description": "Qual especialidade?"},
+    "pareceres_inserido_sisreg": {"type": "boolean", "description": "O paciente está inserido no SISREG?"},
+    "pareceres_tempo_sisreg_dias": {"type": "number", "description": "Há quanto tempo (em dias)?"},
+    "pareceres_inserido_core": {"type": "boolean", "description": "O paciente está inserido no CORE?"},
+    "pareceres_tempo_core_dias": {"type": "number", "description": "Há quanto tempo (em dias)?"},
+    "pareceres_analisou_dieta": {"type": "boolean", "description": "O parecer analisou pedido de fornecimento de dieta ou suplemento?"},
+    "pareceres_dieta_marca_especifica": {"type": "boolean", "description": "O pedido era de dieta ou suplemento de marca específica?"},
+    "pareceres_analisou_home_care": {"type": "boolean", "description": "O parecer analisou pedido de home care?"},
+    "pareceres_pedidos_home_care": {"type": "text", "description": "Quais foram os pedidos de home care?"},
+    "pareceres_pedido_enfermeiro_24h": {"type": "boolean", "description": "Tem pedido de enfermeiro 24 horas?"},
+    "pareceres_analisou_transferencia": {"type": "boolean", "description": "O parecer analisou pedido de transferência hospitalar?"},
+    "pareceres_paciente_transferido": {"type": "boolean", "description": "O paciente já foi transferido?"},
+    "pareceres_data_transferencia": {"type": "date", "description": "Tem data de transferência informada?"},
+    "pareceres_conclusao_parecer": {"type": "text", "description": "Descreva qual foi a conclusão do parecer em relação a cada um dos pedidos"},
+    "pareceres_fundamentos_parecer": {"type": "text", "description": "Descreva quais foram os fundamentos do parecer"},
+    "pareceres_conclusao_parecer_nat": {"type": "text", "description": "Transcreva toda conclusão do parecer do NAT"}
+};
+
+function getToken() {
+    return localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
+}
+
+async function restaurarSlugs() {
+    const categoriaId = parseInt(document.getElementById('categoria-id').value);
+    const btn = document.getElementById('btn-restaurar');
+    const loading = document.getElementById('loading');
+    const resultado = document.getElementById('resultado');
+
+    btn.disabled = true;
+    loading.classList.remove('hidden');
+    resultado.classList.add('hidden');
+
+    try {
+        const response = await fetch('/admin/api/extraction/restaurar-slugs', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getToken()}`
+            },
+            body: JSON.stringify({
+                categoria_id: categoriaId,
+                json_backup: JSON_BACKUP
+            })
+        });
+
+        const data = await response.json();
+
+        resultado.classList.remove('hidden');
+        document.getElementById('resultado-json').textContent = JSON.stringify(data, null, 2);
+
+        if (data.success) {
+            alert(`Restauracao concluida!\n\nVariaveis atualizadas: ${data.variaveis_atualizadas}\nVariaveis removidas: ${data.variaveis_removidas}\nPerguntas sincronizadas: ${data.perguntas_sincronizadas}`);
+        } else {
+            alert(`Erro: ${data.erro}`);
+        }
+
+    } catch (error) {
+        alert(`Erro: ${error.message}`);
+        console.error(error);
+    } finally {
+        btn.disabled = false;
+        loading.classList.add('hidden');
+    }
+}
+</script>
+{% endblock %}
