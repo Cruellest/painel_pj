@@ -93,6 +93,11 @@ async def lifespan(app: FastAPI):
     # Startup
     print("[+] Iniciando Portal PGE-MS...")
     init_database()
+
+    # Configura instrumentação automática de performance
+    from admin.perf_instrumentation import setup_instrumentation
+    setup_instrumentation(app)
+
     yield
     # Shutdown
     print("[-] Encerrando Portal PGE-MS...")

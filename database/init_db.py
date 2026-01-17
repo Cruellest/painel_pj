@@ -28,7 +28,7 @@ from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestac
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
-from admin.models_performance import AdminSettings, PerformanceLog
+from admin.models_performance import AdminSettings, PerformanceLog, RouteSystemMap
 from admin.models_gemini_logs import GeminiApiLog
 
 
@@ -1090,6 +1090,42 @@ def run_migrations():
                     db.rollback()
                     print(f"[WARN] Migração {coluna} prompt_modulos_historico: {e}")
 
+    # Migração: Adicionar colunas de regra secundária (fallback) em prompt_modulos
+    if table_exists('prompt_modulos'):
+        colunas_secundaria = [
+            ('regra_deterministica_secundaria', 'JSON'),
+            ('regra_secundaria_texto_original', 'TEXT'),
+            ('fallback_habilitado', 'BOOLEAN DEFAULT FALSE'),
+        ]
+
+        for coluna, tipo in colunas_secundaria:
+            if not column_exists('prompt_modulos', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE prompt_modulos ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em prompt_modulos")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} prompt_modulos: {e}")
+
+    # Migração: Adicionar colunas de regra secundária em prompt_modulos_historico
+    if table_exists('prompt_modulos_historico'):
+        colunas_secundaria_hist = [
+            ('regra_deterministica_secundaria', 'JSON'),
+            ('regra_secundaria_texto_original', 'TEXT'),
+            ('fallback_habilitado', 'BOOLEAN'),
+        ]
+
+        for coluna, tipo in colunas_secundaria_hist:
+            if not column_exists('prompt_modulos_historico', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE prompt_modulos_historico ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em prompt_modulos_historico")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} prompt_modulos_historico: {e}")
+
     # Migração: Adicionar colunas de dependência em extraction_questions
     if table_exists('extraction_questions'):
         colunas_dep_questions = [
@@ -1272,6 +1308,46 @@ def run_migrations():
             except Exception as e:
                 db.rollback()
                 print(f"[WARN] Migração source_special_type categorias_resumo_json: {e}")
+
+    # Migração: Atualizar tabela performance_logs para MVP de gargalos
+    if table_exists('performance_logs'):
+        colunas_perf_mvp = [
+            ("user_id", "INTEGER"),
+            ("username", "VARCHAR(100)"),
+            ("action", "VARCHAR(100)"),
+            ("status", "VARCHAR(20) DEFAULT 'ok'"),
+            ("total_ms", "FLOAT"),
+            ("llm_request_ms", "FLOAT"),
+            ("json_parse_ms", "FLOAT"),
+            ("db_total_ms", "FLOAT"),
+            ("db_slowest_query_ms", "FLOAT"),
+            ("prompt_tokens", "INTEGER"),
+            ("response_tokens", "INTEGER"),
+            ("json_size_chars", "INTEGER"),
+            ("error_type", "VARCHAR(50)"),
+            ("error_message_short", "VARCHAR(200)"),
+        ]
+
+        for coluna, tipo in colunas_perf_mvp:
+            if not column_exists('performance_logs', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE performance_logs ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em performance_logs")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} performance_logs: {e}")
+
+        # Criar índices para performance_logs
+        try:
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_perf_logs_action ON performance_logs(action)"))
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_perf_logs_status ON performance_logs(status)"))
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_perf_logs_user ON performance_logs(user_id)"))
+            db.commit()
+            print("[OK] Índices de performance_logs criados/verificados")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Criação de índices performance_logs: {e}")
 
     seed_prompt_groups(db)
 

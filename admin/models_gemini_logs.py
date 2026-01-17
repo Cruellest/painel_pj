@@ -10,8 +10,7 @@ Captura TODAS as chamadas de IA de TODOS os usuários/sistemas para:
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, Index, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, Index
 from database.connection import Base
 
 
@@ -27,8 +26,8 @@ class GeminiApiLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
-    # Identificação do contexto
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # Identificação do contexto (sem FK para evitar dependência circular)
+    user_id = Column(Integer, nullable=True, index=True)
     username = Column(String(100), nullable=True)
     sistema = Column(String(100), nullable=False, index=True)  # gerador_pecas, pedido_calculo, etc
     modulo = Column(String(100), nullable=True)  # agentes, services_classificacao, etc

@@ -31,7 +31,8 @@ from sistemas.gerador_pecas.services_extraction import (
 )
 from sistemas.gerador_pecas.services_deterministic import (
     DeterministicRuleGenerator, DeterministicRuleEvaluator,
-    PromptVariableUsageSync, avaliar_ativacao_prompt
+    PromptVariableUsageSync, avaliar_ativacao_prompt,
+    verificar_variaveis_existem
 )
 from admin.models_prompts import PromptModulo
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup
@@ -808,6 +809,358 @@ class TestExtractionSchemaGeneratorNormalization(BaseTestCase):
 
         self.assertEqual(generator._normalizar_slug(""), "variavel")
         self.assertEqual(generator._normalizar_slug("   "), "variavel")
+
+
+class TestVerificarVariaveisExistem(unittest.TestCase):
+    """Testes para a função verificar_variaveis_existem.
+
+    IMPORTANTE: Distingue entre:
+    - Variável inexistente (chave não presente no dict) -> retorna False
+    - Variável existente com valor False/None -> retorna True
+    """
+
+    def test_variavel_existe_com_valor_true(self):
+        """Variável existe e tem valor True -> todas existem."""
+        regra = {
+            "type": "condition",
+            "variable": "autor_idoso",
+            "operator": "equals",
+            "value": True
+        }
+        dados = {"autor_idoso": True}
+
+        existem, variaveis = verificar_variaveis_existem(regra, dados)
+
+        self.assertTrue(existem)
+        self.assertIn("autor_idoso", variaveis)
+
+    def test_variavel_existe_com_valor_false(self):
+        """Variável existe e tem valor False -> ainda assim EXISTE."""
+        regra = {
+            "type": "condition",
+            "variable": "autor_idoso",
+            "operator": "equals",
+            "value": True
+        }
+        dados = {"autor_idoso": False}
+
+        existem, variaveis = verificar_variaveis_existem(regra, dados)
+
+        self.assertTrue(existem)  # EXISTE, mesmo com valor False!
+        self.assertIn("autor_idoso", variaveis)
+
+    def test_variavel_existe_com_valor_none(self):
+        """Variável existe e tem valor None -> ainda assim EXISTE."""
+        regra = {
+            "type": "condition",
+            "variable": "valor_causa",
+            "operator": "greater_than",
+            "value": 100000
+        }
+        dados = {"valor_causa": None}
+
+        existem, variaveis = verificar_variaveis_existem(regra, dados)
+
+        self.assertTrue(existem)  # EXISTE, mesmo com valor None!
+        self.assertIn("valor_causa", variaveis)
+
+    def test_variavel_nao_existe(self):
+        """Variável NÃO existe (chave ausente no dict) -> não existe."""
+        regra = {
+            "type": "condition",
+            "variable": "autor_idoso",
+            "operator": "equals",
+            "value": True
+        }
+        dados = {"outro_campo": "valor"}
+
+        existem, variaveis = verificar_variaveis_existem(regra, dados)
+
+        self.assertFalse(existem)  # NÃO EXISTE!
+        self.assertIn("autor_idoso", variaveis)
+
+    def test_multiplas_variaveis_todas_existem(self):
+        """Múltiplas variáveis na regra, todas existem."""
+        regra = {
+            "type": "and",
+            "conditions": [
+                {"type": "condition", "variable": "autor_idoso", "operator": "equals", "value": True},
+                {"type": "condition", "variable": "valor_causa", "operator": "greater_than", "value": 100000}
+            ]
+        }
+        dados = {"autor_idoso": True, "valor_causa": 150000}
+
+        existem, variaveis = verificar_variaveis_existem(regra, dados)
+
+        self.assertTrue(existem)
+        self.assertIn("autor_idoso", variaveis)
+        self.assertIn("valor_causa", variaveis)
+
+    def test_multiplas_variaveis_uma_nao_existe(self):
+        """Múltiplas variáveis na regra, uma não existe."""
+        regra = {
+            "type": "and",
+            "conditions": [
+                {"type": "condition", "variable": "autor_idoso", "operator": "equals", "value": True},
+                {"type": "condition", "variable": "valor_causa", "operator": "greater_than", "value": 100000}
+            ]
+        }
+        dados = {"autor_idoso": True}  # valor_causa não existe
+
+        existem, variaveis = verificar_variaveis_existem(regra, dados)
+
+        self.assertFalse(existem)
+        self.assertIn("autor_idoso", variaveis)
+        self.assertIn("valor_causa", variaveis)
+
+    def test_variavel_em_grupo_or(self):
+        """Variáveis em grupo OR, verifica todas."""
+        regra = {
+            "type": "or",
+            "conditions": [
+                {"type": "condition", "variable": "medicamento_nao_padronizado", "operator": "equals", "value": True},
+                {"type": "condition", "variable": "medicamento_experimental", "operator": "equals", "value": True}
+            ]
+        }
+        dados = {"medicamento_nao_padronizado": False, "medicamento_experimental": False}
+
+        existem, variaveis = verificar_variaveis_existem(regra, dados)
+
+        self.assertTrue(existem)  # Ambas existem, mesmo com valor False
+        self.assertIn("medicamento_nao_padronizado", variaveis)
+        self.assertIn("medicamento_experimental", variaveis)
+
+
+class TestFallbackRegraDeterministica(BaseTestCase):
+    """Testes para o sistema de fallback (regra primária/secundária).
+
+    Comportamento esperado:
+    1. Se a variável da regra primária EXISTE -> avalia primária (ignora secundária)
+    2. Se a variável da regra primária NÃO EXISTE e fallback habilitado -> avalia secundária
+    3. Se fallback desabilitado -> nunca avalia secundária
+    """
+
+    def test_primaria_ativa_ignora_secundaria(self):
+        """Quando regra primária ativa, ignora secundária completamente."""
+        prompt = self._create_prompt("teste", modo_ativacao="deterministic")
+        self.db.commit()
+
+        regra_primaria = {
+            "type": "condition",
+            "variable": "autor_idoso",
+            "operator": "equals",
+            "value": True
+        }
+        regra_secundaria = {
+            "type": "condition",
+            "variable": "valor_causa",
+            "operator": "greater_than",
+            "value": 100000
+        }
+
+        resultado = avaliar_ativacao_prompt(
+            prompt_id=prompt.id,
+            modo_ativacao="deterministic",
+            regra_deterministica=regra_primaria,
+            dados_extracao={"autor_idoso": True, "valor_causa": 50000},
+            db=self.db,
+            regra_secundaria=regra_secundaria,
+            fallback_habilitado=True
+        )
+
+        self.assertTrue(resultado["ativar"])
+        self.assertEqual(resultado["modo"], "deterministic")
+        self.assertEqual(resultado.get("regra_usada"), "primaria")
+
+    def test_primaria_nao_ativa_ignora_secundaria(self):
+        """Quando variável primária EXISTE mas regra é False, NÃO usa secundária."""
+        prompt = self._create_prompt("teste", modo_ativacao="deterministic")
+        self.db.commit()
+
+        regra_primaria = {
+            "type": "condition",
+            "variable": "autor_idoso",
+            "operator": "equals",
+            "value": True
+        }
+        regra_secundaria = {
+            "type": "condition",
+            "variable": "valor_causa",
+            "operator": "greater_than",
+            "value": 100000
+        }
+
+        # autor_idoso existe mas é False - NÃO deve usar secundária
+        resultado = avaliar_ativacao_prompt(
+            prompt_id=prompt.id,
+            modo_ativacao="deterministic",
+            regra_deterministica=regra_primaria,
+            dados_extracao={"autor_idoso": False, "valor_causa": 200000},
+            db=self.db,
+            regra_secundaria=regra_secundaria,
+            fallback_habilitado=True
+        )
+
+        self.assertFalse(resultado["ativar"])  # Primária prevalece
+        self.assertEqual(resultado["modo"], "deterministic")
+        self.assertEqual(resultado.get("regra_usada"), "primaria")
+
+    def test_primaria_variavel_inexistente_usa_secundaria(self):
+        """Quando variável da primária NÃO EXISTE, usa secundária."""
+        prompt = self._create_prompt("teste", modo_ativacao="deterministic")
+        self.db.commit()
+
+        regra_primaria = {
+            "type": "condition",
+            "variable": "autor_idoso",  # Esta variável NÃO existe nos dados
+            "operator": "equals",
+            "value": True
+        }
+        regra_secundaria = {
+            "type": "condition",
+            "variable": "valor_causa",
+            "operator": "greater_than",
+            "value": 100000
+        }
+
+        # autor_idoso NÃO existe nos dados
+        resultado = avaliar_ativacao_prompt(
+            prompt_id=prompt.id,
+            modo_ativacao="deterministic",
+            regra_deterministica=regra_primaria,
+            dados_extracao={"valor_causa": 200000},  # Só tem valor_causa
+            db=self.db,
+            regra_secundaria=regra_secundaria,
+            fallback_habilitado=True
+        )
+
+        self.assertTrue(resultado["ativar"])  # Secundária ativou
+        self.assertEqual(resultado["modo"], "deterministic")
+        self.assertEqual(resultado.get("regra_usada"), "secundaria")
+
+    def test_fallback_desabilitado_nao_usa_secundaria(self):
+        """Quando fallback desabilitado, nunca usa secundária."""
+        prompt = self._create_prompt("teste", modo_ativacao="deterministic")
+        self.db.commit()
+
+        regra_primaria = {
+            "type": "condition",
+            "variable": "autor_idoso",  # NÃO existe nos dados
+            "operator": "equals",
+            "value": True
+        }
+        regra_secundaria = {
+            "type": "condition",
+            "variable": "valor_causa",
+            "operator": "greater_than",
+            "value": 100000
+        }
+
+        resultado = avaliar_ativacao_prompt(
+            prompt_id=prompt.id,
+            modo_ativacao="deterministic",
+            regra_deterministica=regra_primaria,
+            dados_extracao={"valor_causa": 200000},
+            db=self.db,
+            regra_secundaria=regra_secundaria,
+            fallback_habilitado=False  # Desabilitado!
+        )
+
+        # Sem fallback, não pode decidir (variável primária não existe)
+        self.assertIsNone(resultado["ativar"])
+        self.assertEqual(resultado.get("regra_usada"), "nenhuma")
+
+    def test_secundaria_variavel_inexistente(self):
+        """Quando variável da secundária também não existe."""
+        prompt = self._create_prompt("teste", modo_ativacao="deterministic")
+        self.db.commit()
+
+        regra_primaria = {
+            "type": "condition",
+            "variable": "autor_idoso",
+            "operator": "equals",
+            "value": True
+        }
+        regra_secundaria = {
+            "type": "condition",
+            "variable": "valor_causa",
+            "operator": "greater_than",
+            "value": 100000
+        }
+
+        # Nenhuma variável existe nos dados
+        resultado = avaliar_ativacao_prompt(
+            prompt_id=prompt.id,
+            modo_ativacao="deterministic",
+            regra_deterministica=regra_primaria,
+            dados_extracao={"outro_campo": "qualquer"},
+            db=self.db,
+            regra_secundaria=regra_secundaria,
+            fallback_habilitado=True
+        )
+
+        # Nenhuma regra pode ser avaliada
+        self.assertIsNone(resultado["ativar"])
+        self.assertEqual(resultado.get("regra_usada"), "nenhuma")
+
+    def test_primaria_valor_none_nao_usa_secundaria(self):
+        """Quando variável primária existe com valor None, não usa secundária."""
+        prompt = self._create_prompt("teste", modo_ativacao="deterministic")
+        self.db.commit()
+
+        regra_primaria = {
+            "type": "condition",
+            "variable": "autor_idoso",
+            "operator": "equals",
+            "value": True
+        }
+        regra_secundaria = {
+            "type": "condition",
+            "variable": "valor_causa",
+            "operator": "greater_than",
+            "value": 100000
+        }
+
+        # autor_idoso EXISTE mas é None
+        resultado = avaliar_ativacao_prompt(
+            prompt_id=prompt.id,
+            modo_ativacao="deterministic",
+            regra_deterministica=regra_primaria,
+            dados_extracao={"autor_idoso": None, "valor_causa": 200000},
+            db=self.db,
+            regra_secundaria=regra_secundaria,
+            fallback_habilitado=True
+        )
+
+        # Primária existe, então avalia primária (None != True -> False)
+        self.assertFalse(resultado["ativar"])
+        self.assertEqual(resultado.get("regra_usada"), "primaria")
+
+    def test_sem_regra_secundaria_com_fallback_habilitado(self):
+        """Quando fallback habilitado mas não há regra secundária."""
+        prompt = self._create_prompt("teste", modo_ativacao="deterministic")
+        self.db.commit()
+
+        regra_primaria = {
+            "type": "condition",
+            "variable": "autor_idoso",
+            "operator": "equals",
+            "value": True
+        }
+
+        resultado = avaliar_ativacao_prompt(
+            prompt_id=prompt.id,
+            modo_ativacao="deterministic",
+            regra_deterministica=regra_primaria,
+            dados_extracao={"valor_causa": 200000},  # autor_idoso não existe
+            db=self.db,
+            regra_secundaria=None,  # Sem secundária
+            fallback_habilitado=True
+        )
+
+        # Sem secundária, não pode decidir
+        self.assertIsNone(resultado["ativar"])
+        self.assertEqual(resultado.get("regra_usada"), "nenhuma")
 
 
 if __name__ == "__main__":

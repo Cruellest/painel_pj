@@ -1,66 +1,86 @@
 # admin/router_performance.py
 """
-Router para gerenciamento de logs de performance.
+Router para logs de performance MVP.
+
+Objetivo: identificar gargalos (LLM vs DB vs Parse)
+- Sem toggle (sempre ativo)
+- Todos usuarios geram logs
+- Apenas admin visualiza
 
 Endpoints:
-- GET/POST /admin/performance/toggle - Ativa/desativa logs
 - GET /admin/performance/logs - Lista logs
-- GET /admin/performance/summary - Resumo estatístico
+- GET /admin/performance/summary - Resumo com gargalos
 - DELETE /admin/performance/cleanup - Limpa logs antigos
+- CRUD /admin/performance/route-maps - Mapeamento rota -> sistema
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy import func, desc
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
 from database.connection import get_db
 from auth.dependencies import require_admin
 from auth.models import User
-
-from admin.services_performance import (
-    is_performance_logging_enabled,
-    get_enabled_admin_id,
-    set_performance_logging,
-    get_performance_logs,
-    get_performance_summary,
-    cleanup_old_logs,
-    cleanup_excess_logs
-)
+from admin.models_performance import PerformanceLog, RouteSystemMap
 
 router = APIRouter(prefix="/admin/performance", tags=["Performance Logs"])
 
 
 # ==================================================
-# SCHEMAS
+# HELPER: Calcular system_name baseado nos mapeamentos
 # ==================================================
 
-class ToggleRequest(BaseModel):
-    enabled: bool
+def get_system_name_for_route(route: str, mappings: List[RouteSystemMap]) -> str:
+    """
+    Retorna o nome do sistema para uma rota baseado nos mapeamentos.
+
+    Regras de prioridade:
+    1. Match exact sempre vence
+    2. Para prefix, o mais longo vence
+    3. Para regex, usa o campo priority
+    """
+    if not route or not mappings:
+        return "unknown"
+
+    best_match = None
+    best_score = -1
+
+    for mapping in mappings:
+        if not mapping.matches(route):
+            continue
+
+        # Calcula score para determinar prioridade
+        if mapping.match_type == 'exact':
+            # Exact match tem prioridade maxima
+            score = 1000000 + mapping.priority
+        elif mapping.match_type == 'prefix':
+            # Prefix mais longo tem prioridade maior
+            score = len(mapping.route_pattern) * 1000 + mapping.priority
+        elif mapping.match_type == 'regex':
+            # Regex usa apenas o campo priority
+            score = mapping.priority
+        else:
+            score = 0
+
+        if score > best_score:
+            best_score = score
+            best_match = mapping
+
+    return best_match.system_name if best_match else "unknown"
 
 
-class ToggleResponse(BaseModel):
-    enabled: bool
-    admin_id: Optional[int] = None
-    admin_username: Optional[str] = None
-    message: str
+def enrich_log_with_system(log_dict: dict, mappings: List[RouteSystemMap]) -> dict:
+    """Adiciona system_name ao dict do log."""
+    log_dict["system_name"] = get_system_name_for_route(log_dict.get("route", ""), mappings)
+    return log_dict
 
 
-class LogEntry(BaseModel):
-    id: int
-    created_at: str
-    admin_user_id: int
-    admin_username: Optional[str]
-    request_id: Optional[str]
-    method: str
-    route: str
-    layer: str
-    action: Optional[str]
-    duration_ms: float
-    status_code: Optional[int]
-    extra_info: Optional[str]
-
+# ==================================================
+# SCHEMAS
+# ==================================================
 
 class LogsResponse(BaseModel):
     logs: List[Dict[str, Any]]
@@ -72,8 +92,10 @@ class LogsResponse(BaseModel):
 class SummaryResponse(BaseModel):
     period_hours: int
     total_logs: int
-    layers: List[Dict[str, Any]]
-    slowest_routes: List[Dict[str, Any]]
+    bottleneck_summary: Dict[str, int]  # {LLM: 45, DB: 30, PARSE: 15, OUTRO: 10}
+    avg_times: Dict[str, float]  # {total: 500, llm: 300, db: 100, parse: 50}
+    slowest_by_bottleneck: Dict[str, List[Dict]]  # Top 3 por tipo
+    recent_errors: List[Dict[str, Any]]
 
 
 class CleanupResponse(BaseModel):
@@ -81,205 +103,108 @@ class CleanupResponse(BaseModel):
     message: str
 
 
+# Schemas para RouteSystemMap
+class RouteMapCreate(BaseModel):
+    route_pattern: str = Field(..., min_length=1, max_length=500)
+    system_name: str = Field(..., min_length=1, max_length=100)
+    match_type: str = Field(default='prefix', pattern='^(exact|prefix|regex)$')
+    priority: int = Field(default=0, ge=0, le=1000)
+
+
+class RouteMapUpdate(BaseModel):
+    route_pattern: Optional[str] = Field(None, min_length=1, max_length=500)
+    system_name: Optional[str] = Field(None, min_length=1, max_length=100)
+    match_type: Optional[str] = Field(None, pattern='^(exact|prefix|regex)$')
+    priority: Optional[int] = Field(None, ge=0, le=1000)
+
+
+class RouteMapResponse(BaseModel):
+    id: int
+    route_pattern: str
+    system_name: str
+    match_type: str
+    priority: int
+    created_at: Optional[str]
+    updated_at: Optional[str]
+
+
+class TopRoutesResponse(BaseModel):
+    routes: List[Dict[str, Any]]
+
+
 # ==================================================
 # ENDPOINTS
 # ==================================================
 
-@router.get("/toggle", response_model=ToggleResponse)
-async def get_toggle_status(
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    Retorna o status atual do toggle de logs de performance.
-    """
-    enabled = is_performance_logging_enabled(db)
-    admin_id = get_enabled_admin_id(db)
-
-    admin_username = None
-    if admin_id:
-        admin = db.query(User).filter(User.id == admin_id).first()
-        if admin:
-            admin_username = admin.username
-
-    return ToggleResponse(
-        enabled=enabled,
-        admin_id=admin_id,
-        admin_username=admin_username,
-        message="Logs de performance estão " + ("ativados" if enabled else "desativados")
-    )
-
-
-@router.post("/test-log")
-async def test_log_manually(
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    Endpoint de diagnóstico: testa se o log_performance funciona.
-    """
-    from admin.services_performance import log_performance, invalidate_cache
-
-    # Invalida cache para garantir leitura fresca
-    invalidate_cache()
-
-    # Tenta registrar um log manualmente
-    log_performance(
-        admin_user_id=current_user.id,
-        admin_username=current_user.username,
-        request_id="diag0001",
-        method="POST",
-        route="/admin/performance/test-log",
-        layer="controller",
-        action="diagnostic_test",
-        duration_ms=1.0,
-        status_code=200,
-        db=db
-    )
-
-    # Verifica se foi registrado
-    from admin.models_performance import PerformanceLog
-    count = db.query(PerformanceLog).filter(
-        PerformanceLog.request_id == "diag0001"
-    ).count()
-
-    return {
-        "success": count > 0,
-        "message": f"Log {'registrado' if count > 0 else 'NAO registrado'}",
-        "user_id": current_user.id,
-        "enabled": is_performance_logging_enabled(db),
-        "enabled_admin_id": get_enabled_admin_id(db)
-    }
-
-
-@router.get("/diag-middleware")
-async def diagnose_middleware(
-    request: Request,
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    Endpoint de diagnóstico: simula exatamente o que o middleware faz.
-    """
-    from admin.services_performance import invalidate_cache
-
-    # Invalida cache para leitura fresca
-    invalidate_cache()
-
-    result = {
-        "step_1_is_enabled": None,
-        "step_2_enabled_admin_id": None,
-        "step_3_auth_header": None,
-        "step_4_token_found": None,
-        "step_5_payload": None,
-        "step_6_user_id_from_token": None,
-        "step_7_role": None,
-        "step_8_should_log": None,
-        "expected_user_id": current_user.id
-    }
-
-    # Step 1: Check if enabled
-    result["step_1_is_enabled"] = is_performance_logging_enabled(db)
-
-    # Step 2: Get enabled admin id
-    result["step_2_enabled_admin_id"] = get_enabled_admin_id(db)
-
-    # Step 3: Get auth header
-    auth_header = request.headers.get("Authorization")
-    result["step_3_auth_header"] = auth_header[:50] if auth_header else None
-
-    # Step 4: Extract token
-    token = None
-    if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
-    else:
-        token = request.cookies.get("access_token")
-    result["step_4_token_found"] = token is not None
-
-    # Step 5: Decode token
-    if token:
-        try:
-            from auth.security import decode_token
-            payload = decode_token(token)
-            result["step_5_payload"] = {
-                "user_id": payload.get("user_id") if payload else None,
-                "sub": payload.get("sub") if payload else None,
-                "role": payload.get("role") if payload else None
-            } if payload else "DECODE_FAILED"
-
-            if payload:
-                result["step_6_user_id_from_token"] = payload.get("user_id")
-                result["step_7_role"] = payload.get("role")
-        except Exception as e:
-            result["step_5_payload"] = f"ERROR: {str(e)}"
-
-    # Step 8: Would middleware log?
-    if result["step_1_is_enabled"]:
-        if result["step_7_role"] == "admin":
-            if result["step_6_user_id_from_token"] == result["step_2_enabled_admin_id"]:
-                result["step_8_should_log"] = True
-            else:
-                result["step_8_should_log"] = f"NO: user_id mismatch ({result['step_6_user_id_from_token']} != {result['step_2_enabled_admin_id']})"
-        else:
-            result["step_8_should_log"] = f"NO: role is not admin ({result['step_7_role']})"
-    else:
-        result["step_8_should_log"] = "NO: logging not enabled"
-
-    return result
-
-
-@router.post("/toggle", response_model=ToggleResponse)
-async def set_toggle_status(
-    data: ToggleRequest,
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """
-    Ativa ou desativa logs de performance.
-
-    Quando ativado, apenas requisições do admin que ativou serão logadas.
-    """
-    success = set_performance_logging(data.enabled, current_user.id, db)
-
-    if not success:
-        raise HTTPException(status_code=500, detail="Erro ao alterar configuração")
-
-    return ToggleResponse(
-        enabled=data.enabled,
-        admin_id=current_user.id if data.enabled else None,
-        admin_username=current_user.username if data.enabled else None,
-        message=f"Logs de performance {'ativados' if data.enabled else 'desativados'} para {current_user.username}"
-    )
-
-
 @router.get("/logs", response_model=LogsResponse)
 async def list_logs(
     route: Optional[str] = Query(None, description="Filtrar por rota (parcial)"),
-    layer: Optional[str] = Query(None, description="Filtrar por camada"),
-    hours: int = Query(24, description="Logs das últimas X horas"),
-    limit: int = Query(100, ge=1, le=1000),
+    action: Optional[str] = Query(None, description="Filtrar por action"),
+    bottleneck: Optional[str] = Query(None, description="Filtrar por gargalo: LLM, DB, PARSE"),
+    status: Optional[str] = Query(None, description="Filtrar por status: ok, error"),
+    system: Optional[str] = Query(None, description="Filtrar por sistema (nome mapeado)"),
+    hours: int = Query(24, ge=1, le=168, description="Logs das ultimas X horas"),
+    limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     Lista logs de performance com filtros.
+
+    Filtros:
+    - route: Filtro parcial na rota
+    - action: Filtro exato na action
+    - bottleneck: LLM, DB, PARSE, OUTRO
+    - status: ok ou error
+    - system: Nome do sistema (baseado no mapeamento rota->sistema)
+    - hours: Periodo em horas
     """
     start_date = datetime.utcnow() - timedelta(hours=hours)
 
-    logs = get_performance_logs(
-        db=db,
-        admin_user_id=current_user.id,  # Só logs do próprio admin
-        route_filter=route,
-        layer_filter=layer,
-        start_date=start_date,
-        limit=limit,
-        offset=offset
+    # Carrega mapeamentos de rota->sistema
+    mappings = db.query(RouteSystemMap).all()
+
+    query = db.query(PerformanceLog).filter(
+        PerformanceLog.created_at >= start_date
     )
 
+    # Filtros
+    if route:
+        query = query.filter(PerformanceLog.route.contains(route))
+    if action:
+        query = query.filter(PerformanceLog.action == action)
+    if status:
+        query = query.filter(PerformanceLog.status == status)
+
+    # Ordena por data decrescente
+    query = query.order_by(desc(PerformanceLog.created_at))
+
+    # Executa query (busca mais para filtros calculados)
+    fetch_multiplier = 2 if (bottleneck or system) else 1
+    logs = query.offset(offset).limit(limit * fetch_multiplier).all()
+
+    # Converte para dict e aplica filtros calculados (bottleneck e system)
+    result = []
+    for log in logs:
+        log_dict = log.to_dict()
+        # Enriquece com system_name
+        log_dict = enrich_log_with_system(log_dict, mappings)
+
+        # Filtro de bottleneck (calculado)
+        if bottleneck and log_dict.get('bottleneck') != bottleneck:
+            continue
+        # Filtro de sistema (calculado)
+        if system and log_dict.get('system_name') != system:
+            continue
+
+        result.append(log_dict)
+        if len(result) >= limit:
+            break
+
     return LogsResponse(
-        logs=logs,
-        total=len(logs),
+        logs=result,
+        total=len(result),
         limit=limit,
         offset=offset
     )
@@ -287,45 +212,343 @@ async def list_logs(
 
 @router.get("/summary", response_model=SummaryResponse)
 async def get_summary(
-    hours: int = Query(24, description="Período em horas para análise"),
+    hours: int = Query(24, ge=1, le=168, description="Periodo em horas"),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
-    Retorna resumo estatístico dos logs de performance.
+    Retorna resumo estatistico focado em identificar gargalos.
 
     Inclui:
-    - Estatísticas por camada (avg, max, min)
-    - Rotas mais lentas
+    - Contagem por tipo de gargalo (LLM, DB, PARSE, OUTRO)
+    - Medias de tempo por componente
+    - Top 3 lentas por tipo de gargalo
+    - Erros recentes
     """
-    summary = get_performance_summary(db, hours)
-    return SummaryResponse(**summary)
+    start_date = datetime.utcnow() - timedelta(hours=hours)
+
+    # Total de logs
+    total_logs = db.query(func.count(PerformanceLog.id)).filter(
+        PerformanceLog.created_at >= start_date
+    ).scalar() or 0
+
+    # Medias de tempo
+    avg_query = db.query(
+        func.avg(PerformanceLog.total_ms).label('total'),
+        func.avg(PerformanceLog.llm_request_ms).label('llm'),
+        func.avg(PerformanceLog.db_total_ms).label('db'),
+        func.avg(PerformanceLog.json_parse_ms).label('parse'),
+    ).filter(
+        PerformanceLog.created_at >= start_date
+    ).first()
+
+    avg_times = {
+        'total': round(avg_query.total or 0, 1),
+        'llm': round(avg_query.llm or 0, 1),
+        'db': round(avg_query.db or 0, 1),
+        'parse': round(avg_query.parse or 0, 1),
+    }
+
+    # Busca logs para calcular bottleneck (campo calculado, nao pode filtrar direto)
+    logs = db.query(PerformanceLog).filter(
+        PerformanceLog.created_at >= start_date
+    ).order_by(desc(PerformanceLog.total_ms)).limit(500).all()
+
+    # Calcula distribuicao de bottleneck
+    bottleneck_counts = {'LLM': 0, 'DB': 0, 'PARSE': 0, 'OUTRO': 0, '-': 0}
+    slowest_by_type = {'LLM': [], 'DB': [], 'PARSE': [], 'OUTRO': []}
+
+    for log in logs:
+        bn = log._calc_bottleneck()
+        if bn in bottleneck_counts:
+            bottleneck_counts[bn] += 1
+
+        # Top 3 por tipo
+        if bn in slowest_by_type and len(slowest_by_type[bn]) < 3:
+            slowest_by_type[bn].append({
+                'route': log.route,
+                'action': log.action,
+                'total_ms': log.total_ms,
+                'llm_ms': log.llm_request_ms,
+                'db_ms': log.db_total_ms,
+                'parse_ms': log.json_parse_ms,
+            })
+
+    # Remove contagem de "-" (requests rapidas)
+    del bottleneck_counts['-']
+
+    # Erros recentes
+    errors = db.query(PerformanceLog).filter(
+        PerformanceLog.created_at >= start_date,
+        PerformanceLog.status == 'error'
+    ).order_by(desc(PerformanceLog.created_at)).limit(10).all()
+
+    recent_errors = [{
+        'route': e.route,
+        'action': e.action,
+        'error_type': e.error_type,
+        'error_message': e.error_message_short,
+        'created_at': e.created_at.isoformat() if e.created_at else None,
+    } for e in errors]
+
+    return SummaryResponse(
+        period_hours=hours,
+        total_logs=total_logs,
+        bottleneck_summary=bottleneck_counts,
+        avg_times=avg_times,
+        slowest_by_bottleneck=slowest_by_type,
+        recent_errors=recent_errors
+    )
+
+
+@router.get("/actions")
+async def list_actions(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todas as actions disponiveis para filtro.
+    """
+    result = db.query(PerformanceLog.action).distinct().filter(
+        PerformanceLog.action.isnot(None)
+    ).all()
+
+    return {"actions": [r[0] for r in result if r[0]]}
 
 
 @router.delete("/cleanup", response_model=CleanupResponse)
 async def cleanup_logs(
     days: int = Query(7, ge=1, le=30, description="Remover logs mais antigos que X dias"),
-    max_logs: Optional[int] = Query(None, ge=100, le=100000, description="Manter apenas X logs mais recentes"),
+    max_logs: Optional[int] = Query(10000, ge=100, le=50000, description="Manter apenas X logs mais recentes"),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     Limpa logs antigos ou excedentes.
 
-    Opções:
-    - days: Remove logs mais antigos que X dias (padrão: 7)
-    - max_logs: Se especificado, mantém apenas os X mais recentes
+    Padrao: mantem ultimos 7 dias e maximo 10.000 logs.
     """
     deleted = 0
+    cutoff_date = datetime.utcnow() - timedelta(days=days)
 
     # Limpeza por idade
-    deleted += cleanup_old_logs(db, days)
+    deleted += db.query(PerformanceLog).filter(
+        PerformanceLog.created_at < cutoff_date
+    ).delete(synchronize_session=False)
+
+    db.commit()
 
     # Limpeza por quantidade
     if max_logs:
-        deleted += cleanup_excess_logs(db, max_logs)
+        total = db.query(func.count(PerformanceLog.id)).scalar() or 0
+        if total > max_logs:
+            # Encontra ID de corte
+            cutoff_log = db.query(PerformanceLog.id).order_by(
+                desc(PerformanceLog.created_at)
+            ).offset(max_logs).first()
+
+            if cutoff_log:
+                excess_deleted = db.query(PerformanceLog).filter(
+                    PerformanceLog.id < cutoff_log[0]
+                ).delete(synchronize_session=False)
+                deleted += excess_deleted
+                db.commit()
 
     return CleanupResponse(
         deleted_count=deleted,
         message=f"{deleted} logs removidos"
     )
+
+
+# ==================================================
+# ROUTE SYSTEM MAP - CRUD
+# ==================================================
+
+@router.get("/route-maps")
+async def list_route_maps(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todos os mapeamentos de rota -> sistema.
+    """
+    mappings = db.query(RouteSystemMap).order_by(
+        desc(RouteSystemMap.priority),
+        RouteSystemMap.route_pattern
+    ).all()
+
+    return {"mappings": [m.to_dict() for m in mappings]}
+
+
+@router.post("/route-maps", response_model=RouteMapResponse)
+async def create_route_map(
+    data: RouteMapCreate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Cria um novo mapeamento de rota -> sistema.
+    """
+    # Verifica se ja existe
+    existing = db.query(RouteSystemMap).filter(
+        RouteSystemMap.route_pattern == data.route_pattern
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Ja existe mapeamento para '{data.route_pattern}'"
+        )
+
+    # Valida regex se for o tipo
+    if data.match_type == 'regex':
+        import re
+        try:
+            re.compile(data.route_pattern)
+        except re.error as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Regex invalida: {str(e)}"
+            )
+
+    mapping = RouteSystemMap(
+        route_pattern=data.route_pattern,
+        system_name=data.system_name,
+        match_type=data.match_type,
+        priority=data.priority
+    )
+    db.add(mapping)
+    db.commit()
+    db.refresh(mapping)
+
+    return mapping.to_dict()
+
+
+@router.put("/route-maps/{map_id}", response_model=RouteMapResponse)
+async def update_route_map(
+    map_id: int,
+    data: RouteMapUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Atualiza um mapeamento existente.
+    """
+    mapping = db.query(RouteSystemMap).filter(RouteSystemMap.id == map_id).first()
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Mapeamento nao encontrado")
+
+    # Verifica duplicidade de route_pattern se estiver alterando
+    if data.route_pattern and data.route_pattern != mapping.route_pattern:
+        existing = db.query(RouteSystemMap).filter(
+            RouteSystemMap.route_pattern == data.route_pattern,
+            RouteSystemMap.id != map_id
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Ja existe mapeamento para '{data.route_pattern}'"
+            )
+
+    # Valida regex se for alterado para regex
+    new_match_type = data.match_type or mapping.match_type
+    new_pattern = data.route_pattern or mapping.route_pattern
+    if new_match_type == 'regex':
+        import re
+        try:
+            re.compile(new_pattern)
+        except re.error as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Regex invalida: {str(e)}"
+            )
+
+    # Atualiza campos
+    if data.route_pattern is not None:
+        mapping.route_pattern = data.route_pattern
+    if data.system_name is not None:
+        mapping.system_name = data.system_name
+    if data.match_type is not None:
+        mapping.match_type = data.match_type
+    if data.priority is not None:
+        mapping.priority = data.priority
+
+    db.commit()
+    db.refresh(mapping)
+
+    return mapping.to_dict()
+
+
+@router.delete("/route-maps/{map_id}")
+async def delete_route_map(
+    map_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Remove um mapeamento.
+    """
+    mapping = db.query(RouteSystemMap).filter(RouteSystemMap.id == map_id).first()
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Mapeamento nao encontrado")
+
+    db.delete(mapping)
+    db.commit()
+
+    return {"message": "Mapeamento removido", "id": map_id}
+
+
+@router.get("/top-routes", response_model=TopRoutesResponse)
+async def get_top_routes(
+    hours: int = Query(24, ge=1, le=168, description="Periodo em horas"),
+    limit: int = Query(20, ge=1, le=100, description="Quantidade de rotas"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista as rotas mais frequentes com contagem.
+
+    Util para identificar rotas que precisam de mapeamento.
+    """
+    start_date = datetime.utcnow() - timedelta(hours=hours)
+
+    # Carrega mapeamentos existentes
+    mappings = db.query(RouteSystemMap).all()
+
+    # Agrupa por rota
+    routes = db.query(
+        PerformanceLog.route,
+        func.count(PerformanceLog.id).label('count')
+    ).filter(
+        PerformanceLog.created_at >= start_date
+    ).group_by(
+        PerformanceLog.route
+    ).order_by(
+        desc('count')
+    ).limit(limit).all()
+
+    result = []
+    for route, count in routes:
+        system_name = get_system_name_for_route(route, mappings)
+        result.append({
+            "route": route,
+            "count": count,
+            "system_name": system_name,
+            "has_mapping": system_name != "unknown"
+        })
+
+    return TopRoutesResponse(routes=result)
+
+
+@router.get("/systems")
+async def list_systems(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todos os nomes de sistema disponiveis para filtro.
+    """
+    mappings = db.query(RouteSystemMap.system_name).distinct().all()
+    systems = [m[0] for m in mappings if m[0]]
+    # Adiciona 'unknown' para filtrar logs sem mapeamento
+    systems.append("unknown")
+    return {"systems": sorted(set(systems))}

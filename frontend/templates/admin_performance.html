@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Logs de Performance - Portal PGE-MS</title>
+    <title>Performance & Logs - Portal PGE-MS</title>
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
@@ -26,6 +26,14 @@
             }
         }
     </script>
+    <style>
+        .tab-active {
+            border-bottom: 3px solid #0ea5e9;
+            color: #0ea5e9;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
 </head>
 <body class="min-h-screen bg-gray-50">
 
@@ -41,144 +49,259 @@
                         <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
                     </a>
                     <div class="border-l border-gray-300 pl-4">
-                        <h1 class="font-semibold text-gray-800">Logs de Performance</h1>
-                        <p class="text-xs text-gray-500">Diagnostico de latencia e chamadas de IA</p>
+                        <h1 class="font-semibold text-gray-800">Performance & Logs</h1>
+                        <p class="text-xs text-gray-500">Monitoramento de sistema e IA</p>
                     </div>
                 </div>
-
                 <div class="flex items-center gap-4">
+                    <span class="text-xs text-green-600 flex items-center gap-1">
+                        <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                        Sempre ativo
+                    </span>
                     <a href="/dashboard" class="text-gray-500 hover:text-gray-700 transition-colors">
-                        <i class="fas fa-arrow-left"></i> Voltar ao Dashboard
+                        <i class="fas fa-arrow-left"></i> Voltar
                     </a>
                 </div>
             </div>
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <!-- Abas de Navegacao -->
-        <div class="bg-white rounded-lg shadow-md mb-6">
-            <div class="border-b">
-                <nav class="flex -mb-px">
-                    <button onclick="switchTab('http')" id="tab-http"
-                        class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600">
-                        <i class="fas fa-server mr-2"></i>Performance HTTP
-                    </button>
-                    <button onclick="switchTab('gemini')" id="tab-gemini"
-                        class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
-                        <i class="fas fa-robot mr-2"></i>Chamadas Gemini
-                    </button>
-                </nav>
-            </div>
+    <!-- Tabs Navigation -->
+    <div class="bg-white border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav class="flex gap-8">
+                <button onclick="switchTab('sistema')" id="tab-sistema"
+                    class="py-4 px-1 font-medium text-gray-700 hover:text-primary-600 tab-active transition-colors">
+                    <i class="fas fa-server mr-2"></i>Performance Sistema
+                </button>
+                <button onclick="switchTab('gemini')" id="tab-gemini"
+                    class="py-4 px-1 font-medium text-gray-500 hover:text-primary-600 transition-colors">
+                    <i class="fas fa-robot mr-2"></i>Logs Gemini API
+                </button>
+            </nav>
         </div>
+    </div>
 
-        <!-- ========================================== -->
-        <!-- TAB: Performance HTTP                      -->
-        <!-- ========================================== -->
-        <div id="content-http" class="tab-content">
-            <!-- Toggle de Ativacao -->
-            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h2 class="text-lg font-semibold text-gray-800">Coleta de Logs HTTP</h2>
-                        <p class="text-gray-600 text-sm mt-1">
-                            Quando ativado, registra tempos de resposta de todas as requisicoes do admin logado.
-                        </p>
-                    </div>
-                    <div class="flex items-center gap-4">
-                        <div id="statusIndicator" class="flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full bg-gray-400"></span>
-                            <span class="text-sm text-gray-600">Carregando...</span>
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- ================================================== -->
+        <!-- TAB: PERFORMANCE SISTEMA -->
+        <!-- ================================================== -->
+        <div id="content-sistema" class="tab-content active">
+
+            <!-- Cards de Gargalo -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div id="card-llm" class="bg-white rounded-lg shadow-md p-4 border-l-4 border-purple-500 cursor-pointer hover:bg-purple-50" onclick="filterByBottleneck('LLM')">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Gargalo LLM</h3>
+                            <p id="count-llm" class="text-2xl font-bold text-purple-600">-</p>
                         </div>
-                        <button id="toggleBtn" onclick="togglePerformanceLogs()" disabled
-                            class="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 transition-colors">
-                            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1"></span>
-                        </button>
+                        <i class="fas fa-robot text-2xl text-purple-300"></i>
+                    </div>
+                    <p id="avg-llm" class="text-xs text-gray-500 mt-1">avg: - ms</p>
+                </div>
+                <div id="card-db" class="bg-white rounded-lg shadow-md p-4 border-l-4 border-yellow-500 cursor-pointer hover:bg-yellow-50" onclick="filterByBottleneck('DB')">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Gargalo DB</h3>
+                            <p id="count-db" class="text-2xl font-bold text-yellow-600">-</p>
+                        </div>
+                        <i class="fas fa-database text-2xl text-yellow-300"></i>
+                    </div>
+                    <p id="avg-db" class="text-xs text-gray-500 mt-1">avg: - ms</p>
+                </div>
+                <div id="card-parse" class="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500 cursor-pointer hover:bg-blue-50" onclick="filterByBottleneck('PARSE')">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Gargalo Parse</h3>
+                            <p id="count-parse" class="text-2xl font-bold text-blue-600">-</p>
+                        </div>
+                        <i class="fas fa-code text-2xl text-blue-300"></i>
+                    </div>
+                    <p id="avg-parse" class="text-xs text-gray-500 mt-1">avg: - ms</p>
+                </div>
+                <div id="card-outro" class="bg-white rounded-lg shadow-md p-4 border-l-4 border-gray-400 cursor-pointer hover:bg-gray-100" onclick="filterByBottleneck('OUTRO')">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Outro</h3>
+                            <p id="count-outro" class="text-2xl font-bold text-gray-600">-</p>
+                        </div>
+                        <i class="fas fa-question text-2xl text-gray-300"></i>
+                    </div>
+                    <p id="avg-total" class="text-xs text-gray-500 mt-1">total avg: - ms</p>
+                </div>
+            </div>
+
+            <!-- Grafico de Pizza e Top Lentas -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-4">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Distribuicao de Gargalos</h3>
+                    <canvas id="chartBottleneck" height="200"></canvas>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-4 lg:col-span-2">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Top 3 Mais Lentas por Gargalo</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <h4 class="text-sm font-medium text-purple-600 mb-2"><i class="fas fa-robot mr-1"></i>LLM</h4>
+                            <div id="top-llm" class="space-y-1 text-xs"></div>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-medium text-yellow-600 mb-2"><i class="fas fa-database mr-1"></i>DB</h4>
+                            <div id="top-db" class="space-y-1 text-xs"></div>
+                        </div>
+                        <div>
+                            <h4 class="text-sm font-medium text-blue-600 mb-2"><i class="fas fa-code mr-1"></i>Parse</h4>
+                            <div id="top-parse" class="space-y-1 text-xs"></div>
+                        </div>
                     </div>
                 </div>
-                <div id="activeInfo" class="mt-4 p-3 bg-blue-50 rounded-lg hidden">
-                    <p class="text-sm text-blue-800">
-                        <span class="font-medium">Ativo para:</span>
-                        <span id="activeUser">-</span>
-                    </p>
-                </div>
             </div>
 
-            <!-- Estatisticas HTTP -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-sm font-medium text-gray-500">Total de Logs</h3>
-                    <p id="totalLogs" class="text-2xl font-bold text-gray-800 mt-1">-</p>
-                </div>
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-sm font-medium text-gray-500">Tempo Medio (middleware)</h3>
-                    <p id="avgTime" class="text-2xl font-bold text-gray-800 mt-1">-</p>
-                </div>
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-sm font-medium text-gray-500">Rota Mais Lenta</h3>
-                    <p id="slowestRoute" class="text-lg font-bold text-gray-800 mt-1 truncate">-</p>
-                </div>
-            </div>
-
-            <!-- Filtros HTTP -->
+            <!-- Mapeamento de Rotas para Sistemas -->
             <div class="bg-white rounded-lg shadow-md p-4 mb-6">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-800">
+                        <i class="fas fa-route mr-2 text-indigo-500"></i>Mapeamento Rota → Sistema
+                    </h3>
+                    <button onclick="toggleRouteMapSection()" id="btnToggleRouteMap" class="text-sm text-indigo-600 hover:text-indigo-800">
+                        <i class="fas fa-chevron-down mr-1"></i>Expandir
+                    </button>
+                </div>
+                <div id="routeMapSection" class="hidden">
+                    <!-- Formulario de novo mapeamento -->
+                    <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                        <h4 class="text-sm font-medium text-gray-700 mb-3">Novo Mapeamento</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                            <div class="md:col-span-2">
+                                <input type="text" id="newRoutePattern" placeholder="Padrao da rota (ex: /api/gerador-pecas)"
+                                    class="w-full px-3 py-2 border rounded-lg text-sm">
+                            </div>
+                            <div>
+                                <input type="text" id="newSystemName" placeholder="Nome do Sistema"
+                                    class="w-full px-3 py-2 border rounded-lg text-sm">
+                            </div>
+                            <div>
+                                <select id="newMatchType" class="w-full px-3 py-2 border rounded-lg text-sm">
+                                    <option value="prefix">Prefixo</option>
+                                    <option value="exact">Exato</option>
+                                    <option value="regex">Regex</option>
+                                </select>
+                            </div>
+                            <div>
+                                <button onclick="createRouteMap()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm">
+                                    <i class="fas fa-plus mr-1"></i>Adicionar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Grid: Mapeamentos existentes + Rotas frequentes -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <!-- Mapeamentos existentes -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">Mapeamentos Cadastrados</h4>
+                            <div id="routeMappingsList" class="space-y-2 max-h-64 overflow-y-auto">
+                                <p class="text-gray-400 text-sm">Carregando...</p>
+                            </div>
+                        </div>
+
+                        <!-- Rotas mais frequentes sem mapeamento -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">Rotas Frequentes (sem mapeamento)</h4>
+                            <div id="topRoutesList" class="space-y-2 max-h-64 overflow-y-auto">
+                                <p class="text-gray-400 text-sm">Carregando...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filtros Sistema -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-7 gap-4">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Filtrar por Rota</label>
-                        <input type="text" id="routeFilter" placeholder="/admin/api/..."
-                            class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Sistema</label>
+                        <select id="filterSystem" class="w-full px-3 py-2 border rounded-lg text-sm">
+                            <option value="">Todos</option>
+                        </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Camada</label>
-                        <select id="layerFilter" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Rota</label>
+                        <input type="text" id="filterRoute" placeholder="/api/..."
+                            class="w-full px-3 py-2 border rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Action</label>
+                        <select id="filterAction" class="w-full px-3 py-2 border rounded-lg text-sm">
                             <option value="">Todas</option>
-                            <option value="middleware">Middleware (Total)</option>
-                            <option value="controller">Controller</option>
-                            <option value="service">Service</option>
-                            <option value="db">Banco de Dados</option>
-                            <option value="io">I/O Filesystem</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Gargalo</label>
+                        <select id="filterBottleneck" class="w-full px-3 py-2 border rounded-lg text-sm">
+                            <option value="">Todos</option>
+                            <option value="LLM">LLM</option>
+                            <option value="DB">DB</option>
+                            <option value="PARSE">Parse</option>
+                            <option value="OUTRO">Outro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select id="filterStatus" class="w-full px-3 py-2 border rounded-lg text-sm">
+                            <option value="">Todos</option>
+                            <option value="ok">OK</option>
+                            <option value="error">Erro</option>
                         </select>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Periodo</label>
-                        <select id="hoursFilter" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
-                            <option value="1">Ultima hora</option>
-                            <option value="6">Ultimas 6 horas</option>
-                            <option value="24" selected>Ultimas 24 horas</option>
-                            <option value="72">Ultimos 3 dias</option>
+                        <select id="filterHours" class="w-full px-3 py-2 border rounded-lg text-sm">
+                            <option value="1">1 hora</option>
+                            <option value="6">6 horas</option>
+                            <option value="24" selected>24 horas</option>
+                            <option value="72">3 dias</option>
                         </select>
                     </div>
-                    <div class="flex items-end">
-                        <button onclick="loadLogs()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                    <div class="flex items-end gap-2">
+                        <button onclick="loadSystemLogs()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
                             Filtrar
+                        </button>
+                        <button onclick="clearSystemFilters()" class="px-3 py-2 border rounded-lg text-sm hover:bg-gray-100">
+                            <i class="fas fa-times"></i>
                         </button>
                     </div>
                 </div>
             </div>
 
-            <!-- Tabela de Logs HTTP -->
+            <!-- Tabela de Logs Sistema -->
             <div class="bg-white rounded-lg shadow-md overflow-hidden">
                 <div class="p-4 border-b flex justify-between items-center">
-                    <h2 class="text-lg font-semibold text-gray-800">Logs Recentes</h2>
-                    <button onclick="cleanupLogs()" class="text-sm text-red-600 hover:text-red-800">
-                        Limpar logs antigos
+                    <h2 class="text-lg font-semibold text-gray-800">Logs de Performance</h2>
+                    <button onclick="cleanupSystemLogs()" class="text-sm text-red-600 hover:text-red-800">
+                        <i class="fas fa-trash mr-1"></i>Limpar antigos
                     </button>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rota</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Camada</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Acao</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duracao</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sistema</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rota</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">LLM</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">DB</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Parse</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Gargalo</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                             </tr>
                         </thead>
                         <tbody id="logsTable" class="bg-white divide-y divide-gray-200">
                             <tr>
-                                <td colspan="6" class="px-4 py-8 text-center text-gray-500">
+                                <td colspan="10" class="px-4 py-8 text-center text-gray-500">
                                     Carregando logs...
                                 </td>
                             </tr>
@@ -187,50 +310,115 @@
                 </div>
             </div>
 
-            <!-- Resumo por Camada -->
-            <div class="bg-white rounded-lg shadow-md p-6 mt-6">
-                <h2 class="text-lg font-semibold text-gray-800 mb-4">Resumo por Camada</h2>
-                <div id="layerSummary" class="grid grid-cols-1 md:grid-cols-5 gap-4">
-                    <div class="text-center text-gray-500">Carregando...</div>
+            <!-- Erros Recentes Sistema -->
+            <div class="bg-white rounded-lg shadow-md p-4 mt-6">
+                <h3 class="text-lg font-semibold text-red-600 mb-4"><i class="fas fa-exclamation-triangle mr-2"></i>Erros Recentes</h3>
+                <div id="recentErrors" class="space-y-2">
+                    <p class="text-gray-500 text-sm">Carregando...</p>
                 </div>
             </div>
         </div>
 
-        <!-- ========================================== -->
-        <!-- TAB: Chamadas Gemini                       -->
-        <!-- ========================================== -->
-        <div id="content-gemini" class="tab-content hidden">
-            <!-- Cards de Estatisticas Gemini -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-sm font-medium text-gray-500">Total de Chamadas</h3>
-                    <p id="geminiTotalCalls" class="text-2xl font-bold text-gray-800 mt-1">-</p>
+        <!-- ================================================== -->
+        <!-- TAB: LOGS GEMINI API -->
+        <!-- ================================================== -->
+        <div id="content-gemini" class="tab-content">
+
+            <!-- Cards Gemini - Linha 1: Principais -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-green-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Total Chamadas</h3>
+                            <p id="gemini-total" class="text-2xl font-bold text-green-600">-</p>
+                        </div>
+                        <i class="fas fa-phone text-2xl text-green-300"></i>
+                    </div>
+                    <p class="text-xs mt-1">
+                        <span id="gemini-success-count" class="text-green-600">-</span> ok /
+                        <span id="gemini-error-count" class="text-red-600">-</span> erro
+                    </p>
                 </div>
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-sm font-medium text-gray-500">Latencia Media</h3>
-                    <p id="geminiAvgLatency" class="text-2xl font-bold text-gray-800 mt-1">-</p>
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Latencia Media</h3>
+                            <p id="gemini-avg-latency" class="text-2xl font-bold text-blue-600">-</p>
+                        </div>
+                        <i class="fas fa-clock text-2xl text-blue-300"></i>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">
+                        min: <span id="gemini-min-latency">-</span> / max: <span id="gemini-max-latency">-</span>
+                    </p>
                 </div>
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-sm font-medium text-gray-500">Taxa de Sucesso</h3>
-                    <p id="geminiSuccessRate" class="text-2xl font-bold text-green-600 mt-1">-</p>
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-purple-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Tokens Prompt</h3>
+                            <p id="gemini-tokens-prompt" class="text-2xl font-bold text-purple-600">-</p>
+                        </div>
+                        <i class="fas fa-arrow-right text-2xl text-purple-300"></i>
+                    </div>
+                    <p id="gemini-tokens-response" class="text-xs text-gray-500 mt-1">response: -</p>
                 </div>
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-sm font-medium text-gray-500">Cache Hits</h3>
-                    <p id="geminiCacheRate" class="text-2xl font-bold text-blue-600 mt-1">-</p>
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-teal-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Taxa Sucesso</h3>
+                            <p id="gemini-success-rate" class="text-2xl font-bold text-teal-600">-</p>
+                        </div>
+                        <i class="fas fa-check-circle text-2xl text-teal-300"></i>
+                    </div>
+                    <p id="gemini-retries" class="text-xs text-gray-500 mt-1">retries: -</p>
+                </div>
+            </div>
+
+            <!-- Cards Gemini - Linha 2: Timing e Features -->
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-3 border-l-4 border-indigo-400">
+                    <h3 class="text-xs font-medium text-gray-500">TTFT Medio</h3>
+                    <p id="gemini-ttft" class="text-lg font-bold text-indigo-600">-</p>
+                    <p class="text-xs text-gray-400">Time to First Token</p>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-3 border-l-4 border-pink-400">
+                    <h3 class="text-xs font-medium text-gray-500">Geracao</h3>
+                    <p id="gemini-generation" class="text-lg font-bold text-pink-600">-</p>
+                    <p class="text-xs text-gray-400">Tempo gerando</p>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-3 border-l-4 border-orange-400">
+                    <h3 class="text-xs font-medium text-gray-500">Cache Hits</h3>
+                    <p id="gemini-cache" class="text-lg font-bold text-orange-600">-</p>
+                    <p id="gemini-cache-rate" class="text-xs text-gray-400">taxa: -</p>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-3 border-l-4 border-cyan-400">
+                    <h3 class="text-xs font-medium text-gray-500">Com Imagens</h3>
+                    <p id="gemini-images" class="text-lg font-bold text-cyan-600">-</p>
+                    <p class="text-xs text-gray-400">chamadas</p>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-3 border-l-4 border-amber-400">
+                    <h3 class="text-xs font-medium text-gray-500">Com Search</h3>
+                    <p id="gemini-search" class="text-lg font-bold text-amber-600">-</p>
+                    <p class="text-xs text-gray-400">grounding</p>
                 </div>
             </div>
 
             <!-- Graficos Gemini -->
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-                <!-- Grafico por Sistema -->
                 <div class="bg-white rounded-lg shadow-md p-4">
                     <h3 class="text-lg font-semibold text-gray-800 mb-4">Chamadas por Sistema</h3>
-                    <canvas id="chartBySistema" height="200"></canvas>
+                    <canvas id="chartGeminiSistema" height="200"></canvas>
                 </div>
-                <!-- Grafico por Modelo -->
                 <div class="bg-white rounded-lg shadow-md p-4">
                     <h3 class="text-lg font-semibold text-gray-800 mb-4">Chamadas por Modelo</h3>
-                    <canvas id="chartByModel" height="200"></canvas>
+                    <canvas id="chartGeminiModelo" height="200"></canvas>
+                </div>
+            </div>
+
+            <!-- Chamadas Mais Lentas -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Chamadas Mais Lentas</h3>
+                <div id="gemini-slowest" class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                    <p class="text-gray-500 text-sm">Carregando...</p>
                 </div>
             </div>
 
@@ -239,37 +427,40 @@
                 <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Sistema</label>
-                        <select id="geminiSistemaFilter" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <select id="geminiFilterSistema" class="w-full px-3 py-2 border rounded-lg text-sm">
                             <option value="">Todos</option>
                         </select>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Modelo</label>
-                        <select id="geminiModelFilter" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <select id="geminiFilterModelo" class="w-full px-3 py-2 border rounded-lg text-sm">
                             <option value="">Todos</option>
                         </select>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                        <select id="geminiSuccessFilter" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <select id="geminiFilterSuccess" class="w-full px-3 py-2 border rounded-lg text-sm">
                             <option value="">Todos</option>
                             <option value="true">Sucesso</option>
-                            <option value="false">Erro</option>
+                            <option value="false">Falha</option>
                         </select>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Periodo</label>
-                        <select id="geminiHoursFilter" class="w-full px-3 py-2 border rounded-lg text-sm">
-                            <option value="1">Ultima hora</option>
-                            <option value="6">Ultimas 6 horas</option>
-                            <option value="24" selected>Ultimas 24 horas</option>
-                            <option value="72">Ultimos 3 dias</option>
-                            <option value="168">Ultima semana</option>
+                        <select id="geminiFilterHours" class="w-full px-3 py-2 border rounded-lg text-sm">
+                            <option value="1">1 hora</option>
+                            <option value="6">6 horas</option>
+                            <option value="24" selected>24 horas</option>
+                            <option value="72">3 dias</option>
+                            <option value="168">7 dias</option>
                         </select>
                     </div>
-                    <div class="flex items-end">
-                        <button onclick="loadGeminiLogs()" class="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm">
+                    <div class="flex items-end gap-2">
+                        <button onclick="loadGeminiLogs()" class="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
                             Filtrar
+                        </button>
+                        <button onclick="clearGeminiFilters()" class="px-3 py-2 border rounded-lg text-sm hover:bg-gray-100">
+                            <i class="fas fa-times"></i>
                         </button>
                     </div>
                 </div>
@@ -278,27 +469,29 @@
             <!-- Tabela de Logs Gemini -->
             <div class="bg-white rounded-lg shadow-md overflow-hidden">
                 <div class="p-4 border-b flex justify-between items-center">
-                    <h2 class="text-lg font-semibold text-gray-800">Chamadas Recentes</h2>
+                    <h2 class="text-lg font-semibold text-gray-800">Logs de Chamadas Gemini</h2>
                     <button onclick="cleanupGeminiLogs()" class="text-sm text-red-600 hover:text-red-800">
-                        Limpar logs antigos
+                        <i class="fas fa-trash mr-1"></i>Limpar antigos
                     </button>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sistema</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Modelo</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prompt</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tokens</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Latencia</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sistema</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Modelo</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tokens</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Latencia</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">TTFT</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cache</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Usuario</th>
                             </tr>
                         </thead>
                         <tbody id="geminiLogsTable" class="bg-white divide-y divide-gray-200">
                             <tr>
-                                <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                                <td colspan="9" class="px-4 py-8 text-center text-gray-500">
                                     Carregando logs...
                                 </td>
                             </tr>
@@ -307,19 +500,11 @@
                 </div>
             </div>
 
-            <!-- Chamadas mais lentas e Erros recentes -->
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Chamadas Mais Lentas</h3>
-                    <div id="slowestCalls" class="space-y-2">
-                        <p class="text-gray-500 text-sm">Carregando...</p>
-                    </div>
-                </div>
-                <div class="bg-white rounded-lg shadow-md p-4">
-                    <h3 class="text-lg font-semibold text-red-600 mb-4">Erros Recentes</h3>
-                    <div id="recentErrors" class="space-y-2">
-                        <p class="text-gray-500 text-sm">Carregando...</p>
-                    </div>
+            <!-- Erros Recentes Gemini -->
+            <div class="bg-white rounded-lg shadow-md p-4 mt-6">
+                <h3 class="text-lg font-semibold text-red-600 mb-4"><i class="fas fa-exclamation-triangle mr-2"></i>Erros Gemini Recentes</h3>
+                <div id="geminiRecentErrors" class="space-y-2">
+                    <p class="text-gray-500 text-sm">Carregando...</p>
                 </div>
             </div>
         </div>
@@ -327,126 +512,150 @@
 
     <script>
     const token = localStorage.getItem('token');
-    let isEnabled = false;
-    let chartBySistema = null;
-    let chartByModel = null;
+    let chartBottleneck = null;
+    let chartGeminiSistema = null;
+    let chartGeminiModelo = null;
 
     // ========================================
-    // FUNCOES DE NAVEGACAO
+    // TAB SWITCHING
     // ========================================
-
-    function switchTab(tab) {
-        // Atualiza classes das abas
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.classList.remove('border-blue-500', 'text-blue-600');
-            btn.classList.add('border-transparent', 'text-gray-500');
+    function switchTab(tabName) {
+        // Update tab buttons
+        document.querySelectorAll('[id^="tab-"]').forEach(tab => {
+            tab.classList.remove('tab-active', 'text-gray-700');
+            tab.classList.add('text-gray-500');
         });
-        document.getElementById(`tab-${tab}`).classList.remove('border-transparent', 'text-gray-500');
-        document.getElementById(`tab-${tab}`).classList.add('border-blue-500', 'text-blue-600');
+        document.getElementById(`tab-${tabName}`).classList.add('tab-active', 'text-gray-700');
+        document.getElementById(`tab-${tabName}`).classList.remove('text-gray-500');
 
-        // Mostra/oculta conteudo
+        // Update content
         document.querySelectorAll('.tab-content').forEach(content => {
-            content.classList.add('hidden');
+            content.classList.remove('active');
         });
-        document.getElementById(`content-${tab}`).classList.remove('hidden');
+        document.getElementById(`content-${tabName}`).classList.add('active');
 
-        // Carrega dados da aba se necessario
-        if (tab === 'gemini') {
+        // Load data for selected tab
+        if (tabName === 'sistema') {
+            loadSystemSummary();
+            loadSystemLogs();
+        } else {
             loadGeminiSummary();
             loadGeminiLogs();
-            loadGeminiFilters();
         }
     }
 
     // ========================================
-    // FUNCOES HTTP (Existentes)
+    // SISTEMA - PERFORMANCE LOGS
     // ========================================
 
-    async function loadToggleStatus() {
+    async function loadSystemSummary() {
+        const hours = document.getElementById('filterHours').value;
         try {
-            const response = await fetch('/admin/performance/toggle', {
+            const response = await fetch(`/admin/performance/summary?hours=${hours}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
 
-            isEnabled = data.enabled;
-            updateToggleUI(data);
+            // Atualiza cards
+            document.getElementById('count-llm').textContent = data.bottleneck_summary.LLM || 0;
+            document.getElementById('count-db').textContent = data.bottleneck_summary.DB || 0;
+            document.getElementById('count-parse').textContent = data.bottleneck_summary.PARSE || 0;
+            document.getElementById('count-outro').textContent = data.bottleneck_summary.OUTRO || 0;
+
+            document.getElementById('avg-llm').textContent = `avg: ${data.avg_times.llm} ms`;
+            document.getElementById('avg-db').textContent = `avg: ${data.avg_times.db} ms`;
+            document.getElementById('avg-parse').textContent = `avg: ${data.avg_times.parse} ms`;
+            document.getElementById('avg-total').textContent = `total avg: ${data.avg_times.total} ms`;
+
+            // Grafico
+            renderBottleneckChart(data.bottleneck_summary);
+
+            // Top lentas
+            renderTopSlowest(data.slowest_by_bottleneck);
+
+            // Erros
+            renderSystemErrors(data.recent_errors);
+
         } catch (error) {
-            console.error('Erro ao carregar status:', error);
+            console.error('Erro ao carregar resumo sistema:', error);
         }
     }
 
-    function updateToggleUI(data) {
-        const btn = document.getElementById('toggleBtn');
-        const indicator = document.getElementById('statusIndicator');
-        const activeInfo = document.getElementById('activeInfo');
-        const activeUser = document.getElementById('activeUser');
+    function renderBottleneckChart(bottleneck_summary) {
+        const ctx = document.getElementById('chartBottleneck').getContext('2d');
+        if (chartBottleneck) chartBottleneck.destroy();
 
-        btn.disabled = false;
-
-        if (data.enabled) {
-            btn.classList.remove('bg-gray-300');
-            btn.classList.add('bg-green-500');
-            btn.querySelector('span').classList.remove('translate-x-1');
-            btn.querySelector('span').classList.add('translate-x-6');
-
-            indicator.innerHTML = `
-                <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
-                <span class="text-sm text-green-600 font-medium">Coletando logs</span>
-            `;
-
-            activeInfo.classList.remove('hidden');
-            activeUser.textContent = data.admin_username || 'Admin';
-        } else {
-            btn.classList.remove('bg-green-500');
-            btn.classList.add('bg-gray-300');
-            btn.querySelector('span').classList.remove('translate-x-6');
-            btn.querySelector('span').classList.add('translate-x-1');
-
-            indicator.innerHTML = `
-                <span class="w-3 h-3 rounded-full bg-gray-400"></span>
-                <span class="text-sm text-gray-600">Desativado</span>
-            `;
-
-            activeInfo.classList.add('hidden');
-        }
+        chartBottleneck = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['LLM', 'DB', 'Parse', 'Outro'],
+                datasets: [{
+                    data: [
+                        bottleneck_summary.LLM || 0,
+                        bottleneck_summary.DB || 0,
+                        bottleneck_summary.PARSE || 0,
+                        bottleneck_summary.OUTRO || 0
+                    ],
+                    backgroundColor: ['#9333ea', '#eab308', '#3b82f6', '#9ca3af'],
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
     }
 
-    async function togglePerformanceLogs() {
-        const btn = document.getElementById('toggleBtn');
-        btn.disabled = true;
-
-        try {
-            const response = await fetch('/admin/performance/toggle', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ enabled: !isEnabled })
-            });
-
-            const data = await response.json();
-            isEnabled = data.enabled;
-            updateToggleUI(data);
-
-            showNotification(data.message, 'success');
-        } catch (error) {
-            console.error('Erro ao alternar toggle:', error);
-            showNotification('Erro ao alternar logs', 'error');
-        } finally {
-            btn.disabled = false;
-        }
+    function renderTopSlowest(data) {
+        ['LLM', 'DB', 'PARSE'].forEach(type => {
+            const container = document.getElementById(`top-${type.toLowerCase()}`);
+            const items = data[type] || [];
+            if (items.length === 0) {
+                container.innerHTML = '<p class="text-gray-400">Sem dados</p>';
+                return;
+            }
+            container.innerHTML = items.map(item => `
+                <div class="p-2 bg-gray-50 rounded">
+                    <div class="font-medium truncate" title="${item.route}">${item.action || item.route}</div>
+                    <div class="text-gray-500">${Math.round(item.total_ms)} ms total</div>
+                </div>
+            `).join('');
+        });
     }
 
-    async function loadLogs() {
-        const route = document.getElementById('routeFilter').value;
-        const layer = document.getElementById('layerFilter').value;
-        const hours = document.getElementById('hoursFilter').value;
+    function renderSystemErrors(errors) {
+        const container = document.getElementById('recentErrors');
+        if (!errors || errors.length === 0) {
+            container.innerHTML = '<p class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Nenhum erro recente</p>';
+            return;
+        }
+        container.innerHTML = errors.map(err => `
+            <div class="p-2 bg-red-50 rounded text-sm">
+                <div class="flex justify-between">
+                    <span class="font-medium text-red-700">${err.action || err.route}</span>
+                    <span class="text-xs text-gray-500">${err.created_at ? new Date(err.created_at).toLocaleTimeString('pt-BR') : ''}</span>
+                </div>
+                <div class="text-xs text-red-600">
+                    <span class="font-medium">${err.error_type || 'erro'}</span>: ${err.error_message || '-'}
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function loadSystemLogs() {
+        const system = document.getElementById('filterSystem').value;
+        const route = document.getElementById('filterRoute').value;
+        const action = document.getElementById('filterAction').value;
+        const bottleneck = document.getElementById('filterBottleneck').value;
+        const status = document.getElementById('filterStatus').value;
+        const hours = document.getElementById('filterHours').value;
 
         const params = new URLSearchParams();
+        if (system) params.append('system', system);
         if (route) params.append('route', route);
-        if (layer) params.append('layer', layer);
+        if (action) params.append('action', action);
+        if (bottleneck) params.append('bottleneck', bottleneck);
+        if (status) params.append('status', status);
         params.append('hours', hours);
         params.append('limit', '100');
 
@@ -455,305 +664,455 @@
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
-
-            renderLogsTable(data.logs);
+            renderSystemLogsTable(data.logs);
         } catch (error) {
             console.error('Erro ao carregar logs:', error);
         }
     }
 
-    function renderLogsTable(logs) {
+    function renderSystemLogsTable(logs) {
         const tbody = document.getElementById('logsTable');
-
         if (!logs || logs.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="6" class="px-4 py-8 text-center text-gray-500">
-                        Nenhum log encontrado. Ative a coleta para comecar.
-                    </td>
-                </tr>
-            `;
+            tbody.innerHTML = `<tr><td colspan="10" class="px-4 py-8 text-center text-gray-500">Nenhum log encontrado</td></tr>`;
             return;
         }
 
         tbody.innerHTML = logs.map(log => {
-            const time = new Date(log.created_at).toLocaleTimeString('pt-BR');
-            const durationClass = log.duration_ms > 1000 ? 'text-red-600 font-bold' :
-                                 log.duration_ms > 500 ? 'text-yellow-600' : 'text-green-600';
+            const time = log.created_at ? new Date(log.created_at).toLocaleTimeString('pt-BR') : '-';
+            const bottleneckClass = getBottleneckClass(log.bottleneck);
+            const statusClass = log.status === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
+            const systemClass = log.system_name === 'unknown' ? 'bg-gray-100 text-gray-500' : 'bg-indigo-100 text-indigo-800';
 
             return `
                 <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 text-sm text-gray-500">${time}</td>
-                    <td class="px-4 py-3 text-sm font-mono text-gray-800 truncate max-w-xs" title="${log.route}">
-                        <span class="text-gray-400 text-xs">${log.method}</span> ${log.route}
-                    </td>
-                    <td class="px-4 py-3">
-                        <span class="px-2 py-1 text-xs rounded-full ${getLayerClass(log.layer)}">
-                            ${log.layer}
-                        </span>
-                    </td>
-                    <td class="px-4 py-3 text-sm text-gray-600">${log.action || '-'}</td>
-                    <td class="px-4 py-3 text-sm ${durationClass}">${log.duration_ms.toFixed(1)} ms</td>
-                    <td class="px-4 py-3 text-sm text-gray-500">${log.status_code || '-'}</td>
+                    <td class="px-3 py-2 text-gray-500">${time}</td>
+                    <td class="px-3 py-2"><span class="px-2 py-1 rounded-full text-xs ${systemClass}">${log.system_name || 'unknown'}</span></td>
+                    <td class="px-3 py-2 font-mono text-gray-700 truncate max-w-xs" title="${log.route}">${log.route}</td>
+                    <td class="px-3 py-2 text-gray-600">${log.action || '-'}</td>
+                    <td class="px-3 py-2 font-medium">${Math.round(log.total_ms || 0)} ms</td>
+                    <td class="px-3 py-2 ${log.llm_request_ms ? 'text-purple-600 font-medium' : 'text-gray-400'}">${log.llm_request_ms ? Math.round(log.llm_request_ms) : '-'}</td>
+                    <td class="px-3 py-2 ${log.db_total_ms ? 'text-yellow-600 font-medium' : 'text-gray-400'}">${log.db_total_ms ? Math.round(log.db_total_ms) : '-'}</td>
+                    <td class="px-3 py-2 ${log.json_parse_ms ? 'text-blue-600 font-medium' : 'text-gray-400'}">${log.json_parse_ms ? Math.round(log.json_parse_ms) : '-'}</td>
+                    <td class="px-3 py-2"><span class="px-2 py-1 rounded-full text-xs ${bottleneckClass}">${log.bottleneck}</span></td>
+                    <td class="px-3 py-2"><span class="px-2 py-1 rounded-full text-xs ${statusClass}">${log.status}</span></td>
                 </tr>
             `;
         }).join('');
     }
 
-    function getLayerClass(layer) {
-        const classes = {
-            'middleware': 'bg-purple-100 text-purple-800',
-            'controller': 'bg-blue-100 text-blue-800',
-            'service': 'bg-green-100 text-green-800',
-            'db': 'bg-yellow-100 text-yellow-800',
-            'io': 'bg-orange-100 text-orange-800'
-        };
-        return classes[layer] || 'bg-gray-100 text-gray-800';
+    function getBottleneckClass(bottleneck) {
+        switch(bottleneck) {
+            case 'LLM': return 'bg-purple-100 text-purple-800';
+            case 'DB': return 'bg-yellow-100 text-yellow-800';
+            case 'PARSE': return 'bg-blue-100 text-blue-800';
+            default: return 'bg-gray-100 text-gray-600';
+        }
     }
 
-    async function loadSummary() {
-        const hours = document.getElementById('hoursFilter').value;
-
+    async function loadSystemActions() {
         try {
-            const response = await fetch(`/admin/performance/summary?hours=${hours}`, {
+            const response = await fetch('/admin/performance/actions', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
-
-            // Atualiza cards de estatisticas
-            document.getElementById('totalLogs').textContent = data.total_logs.toLocaleString();
-
-            const middlewareStats = data.layers.find(l => l.layer === 'middleware');
-            if (middlewareStats) {
-                document.getElementById('avgTime').textContent = `${middlewareStats.avg_ms.toFixed(0)} ms`;
-            } else {
-                document.getElementById('avgTime').textContent = '-';
-            }
-
-            if (data.slowest_routes && data.slowest_routes.length > 0) {
-                const slowest = data.slowest_routes[0];
-                document.getElementById('slowestRoute').textContent = `${slowest.route} (${slowest.avg_ms.toFixed(0)}ms)`;
-            } else {
-                document.getElementById('slowestRoute').textContent = '-';
-            }
-
-            // Renderiza resumo por camada
-            renderLayerSummary(data.layers);
-
+            const select = document.getElementById('filterAction');
+            select.innerHTML = '<option value="">Todas</option>' +
+                data.actions.map(a => `<option value="${a}">${a}</option>`).join('');
         } catch (error) {
-            console.error('Erro ao carregar resumo:', error);
+            console.error('Erro ao carregar actions:', error);
         }
     }
 
-    function renderLayerSummary(layers) {
-        const container = document.getElementById('layerSummary');
+    function filterByBottleneck(type) {
+        document.getElementById('filterBottleneck').value = type;
+        loadSystemLogs();
+    }
 
-        if (!layers || layers.length === 0) {
-            container.innerHTML = '<div class="text-center text-gray-500 col-span-5">Sem dados</div>';
+    function clearSystemFilters() {
+        document.getElementById('filterSystem').value = '';
+        document.getElementById('filterRoute').value = '';
+        document.getElementById('filterAction').value = '';
+        document.getElementById('filterBottleneck').value = '';
+        document.getElementById('filterStatus').value = '';
+        loadSystemLogs();
+    }
+
+    // ========================================
+    // ROUTE SYSTEM MAPPING
+    // ========================================
+
+    function toggleRouteMapSection() {
+        const section = document.getElementById('routeMapSection');
+        const btn = document.getElementById('btnToggleRouteMap');
+        if (section.classList.contains('hidden')) {
+            section.classList.remove('hidden');
+            btn.innerHTML = '<i class="fas fa-chevron-up mr-1"></i>Recolher';
+            loadRouteMappings();
+            loadTopRoutes();
+        } else {
+            section.classList.add('hidden');
+            btn.innerHTML = '<i class="fas fa-chevron-down mr-1"></i>Expandir';
+        }
+    }
+
+    async function loadRouteMappings() {
+        try {
+            const response = await fetch('/admin/performance/route-maps', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            renderRouteMappings(data.mappings || []);
+        } catch (error) {
+            console.error('Erro ao carregar mapeamentos:', error);
+        }
+    }
+
+    function renderRouteMappings(mappings) {
+        const container = document.getElementById('routeMappingsList');
+        if (!mappings || mappings.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-sm">Nenhum mapeamento cadastrado</p>';
             return;
         }
 
-        container.innerHTML = layers.map(layer => `
-            <div class="p-3 rounded-lg ${getLayerBgClass(layer.layer)}">
-                <h4 class="font-medium text-sm capitalize">${layer.layer}</h4>
-                <p class="text-lg font-bold">${layer.avg_ms.toFixed(0)} ms</p>
-                <p class="text-xs opacity-75">
-                    min: ${layer.min_ms.toFixed(0)} | max: ${layer.max_ms.toFixed(0)}
-                </p>
-                <p class="text-xs opacity-75">${layer.count} registros</p>
+        container.innerHTML = mappings.map(m => {
+            const typeLabel = { exact: 'Exato', prefix: 'Prefixo', regex: 'Regex' }[m.match_type] || m.match_type;
+            return `
+                <div class="flex items-center justify-between p-2 bg-gray-50 rounded hover:bg-gray-100 group">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span class="font-mono text-xs text-gray-600 truncate" title="${m.route_pattern}">${m.route_pattern}</span>
+                            <span class="text-xs px-1 py-0.5 bg-gray-200 rounded">${typeLabel}</span>
+                        </div>
+                        <div class="text-sm font-medium text-indigo-600">${m.system_name}</div>
+                    </div>
+                    <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onclick="editRouteMap(${m.id}, '${m.route_pattern}', '${m.system_name}', '${m.match_type}')"
+                            class="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Editar">
+                            <i class="fas fa-edit text-xs"></i>
+                        </button>
+                        <button onclick="deleteRouteMap(${m.id})"
+                            class="p-1 text-red-600 hover:bg-red-100 rounded" title="Remover">
+                            <i class="fas fa-trash text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function loadTopRoutes() {
+        const hours = document.getElementById('filterHours').value;
+        try {
+            const response = await fetch(`/admin/performance/top-routes?hours=${hours}&limit=15`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            renderTopRoutes(data.routes || []);
+        } catch (error) {
+            console.error('Erro ao carregar rotas frequentes:', error);
+        }
+    }
+
+    function renderTopRoutes(routes) {
+        const container = document.getElementById('topRoutesList');
+        // Filtra apenas rotas sem mapeamento
+        const unmapped = routes.filter(r => !r.has_mapping);
+
+        if (!unmapped || unmapped.length === 0) {
+            container.innerHTML = '<p class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Todas as rotas frequentes possuem mapeamento</p>';
+            return;
+        }
+
+        container.innerHTML = unmapped.map(r => `
+            <div class="flex items-center justify-between p-2 bg-yellow-50 rounded hover:bg-yellow-100">
+                <div class="flex-1 min-w-0">
+                    <div class="font-mono text-xs text-gray-600 truncate" title="${r.route}">${r.route}</div>
+                    <div class="text-xs text-gray-500">${r.count} chamadas</div>
+                </div>
+                <button onclick="quickMapRoute('${r.route.replace(/'/g, "\\'")}')"
+                    class="px-2 py-1 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                    <i class="fas fa-plus mr-1"></i>Mapear
+                </button>
             </div>
         `).join('');
     }
 
-    function getLayerBgClass(layer) {
-        const classes = {
-            'middleware': 'bg-purple-50 text-purple-800',
-            'controller': 'bg-blue-50 text-blue-800',
-            'service': 'bg-green-50 text-green-800',
-            'db': 'bg-yellow-50 text-yellow-800',
-            'io': 'bg-orange-50 text-orange-800'
-        };
-        return classes[layer] || 'bg-gray-50 text-gray-800';
+    function quickMapRoute(route) {
+        document.getElementById('newRoutePattern').value = route;
+        document.getElementById('newSystemName').focus();
     }
 
-    async function cleanupLogs() {
-        if (!confirm('Remover logs com mais de 7 dias?')) return;
+    async function createRouteMap() {
+        const routePattern = document.getElementById('newRoutePattern').value.trim();
+        const systemName = document.getElementById('newSystemName').value.trim();
+        const matchType = document.getElementById('newMatchType').value;
 
+        if (!routePattern || !systemName) {
+            showNotification('Preencha o padrao da rota e o nome do sistema', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/admin/performance/route-maps', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    route_pattern: routePattern,
+                    system_name: systemName,
+                    match_type: matchType,
+                    priority: 0
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Erro ao criar mapeamento');
+            }
+
+            showNotification('Mapeamento criado com sucesso', 'success');
+            document.getElementById('newRoutePattern').value = '';
+            document.getElementById('newSystemName').value = '';
+            loadRouteMappings();
+            loadTopRoutes();
+            loadSystemFilters();
+            loadSystemLogs();
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    }
+
+    function editRouteMap(id, pattern, name, matchType) {
+        const newName = prompt('Novo nome do sistema:', name);
+        if (newName && newName !== name) {
+            updateRouteMap(id, { system_name: newName });
+        }
+    }
+
+    async function updateRouteMap(id, data) {
+        try {
+            const response = await fetch(`/admin/performance/route-maps/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Erro ao atualizar mapeamento');
+            }
+
+            showNotification('Mapeamento atualizado', 'success');
+            loadRouteMappings();
+            loadSystemFilters();
+            loadSystemLogs();
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    }
+
+    async function deleteRouteMap(id) {
+        if (!confirm('Remover este mapeamento?')) return;
+
+        try {
+            const response = await fetch(`/admin/performance/route-maps/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Erro ao remover mapeamento');
+            }
+
+            showNotification('Mapeamento removido', 'success');
+            loadRouteMappings();
+            loadTopRoutes();
+            loadSystemFilters();
+            loadSystemLogs();
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    }
+
+    async function loadSystemFilters() {
+        try {
+            const response = await fetch('/admin/performance/systems', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            const select = document.getElementById('filterSystem');
+            select.innerHTML = '<option value="">Todos</option>' +
+                (data.systems || []).map(s => `<option value="${s}">${s}</option>`).join('');
+        } catch (error) {
+            console.error('Erro ao carregar sistemas:', error);
+        }
+    }
+
+    async function cleanupSystemLogs() {
+        if (!confirm('Remover logs com mais de 7 dias?')) return;
         try {
             const response = await fetch('/admin/performance/cleanup?days=7', {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
-
             showNotification(`${data.deleted_count} logs removidos`, 'success');
-            loadLogs();
-            loadSummary();
+            loadSystemSummary();
+            loadSystemLogs();
         } catch (error) {
-            console.error('Erro ao limpar logs:', error);
             showNotification('Erro ao limpar logs', 'error');
         }
     }
 
     // ========================================
-    // FUNCOES GEMINI (Novas)
+    // GEMINI - API LOGS
     // ========================================
 
-    async function loadGeminiFilters() {
-        try {
-            // Carrega sistemas
-            const sistemasResp = await fetch('/admin/api/gemini-logs/systems', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const sistemasData = await sistemasResp.json();
-            const sistemaSelect = document.getElementById('geminiSistemaFilter');
-            sistemaSelect.innerHTML = '<option value="">Todos</option>' +
-                sistemasData.systems.map(s => `<option value="${s}">${s}</option>`).join('');
-
-            // Carrega modelos
-            const modelsResp = await fetch('/admin/api/gemini-logs/models', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const modelsData = await modelsResp.json();
-            const modelSelect = document.getElementById('geminiModelFilter');
-            modelSelect.innerHTML = '<option value="">Todos</option>' +
-                modelsData.models.map(m => `<option value="${m}">${m}</option>`).join('');
-        } catch (error) {
-            console.error('Erro ao carregar filtros Gemini:', error);
-        }
-    }
-
     async function loadGeminiSummary() {
-        const hours = document.getElementById('geminiHoursFilter').value;
-
+        const hours = document.getElementById('geminiFilterHours').value;
         try {
             const response = await fetch(`/admin/api/gemini-logs/summary?hours=${hours}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
+            const stats = data.stats || {};
 
-            // Atualiza cards
-            document.getElementById('geminiTotalCalls').textContent = data.total_calls.toLocaleString();
-            document.getElementById('geminiAvgLatency').textContent = `${data.stats.avg_latency_ms.toFixed(0)} ms`;
-            document.getElementById('geminiSuccessRate').textContent = `${data.stats.success_rate}%`;
-            document.getElementById('geminiCacheRate').textContent = `${data.stats.cache_hit_rate}%`;
+            // Cards Linha 1 - Principais
+            document.getElementById('gemini-total').textContent = data.total_calls || 0;
+            document.getElementById('gemini-success-count').textContent = stats.success_count || 0;
+            document.getElementById('gemini-error-count').textContent = stats.error_count || 0;
 
-            // Renderiza graficos
-            renderGeminiCharts(data);
+            document.getElementById('gemini-avg-latency').textContent = `${Math.round(stats.avg_latency_ms || 0)} ms`;
+            document.getElementById('gemini-min-latency').textContent = `${Math.round(stats.min_latency_ms || 0)} ms`;
+            document.getElementById('gemini-max-latency').textContent = `${Math.round(stats.max_latency_ms || 0)} ms`;
 
-            // Chamadas mais lentas
-            renderSlowestCalls(data.slowest_calls);
+            document.getElementById('gemini-tokens-prompt').textContent = formatNumber(stats.total_prompt_tokens || 0);
+            document.getElementById('gemini-tokens-response').textContent = `response: ${formatNumber(stats.total_response_tokens || 0)}`;
 
-            // Erros recentes
-            renderRecentErrors(data.recent_errors);
+            document.getElementById('gemini-success-rate').textContent = `${stats.success_rate || 0}%`;
+            document.getElementById('gemini-retries').textContent = `retries: ${stats.total_retries || 0}`;
+
+            // Cards Linha 2 - Timing e Features
+            document.getElementById('gemini-ttft').textContent = `${Math.round(stats.avg_ttft_ms || 0)} ms`;
+            document.getElementById('gemini-generation').textContent = `${Math.round(stats.avg_generation_ms || 0)} ms`;
+            document.getElementById('gemini-cache').textContent = stats.cache_hits || 0;
+            document.getElementById('gemini-cache-rate').textContent = `taxa: ${stats.cache_rate || 0}%`;
+            document.getElementById('gemini-images').textContent = stats.image_calls || 0;
+            document.getElementById('gemini-search').textContent = stats.search_calls || 0;
+
+            // Charts
+            renderGeminiSistemaChart(data.by_sistema || []);
+            renderGeminiModeloChart(data.by_model || []);
+
+            // Slowest calls
+            renderGeminiSlowest(data.slowest_calls || []);
+
+            // Errors
+            renderGeminiErrors(data.recent_errors || []);
 
         } catch (error) {
             console.error('Erro ao carregar resumo Gemini:', error);
         }
     }
 
-    function renderGeminiCharts(data) {
-        // Grafico por Sistema
-        const ctxSistema = document.getElementById('chartBySistema').getContext('2d');
-        if (chartBySistema) chartBySistema.destroy();
+    function formatNumber(num) {
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+        return num.toString();
+    }
 
-        const sistemaLabels = data.by_sistema.map(s => s.sistema);
-        const sistemaValues = data.by_sistema.map(s => s.count);
-        const sistemaColors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
+    function renderGeminiSistemaChart(data) {
+        const ctx = document.getElementById('chartGeminiSistema').getContext('2d');
+        if (chartGeminiSistema) chartGeminiSistema.destroy();
 
-        chartBySistema = new Chart(ctxSistema, {
-            type: 'doughnut',
-            data: {
-                labels: sistemaLabels,
-                datasets: [{
-                    data: sistemaValues,
-                    backgroundColor: sistemaColors.slice(0, sistemaLabels.length),
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                    }
-                }
-            }
-        });
+        const colors = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
-        // Grafico por Modelo
-        const ctxModel = document.getElementById('chartByModel').getContext('2d');
-        if (chartByModel) chartByModel.destroy();
-
-        const modelLabels = data.by_model.map(m => m.model.replace('gemini-', ''));
-        const modelValues = data.by_model.map(m => m.count);
-
-        chartByModel = new Chart(ctxModel, {
+        chartGeminiSistema = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: modelLabels,
+                labels: data.map(d => d.sistema || 'unknown'),
                 datasets: [{
                     label: 'Chamadas',
-                    data: modelValues,
-                    backgroundColor: '#8B5CF6',
+                    data: data.map(d => d.count),
+                    backgroundColor: colors.slice(0, data.length),
                 }]
             },
             options: {
                 responsive: true,
-                plugins: {
-                    legend: {
-                        display: false,
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true
-                    }
-                }
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true } }
             }
         });
     }
 
-    function renderSlowestCalls(calls) {
-        const container = document.getElementById('slowestCalls');
+    function renderGeminiModeloChart(data) {
+        const ctx = document.getElementById('chartGeminiModelo').getContext('2d');
+        if (chartGeminiModelo) chartGeminiModelo.destroy();
+
+        chartGeminiModelo = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: data.map(d => d.model || 'unknown'),
+                datasets: [{
+                    data: data.map(d => d.count),
+                    backgroundColor: ['#8b5cf6', '#3b82f6', '#22c55e', '#f59e0b', '#ef4444'],
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+    }
+
+    function renderGeminiSlowest(calls) {
+        const container = document.getElementById('gemini-slowest');
         if (!calls || calls.length === 0) {
-            container.innerHTML = '<p class="text-gray-500 text-sm">Nenhuma chamada registrada</p>';
+            container.innerHTML = '<p class="text-gray-400">Sem dados</p>';
             return;
         }
-
-        container.innerHTML = calls.map(call => `
-            <div class="p-2 bg-gray-50 rounded text-sm">
-                <div class="flex justify-between">
-                    <span class="font-medium">${call.sistema}</span>
-                    <span class="text-red-600 font-bold">${call.time_total_ms.toFixed(0)} ms</span>
+        container.innerHTML = calls.slice(0, 6).map(call => `
+            <div class="p-3 bg-gray-50 rounded-lg">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="font-medium text-gray-800">${call.sistema || 'unknown'}</span>
+                    <span class="text-sm font-bold text-red-600">${Math.round(call.time_total_ms)} ms</span>
                 </div>
-                <div class="text-xs text-gray-500">${call.model} | ${call.prompt_chars} chars</div>
+                <div class="text-xs text-gray-500">
+                    <span>${call.model || '-'}</span>
+                    ${call.error ? `<span class="text-red-500 ml-2">Erro</span>` : ''}
+                </div>
             </div>
         `).join('');
     }
 
-    function renderRecentErrors(errors) {
-        const container = document.getElementById('recentErrors');
+    function renderGeminiErrors(errors) {
+        const container = document.getElementById('geminiRecentErrors');
         if (!errors || errors.length === 0) {
-            container.innerHTML = '<p class="text-green-600 text-sm">Nenhum erro recente</p>';
+            container.innerHTML = '<p class="text-green-600 text-sm"><i class="fas fa-check mr-1"></i>Nenhum erro recente</p>';
             return;
         }
-
         container.innerHTML = errors.map(err => `
             <div class="p-2 bg-red-50 rounded text-sm">
                 <div class="flex justify-between">
-                    <span class="font-medium text-red-700">${err.sistema}</span>
-                    <span class="text-xs text-gray-500">${new Date(err.created_at).toLocaleTimeString('pt-BR')}</span>
+                    <span class="font-medium text-red-700">${err.sistema || 'unknown'}</span>
+                    <span class="text-xs text-gray-500">${err.created_at ? new Date(err.created_at).toLocaleTimeString('pt-BR') : ''}</span>
                 </div>
-                <div class="text-xs text-red-600 truncate" title="${err.error}">${err.error || 'Erro desconhecido'}</div>
+                <div class="text-xs text-red-600 truncate" title="${err.error || ''}">${err.error || 'Erro desconhecido'}</div>
             </div>
         `).join('');
     }
 
     async function loadGeminiLogs() {
-        const sistema = document.getElementById('geminiSistemaFilter').value;
-        const model = document.getElementById('geminiModelFilter').value;
-        const success = document.getElementById('geminiSuccessFilter').value;
-        const hours = document.getElementById('geminiHoursFilter').value;
+        const sistema = document.getElementById('geminiFilterSistema').value;
+        const model = document.getElementById('geminiFilterModelo').value;
+        const success = document.getElementById('geminiFilterSuccess').value;
+        const hours = document.getElementById('geminiFilterHours').value;
 
         const params = new URLSearchParams();
         if (sistema) params.append('sistema', sistema);
@@ -767,7 +1126,6 @@
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
-
             renderGeminiLogsTable(data.logs);
         } catch (error) {
             console.error('Erro ao carregar logs Gemini:', error);
@@ -776,76 +1134,92 @@
 
     function renderGeminiLogsTable(logs) {
         const tbody = document.getElementById('geminiLogsTable');
-
         if (!logs || logs.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="7" class="px-4 py-8 text-center text-gray-500">
-                        Nenhuma chamada registrada no periodo.
-                    </td>
-                </tr>
-            `;
+            tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-8 text-center text-gray-500">Nenhum log encontrado</td></tr>`;
             return;
         }
 
         tbody.innerHTML = logs.map(log => {
-            const time = new Date(log.created_at).toLocaleTimeString('pt-BR');
-            const latencyClass = log.time_total_ms > 5000 ? 'text-red-600 font-bold' :
-                                log.time_total_ms > 2000 ? 'text-yellow-600' : 'text-green-600';
+            const time = log.created_at ? new Date(log.created_at).toLocaleTimeString('pt-BR') : '-';
             const statusClass = log.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-            const statusText = log.success ? (log.cached ? 'Cache' : 'OK') : 'Erro';
+            const cacheClass = log.cached ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600';
 
             return `
                 <tr class="hover:bg-gray-50">
-                    <td class="px-4 py-3 text-sm text-gray-500">${time}</td>
-                    <td class="px-4 py-3 text-sm text-gray-800">${log.sistema}</td>
-                    <td class="px-4 py-3 text-sm font-mono text-gray-600">${log.model.replace('gemini-', '')}</td>
-                    <td class="px-4 py-3 text-sm text-gray-500">${log.prompt_chars.toLocaleString()} chars</td>
-                    <td class="px-4 py-3 text-sm text-gray-600">${log.response_tokens || '-'}</td>
-                    <td class="px-4 py-3 text-sm ${latencyClass}">${log.time_total_ms.toFixed(0)} ms</td>
-                    <td class="px-4 py-3">
-                        <span class="px-2 py-1 text-xs rounded-full ${statusClass}">${statusText}</span>
+                    <td class="px-3 py-2 text-gray-500">${time}</td>
+                    <td class="px-3 py-2 font-medium text-gray-700">${log.sistema || '-'}</td>
+                    <td class="px-3 py-2 text-gray-600 text-xs">${log.model || '-'}</td>
+                    <td class="px-3 py-2 text-gray-600">
+                        <span class="text-purple-600">${log.prompt_tokens_estimated || '-'}</span> /
+                        <span class="text-blue-600">${log.response_tokens || '-'}</span>
                     </td>
+                    <td class="px-3 py-2 font-medium">${Math.round(log.time_total_ms || 0)} ms</td>
+                    <td class="px-3 py-2 text-gray-500">${log.time_ttft_ms ? Math.round(log.time_ttft_ms) + ' ms' : '-'}</td>
+                    <td class="px-3 py-2"><span class="px-2 py-1 rounded-full text-xs ${cacheClass}">${log.cached ? 'Sim' : 'Nao'}</span></td>
+                    <td class="px-3 py-2"><span class="px-2 py-1 rounded-full text-xs ${statusClass}">${log.success ? 'OK' : 'Erro'}</span></td>
+                    <td class="px-3 py-2 text-gray-500 text-xs">${log.username || '-'}</td>
                 </tr>
             `;
         }).join('');
     }
 
-    async function cleanupGeminiLogs() {
-        if (!confirm('Remover logs de Gemini com mais de 30 dias?')) return;
+    async function loadGeminiFilters() {
+        try {
+            // Load systems
+            const systemsRes = await fetch('/admin/api/gemini-logs/systems', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const systemsData = await systemsRes.json();
+            const sistemasSelect = document.getElementById('geminiFilterSistema');
+            sistemasSelect.innerHTML = '<option value="">Todos</option>' +
+                (systemsData.systems || []).map(s => `<option value="${s}">${s}</option>`).join('');
 
+            // Load models
+            const modelsRes = await fetch('/admin/api/gemini-logs/models', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const modelsData = await modelsRes.json();
+            const modelosSelect = document.getElementById('geminiFilterModelo');
+            modelosSelect.innerHTML = '<option value="">Todos</option>' +
+                (modelsData.models || []).map(m => `<option value="${m}">${m}</option>`).join('');
+        } catch (error) {
+            console.error('Erro ao carregar filtros Gemini:', error);
+        }
+    }
+
+    function clearGeminiFilters() {
+        document.getElementById('geminiFilterSistema').value = '';
+        document.getElementById('geminiFilterModelo').value = '';
+        document.getElementById('geminiFilterSuccess').value = '';
+        loadGeminiLogs();
+    }
+
+    async function cleanupGeminiLogs() {
+        if (!confirm('Remover logs com mais de 30 dias?')) return;
         try {
             const response = await fetch('/admin/api/gemini-logs/cleanup?days=30', {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
-
             showNotification(`${data.deleted_count} logs removidos`, 'success');
             loadGeminiSummary();
             loadGeminiLogs();
         } catch (error) {
-            console.error('Erro ao limpar logs Gemini:', error);
             showNotification('Erro ao limpar logs', 'error');
         }
     }
 
     // ========================================
-    // FUNCOES UTILITARIAS
+    // UTILS
     // ========================================
 
     function showNotification(message, type) {
-        const colors = {
-            success: 'bg-green-500',
-            error: 'bg-red-500',
-            info: 'bg-blue-500'
-        };
-
+        const colors = { success: 'bg-green-500', error: 'bg-red-500' };
         const notification = document.createElement('div');
         notification.className = `fixed top-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50`;
         notification.textContent = message;
         document.body.appendChild(notification);
-
         setTimeout(() => notification.remove(), 3000);
     }
 
@@ -853,16 +1227,23 @@
     // INICIALIZACAO
     // ========================================
     document.addEventListener('DOMContentLoaded', () => {
-        // Carrega dados da aba HTTP
-        loadToggleStatus();
-        loadLogs();
-        loadSummary();
+        // Load sistema tab data
+        loadSystemSummary();
+        loadSystemLogs();
+        loadSystemActions();
+        loadSystemFilters();
 
-        // Auto-refresh a cada 30 segundos se ativo
+        // Pre-load Gemini filters
+        loadGeminiFilters();
+
+        // Auto-refresh a cada 30s
         setInterval(() => {
-            if (isEnabled) {
-                loadLogs();
-                loadSummary();
+            if (document.getElementById('content-sistema').classList.contains('active')) {
+                loadSystemSummary();
+                loadSystemLogs();
+            } else {
+                loadGeminiSummary();
+                loadGeminiLogs();
             }
         }, 30000);
     });

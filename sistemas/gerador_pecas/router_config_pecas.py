@@ -29,6 +29,7 @@ from sistemas.gerador_pecas.models_config_pecas import (
     carregar_categorias_json,
     get_codigos_por_categoria_json
 )
+from sistemas.gerador_pecas.services_source_resolver import invalidar_cache_source_resolver
 
 router = APIRouter(prefix="/api/gerador-pecas/config", tags=["Config Peças"])
 templates = Jinja2Templates(directory="frontend/templates")
@@ -166,7 +167,11 @@ async def criar_categoria(
     db.add(categoria)
     db.commit()
     db.refresh(categoria)
-    
+
+    # Invalida cache do SourceResolver se for categoria especial
+    if categoria.is_primeiro_documento:
+        invalidar_cache_source_resolver(categoria.nome)
+
     return categoria
 
 
@@ -196,10 +201,14 @@ async def atualizar_categoria(
     
     for key, value in dados.dict().items():
         setattr(categoria, key, value)
-    
+
     db.commit()
     db.refresh(categoria)
-    
+
+    # Invalida cache do SourceResolver - sempre invalidar ao atualizar
+    # pois os códigos podem ter mudado
+    invalidar_cache_source_resolver(categoria.nome)
+
     return categoria
 
 
@@ -216,10 +225,15 @@ async def excluir_categoria(
     categoria = db.query(CategoriaDocumento).filter(CategoriaDocumento.id == categoria_id).first()
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
-    
+
+    nome_categoria = categoria.nome  # Guarda antes de deletar
+
     db.delete(categoria)
     db.commit()
-    
+
+    # Invalida cache do SourceResolver
+    invalidar_cache_source_resolver(nome_categoria)
+
     return {"message": "Categoria excluída com sucesso"}
 
 

@@ -397,6 +397,8 @@ class GeminiService:
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.response_tokens = cached.tokens_used
                 metrics.log()
+                # Log assíncrono para BD (mesmo para cache)
+                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
                 return GeminiResponse(
                     success=True,
                     content=cached.content,

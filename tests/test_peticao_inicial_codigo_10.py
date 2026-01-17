@@ -468,6 +468,115 @@ class TestFiltroCategoriasMultiplosDocumentos(unittest.TestCase):
         self.assertNotIn("9500", tipos)
 
 
+class TestSourceResolverCodigo10(unittest.TestCase):
+    """
+    Testes para garantir que o SourceResolver funciona corretamente.
+
+    NOTA: O SourceResolver agora é CONFIG-DRIVEN. Os códigos válidos são
+    buscados do banco de dados (categoria peticao_inicial).
+
+    Para testes completos de config-driven, veja:
+    tests/test_peticao_inicial_config_driven.py
+    """
+
+    def test_source_resolver_fallback_inclui_codigos_basicos(self):
+        """
+        TESTE: SourceResolver deve ter fallback com códigos básicos [9500, 500].
+        """
+        from sistemas.gerador_pecas.services_source_resolver import SourceResolver
+
+        resolver = SourceResolver()
+
+        # Verifica que fallback tem os códigos básicos
+        self.assertIn(500, resolver.CODIGOS_PETICAO_INICIAL_FALLBACK,
+            "Código 500 deve estar no fallback")
+        self.assertIn(9500, resolver.CODIGOS_PETICAO_INICIAL_FALLBACK,
+            "Código 9500 deve estar no fallback")
+
+    def test_source_resolver_resolve_sem_db_usa_fallback(self):
+        """
+        TESTE: SourceResolver sem DB deve usar fallback e resolver corretamente.
+        """
+        from sistemas.gerador_pecas.services_source_resolver import (
+            SourceResolver, DocumentoInfo
+        )
+        from datetime import datetime
+
+        resolver = SourceResolver()  # Sem DB
+
+        # Documentos ordenados: código 500 é o primeiro
+        documentos = [
+            DocumentoInfo(id="1", codigo=500, data=datetime(2024, 1, 1), descricao="PI", ordem=0),
+            DocumentoInfo(id="2", codigo=9500, data=datetime(2024, 1, 2), descricao="Petição", ordem=1),
+        ]
+
+        result = resolver.resolve("peticao_inicial", documentos)
+
+        self.assertTrue(result.sucesso, f"Deveria resolver com sucesso: {result.motivo}")
+        self.assertEqual(result.documento_id, "1",
+            "Deveria retornar o documento com código 500 (primeiro)")
+
+    def test_source_resolver_codigo_nao_primeiro_nao_retorna(self):
+        """
+        TESTE: Quando código válido NÃO é o primeiro, NÃO deve ser retornado como PI.
+        """
+        from sistemas.gerador_pecas.services_source_resolver import (
+            SourceResolver, DocumentoInfo
+        )
+        from datetime import datetime
+
+        resolver = SourceResolver()  # Sem DB, usa fallback [9500, 500]
+
+        # Documentos ordenados: código 500 é o primeiro, 9500 é o segundo
+        documentos = [
+            DocumentoInfo(id="1", codigo=500, data=datetime(2024, 1, 1), descricao="PI", ordem=0),
+            DocumentoInfo(id="2", codigo=9500, data=datetime(2024, 1, 2), descricao="Petição", ordem=1),
+        ]
+
+        result = resolver.resolve("peticao_inicial", documentos)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.documento_id, "1",
+            "Deveria retornar o documento com código 500 (primeiro)")
+        self.assertNotEqual(result.documento_id, "2",
+            "NÃO deveria retornar o código 9500 que é o segundo")
+
+    def test_source_resolver_definicao_existe(self):
+        """
+        TESTE: A definição da fonte especial 'peticao_inicial' deve existir.
+        """
+        from sistemas.gerador_pecas.services_source_resolver import SourceResolver
+
+        resolver = SourceResolver()
+        info = resolver.get_source_info("peticao_inicial")
+
+        self.assertIsNotNone(info, "Fonte especial 'peticao_inicial' deve existir")
+        self.assertEqual(info["key"], "peticao_inicial")
+        self.assertEqual(info["categoria_nome"], "peticao_inicial")
+
+    def test_source_resolver_sem_data_usa_ordem(self):
+        """
+        TESTE: Documentos sem data devem usar ordem como fallback.
+        """
+        from sistemas.gerador_pecas.services_source_resolver import (
+            SourceResolver, DocumentoInfo
+        )
+
+        resolver = SourceResolver()  # Sem DB, usa fallback [9500, 500]
+
+        # Documentos sem data - usa ordem
+        documentos = [
+            DocumentoInfo(id="1", codigo=500, data=None, descricao="PI", ordem=0),
+            DocumentoInfo(id="2", codigo=9500, data=None, descricao="Petição", ordem=1),
+        ]
+
+        result = resolver.resolve("peticao_inicial", documentos)
+
+        self.assertTrue(result.sucesso)
+        self.assertEqual(result.documento_id, "1",
+            "Deveria retornar o documento com ordem 0 (código 500)")
+
+
 # =============================================================================
 # RUNNER
 # =============================================================================
@@ -483,6 +592,7 @@ def run_tests():
 
     suite.addTests(loader.loadTestsFromTestCase(TestPeticaoInicialCodigo10))
     suite.addTests(loader.loadTestsFromTestCase(TestFiltroCategoriasMultiplosDocumentos))
+    suite.addTests(loader.loadTestsFromTestCase(TestSourceResolverCodigo10))
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)

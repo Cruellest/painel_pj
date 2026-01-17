@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, and_
+from sqlalchemy import func, desc, and_, case
 
 from database.connection import SessionLocal
 from admin.models_gemini_logs import GeminiApiLog
@@ -209,7 +209,12 @@ def get_gemini_summary(db: Session, hours: int = 24) -> Dict[str, Any]:
         func.avg(GeminiApiLog.time_total_ms).label('avg_ms'),
         func.max(GeminiApiLog.time_total_ms).label('max_ms'),
         func.min(GeminiApiLog.time_total_ms).label('min_ms'),
-        func.sum(GeminiApiLog.response_tokens).label('total_tokens'),
+        func.sum(GeminiApiLog.response_tokens).label('total_response_tokens'),
+        func.sum(GeminiApiLog.prompt_tokens_estimated).label('total_prompt_tokens'),
+        func.avg(GeminiApiLog.time_ttft_ms).label('avg_ttft_ms'),
+        func.avg(GeminiApiLog.time_generation_ms).label('avg_generation_ms'),
+        func.avg(GeminiApiLog.time_connect_ms).label('avg_connect_ms'),
+        func.sum(GeminiApiLog.retry_count).label('total_retries'),
     ).filter(
         GeminiApiLog.created_at >= start_date
     ).first()
@@ -230,17 +235,34 @@ def get_gemini_summary(db: Session, hours: int = 24) -> Dict[str, Any]:
         )
     ).scalar() or 0
 
+    # Chamadas com imagens
+    image_count = db.query(func.count(GeminiApiLog.id)).filter(
+        and_(
+            GeminiApiLog.created_at >= start_date,
+            GeminiApiLog.has_images == True
+        )
+    ).scalar() or 0
+
+    # Chamadas com search
+    search_count = db.query(func.count(GeminiApiLog.id)).filter(
+        and_(
+            GeminiApiLog.created_at >= start_date,
+            GeminiApiLog.has_search == True
+        )
+    ).scalar() or 0
+
     # Por sistema
     by_sistema = db.query(
         GeminiApiLog.sistema,
         func.count(GeminiApiLog.id).label('count'),
         func.avg(GeminiApiLog.time_total_ms).label('avg_ms'),
+        func.sum(GeminiApiLog.response_tokens).label('total_tokens'),
         func.sum(
-            func.case((GeminiApiLog.success == True, 1), else_=0)
+            case({GeminiApiLog.success == True: 1}, else_=0)
         ).label('success_count'),
     ).filter(
         GeminiApiLog.created_at >= start_date
-    ).group_by(GeminiApiLog.sistema).all()
+    ).group_by(GeminiApiLog.sistema).order_by(desc('count')).all()
 
     # Por modelo
     by_model = db.query(
@@ -250,7 +272,7 @@ def get_gemini_summary(db: Session, hours: int = 24) -> Dict[str, Any]:
         func.sum(GeminiApiLog.response_tokens).label('total_tokens'),
     ).filter(
         GeminiApiLog.created_at >= start_date
-    ).group_by(GeminiApiLog.model).all()
+    ).group_by(GeminiApiLog.model).order_by(desc('count')).all()
 
     # Chamadas mais lentas
     slowest = db.query(GeminiApiLog).filter(
@@ -272,15 +294,26 @@ def get_gemini_summary(db: Session, hours: int = 24) -> Dict[str, Any]:
             "avg_latency_ms": round(stats_query.avg_ms, 2) if stats_query.avg_ms else 0,
             "max_latency_ms": round(stats_query.max_ms, 2) if stats_query.max_ms else 0,
             "min_latency_ms": round(stats_query.min_ms, 2) if stats_query.min_ms else 0,
-            "total_tokens": stats_query.total_tokens or 0,
+            "total_response_tokens": stats_query.total_response_tokens or 0,
+            "total_prompt_tokens": stats_query.total_prompt_tokens or 0,
+            "avg_ttft_ms": round(stats_query.avg_ttft_ms, 2) if stats_query.avg_ttft_ms else 0,
+            "avg_generation_ms": round(stats_query.avg_generation_ms, 2) if stats_query.avg_generation_ms else 0,
+            "avg_connect_ms": round(stats_query.avg_connect_ms, 2) if stats_query.avg_connect_ms else 0,
+            "total_retries": stats_query.total_retries or 0,
+            "success_count": success_count,
+            "error_count": total_logs - success_count,
             "success_rate": round((success_count / total_logs * 100), 1) if total_logs > 0 else 0,
-            "cache_hit_rate": round((cache_count / total_logs * 100), 1) if total_logs > 0 else 0,
+            "cache_hits": cache_count,
+            "cache_rate": round((cache_count / total_logs * 100), 1) if total_logs > 0 else 0,
+            "image_calls": image_count,
+            "search_calls": search_count,
         },
         "by_sistema": [
             {
                 "sistema": s.sistema,
                 "count": s.count,
                 "avg_ms": round(s.avg_ms, 2) if s.avg_ms else 0,
+                "total_tokens": s.total_tokens or 0,
                 "success_rate": round((s.success_count / s.count * 100), 1) if s.count > 0 else 0,
             }
             for s in by_sistema

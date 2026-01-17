@@ -301,7 +301,8 @@ async def baixar_documentos_tjms(
 
 def filtrar_documentos_por_categoria(
     documentos: List[Dict[str, Any]],
-    categoria: CategoriaResumoJSON
+    categoria: CategoriaResumoJSON,
+    db: Session = None
 ) -> List[Dict[str, Any]]:
     """
     Filtra documentos que pertencem a uma categoria específica.
@@ -347,7 +348,7 @@ def filtrar_documentos_por_categoria(
                 ordem=i
             ))
 
-        resolver = get_source_resolver()
+        resolver = get_source_resolver(db)
         result = resolver.resolve(categoria.source_special_type, docs_info)
 
         logger.info(f"Resultado resolver fonte especial '{categoria.source_special_type}': sucesso={result.sucesso}, motivo={result.motivo}")
@@ -580,7 +581,7 @@ async def baixar_documentos_categoria(
             ]
 
             # 3. Filtra por categoria
-            docs_filtrados = filtrar_documentos_por_categoria(docs_dict, categoria)
+            docs_filtrados = filtrar_documentos_por_categoria(docs_dict, categoria, db)
 
             if not docs_filtrados:
                 # Monta mensagem de erro detalhada

@@ -446,45 +446,144 @@
 
                             <div class="text-xs text-gray-400 text-center mb-2">— ou configure manualmente —</div>
 
-                            <label class="block text-xs font-medium text-gray-700 mb-1">
-                                <i class="fas fa-code-branch text-indigo-500 mr-1"></i>Regra Manual
-                            </label>
+                            <!-- REGRA PRIMÁRIA -->
+                            <div class="mb-4 p-3 border border-indigo-200 rounded-lg bg-indigo-50/30">
+                                <label class="block text-xs font-medium text-indigo-700 mb-2">
+                                    <i class="fas fa-1 text-indigo-500 mr-1"></i>Regra Primária (Principal)
+                                    <span class="font-normal text-gray-500 ml-1">- Baseada no documento fonte (ex: petição inicial)</span>
+                                </label>
 
-                            <!-- Visualizador Humanizado -->
-                            <div id="regra-humanizada" class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs">
-                                <span class="text-gray-400 italic">Nenhuma regra configurada</span>
+                                <!-- Visualizador Humanizado Primária -->
+                                <div id="regra-humanizada" class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs">
+                                    <span class="text-gray-400 italic">Nenhuma regra configurada</span>
+                                </div>
+
+                                <!-- Editor de Condições Primária -->
+                                <div id="editor-regras" class="space-y-2">
+                                    <div class="flex items-center gap-2">
+                                        <label class="text-xs text-gray-600">Operador:</label>
+                                        <select id="regra-operador" class="px-2 py-1 border border-gray-300 rounded text-xs"
+                                            onchange="atualizarVisualizadorRegra()">
+                                            <option value="and">E (AND)</option>
+                                            <option value="or">OU (OR)</option>
+                                        </select>
+                                    </div>
+
+                                    <div id="lista-condicoes" class="space-y-1.5">
+                                        <!-- Condições e grupos serão adicionados aqui -->
+                                    </div>
+
+                                    <div class="flex gap-2">
+                                        <button type="button" onclick="adicionarCondicao()"
+                                            class="px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 text-xs">
+                                            <i class="fas fa-plus mr-1"></i>Condição
+                                        </button>
+                                        <button type="button" onclick="adicionarGrupo()"
+                                            class="px-2.5 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 text-xs"
+                                            title="Adicionar grupo de condições">
+                                            <i class="fas fa-object-group mr-1"></i>Grupo
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
-                            <!-- Editor de Condições -->
-                            <div id="editor-regras" class="space-y-2">
-                                <div class="flex items-center gap-2">
-                                    <label class="text-xs text-gray-600">Operador:</label>
-                                    <select id="regra-operador" class="px-2 py-1 border border-gray-300 rounded text-xs"
-                                        onchange="atualizarVisualizadorRegra()">
-                                        <option value="and">E (AND)</option>
-                                        <option value="or">OU (OR)</option>
-                                    </select>
+                            <!-- REGRA SECUNDÁRIA (FALLBACK) -->
+                            <div class="mb-3 p-3 border border-amber-200 rounded-lg bg-amber-50/30">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="block text-xs font-medium text-amber-700">
+                                        <i class="fas fa-2 text-amber-500 mr-1"></i>Regra Secundária (Fallback)
+                                    </label>
+                                    <label class="flex items-center gap-1.5 text-xs">
+                                        <input type="checkbox" id="fallback-habilitado"
+                                            class="w-3.5 h-3.5 text-amber-600 rounded"
+                                            onchange="toggleFallback()">
+                                        <span class="text-gray-700">Usar Fallback</span>
+                                    </label>
                                 </div>
 
-                                <div id="lista-condicoes" class="space-y-1.5">
-                                    <!-- Condições e grupos serão adicionados aqui -->
+                                <!-- Aviso explicativo -->
+                                <div class="mb-2 p-2 bg-amber-100/50 border border-amber-200 rounded text-xs text-amber-800">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    <strong>Importante:</strong> A regra secundária só é avaliada se a variável da primária
+                                    <strong>NÃO EXISTIR</strong> (documento não identificado). Se a primária existir,
+                                    seu valor prevalece mesmo que seja <code class="bg-amber-200 px-1 rounded">false</code> ou <code class="bg-amber-200 px-1 rounded">null</code>.
                                 </div>
 
-                                <div class="flex gap-2">
-                                    <button type="button" onclick="adicionarCondicao()"
-                                        class="px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 text-xs">
-                                        <i class="fas fa-plus mr-1"></i>Condição
-                                    </button>
-                                    <button type="button" onclick="adicionarGrupo()"
-                                        class="px-2.5 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 text-xs"
-                                        title="Adicionar grupo de condições">
-                                        <i class="fas fa-object-group mr-1"></i>Grupo
-                                    </button>
+                                <!-- Conteúdo da regra secundária (colapsável) -->
+                                <div id="fallback-content" class="hidden">
+                                    <!-- Gerar Regra Secundária via IA -->
+                                    <div class="mb-2 p-2 bg-amber-100/50 border border-amber-200 rounded">
+                                        <div class="flex gap-2">
+                                            <textarea id="regra-secundaria-linguagem-natural" rows="2"
+                                                class="flex-1 px-2 py-1.5 border border-amber-300 rounded text-xs resize-none"
+                                                placeholder="Ex: 'A contestação menciona competência do juizado'"></textarea>
+                                            <button type="button" onclick="gerarRegraSecundariaIA()"
+                                                id="btn-gerar-regra-secundaria-ia"
+                                                class="px-3 py-1.5 bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-1 text-xs whitespace-nowrap">
+                                                <i class="fas fa-wand-magic-sparkles"></i>Gerar
+                                            </button>
+                                        </div>
+
+                                        <!-- Preview da regra secundária gerada -->
+                                        <div id="preview-regra-secundaria-gerada" class="hidden mt-2">
+                                            <div class="bg-white p-2 rounded border border-amber-200">
+                                                <div class="flex items-center justify-between mb-1">
+                                                    <span class="text-xs font-medium text-gray-700">Regra Secundária:</span>
+                                                    <span id="preview-secundaria-status" class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">OK</span>
+                                                </div>
+                                                <div id="preview-regra-secundaria-conteudo" class="text-xs text-gray-600 mb-2"></div>
+                                                <div class="flex gap-2">
+                                                    <button type="button" onclick="aplicarRegraSecundariaGerada()"
+                                                        class="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">
+                                                        <i class="fas fa-check mr-1"></i>Aplicar
+                                                    </button>
+                                                    <button type="button" onclick="descartarRegraSecundariaGerada()"
+                                                        class="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs hover:bg-gray-300">
+                                                        <i class="fas fa-times mr-1"></i>Descartar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Visualizador Humanizado Secundária -->
+                                    <div id="regra-secundaria-humanizada" class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs">
+                                        <span class="text-gray-400 italic">Nenhuma regra secundária configurada</span>
+                                    </div>
+
+                                    <!-- Editor de Condições Secundária -->
+                                    <div id="editor-regras-secundaria" class="space-y-2">
+                                        <div class="flex items-center gap-2">
+                                            <label class="text-xs text-gray-600">Operador:</label>
+                                            <select id="regra-secundaria-operador" class="px-2 py-1 border border-gray-300 rounded text-xs"
+                                                onchange="atualizarVisualizadorRegraSecundaria()">
+                                                <option value="and">E (AND)</option>
+                                                <option value="or">OU (OR)</option>
+                                            </select>
+                                        </div>
+
+                                        <div id="lista-condicoes-secundaria" class="space-y-1.5">
+                                            <!-- Condições secundárias serão adicionadas aqui -->
+                                        </div>
+
+                                        <div class="flex gap-2">
+                                            <button type="button" onclick="adicionarCondicaoSecundaria()"
+                                                class="px-2.5 py-1 bg-amber-100 text-amber-700 rounded hover:bg-amber-200 text-xs">
+                                                <i class="fas fa-plus mr-1"></i>Condição
+                                            </button>
+                                            <button type="button" onclick="adicionarGrupoSecundaria()"
+                                                class="px-2.5 py-1 bg-orange-100 text-orange-700 rounded hover:bg-orange-200 text-xs"
+                                                title="Adicionar grupo de condições">
+                                                <i class="fas fa-object-group mr-1"></i>Grupo
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <!-- JSON da regra (hidden para backend) -->
+                            <!-- JSON das regras (hidden para backend) -->
                             <input type="hidden" id="modulo-regra-json">
+                            <input type="hidden" id="modulo-regra-secundaria-json">
                         </div>
                     </div>
 
@@ -948,9 +1047,11 @@
         let salvarOrdemTimeout = null; // Timeout para debounce do salvamento automático
         // Estado do modo de ativação
         let modoAtivacaoAtual = 'llm'; // 'llm' ou 'deterministic'
-        let condicoesRegra = []; // Array de condições/grupos para modo determinístico
+        let condicoesRegra = []; // Array de condições/grupos para modo determinístico (PRIMÁRIA)
+        let condicoesRegraSecundaria = []; // Array de condições/grupos para regra SECUNDÁRIA (fallback)
         let variaveisDisponiveis = []; // Cache de variáveis para autocomplete
         let contadorIdCondicao = 0; // Contador para IDs únicos
+        let regraSecundariaGerada = null; // Cache da regra secundária gerada pela IA
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', async () => {
@@ -2977,6 +3078,320 @@
             ultimaRegraGerada = null;
         }
 
+        // ============================================================================
+        // REGRA SECUNDARIA (FALLBACK)
+        // ============================================================================
+
+        // Toggle para mostrar/esconder conteúdo da regra secundária
+        function toggleFallback() {
+            const habilitado = document.getElementById('fallback-habilitado').checked;
+            const conteudo = document.getElementById('fallback-content');
+            if (habilitado) {
+                conteudo.classList.remove('hidden');
+            } else {
+                conteudo.classList.add('hidden');
+            }
+        }
+
+        // Reseta o editor de regras secundárias
+        function resetarEditorRegrasSecundaria() {
+            condicoesRegraSecundaria = [];
+            const regraSecundariaOperador = document.getElementById('regra-secundaria-operador');
+            if (regraSecundariaOperador) {
+                regraSecundariaOperador.value = 'and';
+            }
+            const textareaSecundaria = document.getElementById('regra-secundaria-linguagem-natural');
+            if (textareaSecundaria) {
+                textareaSecundaria.value = '';
+            }
+            const jsonHidden = document.getElementById('modulo-regra-secundaria-json');
+            if (jsonHidden) {
+                jsonHidden.value = '';
+            }
+            renderizarCondicoesSecundaria();
+            atualizarVisualizadorRegraSecundaria();
+            document.getElementById('preview-regra-secundaria-gerada')?.classList.add('hidden');
+        }
+
+        // Carrega regra secundária existente do módulo
+        function carregarRegraSecundariaModulo(regraJson) {
+            if (!regraJson) {
+                resetarEditorRegrasSecundaria();
+                return;
+            }
+
+            try {
+                const regra = typeof regraJson === 'string' ? JSON.parse(regraJson) : regraJson;
+
+                // Formato AST: { type: 'and'/'or', conditions: [...] }
+                if (regra.type && regra.type !== 'condition') {
+                    document.getElementById('regra-secundaria-operador').value = regra.type || 'and';
+                    condicoesRegraSecundaria = carregarASTRecursivo(regra.conditions || []);
+                }
+                // Condição única: { type: 'condition', variable, operator, value }
+                else if (regra.type === 'condition') {
+                    document.getElementById('regra-secundaria-operador').value = 'and';
+                    condicoesRegraSecundaria = [{
+                        type: 'condition',
+                        id: gerarIdUnico(),
+                        variavel: regra.variable || '',
+                        operador: regra.operator || 'equals',
+                        valor: regra.value !== undefined ? regra.value : ''
+                    }];
+                }
+                // Formato antigo: { logic: 'and', conditions: [...] }
+                else if (regra.logic && regra.conditions) {
+                    document.getElementById('regra-secundaria-operador').value = regra.logic || 'and';
+                    condicoesRegraSecundaria = regra.conditions.map(c => ({
+                        type: 'condition',
+                        id: gerarIdUnico(),
+                        variavel: c.variable || '',
+                        operador: c.operator || 'equals',
+                        valor: c.value !== undefined ? c.value : ''
+                    }));
+                }
+                else {
+                    resetarEditorRegrasSecundaria();
+                    return;
+                }
+
+                renderizarCondicoesSecundaria();
+                atualizarVisualizadorRegraSecundaria();
+
+                // Atualiza JSON hidden
+                const ast = construirASTSecundaria();
+                document.getElementById('modulo-regra-secundaria-json').value = ast ? JSON.stringify(ast) : '';
+
+            } catch (e) {
+                console.error('Erro ao carregar regra secundária:', e);
+                resetarEditorRegrasSecundaria();
+            }
+        }
+
+        // Gera regra secundária via IA
+        async function gerarRegraSecundariaIA() {
+            const texto = document.getElementById('regra-secundaria-linguagem-natural').value.trim();
+            if (!texto) {
+                alert('Digite uma condição em linguagem natural para a regra secundária');
+                return;
+            }
+
+            const btn = document.getElementById('btn-gerar-regra-secundaria-ia');
+            const btnHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando...';
+            btn.disabled = true;
+
+            document.getElementById('preview-regra-secundaria-gerada').classList.add('hidden');
+
+            try {
+                const grupoId = document.getElementById('modulo-grupo')?.value || '';
+                const response = await fetch('/admin/api/extraction/regras-deterministicas/gerar', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    },
+                    body: JSON.stringify({
+                        condicao_texto: texto,
+                        contexto: `Regra SECUNDÁRIA (fallback) - Grupo: ${grupoId || 'N/A'}`
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    regraSecundariaGerada = {
+                        regra: data.regra,
+                        variaveis_usadas: data.variaveis_usadas,
+                        texto_original: texto
+                    };
+                    // Mostra preview
+                    document.getElementById('preview-regra-secundaria-gerada').classList.remove('hidden');
+                    document.getElementById('preview-secundaria-status').textContent = 'Válida';
+                    document.getElementById('preview-secundaria-status').className = 'text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700';
+                    document.getElementById('preview-regra-secundaria-conteudo').innerHTML = renderizarRegraHumanizadaIA(data.regra);
+                } else {
+                    alert(data.erro || 'Erro ao gerar regra secundária');
+                }
+            } catch (error) {
+                console.error('Erro ao gerar regra secundária:', error);
+                alert('Erro de conexão: ' + error.message);
+            } finally {
+                btn.innerHTML = btnHtml;
+                btn.disabled = false;
+            }
+        }
+
+        // Aplica regra secundária gerada ao builder
+        function aplicarRegraSecundariaGerada() {
+            if (!regraSecundariaGerada) return;
+
+            const regra = regraSecundariaGerada.regra;
+
+            // Determina operador principal
+            const operadorLogico = (regra.type === 'or') ? 'or' : 'and';
+            document.getElementById('regra-secundaria-operador').value = operadorLogico;
+
+            // Converte AST para formato do builder
+            if (regra.type === 'condition') {
+                condicoesRegraSecundaria = [{
+                    type: 'condition',
+                    id: gerarIdUnico(),
+                    variavel: regra.variable,
+                    operador: regra.operator,
+                    valor: regra.value !== undefined ? String(regra.value) : ''
+                }];
+            } else if (regra.conditions) {
+                condicoesRegraSecundaria = carregarASTRecursivo(regra.conditions);
+            } else {
+                condicoesRegraSecundaria = [];
+            }
+
+            renderizarCondicoesSecundaria();
+
+            // Limpa preview
+            document.getElementById('preview-regra-secundaria-gerada').classList.add('hidden');
+            document.getElementById('regra-secundaria-linguagem-natural').value = '';
+            regraSecundariaGerada = null;
+        }
+
+        // Descarta regra secundária gerada
+        function descartarRegraSecundariaGerada() {
+            document.getElementById('preview-regra-secundaria-gerada').classList.add('hidden');
+            regraSecundariaGerada = null;
+        }
+
+        // Adiciona condição à regra secundária
+        function adicionarCondicaoSecundaria() {
+            condicoesRegraSecundaria.push({
+                type: 'condition',
+                id: gerarIdUnico(),
+                variavel: '',
+                operador: 'equals',
+                valor: ''
+            });
+            renderizarCondicoesSecundaria();
+        }
+
+        // Adiciona grupo à regra secundária
+        function adicionarGrupoSecundaria() {
+            condicoesRegraSecundaria.push({
+                type: 'group',
+                id: gerarIdUnico(),
+                operador: 'and',
+                conditions: []
+            });
+            renderizarCondicoesSecundaria();
+        }
+
+        // Remove item da regra secundária
+        function removerItemSecundaria(id) {
+            condicoesRegraSecundaria = condicoesRegraSecundaria.filter(c => c.id !== id);
+            renderizarCondicoesSecundaria();
+        }
+
+        // Renderiza condições da regra secundária
+        function renderizarCondicoesSecundaria() {
+            const container = document.getElementById('lista-condicoes-secundaria');
+            container.innerHTML = condicoesRegraSecundaria.map(cond => renderizarItemCondicaoSecundaria(cond)).join('');
+            atualizarVisualizadorRegraSecundaria();
+        }
+
+        // Renderiza item de condição secundária (reutiliza lógica da primária)
+        function renderizarItemCondicaoSecundaria(item) {
+            if (item.type === 'condition') {
+                return `
+                    <div class="flex items-center gap-1.5 p-1.5 bg-amber-50 rounded border border-amber-200" data-id-sec="${item.id}">
+                        <select class="px-1.5 py-1 border border-gray-300 rounded text-xs flex-1 min-w-[100px]"
+                            onchange="atualizarCondicaoSecundaria('${item.id}', 'variavel', this.value)">
+                            <option value="">Selecione...</option>
+                            ${variaveisDisponiveis.map(v => `<option value="${v.slug}" ${v.slug === item.variavel ? 'selected' : ''}>${v.slug}</option>`).join('')}
+                        </select>
+                        <select class="px-1.5 py-1 border border-gray-300 rounded text-xs"
+                            onchange="atualizarCondicaoSecundaria('${item.id}', 'operador', this.value)">
+                            <option value="equals" ${item.operador === 'equals' ? 'selected' : ''}>=</option>
+                            <option value="not_equals" ${item.operador === 'not_equals' ? 'selected' : ''}>!=</option>
+                            <option value="contains" ${item.operador === 'contains' ? 'selected' : ''}>contém</option>
+                            <option value="exists" ${item.operador === 'exists' ? 'selected' : ''}>existe</option>
+                            <option value="not_exists" ${item.operador === 'not_exists' ? 'selected' : ''}>não existe</option>
+                        </select>
+                        <input type="text" value="${item.valor || ''}" placeholder="valor"
+                            class="px-1.5 py-1 border border-gray-300 rounded text-xs w-20"
+                            onchange="atualizarCondicaoSecundaria('${item.id}', 'valor', this.value)">
+                        <button type="button" onclick="removerItemSecundaria('${item.id}')"
+                            class="p-1 text-red-500 hover:bg-red-100 rounded">
+                            <i class="fas fa-times text-xs"></i>
+                        </button>
+                    </div>
+                `;
+            }
+            return '';
+        }
+
+        // Atualiza campo de condição secundária
+        function atualizarCondicaoSecundaria(id, campo, valor) {
+            const cond = condicoesRegraSecundaria.find(c => c.id === id);
+            if (cond) {
+                cond[campo] = valor;
+                atualizarVisualizadorRegraSecundaria();
+            }
+        }
+
+        // Atualiza visualizador humanizado da regra secundária
+        function atualizarVisualizadorRegraSecundaria() {
+            const container = document.getElementById('regra-secundaria-humanizada');
+            const regra = construirASTSecundaria();
+
+            // Atualiza o JSON hidden
+            const jsonHidden = document.getElementById('modulo-regra-secundaria-json');
+            if (jsonHidden) {
+                jsonHidden.value = regra ? JSON.stringify(regra) : '';
+            }
+
+            if (!regra || (regra.conditions && regra.conditions.length === 0)) {
+                container.innerHTML = '<span class="text-gray-400 italic">Nenhuma regra secundária configurada</span>';
+                return;
+            }
+
+            container.innerHTML = renderizarRegraHumanizadaIA(regra);
+        }
+
+        // Constrói AST da regra secundária
+        function construirASTSecundaria() {
+            const operadorPrincipal = document.getElementById('regra-secundaria-operador')?.value || 'and';
+
+            if (condicoesRegraSecundaria.length === 0) {
+                return null;
+            }
+
+            if (condicoesRegraSecundaria.length === 1 && condicoesRegraSecundaria[0].type === 'condition') {
+                const c = condicoesRegraSecundaria[0];
+                if (!c.variavel) return null;
+                return {
+                    type: 'condition',
+                    variable: c.variavel,
+                    operator: c.operador,
+                    value: parseValorCondicao(c.valor, c.operador)
+                };
+            }
+
+            const conditions = condicoesRegraSecundaria
+                .filter(c => c.variavel)
+                .map(c => ({
+                    type: 'condition',
+                    variable: c.variavel,
+                    operator: c.operador,
+                    value: parseValorCondicao(c.valor, c.operador)
+                }));
+
+            if (conditions.length === 0) return null;
+
+            return {
+                type: operadorPrincipal,
+                conditions: conditions
+            };
+        }
+
         // Renderiza regra em formato humanizado (para preview IA)
         function renderizarRegraHumanizadaIA(regra) {
             if (!regra) return '<span class="text-gray-400">Nenhuma regra</span>';
@@ -3072,6 +3487,13 @@
 
             // Reseta o editor de regras para modo LLM
             resetarEditorRegras();
+
+            // Reseta o editor de regras secundárias (fallback)
+            const fallbackCheckbox = document.getElementById('fallback-habilitado');
+            const fallbackContent = document.getElementById('fallback-content');
+            if (fallbackCheckbox) fallbackCheckbox.checked = false;
+            if (fallbackContent) fallbackContent.classList.add('hidden');
+            resetarEditorRegrasSecundaria();
 
             renderizarTags();
 
@@ -3178,6 +3600,27 @@
                     resetarEditorRegras();
                 }
 
+                // Carrega regra secundária (fallback) se existir
+                const fallbackCheckbox = document.getElementById('fallback-habilitado');
+                const fallbackContent = document.getElementById('fallback-content');
+                if (fallbackCheckbox) {
+                    fallbackCheckbox.checked = modulo.fallback_habilitado || false;
+                }
+                if (fallbackContent) {
+                    fallbackContent.classList.toggle('hidden', !modulo.fallback_habilitado);
+                }
+                if (modulo.regra_secundaria_texto_original) {
+                    const textareaSecundaria = document.getElementById('regra-secundaria-linguagem-natural');
+                    if (textareaSecundaria) {
+                        textareaSecundaria.value = modulo.regra_secundaria_texto_original;
+                    }
+                }
+                if (modulo.regra_deterministica_secundaria) {
+                    carregarRegraSecundariaModulo(modulo.regra_deterministica_secundaria);
+                } else {
+                    resetarEditorRegrasSecundaria();
+                }
+
                 renderizarTags();
 
                 document.getElementById('modal-editor').classList.remove('hidden');
@@ -3197,16 +3640,31 @@
             const grupoId = document.getElementById('modulo-grupo').value;
             const subgrupoId = document.getElementById('modulo-subgrupo').value;
             
-            // Obtém modo de ativação e regra
+            // Obtém modo de ativação e regra primária
             const regraJson = document.getElementById('modulo-regra-json')?.value || '';
             let regraAtivacao = null;
             if (modoAtivacaoAtual === 'deterministic' && regraJson) {
                 try {
                     regraAtivacao = JSON.parse(regraJson);
                 } catch (e) {
-                    console.error('Erro ao parsear regra:', e);
+                    console.error('Erro ao parsear regra primária:', e);
                 }
             }
+
+            // Obtém regra secundária (fallback)
+            const regraSecundariaJson = document.getElementById('modulo-regra-secundaria-json')?.value || '';
+            let regraSecundaria = null;
+            const fallbackHabilitado = document.getElementById('fallback-habilitado')?.checked || false;
+            if (modoAtivacaoAtual === 'deterministic' && fallbackHabilitado && regraSecundariaJson) {
+                try {
+                    regraSecundaria = JSON.parse(regraSecundariaJson);
+                } catch (e) {
+                    console.error('Erro ao parsear regra secundária:', e);
+                }
+            }
+            const regraSecundariaTextoOriginal = fallbackHabilitado
+                ? (document.getElementById('regra-secundaria-linguagem-natural')?.value || null)
+                : null;
 
             const dados = {
                 tipo: tipo,
@@ -3218,6 +3676,9 @@
                 condicao_ativacao: tipo === 'conteudo' ? (document.getElementById('modulo-condicao-ativacao').value || null) : null,
                 modo_ativacao: tipo === 'conteudo' ? modoAtivacaoAtual : null,
                 regra_deterministica: tipo === 'conteudo' && modoAtivacaoAtual === 'deterministic' ? regraAtivacao : null,
+                regra_deterministica_secundaria: tipo === 'conteudo' && modoAtivacaoAtual === 'deterministic' ? regraSecundaria : null,
+                regra_secundaria_texto_original: tipo === 'conteudo' && modoAtivacaoAtual === 'deterministic' ? regraSecundariaTextoOriginal : null,
+                fallback_habilitado: tipo === 'conteudo' ? fallbackHabilitado : false,
                 conteudo: document.getElementById('modulo-conteudo').value,
                 tags: tagsAtuais,
                 ativo: document.getElementById('modulo-ativo').checked,

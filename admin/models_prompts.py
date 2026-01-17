@@ -66,9 +66,17 @@ class PromptModulo(Base):
     # Modo de ativação (llm = modo atual, deterministic = regra AST)
     modo_ativacao = Column(String(20), nullable=True, default='llm')  # 'llm' | 'deterministic'
 
-    # Regra determinística (quando modo_ativacao = 'deterministic')
+    # Regra determinística PRIMÁRIA (quando modo_ativacao = 'deterministic')
+    # A regra primária é avaliada primeiro e prevalece quando a variável existe
     regra_deterministica = Column(JSON, nullable=True)  # AST JSON da regra gerada pela IA
     regra_texto_original = Column(Text, nullable=True)  # Texto original em linguagem natural
+
+    # Regra determinística SECUNDÁRIA (fallback)
+    # Só é avaliada quando a variável da regra primária NÃO EXISTE (documento não identificado)
+    # NUNCA sobrepõe a primária - se a primária existe (mesmo false/null), a secundária é ignorada
+    regra_deterministica_secundaria = Column(JSON, nullable=True)  # AST JSON da regra secundária
+    regra_secundaria_texto_original = Column(Text, nullable=True)  # Texto original da secundária
+    fallback_habilitado = Column(Boolean, default=False)  # Se deve avaliar regra secundária
 
     # Metadados
     palavras_chave = Column(JSON, nullable=True, default=list)  # Para detecção automática
@@ -123,6 +131,11 @@ class PromptModuloHistorico(Base):
     modo_ativacao = Column(String(20), nullable=True)
     regra_deterministica = Column(JSON, nullable=True)
     regra_texto_original = Column(Text, nullable=True)
+
+    # Regra secundária (histórico)
+    regra_deterministica_secundaria = Column(JSON, nullable=True)
+    regra_secundaria_texto_original = Column(Text, nullable=True)
+    fallback_habilitado = Column(Boolean, nullable=True)
     
     # Auditoria
     alterado_por = Column(Integer, ForeignKey("users.id"), nullable=True)

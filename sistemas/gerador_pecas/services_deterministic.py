@@ -785,29 +785,38 @@ class PromptVariableUsageSync:
     def atualizar_uso(
         self,
         prompt_id: int,
-        regra: Optional[Dict]
+        regra: Optional[Dict],
+        regra_secundaria: Optional[Dict] = None
     ) -> List[str]:
         """
         Atualiza o registro de variáveis usadas por um prompt.
 
         Args:
             prompt_id: ID do prompt
-            regra: AST JSON da regra (ou None se modo LLM)
+            regra: AST JSON da regra PRIMÁRIA (ou None se modo LLM)
+            regra_secundaria: AST JSON da regra SECUNDÁRIA/fallback (opcional)
 
         Returns:
-            Lista de slugs de variáveis usadas
+            Lista de slugs de variáveis usadas (primária + secundária)
         """
         # Remove registros anteriores
         self.db.query(PromptVariableUsage).filter(
             PromptVariableUsage.prompt_id == prompt_id
         ).delete()
 
-        if not regra:
+        variaveis = set()
+
+        # Extrai variáveis da regra primária
+        if regra:
+            variaveis.update(self._extrair_variaveis(regra))
+
+        # Extrai variáveis da regra secundária
+        if regra_secundaria:
+            variaveis.update(self._extrair_variaveis(regra_secundaria))
+
+        if not variaveis:
             self.db.commit()
             return []
-
-        # Extrai variáveis usadas
-        variaveis = self._extrair_variaveis(regra)
 
         # Cria novos registros
         for slug in variaveis:
@@ -870,44 +879,154 @@ class PromptVariableUsageSync:
         ]
 
 
+def verificar_variaveis_existem(regra: Dict, dados: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """
+    Verifica se TODAS as variáveis usadas na regra EXISTEM nos dados.
+
+    IMPORTANTE: Distingue entre:
+    - Variável inexistente (chave não presente no dict) -> retorna False
+    - Variável existente com valor False/None -> retorna True
+
+    Args:
+        regra: AST JSON da regra
+        dados: Dicionário com dados extraídos
+
+    Returns:
+        Tupla (todas_existem, lista_variaveis_usadas)
+    """
+    variaveis = _extrair_variaveis_regra(regra)
+    todas_existem = all(var in dados for var in variaveis)
+    return todas_existem, list(variaveis)
+
+
 def avaliar_ativacao_prompt(
     prompt_id: int,
     modo_ativacao: str,
     regra_deterministica: Optional[Dict],
     dados_extracao: Dict[str, Any],
-    db: Session
+    db: Session,
+    regra_secundaria: Optional[Dict] = None,
+    fallback_habilitado: bool = False
 ) -> Dict[str, Any]:
     """
     Função de conveniência para avaliar se um prompt deve ser ativado.
 
+    Suporta regra primária e secundária (fallback controlado):
+    1. Se regra primária existe:
+       - Verifica se as variáveis da primária EXISTEM nos dados
+       - Se existem: avalia primária (prevalece mesmo se false/null)
+       - Se NÃO existem: avalia secundária (se habilitada)
+    2. Secundária NUNCA sobrepõe primária
+
     Args:
         prompt_id: ID do prompt
         modo_ativacao: 'llm' ou 'deterministic'
-        regra_deterministica: AST JSON (se modo deterministic)
+        regra_deterministica: AST JSON da regra PRIMÁRIA (se modo deterministic)
         dados_extracao: Dados extraídos do processo
         db: Sessão do banco
+        regra_secundaria: AST JSON da regra SECUNDÁRIA/fallback (opcional)
+        fallback_habilitado: Se deve avaliar regra secundária quando primária não existe
 
     Returns:
-        Dict com ativar, modo, detalhes
+        Dict com ativar, modo, detalhes, regra_usada
     """
     if modo_ativacao == "deterministic" and regra_deterministica:
-        # Modo determinístico - avalia sem LLM
         avaliador = DeterministicRuleEvaluator()
-        resultado = avaliador.avaliar(regra_deterministica, dados_extracao)
 
-        # Registra log de ativação
-        _registrar_log_ativacao(
-            db=db,
-            prompt_id=prompt_id,
-            modo="deterministic",
-            resultado=resultado,
-            variaveis_usadas=list(_extrair_variaveis_regra(regra_deterministica))
+        # 1. Verifica se variáveis da regra primária EXISTEM nos dados
+        variaveis_primaria_existem, vars_primaria = verificar_variaveis_existem(
+            regra_deterministica, dados_extracao
+        )
+
+        logger.info(
+            f"[DETERMINISTIC] Prompt {prompt_id}: "
+            f"variáveis primária existem={variaveis_primaria_existem}, "
+            f"vars={vars_primaria}"
+        )
+
+        # 2. Se variáveis da primária EXISTEM -> avalia primária (encerra decisão)
+        if variaveis_primaria_existem:
+            resultado = avaliador.avaliar(regra_deterministica, dados_extracao)
+
+            logger.info(
+                f"[DETERMINISTIC] Prompt {prompt_id}: "
+                f"regra PRIMÁRIA avaliada = {resultado}"
+            )
+
+            _registrar_log_ativacao(
+                db=db,
+                prompt_id=prompt_id,
+                modo="deterministic_primary",
+                resultado=resultado,
+                variaveis_usadas=vars_primaria
+            )
+
+            return {
+                "ativar": resultado,
+                "modo": "deterministic",
+                "regra_usada": "primaria",
+                "detalhes": f"Avaliado por regra primária (variáveis existem: {vars_primaria})"
+            }
+
+        # 3. Se variáveis da primária NÃO EXISTEM -> tenta secundária (se habilitada)
+        if fallback_habilitado and regra_secundaria:
+            variaveis_secundaria_existem, vars_secundaria = verificar_variaveis_existem(
+                regra_secundaria, dados_extracao
+            )
+
+            logger.info(
+                f"[DETERMINISTIC] Prompt {prompt_id}: "
+                f"FALLBACK para secundária, vars existem={variaveis_secundaria_existem}, "
+                f"vars={vars_secundaria}"
+            )
+
+            if variaveis_secundaria_existem:
+                resultado = avaliador.avaliar(regra_secundaria, dados_extracao)
+
+                logger.info(
+                    f"[DETERMINISTIC] Prompt {prompt_id}: "
+                    f"regra SECUNDÁRIA avaliada = {resultado}"
+                )
+
+                _registrar_log_ativacao(
+                    db=db,
+                    prompt_id=prompt_id,
+                    modo="deterministic_secondary",
+                    resultado=resultado,
+                    variaveis_usadas=vars_secundaria
+                )
+
+                return {
+                    "ativar": resultado,
+                    "modo": "deterministic",
+                    "regra_usada": "secundaria",
+                    "detalhes": f"Avaliado por regra secundária/fallback (primária inexistente: {vars_primaria})"
+                }
+            else:
+                # Nem primária nem secundária têm variáveis disponíveis
+                logger.warning(
+                    f"[DETERMINISTIC] Prompt {prompt_id}: "
+                    f"NEM primária NEM secundária têm variáveis disponíveis"
+                )
+
+                return {
+                    "ativar": None,  # Indeterminado - não é possível avaliar
+                    "modo": "deterministic",
+                    "regra_usada": "nenhuma",
+                    "detalhes": f"Nenhuma regra aplicável - variáveis inexistentes (primária: {vars_primaria}, secundária: {vars_secundaria})"
+                }
+
+        # 4. Variáveis da primária não existem e não há secundária/fallback
+        logger.info(
+            f"[DETERMINISTIC] Prompt {prompt_id}: "
+            f"regra primária INAPLICÁVEL (vars não existem), sem fallback"
         )
 
         return {
-            "ativar": resultado,
+            "ativar": None,  # Indeterminado - não é possível avaliar
             "modo": "deterministic",
-            "detalhes": "Avaliado por regra determinística"
+            "regra_usada": "nenhuma",
+            "detalhes": f"Regra primária inaplicável (variáveis inexistentes: {vars_primaria}), fallback desabilitado"
         }
 
     else:
@@ -915,6 +1034,7 @@ def avaliar_ativacao_prompt(
         return {
             "ativar": None,
             "modo": "llm",
+            "regra_usada": None,
             "detalhes": "Requer avaliação por LLM"
         }
 

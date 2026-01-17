@@ -795,7 +795,7 @@ class GerenciadorFormatosJSON:
             elif cat.usa_fonte_especial:
                 # Categoria com fonte especial - armazena separadamente
                 from sistemas.gerador_pecas.services_source_resolver import get_source_resolver
-                resolver = get_source_resolver()
+                resolver = get_source_resolver(self.db)
                 source_info = resolver.get_source_info(cat.source_special_type)
                 codigos = source_info["codigos_validos"] if source_info else []
                 self._fontes_especiais[cat.source_special_type] = (formato, codigos)
@@ -852,7 +852,7 @@ class GerenciadorFormatosJSON:
             ))
 
         # Resolve cada fonte especial
-        resolver = get_source_resolver()
+        resolver = get_source_resolver(self.db)
         for source_type, (formato, codigos) in self._fontes_especiais.items():
             result = resolver.resolve(source_type, docs_info)
 

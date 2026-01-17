@@ -36,10 +36,16 @@ class PromptModuloBase(BaseModel):
     conteudo: str  # Conteúdo do prompt (para Agente 3)
     # Modo de ativação: 'llm' (padrão) ou 'deterministic'
     modo_ativacao: Optional[str] = 'llm'
-    # Regra determinística (AST JSON) - apenas quando modo_ativacao = 'deterministic'
+    # Regra determinística PRIMÁRIA (AST JSON) - apenas quando modo_ativacao = 'deterministic'
     regra_deterministica: Optional[dict] = None
-    # Texto original da regra em linguagem natural
+    # Texto original da regra primária em linguagem natural
     regra_texto_original: Optional[str] = None
+    # Regra determinística SECUNDÁRIA (fallback) - avaliada se primária não existe
+    regra_deterministica_secundaria: Optional[dict] = None
+    # Texto original da regra secundária em linguagem natural
+    regra_secundaria_texto_original: Optional[str] = None
+    # Se deve avaliar regra secundária quando primária não existe
+    fallback_habilitado: Optional[bool] = False
     tags: Optional[List[str]] = []
     ativo: bool = True
     ordem: int = 0
@@ -60,10 +66,16 @@ class PromptModuloUpdate(BaseModel):
     conteudo: Optional[str] = None
     # Modo de ativação: 'llm' ou 'deterministic'
     modo_ativacao: Optional[str] = None
-    # Regra determinística (AST JSON)
+    # Regra determinística PRIMÁRIA (AST JSON)
     regra_deterministica: Optional[dict] = None
-    # Texto original da regra em linguagem natural
+    # Texto original da regra primária em linguagem natural
     regra_texto_original: Optional[str] = None
+    # Regra determinística SECUNDÁRIA (fallback)
+    regra_deterministica_secundaria: Optional[dict] = None
+    # Texto original da regra secundária em linguagem natural
+    regra_secundaria_texto_original: Optional[str] = None
+    # Se deve avaliar regra secundária quando primária não existe
+    fallback_habilitado: Optional[bool] = None
     tags: Optional[List[str]] = None
     ativo: Optional[bool] = None
     ordem: Optional[int] = None
@@ -85,10 +97,16 @@ class PromptModuloResponse(BaseModel):
     conteudo: str
     # Modo de ativação: 'llm' ou 'deterministic'
     modo_ativacao: Optional[str] = 'llm'
-    # Regra determinística (AST JSON)
+    # Regra determinística PRIMÁRIA (AST JSON)
     regra_deterministica: Optional[dict] = None
-    # Texto original da regra em linguagem natural
+    # Texto original da regra primária em linguagem natural
     regra_texto_original: Optional[str] = None
+    # Regra determinística SECUNDÁRIA (fallback)
+    regra_deterministica_secundaria: Optional[dict] = None
+    # Texto original da regra secundária em linguagem natural
+    regra_secundaria_texto_original: Optional[str] = None
+    # Se deve avaliar regra secundária quando primária não existe
+    fallback_habilitado: Optional[bool] = False
     # Palavras-chave para ativação
     palavras_chave: Optional[List[str]] = []
     tags: Optional[List[str]] = []
@@ -323,10 +341,14 @@ async def listar_modulos(
             "titulo": modulo.titulo,
             "condicao_ativacao": modulo.condicao_ativacao,
             "conteudo": modulo.conteudo,
-            # Campos de modo determinístico
+            # Campos de modo determinístico (primária)
             "modo_ativacao": modulo.modo_ativacao or 'llm',
             "regra_deterministica": modulo.regra_deterministica,
             "regra_texto_original": modulo.regra_texto_original,
+            # Campos de regra secundária (fallback)
+            "regra_deterministica_secundaria": modulo.regra_deterministica_secundaria,
+            "regra_secundaria_texto_original": modulo.regra_secundaria_texto_original,
+            "fallback_habilitado": modulo.fallback_habilitado or False,
             "palavras_chave": modulo.palavras_chave,
             "tags": modulo.tags,
             "ativo": modulo.ativo,
@@ -942,10 +964,14 @@ async def atualizar_modulo(
         conteudo=modulo.conteudo,
         palavras_chave=modulo.palavras_chave,
         tags=modulo.tags,
-        # Campos de modo determinístico
+        # Campos de modo determinístico (primária)
         modo_ativacao=modulo.modo_ativacao,
         regra_deterministica=modulo.regra_deterministica,
         regra_texto_original=modulo.regra_texto_original,
+        # Campos de regra secundária (fallback)
+        regra_deterministica_secundaria=modulo.regra_deterministica_secundaria,
+        regra_secundaria_texto_original=modulo.regra_secundaria_texto_original,
+        fallback_habilitado=modulo.fallback_habilitado,
         alterado_por=current_user.id,
         motivo=modulo_data.motivo,
         diff_resumo=diff_resumo
@@ -993,7 +1019,12 @@ async def atualizar_modulo(
         try:
             from sistemas.gerador_pecas.services_deterministic import PromptVariableUsageSync
             sync = PromptVariableUsageSync(db)
-            sync.atualizar_uso(modulo.id, modulo.regra_deterministica)
+            # Passa tanto regra primária quanto secundária para sincronizar todas as variáveis usadas
+            sync.atualizar_uso(
+                modulo.id,
+                modulo.regra_deterministica,
+                modulo.regra_deterministica_secundaria if modulo.fallback_habilitado else None
+            )
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Erro ao sincronizar uso de variáveis: {e}")
@@ -1002,7 +1033,7 @@ async def atualizar_modulo(
         try:
             from sistemas.gerador_pecas.services_deterministic import PromptVariableUsageSync
             sync = PromptVariableUsageSync(db)
-            sync.atualizar_uso(modulo.id, None)
+            sync.atualizar_uso(modulo.id, None, None)
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Erro ao limpar uso de variáveis: {e}")
