@@ -110,6 +110,48 @@ async def get_toggle_status(
     )
 
 
+@router.post("/test-log")
+async def test_log_manually(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint de diagnóstico: testa se o log_performance funciona.
+    """
+    from admin.services_performance import log_performance, invalidate_cache
+
+    # Invalida cache para garantir leitura fresca
+    invalidate_cache()
+
+    # Tenta registrar um log manualmente
+    log_performance(
+        admin_user_id=current_user.id,
+        admin_username=current_user.username,
+        request_id="diag0001",
+        method="POST",
+        route="/admin/performance/test-log",
+        layer="controller",
+        action="diagnostic_test",
+        duration_ms=1.0,
+        status_code=200,
+        db=db
+    )
+
+    # Verifica se foi registrado
+    from admin.models_performance import PerformanceLog
+    count = db.query(PerformanceLog).filter(
+        PerformanceLog.request_id == "diag0001"
+    ).count()
+
+    return {
+        "success": count > 0,
+        "message": f"Log {'registrado' if count > 0 else 'NAO registrado'}",
+        "user_id": current_user.id,
+        "enabled": is_performance_logging_enabled(db),
+        "enabled_admin_id": get_enabled_admin_id(db)
+    }
+
+
 @router.post("/toggle", response_model=ToggleResponse)
 async def set_toggle_status(
     data: ToggleRequest,

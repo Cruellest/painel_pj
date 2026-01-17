@@ -82,7 +82,7 @@ def print_result(name: str, duration_ms: float, status: int, success: bool):
     elif duration_ms > 500:
         duration_color = warning
 
-    icon = "✓" if success else "✗"
+    icon = "[OK]" if success else "[X]"
     print(f"  {color}{icon}{reset} {name:<40} {duration_color}{duration_ms:>8.1f}ms{reset}  [{status}]")
 
 
