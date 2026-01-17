@@ -9,7 +9,7 @@ Endpoints:
 - DELETE /admin/performance/cleanup - Limpa logs antigos
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
@@ -150,6 +150,82 @@ async def test_log_manually(
         "enabled": is_performance_logging_enabled(db),
         "enabled_admin_id": get_enabled_admin_id(db)
     }
+
+
+@router.get("/diag-middleware")
+async def diagnose_middleware(
+    request: Request,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint de diagnóstico: simula exatamente o que o middleware faz.
+    """
+    from admin.services_performance import invalidate_cache
+
+    # Invalida cache para leitura fresca
+    invalidate_cache()
+
+    result = {
+        "step_1_is_enabled": None,
+        "step_2_enabled_admin_id": None,
+        "step_3_auth_header": None,
+        "step_4_token_found": None,
+        "step_5_payload": None,
+        "step_6_user_id_from_token": None,
+        "step_7_role": None,
+        "step_8_should_log": None,
+        "expected_user_id": current_user.id
+    }
+
+    # Step 1: Check if enabled
+    result["step_1_is_enabled"] = is_performance_logging_enabled(db)
+
+    # Step 2: Get enabled admin id
+    result["step_2_enabled_admin_id"] = get_enabled_admin_id(db)
+
+    # Step 3: Get auth header
+    auth_header = request.headers.get("Authorization")
+    result["step_3_auth_header"] = auth_header[:50] if auth_header else None
+
+    # Step 4: Extract token
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+    else:
+        token = request.cookies.get("access_token")
+    result["step_4_token_found"] = token is not None
+
+    # Step 5: Decode token
+    if token:
+        try:
+            from auth.utils import decode_access_token
+            payload = decode_access_token(token)
+            result["step_5_payload"] = {
+                "user_id": payload.get("user_id") if payload else None,
+                "sub": payload.get("sub") if payload else None,
+                "role": payload.get("role") if payload else None
+            } if payload else "DECODE_FAILED"
+
+            if payload:
+                result["step_6_user_id_from_token"] = payload.get("user_id")
+                result["step_7_role"] = payload.get("role")
+        except Exception as e:
+            result["step_5_payload"] = f"ERROR: {str(e)}"
+
+    # Step 8: Would middleware log?
+    if result["step_1_is_enabled"]:
+        if result["step_7_role"] == "admin":
+            if result["step_6_user_id_from_token"] == result["step_2_enabled_admin_id"]:
+                result["step_8_should_log"] = True
+            else:
+                result["step_8_should_log"] = f"NO: user_id mismatch ({result['step_6_user_id_from_token']} != {result['step_2_enabled_admin_id']})"
+        else:
+            result["step_8_should_log"] = f"NO: role is not admin ({result['step_7_role']})"
+    else:
+        result["step_8_should_log"] = "NO: logging not enabled"
+
+    return result
 
 
 @router.post("/toggle", response_model=ToggleResponse)
