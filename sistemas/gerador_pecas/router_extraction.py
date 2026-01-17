@@ -144,6 +144,9 @@ class SyncJsonResponse(BaseModel):
     schema_json: Optional[dict] = None
     variaveis_adicionadas: int = 0
     variaveis_adicionadas_lista: Optional[List[str]] = None
+    variaveis_modificadas: int = 0
+    variaveis_modificadas_lista: Optional[List[str]] = None
+    houve_alteracao: bool = False
     perguntas_incompletas: Optional[List[dict]] = None
     mensagem: Optional[str] = None
     erro: Optional[str] = None
@@ -1354,60 +1357,113 @@ async def sincronizar_json_sem_ia(
             erro=f"Não foi possível atualizar: {len(perguntas_incompletas)} pergunta(s) incompleta(s)"
         )
 
-    # Faz merge: cria novo JSON ordenado conforme perguntas
+    # SEMPRE reconstrói o JSON a partir do BD (fonte da verdade)
+    # O BD é a fonte da verdade; comparamos estruturalmente para detectar mudanças
     json_novo = {}
     variaveis_adicionadas = []
+    variaveis_modificadas = []
+
+    def _normalizar_para_comparacao(obj):
+        """Normaliza objeto para comparação estrutural (ordena chaves, arrays)."""
+        if isinstance(obj, dict):
+            return {k: _normalizar_para_comparacao(obj[k]) for k in sorted(obj.keys())}
+        elif isinstance(obj, list):
+            # Para listas de dicts com 'id' ou 'value', ordena por esse campo
+            if obj and isinstance(obj[0], dict):
+                if 'id' in obj[0]:
+                    return sorted([_normalizar_para_comparacao(item) for item in obj],
+                                  key=lambda x: str(x.get('id', '')))
+                elif 'value' in obj[0]:
+                    return sorted([_normalizar_para_comparacao(item) for item in obj],
+                                  key=lambda x: str(x.get('value', '')))
+            return [_normalizar_para_comparacao(item) for item in obj]
+        return obj
+
+    def _configs_sao_iguais(config_bd, config_json):
+        """Compara se duas configurações são estruturalmente iguais."""
+        return _normalizar_para_comparacao(config_bd) == _normalizar_para_comparacao(config_json)
 
     for p in perguntas_validas:
         slug = p.nome_variavel_sugerido.strip()
         tipo = p.tipo_sugerido.strip().lower()
 
+        # SEMPRE constrói a configuração a partir do BD
+        config = {
+            "type": tipo,
+            "description": p.pergunta
+        }
+
+        # Adiciona dependências se configuradas
+        if p.depends_on_variable:
+            config["conditional"] = True
+            config["depends_on"] = p.depends_on_variable
+
+            if p.dependency_operator:
+                config["dependency_operator"] = p.dependency_operator
+
+            if p.dependency_value is not None:
+                config["dependency_value"] = p.dependency_value
+
+        # Adiciona dependency_config se existir (configuração complexa)
+        if p.dependency_config:
+            config["dependency_config"] = p.dependency_config
+
+        # Adiciona opções se tipo choice e há opções
+        if tipo == "choice" and p.opcoes_sugeridas:
+            config["options"] = p.opcoes_sugeridas
+
+        # Adiciona campos obrigatórios se existir
+        if hasattr(p, 'required') and p.required is not None:
+            config["required"] = p.required
+
+        # Verifica se é nova ou modificada
         if slug in json_atual:
-            # Campo já existe - preserva configuração existente
-            json_novo[slug] = json_atual[slug]
+            # Compara estruturalmente para detectar mudanças
+            if not _configs_sao_iguais(config, json_atual[slug]):
+                variaveis_modificadas.append(slug)
         else:
-            # Campo novo - cria com defaults mínimos
-            config = {
-                "type": tipo,
-                "description": p.pergunta
-            }
-
-            # Adiciona dependências se configuradas
-            if p.depends_on_variable:
-                config["conditional"] = True
-                config["depends_on"] = p.depends_on_variable
-
-                if p.dependency_operator:
-                    config["dependency_operator"] = p.dependency_operator
-
-                if p.dependency_value is not None:
-                    config["dependency_value"] = p.dependency_value
-
-            # Adiciona opções se tipo choice e há opções
-            if tipo == "choice" and p.opcoes_sugeridas:
-                config["options"] = p.opcoes_sugeridas
-
-            json_novo[slug] = config
             variaveis_adicionadas.append(slug)
+
+        json_novo[slug] = config
 
     # Adiciona campos do JSON original que não estão nas perguntas (preserva campos manuais)
     for chave, valor in json_atual.items():
         if chave not in json_novo:
             json_novo[chave] = valor
 
-    # Monta resposta
-    if variaveis_adicionadas:
-        mensagem = f"JSON atualizado: {len(variaveis_adicionadas)} variável(is) adicionada(s)"
-    else:
-        mensagem = "Nada para atualizar - todas as perguntas já estão no JSON"
+    # Detecta se houve alteração real (inclui mudanças na ordem das chaves)
+    json_atual_normalizado = _normalizar_para_comparacao(json_atual)
+    json_novo_normalizado = _normalizar_para_comparacao(json_novo)
+    houve_alteracao = json_atual_normalizado != json_novo_normalizado
 
-    logger.info(f"Sincronização JSON categoria {categoria_id}: {len(variaveis_adicionadas)} adicionadas")
+    # Monta resposta com informações detalhadas
+    if variaveis_adicionadas or variaveis_modificadas or houve_alteracao:
+        partes_mensagem = []
+        if variaveis_adicionadas:
+            partes_mensagem.append(f"{len(variaveis_adicionadas)} variável(is) adicionada(s)")
+        if variaveis_modificadas:
+            partes_mensagem.append(f"{len(variaveis_modificadas)} variável(is) atualizada(s)")
+        if not variaveis_adicionadas and not variaveis_modificadas and houve_alteracao:
+            partes_mensagem.append("estrutura/ordem atualizada")
+        mensagem = "JSON atualizado: " + ", ".join(partes_mensagem)
+    else:
+        mensagem = "Nada para atualizar - JSON já está sincronizado com o banco de dados"
+
+    logger.info(
+        f"Sincronização JSON categoria {categoria_id}: "
+        f"{len(variaveis_adicionadas)} adicionadas, "
+        f"{len(variaveis_modificadas)} modificadas, "
+        f"houve_alteracao={houve_alteracao}"
+    )
 
     return SyncJsonResponse(
         success=True,
         schema_json=json_novo,
         variaveis_adicionadas=len(variaveis_adicionadas),
         variaveis_adicionadas_lista=variaveis_adicionadas if variaveis_adicionadas else None,
+        variaveis_modificadas=len(variaveis_modificadas),
+        variaveis_modificadas_lista=variaveis_modificadas if variaveis_modificadas else None,
+        houve_alteracao=houve_alteracao,
         mensagem=mensagem
     )
 
