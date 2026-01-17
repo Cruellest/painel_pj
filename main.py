@@ -72,6 +72,7 @@ from sistemas.prestacao_contas.router_admin import router as prestacao_contas_ad
 
 # Import do sistema de Performance Logs
 from admin.router_performance import router as performance_router
+from admin.router_gemini_logs import router as gemini_logs_router
 from admin.middleware_performance import PerformanceMiddleware
 
 # Diretórios base
@@ -323,6 +324,9 @@ app.include_router(admin_router)
 
 # Router de Performance Logs (admin)
 app.include_router(performance_router)
+
+# Router de Logs de Chamadas Gemini (admin)
+app.include_router(gemini_logs_router)
 
 
 # ==================================================

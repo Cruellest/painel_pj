@@ -344,7 +344,9 @@ class GeminiService:
         task: str = None,
         max_tokens: int = None,
         temperature: float = 0.3,
-        use_cache: bool = True
+        use_cache: bool = True,
+        # Contexto para logging
+        context: Dict[str, Any] = None
     ) -> GeminiResponse:
         """
         Gera texto usando o Gemini.
@@ -357,10 +359,13 @@ class GeminiService:
             max_tokens: Limite de tokens na resposta (None = sem limite, usa máximo do modelo)
             temperature: Temperatura (0-2)
             use_cache: Se True, usa cache para respostas idênticas (padrão: True)
+            context: Dicionário com contexto para logging (sistema, modulo, user_id, username)
 
         Returns:
             GeminiResponse com o resultado e métricas de latência
         """
+        # Contexto padrão
+        ctx = context or {}
         metrics = GeminiMetrics()
         t_start = time.perf_counter()
 
@@ -447,6 +452,9 @@ class GeminiService:
                 if use_cache and temperature <= 0.3:
                     _response_cache.set(prompt, system_prompt, model, temperature, result)
 
+                # Log assíncrono para BD (não bloqueia)
+                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+
                 return result
 
             except RETRY_ERRORS as e:
@@ -465,6 +473,7 @@ class GeminiService:
                 metrics.error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.log()
+                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
                 return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
             except Exception as e:
@@ -472,6 +481,7 @@ class GeminiService:
                 metrics.error = str(e)
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.log()
+                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
                 return GeminiResponse(success=False, error=f"Erro: {str(e)}", metrics=metrics)
 
         # Todas as tentativas falharam
@@ -479,6 +489,7 @@ class GeminiService:
         metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
         metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
         metrics.log()
+        asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
         return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
     
     async def generate_with_session(
@@ -552,7 +563,8 @@ class GeminiService:
         system_prompt: str = "",
         model: str = None,
         max_tokens: int = None,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        context: Dict[str, Any] = None
     ) -> GeminiResponse:
         """
         Gera texto analisando imagens.
@@ -564,10 +576,12 @@ class GeminiService:
             model: Nome do modelo (opcional)
             max_tokens: Limite de tokens na resposta
             temperature: Temperatura (0-2)
+            context: Dicionário com contexto para logging (sistema, modulo, user_id, username)
 
         Returns:
             GeminiResponse com o resultado
         """
+        ctx = context or {}
         metrics = GeminiMetrics()
         t_start = time.perf_counter()
 
@@ -618,6 +632,9 @@ class GeminiService:
                 metrics.response_tokens = tokens
                 metrics.log()
 
+                # Log assíncrono para BD
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
+
                 return GeminiResponse(
                     success=True,
                     content=content,
@@ -636,20 +653,23 @@ class GeminiService:
                 metrics.success = False
                 metrics.error = f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
                 return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
             except Exception as e:
                 metrics.success = False
                 metrics.error = str(e)
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
                 return GeminiResponse(success=False, error=f"Erro: {str(e)}", metrics=metrics)
 
         # Todas as tentativas falharam
         metrics.success = False
         metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
         metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+        asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
         return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
-    
+
     async def generate_with_images_session(
         self,
         session: aiohttp.ClientSession,
@@ -1016,6 +1036,40 @@ class GeminiService:
             return f"Buscas: {', '.join(sources[:3])}"
 
         return ""
+
+    async def _log_to_db(
+        self,
+        metrics: GeminiMetrics,
+        context: Dict[str, Any],
+        has_images: bool = False,
+        has_search: bool = False,
+        temperature: float = None
+    ):
+        """
+        Registra a chamada no banco de dados de forma assíncrona.
+
+        Args:
+            metrics: Métricas da chamada
+            context: Dicionário com sistema, modulo, user_id, username
+            has_images: Se a chamada incluiu imagens
+            has_search: Se usou Google Search Grounding
+            temperature: Temperatura usada
+        """
+        try:
+            from admin.services_gemini_logs import log_gemini_call_async
+            await log_gemini_call_async(
+                metrics=metrics,
+                sistema=context.get('sistema', 'unknown'),
+                modulo=context.get('modulo'),
+                user_id=context.get('user_id'),
+                username=context.get('username'),
+                has_images=has_images,
+                has_search=has_search,
+                temperature=temperature
+            )
+        except Exception as e:
+            # Não falha a chamada principal por erro de logging
+            logger.warning(f"[Gemini] Falha ao logar chamada no BD: {e}")
 
 
 # Instância global do serviço (singleton)

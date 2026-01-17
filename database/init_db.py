@@ -29,6 +29,7 @@ from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
 from admin.models_performance import AdminSettings, PerformanceLog
+from admin.models_gemini_logs import GeminiApiLog
 
 
 def wait_for_db(max_retries=10, delay=3):
