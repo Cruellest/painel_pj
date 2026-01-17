@@ -225,12 +225,13 @@ def get_categorias_documento_seed() -> list:
     resultado = []
     ordem = 1
     
-    # Categoria especial: Petição Inicial (primeiro documento 9500 ou 500)
+    # Categoria especial: Petição Inicial (primeiro documento 9500, 500 ou 10)
+    # O código 10 (Termo) também pode ser petição inicial quando é o primeiro documento do processo
     resultado.append({
         "nome": "peticao_inicial",
         "titulo": "Petição Inicial",
-        "descricao": "Primeiro documento do processo (geralmente código 9500 ou 500). Categoria especial que considera apenas o primeiro documento cronológico.",
-        "codigos_documento": [9500, 500],
+        "descricao": "Primeiro documento do processo (código 9500, 500 ou 10). Categoria especial que considera apenas o primeiro documento cronológico.",
+        "codigos_documento": [9500, 500, 10],
         "ordem": ordem,
         "cor": "#2980b9",
         "is_primeiro_documento": True  # Marca como categoria que pega só o primeiro documento

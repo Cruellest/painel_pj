@@ -1,5 +1,10 @@
 [
   {
+    "Categoria": "Documento",
+    "Nome": "Termo",
+    "Código": "10"
+  },
+  {
     "Categoria": "Petição",
     "Nome": "Manifestação (Outras)",
     "Código": "357"

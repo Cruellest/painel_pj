@@ -197,14 +197,18 @@ class FiltroCategoriasDocumento:
             
             # Verifica se é código de "primeiro documento"
             if codigo in codigos_primeiro_doc:
-                # Se já pegamos um documento com este código, pula os demais
+                # Se já pegamos um documento de QUALQUER código do grupo PI, pula
+                # Isso garante que só pegamos UM documento de petição inicial,
+                # independente de ser 500, 9500 ou 10
                 if codigo in codigos_primeiro_doc_usados:
                     continue
-                # Marca como usado (próximos documentos com este código serão ignorados)
-                codigos_primeiro_doc_usados.add(codigo)
-            
+                # Marca TODOS os códigos do grupo como usados
+                # Assim o primeiro documento PI encontrado (seja 500, 9500 ou 10)
+                # impede que outros documentos de outros códigos PI sejam incluídos
+                codigos_primeiro_doc_usados.update(codigos_primeiro_doc)
+
             docs_filtrados.append(doc)
-        
+
         return docs_filtrados
     
     def filtrar_resumos_por_tipo(
@@ -244,12 +248,14 @@ class FiltroCategoriasDocumento:
             
             # Verifica se é código de "primeiro documento"
             if codigo in codigos_primeiro_doc:
+                # Se já pegamos um documento de QUALQUER código do grupo PI, pula
                 if codigo in codigos_primeiro_doc_usados:
                     continue
-                codigos_primeiro_doc_usados.add(codigo)
-            
+                # Marca TODOS os códigos do grupo como usados
+                codigos_primeiro_doc_usados.update(codigos_primeiro_doc)
+
             resumos_filtrados.append(resumo)
-        
+
         return resumos_filtrados
     
     def get_tipos_peca_disponiveis(self) -> List[dict]:
