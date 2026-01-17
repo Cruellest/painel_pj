@@ -10,7 +10,7 @@ Endpoints para:
 """
 
 import logging
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -335,7 +335,8 @@ def _get_unique_slug(db: Session, base_slug: str, exclude_question_id: int = Non
 def ensure_variable_for_question(
     db: Session,
     pergunta: ExtractionQuestion,
-    categoria: "CategoriaResumoJSON"
+    categoria: "CategoriaResumoJSON",
+    criar_sem_tipo: bool = True
 ) -> Optional[ExtractionVariable]:
     """
     Garante que existe uma variável correspondente à pergunta.
@@ -345,14 +346,20 @@ def ensure_variable_for_question(
     da pergunta para exibição na UI.
 
     Esta função:
-    1. Verifica se a pergunta tem os campos mínimos (texto, tipo)
+    1. Verifica se a pergunta tem os campos mínimos (texto, slug)
     2. Se já existe variável vinculada, PRESERVA o slug e sincroniza com pergunta
     3. Se não existe, cria nova variável (usando nome_variavel_sugerido ou gerando slug)
+
+    COMPORTAMENTO ATUALIZADO (v2):
+    - Se nome_variavel_sugerido (slug) estiver preenchido, cria a variável IMEDIATAMENTE
+    - Se tipo_sugerido não estiver preenchido, usa "text" como default
+    - Isso permite vincular dependências logo após criar a pergunta com slug
 
     Args:
         db: Sessão do banco de dados
         pergunta: Pergunta de extração
         categoria: Categoria da pergunta
+        criar_sem_tipo: Se True, cria variável mesmo sem tipo definido (usa "text" como default)
 
     Returns:
         ExtractionVariable existente/criada ou None se pergunta incompleta
@@ -361,8 +368,13 @@ def ensure_variable_for_question(
     if not pergunta.pergunta or not pergunta.pergunta.strip():
         return None
 
-    if not pergunta.tipo_sugerido or not pergunta.tipo_sugerido.strip():
+    # Se não tem slug definido, não cria variável (precisa pelo menos do slug)
+    if not pergunta.nome_variavel_sugerido or not pergunta.nome_variavel_sugerido.strip():
         return None
+
+    # Se não tem tipo definido e criar_sem_tipo=False, não cria
+    # Se criar_sem_tipo=True (default), usa "text" como tipo padrão
+    tipo_variavel = pergunta.tipo_sugerido.strip().lower() if pergunta.tipo_sugerido and pergunta.tipo_sugerido.strip() else "text"
 
     # Verifica se já existe variável vinculada a esta pergunta
     variavel_existente = db.query(ExtractionVariable).filter(
@@ -377,7 +389,7 @@ def ensure_variable_for_question(
             logger.info(f"Pergunta {pergunta.id}: sincronizado nome_variavel_sugerido = '{variavel_existente.slug}'")
 
         # Atualiza apenas campos não-identificadores da variável (tipo, opções, dependências)
-        variavel_existente.tipo = pergunta.tipo_sugerido.lower()
+        variavel_existente.tipo = tipo_variavel
         variavel_existente.opcoes = pergunta.opcoes_sugeridas
         variavel_existente.categoria_id = categoria.id
 
@@ -420,7 +432,7 @@ def ensure_variable_for_question(
             variavel_mesmo_slug.source_question_id = pergunta.id
             variavel_mesmo_slug.categoria_id = categoria.id
             variavel_mesmo_slug.label = pergunta.pergunta[:200] if pergunta.pergunta else slug_base
-            variavel_mesmo_slug.tipo = pergunta.tipo_sugerido.lower()
+            variavel_mesmo_slug.tipo = tipo_variavel
             variavel_mesmo_slug.descricao = pergunta.descricao or variavel_mesmo_slug.descricao
             variavel_mesmo_slug.opcoes = pergunta.opcoes_sugeridas or variavel_mesmo_slug.opcoes
             variavel_mesmo_slug.atualizado_em = datetime.utcnow()
@@ -441,7 +453,7 @@ def ensure_variable_for_question(
         slug=slug_base,
         label=pergunta.pergunta[:200] if pergunta.pergunta else slug_base,
         descricao=pergunta.descricao,
-        tipo=pergunta.tipo_sugerido.lower(),
+        tipo=tipo_variavel,
         categoria_id=categoria.id,
         opcoes=pergunta.opcoes_sugeridas,
         source_question_id=pergunta.id,
@@ -528,6 +540,19 @@ async def criar_pergunta(
     categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == data.categoria_id).first()
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    # Valida slug duplicado na mesma categoria
+    if data.nome_variavel_sugerido and data.nome_variavel_sugerido.strip():
+        slug_existente = db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.categoria_id == data.categoria_id,
+            ExtractionQuestion.nome_variavel_sugerido == data.nome_variavel_sugerido.strip(),
+            ExtractionQuestion.ativo == True
+        ).first()
+        if slug_existente:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Já existe uma pergunta ativa com o slug '{data.nome_variavel_sugerido}' nesta categoria"
+            )
 
     # Cria a pergunta
     pergunta = ExtractionQuestion(
@@ -846,6 +871,9 @@ REGRAS DE RESPOSTA:
                     "pergunta": p.pergunta
                 })
 
+        # CORREÇÃO DETERMINÍSTICA: Garante que dependentes fiquem imediatamente após suas âncoras
+        ordem_final = _garantir_hierarquia_dependencias(ordem_final, data.perguntas)
+
         logger.info(f"Perguntas reordenadas por IA para categoria '{data.categoria_nome}'")
 
         return {
@@ -856,6 +884,139 @@ REGRAS DE RESPOSTA:
     except Exception as e:
         logger.error(f"Erro ao ordenar perguntas com IA: {e}")
         return {"success": False, "erro": str(e)}
+
+
+def _garantir_hierarquia_dependencias(
+    ordem: List[Dict],
+    perguntas_originais: List
+) -> List[Dict]:
+    """
+    Correção determinística da ordem para garantir que dependentes
+    fiquem imediatamente abaixo de suas âncoras.
+
+    REGRAS:
+    1. Cada pergunta condicional deve estar IMEDIATAMENTE após sua âncora
+    2. Se a âncora tem múltiplos dependentes, eles ficam todos logo abaixo da âncora
+    3. Se um dependente tem sub-dependentes, a árvore é mantida (pai -> filho -> neto)
+    4. A ordem relativa entre perguntas não-relacionadas é preservada da sugestão da IA
+    5. Perguntas que dependem de outras só são adicionadas DEPOIS de suas âncoras
+
+    Args:
+        ordem: Lista de {"id": int, "pergunta": str} na ordem sugerida pela IA
+        perguntas_originais: Lista de perguntas com informações de dependência
+
+    Returns:
+        Lista corrigida mantendo hierarquia
+    """
+    if not ordem or not perguntas_originais:
+        return ordem
+
+    # Cria mapeamentos
+    id_para_pergunta = {p.id: p for p in perguntas_originais}
+    id_para_ordem_item = {item["id"]: item for item in ordem}
+
+    # Cria grafo de dependências
+    slug_para_id = {}
+    id_para_slug = {}
+    id_depende_de_slug = {}  # id -> slug_ancora
+    dependentes_de = {}  # slug_ancora -> [ids_dependentes]
+
+    for p in perguntas_originais:
+        if p.nome_variavel_sugerido:
+            slug_para_id[p.nome_variavel_sugerido] = p.id
+            id_para_slug[p.id] = p.nome_variavel_sugerido
+
+        if p.depends_on_variable:
+            ancora_slug = p.depends_on_variable
+            id_depende_de_slug[p.id] = ancora_slug
+            if ancora_slug not in dependentes_de:
+                dependentes_de[ancora_slug] = []
+            dependentes_de[ancora_slug].append(p.id)
+
+    # Se não há dependências, retorna ordem original
+    if not dependentes_de:
+        return ordem
+
+    # Identifica raízes (perguntas sem dependência) - estas podem ser processadas livremente
+    ids_raiz = set()
+    for p in perguntas_originais:
+        if not p.depends_on_variable:
+            ids_raiz.add(p.id)
+
+    # Função auxiliar para coletar toda a árvore de dependentes em ordem DFS
+    def coletar_arvore_dfs(pergunta_id: int, visitados: set) -> List[int]:
+        """Coleta a pergunta e todos seus dependentes em ordem DFS."""
+        if pergunta_id in visitados:
+            return []
+
+        resultado = [pergunta_id]
+        visitados.add(pergunta_id)
+
+        # Se esta pergunta tem dependentes, adiciona-os recursivamente
+        slug = id_para_slug.get(pergunta_id)
+        if slug and slug in dependentes_de:
+            # Ordena dependentes pela ordem original da IA para preservar sugestão
+            dependentes = dependentes_de[slug]
+            dependentes_com_idx = []
+            for dep_id in dependentes:
+                if dep_id not in visitados:
+                    idx_ordem = 9999
+                    if dep_id in id_para_ordem_item:
+                        try:
+                            idx_ordem = [i for i, item in enumerate(ordem) if item["id"] == dep_id][0]
+                        except (IndexError, ValueError):
+                            pass
+                    dependentes_com_idx.append((idx_ordem, dep_id))
+
+            dependentes_com_idx.sort(key=lambda x: x[0])
+
+            for _, dep_id in dependentes_com_idx:
+                resultado.extend(coletar_arvore_dfs(dep_id, visitados))
+
+        return resultado
+
+    # Constrói ordem corrigida processando na ordem da IA, mas respeitando hierarquia
+    ids_processados = set()
+    ordem_corrigida = []
+
+    for item in ordem:
+        pergunta_id = item["id"]
+
+        if pergunta_id in ids_processados:
+            continue
+
+        # Se esta pergunta depende de outra que ainda não foi processada, pula
+        # (será adicionada quando sua âncora for processada)
+        ancora_slug = id_depende_de_slug.get(pergunta_id)
+        if ancora_slug:
+            ancora_id = slug_para_id.get(ancora_slug)
+            if ancora_id and ancora_id not in ids_processados:
+                # Âncora ainda não processada - esta pergunta será adicionada depois
+                continue
+
+        # Processa esta pergunta e toda sua árvore de dependentes
+        arvore = coletar_arvore_dfs(pergunta_id, ids_processados)
+
+        for pid in arvore:
+            if pid in id_para_ordem_item:
+                ordem_corrigida.append(id_para_ordem_item[pid])
+            else:
+                pergunta = id_para_pergunta.get(pid)
+                if pergunta:
+                    ordem_corrigida.append({
+                        "id": pid,
+                        "pergunta": pergunta.pergunta
+                    })
+
+    # Adiciona quaisquer perguntas que ficaram de fora
+    for item in ordem:
+        if item["id"] not in ids_processados:
+            ordem_corrigida.append(item)
+            ids_processados.add(item["id"])
+
+    logger.info(f"Hierarquia de dependências corrigida: {len(ordem)} -> {len(ordem_corrigida)} perguntas")
+
+    return ordem_corrigida
 
 
 @router.post("/perguntas/posicionar-ia")
@@ -995,6 +1156,22 @@ async def atualizar_pergunta(
     pergunta = db.query(ExtractionQuestion).filter(ExtractionQuestion.id == pergunta_id).first()
     if not pergunta:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
+
+    # Valida slug duplicado na mesma categoria (se está sendo alterado)
+    update_data_check = data.model_dump(exclude_unset=True)
+    novo_slug = update_data_check.get("nome_variavel_sugerido")
+    if novo_slug and novo_slug.strip() and novo_slug != pergunta.nome_variavel_sugerido:
+        slug_existente = db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.categoria_id == pergunta.categoria_id,
+            ExtractionQuestion.nome_variavel_sugerido == novo_slug.strip(),
+            ExtractionQuestion.id != pergunta_id,
+            ExtractionQuestion.ativo == True
+        ).first()
+        if slug_existente:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Já existe uma pergunta ativa com o slug '{novo_slug}' nesta categoria"
+            )
 
     # Atualiza campos fornecidos
     update_data = data.model_dump(exclude_unset=True)
