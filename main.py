@@ -70,6 +70,10 @@ from sistemas.pedido_calculo.router_admin import router as pedido_calculo_admin_
 from sistemas.prestacao_contas.router import router as prestacao_contas_router
 from sistemas.prestacao_contas.router_admin import router as prestacao_contas_admin_router
 
+# Import do sistema de Performance Logs
+from admin.router_performance import router as performance_router
+from admin.middleware_performance import PerformanceMiddleware
+
 # Diretórios base
 BASE_DIR = Path(__file__).resolve().parent
 MATRICULAS_TEMPLATES = BASE_DIR / "sistemas" / "matriculas_confrontantes" / "templates"
@@ -211,6 +215,9 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
+# PERFORMANCE: Middleware de timing (apenas para admin quando ativado)
+app.add_middleware(PerformanceMiddleware)
+
 
 # ==================================================
 # SECURITY: EXCEPTION HANDLERS - Sanitiza erros em produção
@@ -313,6 +320,9 @@ app.include_router(users_router)
 
 from admin.router import router as admin_router
 app.include_router(admin_router)
+
+# Router de Performance Logs (admin)
+app.include_router(performance_router)
 
 
 # ==================================================
@@ -609,6 +619,12 @@ async def admin_variaveis_page(request: Request):
 async def admin_restaurar_slugs_page(request: Request):
     """Página para restaurar slugs de variáveis a partir de backup"""
     return templates.TemplateResponse("admin_restaurar_slugs.html", {"request": request})
+
+
+@app.get("/admin/performance")
+async def admin_performance_page(request: Request):
+    """Página para gerenciar logs de performance (diagnóstico de latência)"""
+    return templates.TemplateResponse("admin_performance.html", {"request": request})
 
 
 # ==================================================

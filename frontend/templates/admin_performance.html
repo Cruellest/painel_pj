@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+
+{% block title %}Logs de Performance - Admin{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Logs de Performance</h1>
+            <p class="text-gray-600 text-sm mt-1">Diagnóstico de latência e gargalos do sistema</p>
+        </div>
+        <a href="/admin/gerador-pecas" class="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm">
+            Voltar ao Admin
+        </a>
+    </div>
+
+    <!-- Toggle de Ativação -->
+    <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-semibold text-gray-800">Coleta de Logs</h2>
+                <p class="text-gray-600 text-sm mt-1">
+                    Quando ativado, registra tempos de resposta de todas as requisições do admin logado.
+                </p>
+            </div>
+            <div class="flex items-center gap-4">
+                <div id="statusIndicator" class="flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+                    <span class="text-sm text-gray-600">Carregando...</span>
+                </div>
+                <button id="toggleBtn" onclick="togglePerformanceLogs()" disabled
+                    class="relative inline-flex h-6 w-11 items-center rounded-full bg-gray-300 transition-colors">
+                    <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform translate-x-1"></span>
+                </button>
+            </div>
+        </div>
+        <div id="activeInfo" class="mt-4 p-3 bg-blue-50 rounded-lg hidden">
+            <p class="text-sm text-blue-800">
+                <span class="font-medium">Ativo para:</span>
+                <span id="activeUser">-</span>
+            </p>
+        </div>
+    </div>
+
+    <!-- Estatísticas -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="bg-white rounded-lg shadow-md p-4">
+            <h3 class="text-sm font-medium text-gray-500">Total de Logs</h3>
+            <p id="totalLogs" class="text-2xl font-bold text-gray-800 mt-1">-</p>
+        </div>
+        <div class="bg-white rounded-lg shadow-md p-4">
+            <h3 class="text-sm font-medium text-gray-500">Tempo Médio (middleware)</h3>
+            <p id="avgTime" class="text-2xl font-bold text-gray-800 mt-1">-</p>
+        </div>
+        <div class="bg-white rounded-lg shadow-md p-4">
+            <h3 class="text-sm font-medium text-gray-500">Rota Mais Lenta</h3>
+            <p id="slowestRoute" class="text-lg font-bold text-gray-800 mt-1 truncate">-</p>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Filtrar por Rota</label>
+                <input type="text" id="routeFilter" placeholder="/admin/api/..."
+                    class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Camada</label>
+                <select id="layerFilter" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="">Todas</option>
+                    <option value="middleware">Middleware (Total)</option>
+                    <option value="controller">Controller</option>
+                    <option value="service">Service</option>
+                    <option value="db">Banco de Dados</option>
+                    <option value="io">I/O Filesystem</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Período</label>
+                <select id="hoursFilter" class="w-full px-3 py-2 border rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="1">Última hora</option>
+                    <option value="6">Últimas 6 horas</option>
+                    <option value="24" selected>Últimas 24 horas</option>
+                    <option value="72">Últimos 3 dias</option>
+                </select>
+            </div>
+            <div class="flex items-end">
+                <button onclick="loadLogs()" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm">
+                    Filtrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabela de Logs -->
+    <div class="bg-white rounded-lg shadow-md overflow-hidden">
+        <div class="p-4 border-b flex justify-between items-center">
+            <h2 class="text-lg font-semibold text-gray-800">Logs Recentes</h2>
+            <button onclick="cleanupLogs()" class="text-sm text-red-600 hover:text-red-800">
+                Limpar logs antigos
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rota</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Camada</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ação</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duração</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="logsTable" class="bg-white divide-y divide-gray-200">
+                    <tr>
+                        <td colspan="6" class="px-4 py-8 text-center text-gray-500">
+                            Carregando logs...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Resumo por Camada -->
+    <div class="bg-white rounded-lg shadow-md p-6 mt-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Resumo por Camada</h2>
+        <div id="layerSummary" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div class="text-center text-gray-500">Carregando...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+const token = localStorage.getItem('token');
+let isEnabled = false;
+
+async function loadToggleStatus() {
+    try {
+        const response = await fetch('/admin/performance/toggle', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        isEnabled = data.enabled;
+        updateToggleUI(data);
+    } catch (error) {
+        console.error('Erro ao carregar status:', error);
+    }
+}
+
+function updateToggleUI(data) {
+    const btn = document.getElementById('toggleBtn');
+    const indicator = document.getElementById('statusIndicator');
+    const activeInfo = document.getElementById('activeInfo');
+    const activeUser = document.getElementById('activeUser');
+
+    btn.disabled = false;
+
+    if (data.enabled) {
+        btn.classList.remove('bg-gray-300');
+        btn.classList.add('bg-green-500');
+        btn.querySelector('span').classList.remove('translate-x-1');
+        btn.querySelector('span').classList.add('translate-x-6');
+
+        indicator.innerHTML = `
+            <span class="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
+            <span class="text-sm text-green-600 font-medium">Coletando logs</span>
+        `;
+
+        activeInfo.classList.remove('hidden');
+        activeUser.textContent = data.admin_username || 'Admin';
+    } else {
+        btn.classList.remove('bg-green-500');
+        btn.classList.add('bg-gray-300');
+        btn.querySelector('span').classList.remove('translate-x-6');
+        btn.querySelector('span').classList.add('translate-x-1');
+
+        indicator.innerHTML = `
+            <span class="w-3 h-3 rounded-full bg-gray-400"></span>
+            <span class="text-sm text-gray-600">Desativado</span>
+        `;
+
+        activeInfo.classList.add('hidden');
+    }
+}
+
+async function togglePerformanceLogs() {
+    const btn = document.getElementById('toggleBtn');
+    btn.disabled = true;
+
+    try {
+        const response = await fetch('/admin/performance/toggle', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enabled: !isEnabled })
+        });
+
+        const data = await response.json();
+        isEnabled = data.enabled;
+        updateToggleUI(data);
+
+        showNotification(data.message, 'success');
+    } catch (error) {
+        console.error('Erro ao alternar toggle:', error);
+        showNotification('Erro ao alternar logs', 'error');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function loadLogs() {
+    const route = document.getElementById('routeFilter').value;
+    const layer = document.getElementById('layerFilter').value;
+    const hours = document.getElementById('hoursFilter').value;
+
+    const params = new URLSearchParams();
+    if (route) params.append('route', route);
+    if (layer) params.append('layer', layer);
+    params.append('hours', hours);
+    params.append('limit', '100');
+
+    try {
+        const response = await fetch(`/admin/performance/logs?${params}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        renderLogsTable(data.logs);
+    } catch (error) {
+        console.error('Erro ao carregar logs:', error);
+    }
+}
+
+function renderLogsTable(logs) {
+    const tbody = document.getElementById('logsTable');
+
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="px-4 py-8 text-center text-gray-500">
+                    Nenhum log encontrado. Ative a coleta para começar.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = logs.map(log => {
+        const time = new Date(log.created_at).toLocaleTimeString('pt-BR');
+        const durationClass = log.duration_ms > 1000 ? 'text-red-600 font-bold' :
+                             log.duration_ms > 500 ? 'text-yellow-600' : 'text-green-600';
+
+        return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 text-sm text-gray-500">${time}</td>
+                <td class="px-4 py-3 text-sm font-mono text-gray-800 truncate max-w-xs" title="${log.route}">
+                    <span class="text-gray-400 text-xs">${log.method}</span> ${log.route}
+                </td>
+                <td class="px-4 py-3">
+                    <span class="px-2 py-1 text-xs rounded-full ${getLayerClass(log.layer)}">
+                        ${log.layer}
+                    </span>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-600">${log.action || '-'}</td>
+                <td class="px-4 py-3 text-sm ${durationClass}">${log.duration_ms.toFixed(1)} ms</td>
+                <td class="px-4 py-3 text-sm text-gray-500">${log.status_code || '-'}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function getLayerClass(layer) {
+    const classes = {
+        'middleware': 'bg-purple-100 text-purple-800',
+        'controller': 'bg-blue-100 text-blue-800',
+        'service': 'bg-green-100 text-green-800',
+        'db': 'bg-yellow-100 text-yellow-800',
+        'io': 'bg-orange-100 text-orange-800'
+    };
+    return classes[layer] || 'bg-gray-100 text-gray-800';
+}
+
+async function loadSummary() {
+    const hours = document.getElementById('hoursFilter').value;
+
+    try {
+        const response = await fetch(`/admin/performance/summary?hours=${hours}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        // Atualiza cards de estatísticas
+        document.getElementById('totalLogs').textContent = data.total_logs.toLocaleString();
+
+        const middlewareStats = data.layers.find(l => l.layer === 'middleware');
+        if (middlewareStats) {
+            document.getElementById('avgTime').textContent = `${middlewareStats.avg_ms.toFixed(0)} ms`;
+        } else {
+            document.getElementById('avgTime').textContent = '-';
+        }
+
+        if (data.slowest_routes && data.slowest_routes.length > 0) {
+            const slowest = data.slowest_routes[0];
+            document.getElementById('slowestRoute').textContent = `${slowest.route} (${slowest.avg_ms.toFixed(0)}ms)`;
+        } else {
+            document.getElementById('slowestRoute').textContent = '-';
+        }
+
+        // Renderiza resumo por camada
+        renderLayerSummary(data.layers);
+
+    } catch (error) {
+        console.error('Erro ao carregar resumo:', error);
+    }
+}
+
+function renderLayerSummary(layers) {
+    const container = document.getElementById('layerSummary');
+
+    if (!layers || layers.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-500 col-span-5">Sem dados</div>';
+        return;
+    }
+
+    container.innerHTML = layers.map(layer => `
+        <div class="p-3 rounded-lg ${getLayerBgClass(layer.layer)}">
+            <h4 class="font-medium text-sm capitalize">${layer.layer}</h4>
+            <p class="text-lg font-bold">${layer.avg_ms.toFixed(0)} ms</p>
+            <p class="text-xs opacity-75">
+                min: ${layer.min_ms.toFixed(0)} | max: ${layer.max_ms.toFixed(0)}
+            </p>
+            <p class="text-xs opacity-75">${layer.count} registros</p>
+        </div>
+    `).join('');
+}
+
+function getLayerBgClass(layer) {
+    const classes = {
+        'middleware': 'bg-purple-50 text-purple-800',
+        'controller': 'bg-blue-50 text-blue-800',
+        'service': 'bg-green-50 text-green-800',
+        'db': 'bg-yellow-50 text-yellow-800',
+        'io': 'bg-orange-50 text-orange-800'
+    };
+    return classes[layer] || 'bg-gray-50 text-gray-800';
+}
+
+async function cleanupLogs() {
+    if (!confirm('Remover logs com mais de 7 dias?')) return;
+
+    try {
+        const response = await fetch('/admin/performance/cleanup?days=7', {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+
+        showNotification(`${data.deleted_count} logs removidos`, 'success');
+        loadLogs();
+        loadSummary();
+    } catch (error) {
+        console.error('Erro ao limpar logs:', error);
+        showNotification('Erro ao limpar logs', 'error');
+    }
+}
+
+function showNotification(message, type) {
+    const colors = {
+        success: 'bg-green-500',
+        error: 'bg-red-500',
+        info: 'bg-blue-500'
+    };
+
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50`;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    setTimeout(() => notification.remove(), 3000);
+}
+
+// Inicialização
+document.addEventListener('DOMContentLoaded', () => {
+    loadToggleStatus();
+    loadLogs();
+    loadSummary();
+
+    // Auto-refresh a cada 30 segundos se ativo
+    setInterval(() => {
+        if (isEnabled) {
+            loadLogs();
+            loadSummary();
+        }
+    }, 30000);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,4 @@
+# Ignora logs de performance (apenas mantém estrutura)
+*.log
+*.json
+!.gitignore
