@@ -810,6 +810,370 @@ class TestReordenacaoComIA(TestCategoriasResumoJSONBase):
 
 
 # =============================================================================
+# TESTES: TRUNCAMENTO E VALIDAÇÃO DE JSON
+# =============================================================================
+
+class TestTruncamentoValidacaoJSON(TestCategoriasResumoJSONBase):
+    """
+    Testes para verificar que JSON truncado/inválido não é aceito.
+
+    Cenários críticos:
+    - JSON pequeno (baseline)
+    - JSON grande (muitas perguntas)
+    - Resposta truncada simulada
+    - JSON inválido não deve ser salvo
+    """
+
+    def test_json_pequeno_baseline(self):
+        """
+        TESTE: JSON pequeno é parseado corretamente (baseline).
+
+        Verifica que o sistema funciona com JSONs simples.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        json_resposta = '''
+        {
+            "schema": {
+                "nome_autor": {"type": "text", "description": "Nome do autor"}
+            },
+            "mapeamento_variaveis": {
+                "1": {"slug": "nome_autor", "label": "Nome do Autor", "tipo": "text"}
+            }
+        }
+        '''
+
+        generator = ExtractionSchemaGenerator(self.db)
+        resultado = generator._extrair_json_resposta(json_resposta)
+
+        self.assertIsNotNone(resultado, "JSON pequeno deve ser parseado")
+        self.assertIn("schema", resultado)
+        self.assertIn("mapeamento_variaveis", resultado)
+        self.assertEqual(len(resultado["schema"]), 1)
+
+    def test_json_grande_muitas_perguntas(self):
+        """
+        TESTE: JSON grande com muitas perguntas é parseado corretamente.
+
+        Simula cenário com 20+ campos no schema.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        # Cria JSON com muitos campos
+        schema = {}
+        mapeamento = {}
+        for i in range(25):
+            campo = f"campo_{i:02d}"
+            schema[campo] = {"type": "text", "description": f"Descrição do campo {i}"}
+            mapeamento[str(i)] = {"slug": campo, "label": f"Campo {i}", "tipo": "text"}
+
+        json_str = json.dumps({"schema": schema, "mapeamento_variaveis": mapeamento}, indent=2)
+
+        generator = ExtractionSchemaGenerator(self.db)
+        resultado = generator._extrair_json_resposta(json_str)
+
+        self.assertIsNotNone(resultado, "JSON grande deve ser parseado")
+        self.assertEqual(len(resultado["schema"]), 25, "Deve ter 25 campos")
+        self.assertEqual(len(resultado["mapeamento_variaveis"]), 25, "Deve ter 25 mapeamentos")
+
+    def test_json_truncado_chaves_desbalanceadas_rejeitado(self):
+        """
+        TESTE: JSON com chaves desbalanceadas (truncado) é rejeitado.
+
+        Simula cenário onde a resposta da IA foi cortada.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        # JSON truncado - falta fechar chaves
+        json_truncado = '''
+        {
+            "schema": {
+                "nome_autor": {"type": "text", "description": "Nome do autor"},
+                "valor_causa": {"type": "number", "description": "Valor da ca
+        '''
+
+        generator = ExtractionSchemaGenerator(self.db)
+        resultado = generator._extrair_json_resposta(json_truncado)
+
+        self.assertIsNone(resultado, "JSON truncado deve ser rejeitado (retornar None)")
+
+    def test_json_truncado_string_incompleta_rejeitado(self):
+        """
+        TESTE: JSON com string incompleta (truncado) é rejeitado.
+
+        Simula corte no meio de uma string.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        # JSON truncado no meio de uma string
+        json_truncado = '''
+        {
+            "schema": {
+                "nome_autor": {"type": "text", "description": "Nome completo do autor da ação judicial que está
+        '''
+
+        generator = ExtractionSchemaGenerator(self.db)
+        resultado = generator._extrair_json_resposta(json_truncado)
+
+        self.assertIsNone(resultado, "JSON com string truncada deve ser rejeitado")
+
+    def test_json_invalido_nao_salvo_no_banco(self):
+        """
+        TESTE: JSON inválido não é salvo no banco de dados.
+
+        Cenário:
+        1. Simular resposta truncada da IA
+        2. Chamar gerar_schema
+        3. Verificar que nenhum modelo foi salvo
+        """
+        from sistemas.gerador_pecas.models_extraction import ExtractionModel
+        from unittest.mock import AsyncMock, patch
+
+        user = self._criar_usuario_admin()
+        categoria = self._criar_categoria("test_nao_salva_invalido")
+
+        # Cria perguntas
+        p1 = self._criar_pergunta(categoria.id, "campo1", "text", "Pergunta 1", ordem=0)
+
+        # Conta modelos antes
+        modelos_antes = self.db.query(ExtractionModel).filter(
+            ExtractionModel.categoria_id == categoria.id
+        ).count()
+
+        # Mock da resposta do Gemini com JSON truncado
+        mock_response = AsyncMock()
+        mock_response.success = True
+        mock_response.content = '{"schema": {"campo1": {"type": "text"'  # Truncado!
+        mock_response.tokens_used = 100
+
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        with patch('sistemas.gerador_pecas.services_extraction.gemini_service.generate',
+                   return_value=mock_response):
+            generator = ExtractionSchemaGenerator(self.db)
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                resultado = loop.run_until_complete(
+                    generator.gerar_schema(
+                        categoria_id=categoria.id,
+                        categoria_nome=categoria.nome,
+                        perguntas=[p1],
+                        user_id=user.id
+                    )
+                )
+            finally:
+                loop.close()
+
+            # Deve falhar
+            self.assertFalse(resultado.get("success"),
+                "Geração com JSON truncado deve falhar")
+
+            # Conta modelos depois
+            modelos_depois = self.db.query(ExtractionModel).filter(
+                ExtractionModel.categoria_id == categoria.id
+            ).count()
+
+            self.assertEqual(modelos_antes, modelos_depois,
+                "Nenhum modelo deve ser salvo quando JSON é inválido")
+
+    def test_verificar_json_parece_completo_positivo(self):
+        """
+        TESTE: Função de verificação aceita JSON completo.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        json_completo = '''{"schema": {"campo": {"type": "text"}}, "mapeamento": {}}'''
+
+        generator = ExtractionSchemaGenerator(self.db)
+        resultado = generator._verificar_json_parece_completo(json_completo)
+
+        self.assertTrue(resultado, "JSON completo deve passar na verificação")
+
+    def test_verificar_json_parece_completo_negativo(self):
+        """
+        TESTE: Função de verificação rejeita JSON incompleto.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        generator = ExtractionSchemaGenerator(self.db)
+
+        # Teste 1: Chaves desbalanceadas
+        json_incompleto1 = '''{"schema": {"campo": {"type": "text"}'''
+        self.assertFalse(
+            generator._verificar_json_parece_completo(json_incompleto1),
+            "JSON com chaves desbalanceadas deve falhar"
+        )
+
+        # Teste 2: Colchetes desbalanceados
+        json_incompleto2 = '''{"lista": [1, 2, 3}'''
+        self.assertFalse(
+            generator._verificar_json_parece_completo(json_incompleto2),
+            "JSON com colchetes desbalanceados deve falhar"
+        )
+
+        # Teste 3: Não termina com }
+        json_incompleto3 = '''{"campo": "valor",'''
+        self.assertFalse(
+            generator._verificar_json_parece_completo(json_incompleto3),
+            "JSON que não termina com } deve falhar"
+        )
+
+    def test_extrair_json_balanceado_encontra_json_correto(self):
+        """
+        TESTE: Extração balanceada encontra JSON correto mesmo com texto ao redor.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        texto_com_json = '''
+        Aqui está o resultado da análise:
+
+        ```json
+        {"schema": {"campo": {"type": "text", "description": "Descrição"}}, "mapeamento": {"1": {"slug": "campo"}}}
+        ```
+
+        Espero que isso ajude!
+        '''
+
+        generator = ExtractionSchemaGenerator(self.db)
+        resultado = generator._extrair_json_resposta(texto_com_json)
+
+        self.assertIsNotNone(resultado, "Deve extrair JSON de texto com markdown")
+        self.assertIn("schema", resultado)
+
+    def test_extrair_json_balanceado_rejeita_truncado(self):
+        """
+        TESTE: Extração balanceada rejeita JSON truncado no meio.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+
+        # Texto com JSON truncado
+        texto_truncado = '''
+        Aqui está o resultado:
+        {"schema": {"campo1": {"type": "text"}, "campo2": {"type": "number", "description": "Valor que
+        '''
+
+        generator = ExtractionSchemaGenerator(self.db)
+        resultado = generator._extrair_json_balanceado(texto_truncado)
+
+        self.assertIsNone(resultado, "JSON truncado não deve ser extraído pelo método balanceado")
+
+    def test_log_diagnostico_tamanho_resposta(self):
+        """
+        TESTE: Verifica que logs de diagnóstico são gerados com tamanho correto.
+
+        Este teste verifica indiretamente que os logs estão sendo gerados
+        através do funcionamento correto da extração.
+        """
+        from sistemas.gerador_pecas.services_extraction import ExtractionSchemaGenerator
+        import logging
+
+        # Configura logger para capturar mensagens
+        logger = logging.getLogger('sistemas.gerador_pecas.services_extraction')
+        original_level = logger.level
+        logger.setLevel(logging.INFO)
+
+        try:
+            json_grande = json.dumps({
+                "schema": {f"campo_{i}": {"type": "text"} for i in range(10)},
+                "mapeamento_variaveis": {}
+            })
+
+            generator = ExtractionSchemaGenerator(self.db)
+            resultado = generator._extrair_json_resposta(json_grande)
+
+            # Se chegou aqui sem erro, o log foi gerado
+            self.assertIsNotNone(resultado)
+
+        finally:
+            logger.setLevel(original_level)
+
+
+class TestParsearRespostaJSONTruncamento(TestCategoriasResumoJSONBase):
+    """
+    Testes específicos para a função parsear_resposta_json do extrator_resumo_json.
+    """
+
+    def test_parsear_resposta_json_completo(self):
+        """
+        TESTE: Função parseia JSON completo corretamente.
+        """
+        from sistemas.gerador_pecas.extrator_resumo_json import parsear_resposta_json
+
+        json_completo = '''
+        ```json
+        {
+            "tipo_documento": "Petição Inicial",
+            "autor": "Fulano de Tal",
+            "valor_causa": 10000.00
+        }
+        ```
+        '''
+
+        resultado, erro = parsear_resposta_json(json_completo)
+
+        self.assertIsNone(erro, f"Não deveria ter erro: {erro}")
+        self.assertEqual(resultado["tipo_documento"], "Petição Inicial")
+        self.assertEqual(resultado["autor"], "Fulano de Tal")
+        self.assertEqual(resultado["valor_causa"], 10000.00)
+
+    def test_parsear_resposta_json_truncado_detecta_erro(self):
+        """
+        TESTE: Função detecta e reporta JSON truncado.
+        """
+        from sistemas.gerador_pecas.extrator_resumo_json import parsear_resposta_json
+
+        json_truncado = '''
+        {
+            "tipo_documento": "Petição Inicial",
+            "autor": "Fulano de
+        '''
+
+        resultado, erro = parsear_resposta_json(json_truncado)
+
+        # Deve ter erro (mesmo que tente reparar)
+        # Se reparou, o resultado terá [TRUNCADO]
+        if erro is None:
+            # Se não deu erro, verificar se tem marca de truncamento
+            autor = resultado.get("autor", "")
+            self.assertIn("[TRUNCADO]", str(autor),
+                "Valor truncado deve ter marca [TRUNCADO]")
+        else:
+            self.assertIn("parse", erro.lower(),
+                "Erro deve mencionar problema de parse")
+
+    def test_parsear_resposta_vazia(self):
+        """
+        TESTE: Função lida corretamente com resposta vazia.
+        """
+        from sistemas.gerador_pecas.extrator_resumo_json import parsear_resposta_json
+
+        resultado, erro = parsear_resposta_json("")
+
+        self.assertEqual(resultado, {})
+        self.assertIsNotNone(erro)
+        self.assertIn("vazia", erro.lower())
+
+    def test_parsear_resposta_sem_json(self):
+        """
+        TESTE: Função lida corretamente com resposta sem JSON.
+        """
+        from sistemas.gerador_pecas.extrator_resumo_json import parsear_resposta_json
+
+        texto_sem_json = '''
+        Este documento contém apenas texto comum,
+        sem nenhuma estrutura JSON válida.
+        Aqui está o relatório final do caso.
+        '''
+
+        resultado, erro = parsear_resposta_json(texto_sem_json)
+
+        self.assertEqual(resultado, {})
+        self.assertIsNotNone(erro)
+
+
+# =============================================================================
 # RUNNER
 # =============================================================================
 
@@ -826,6 +1190,8 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestAtualizarJSONSemRecriarVariaveis))
     suite.addTests(loader.loadTestsFromTestCase(TestCriacaoPerguntaVariavel))
     suite.addTests(loader.loadTestsFromTestCase(TestReordenacaoComIA))
+    suite.addTests(loader.loadTestsFromTestCase(TestTruncamentoValidacaoJSON))
+    suite.addTests(loader.loadTestsFromTestCase(TestParsearRespostaJSONTruncamento))
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)

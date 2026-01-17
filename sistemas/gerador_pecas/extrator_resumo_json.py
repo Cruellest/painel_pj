@@ -457,8 +457,16 @@ def parsear_resposta_json(resposta: str) -> Tuple[Dict[str, Any], Optional[str]]
     Returns:
         Tupla (json_dict, erro) - erro é None se parse bem-sucedido
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     if not resposta:
+        logger.error("[JSON_PARSE] Resposta vazia recebida")
         return {}, "Resposta vazia"
+
+    # Log de diagnóstico - tamanho original
+    tamanho_original = len(resposta)
+    logger.info(f"[JSON_PARSE] Resposta recebida: {tamanho_original} caracteres")
 
     resposta = resposta.strip()
 
@@ -466,6 +474,7 @@ def parsear_resposta_json(resposta: str) -> Tuple[Dict[str, Any], Optional[str]]
     match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', resposta)
     if match:
         json_str = match.group(1).strip()
+        logger.debug(f"[JSON_PARSE] JSON extraído de bloco markdown: {len(json_str)} chars")
     else:
         # Tenta usar resposta direta (pode começar com { ou [)
         json_str = resposta
@@ -488,15 +497,32 @@ def parsear_resposta_json(resposta: str) -> Tuple[Dict[str, Any], Optional[str]]
     elif last_bracket >= 0:
         json_str = json_str[:last_bracket + 1]
 
-    import logging
-    logger = logging.getLogger(__name__)
+    tamanho_extraido = len(json_str)
+    if tamanho_original - tamanho_extraido > 50:
+        logger.debug(f"[JSON_PARSE] Após extração: {tamanho_extraido} chars (removido {tamanho_original - tamanho_extraido})")
+
+    # VALIDAÇÃO DE COMPLETUDE: Verifica balanceamento antes de parsear
+    abre_chaves = json_str.count('{')
+    fecha_chaves = json_str.count('}')
+    abre_colchetes = json_str.count('[')
+    fecha_colchetes = json_str.count(']')
+
+    if abre_chaves != fecha_chaves or abre_colchetes != fecha_colchetes:
+        logger.warning(
+            f"[JSON_PARSE] POSSÍVEL TRUNCAMENTO - Estruturas desbalanceadas: "
+            f"{{ {abre_chaves}/{fecha_chaves} }}, [ {abre_colchetes}/{fecha_colchetes} ]"
+        )
+        # Log dos últimos 200 chars para diagnóstico
+        if len(json_str) > 200:
+            logger.warning(f"[JSON_PARSE] Últimos 200 chars: ...{json_str[-200:]}")
 
     # Primeira tentativa: parse direto
     try:
         resultado = json.loads(json_str)
+        logger.info(f"[JSON_PARSE] Parse direto bem-sucedido: {len(resultado)} campos")
         return resultado, None
     except json.JSONDecodeError as e1:
-        logger.debug(f"Parse direto falhou: {e1}")
+        logger.debug(f"[JSON_PARSE] Parse direto falhou na posição {e1.pos}: {e1.msg}")
 
     # Segunda tentativa: corrige JSON malformado
     json_str_corrigido = _corrigir_json_malformado(json_str)

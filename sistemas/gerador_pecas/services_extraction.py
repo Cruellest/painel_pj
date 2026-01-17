@@ -183,18 +183,51 @@ class ExtractionSchemaGenerator:
                 logger.error(f"Erro na chamada Gemini: {response.error}")
                 return {"success": False, "erro": f"Erro na IA: {response.error}"}
 
-            # 3. Parseia a resposta JSON
+            # Log de diagnóstico - tamanho da resposta
+            tamanho_resposta = len(response.content) if response.content else 0
+            tokens_usados = response.tokens_used
+            logger.info(
+                f"[SCHEMA_GEN] Resposta recebida: {tamanho_resposta} chars, "
+                f"{tokens_usados} tokens, perguntas={len(perguntas_novas)}"
+            )
+
+            # 3. Parseia a resposta JSON com validação robusta
             resultado_ia = self._extrair_json_resposta(response.content)
 
             if not resultado_ia:
-                logger.error(f"Resposta IA não é JSON válido: {response.content[:500]}")
-                return {"success": False, "erro": "A IA não retornou um JSON válido"}
+                # Log detalhado para diagnóstico
+                logger.error(
+                    f"[SCHEMA_GEN] FALHA NO PARSE - Resposta IA não é JSON válido. "
+                    f"Tamanho: {tamanho_resposta} chars. "
+                    f"Primeiros 500 chars: {response.content[:500] if response.content else 'VAZIO'}"
+                )
+                # Retorna erro explícito para o frontend
+                return {
+                    "success": False,
+                    "erro": "A IA não retornou um JSON válido. Possível truncamento da resposta.",
+                    "debug": {
+                        "tamanho_resposta": tamanho_resposta,
+                        "tokens_usados": tokens_usados,
+                        "perguntas_enviadas": len(perguntas_novas)
+                    }
+                }
 
             schema_novo = resultado_ia.get("schema", {})
             mapeamento_novo = resultado_ia.get("mapeamento_variaveis", {})
 
             if not schema_novo:
+                logger.error(f"[SCHEMA_GEN] Schema vazio na resposta. Keys presentes: {list(resultado_ia.keys())}")
                 return {"success": False, "erro": "Schema não encontrado na resposta da IA"}
+
+            # VALIDAÇÃO CRÍTICA: Verifica se schema tem variáveis para todas as perguntas
+            variaveis_no_schema = len(schema_novo)
+            perguntas_esperadas = len(perguntas_novas)
+            if variaveis_no_schema < perguntas_esperadas:
+                logger.warning(
+                    f"[SCHEMA_GEN] Schema incompleto: {variaveis_no_schema} variáveis "
+                    f"para {perguntas_esperadas} perguntas. Possível truncamento."
+                )
+                # Não falha, mas alerta (a IA pode ter combinado variáveis legitimamente)
 
             # 4. Valida e normaliza o schema novo
             schema_novo_validado = self._validar_schema(schema_novo)
@@ -412,8 +445,21 @@ INSTRUÇÕES OBRIGATÓRIAS:
 7. Retorne APENAS o JSON, sem explicações"""
 
     def _extrair_json_resposta(self, resposta: str) -> Optional[Dict]:
-        """Extrai JSON da resposta da IA."""
-        # Tenta encontrar JSON na resposta
+        """
+        Extrai JSON da resposta da IA com validação robusta.
+
+        IMPORTANTE: Esta função agora valida a completude do JSON para evitar
+        truncamento silencioso. Se o JSON parecer truncado, retorna None e loga
+        o erro detalhadamente.
+        """
+        if not resposta:
+            logger.error("[JSON_EXTRACT] Resposta da IA está vazia")
+            return None
+
+        # Log de diagnóstico - tamanho original
+        tamanho_original = len(resposta)
+        logger.info(f"[JSON_EXTRACT] Resposta IA recebida: {tamanho_original} caracteres")
+
         resposta = resposta.strip()
 
         # Remove marcadores de código se presentes
@@ -426,18 +472,146 @@ INSTRUÇÕES OBRIGATÓRIAS:
             resposta = resposta[:-3]
 
         resposta = resposta.strip()
+        tamanho_limpo = len(resposta)
 
+        # Log se houve diferença significativa após limpeza
+        if tamanho_original - tamanho_limpo > 20:
+            logger.debug(f"[JSON_EXTRACT] Após limpeza: {tamanho_limpo} chars (removido {tamanho_original - tamanho_limpo})")
+
+        # Primeira tentativa: parse direto
         try:
-            return json.loads(resposta)
-        except json.JSONDecodeError:
-            # Tenta encontrar JSON dentro do texto
-            match = re.search(r'\{[\s\S]*\}', resposta)
-            if match:
+            resultado = json.loads(resposta)
+            logger.info(f"[JSON_EXTRACT] Parse direto bem-sucedido: {len(resultado.get('schema', {}))} campos no schema")
+            return resultado
+        except json.JSONDecodeError as e:
+            logger.debug(f"[JSON_EXTRACT] Parse direto falhou na posição {e.pos}: {e.msg}")
+
+        # Segunda tentativa: encontrar JSON dentro do texto (não-greedy, balanceado)
+        json_str = self._extrair_json_balanceado(resposta)
+        if json_str:
+            try:
+                resultado = json.loads(json_str)
+                tamanho_extraido = len(json_str)
+                logger.info(f"[JSON_EXTRACT] JSON extraído via balanceamento: {tamanho_extraido} chars")
+                return resultado
+            except json.JSONDecodeError as e:
+                logger.warning(f"[JSON_EXTRACT] JSON extraído mas inválido na pos {e.pos}: {e.msg}")
+                # Log dos últimos 200 chars para diagnóstico de truncamento
+                if len(json_str) > 200:
+                    logger.warning(f"[JSON_EXTRACT] Últimos 200 chars do JSON: ...{json_str[-200:]}")
+
+        # Terceira tentativa: regex greedy como último recurso (com validação extra)
+        match = re.search(r'\{[\s\S]*\}', resposta)
+        if match:
+            json_candidato = match.group()
+            # Valida se parece completo (tem schema e mapeamento_variaveis)
+            if self._verificar_json_parece_completo(json_candidato):
                 try:
-                    return json.loads(match.group())
-                except json.JSONDecodeError:
-                    pass
+                    resultado = json.loads(json_candidato)
+                    logger.info(f"[JSON_EXTRACT] Parse via regex: {len(json_candidato)} chars")
+                    return resultado
+                except json.JSONDecodeError as e:
+                    logger.error(
+                        f"[JSON_EXTRACT] FALHA CRÍTICA - JSON parece completo mas não parseia. "
+                        f"Erro pos {e.pos}: {e.msg}. "
+                        f"Tamanho: {len(json_candidato)} chars"
+                    )
+            else:
+                logger.error(
+                    f"[JSON_EXTRACT] JSON TRUNCADO DETECTADO. "
+                    f"Tamanho extraído: {len(json_candidato)} chars. "
+                    f"Últimos 100 chars: ...{json_candidato[-100:] if len(json_candidato) > 100 else json_candidato}"
+                )
+        else:
+            logger.error(f"[JSON_EXTRACT] Nenhum JSON encontrado na resposta de {tamanho_original} chars")
+
+        return None
+
+    def _extrair_json_balanceado(self, texto: str) -> Optional[str]:
+        """
+        Extrai JSON usando contagem balanceada de chaves.
+
+        Mais robusto que regex greedy pois encontra o JSON completo mais externo
+        verificando balanceamento de { e }.
+        """
+        inicio = texto.find('{')
+        if inicio == -1:
             return None
+
+        nivel = 0
+        dentro_string = False
+        escape_proximo = False
+
+        for i, char in enumerate(texto[inicio:], inicio):
+            if escape_proximo:
+                escape_proximo = False
+                continue
+
+            if char == '\\' and dentro_string:
+                escape_proximo = True
+                continue
+
+            if char == '"' and not escape_proximo:
+                dentro_string = not dentro_string
+                continue
+
+            if dentro_string:
+                continue
+
+            if char == '{':
+                nivel += 1
+            elif char == '}':
+                nivel -= 1
+                if nivel == 0:
+                    return texto[inicio:i+1]
+
+        # Se chegou aqui, JSON está incompleto (chaves não balanceadas)
+        logger.warning(f"[JSON_EXTRACT] JSON com chaves desbalanceadas. Nível final: {nivel}")
+        return None
+
+    def _verificar_json_parece_completo(self, json_str: str) -> bool:
+        """
+        Verifica heuristicamente se um JSON parece completo.
+
+        Checa:
+        1. Termina com } (não no meio de string/valor)
+        2. Chaves balanceadas
+        3. Não termina com caracteres de truncamento típicos
+        """
+        if not json_str or not json_str.strip().endswith('}'):
+            return False
+
+        # Conta chaves e colchetes
+        abre_chaves = json_str.count('{')
+        fecha_chaves = json_str.count('}')
+        abre_colchetes = json_str.count('[')
+        fecha_colchetes = json_str.count(']')
+
+        if abre_chaves != fecha_chaves:
+            logger.debug(f"[JSON_VERIFY] Chaves desbalanceadas: {abre_chaves} {{ vs {fecha_chaves} }}")
+            return False
+
+        if abre_colchetes != fecha_colchetes:
+            logger.debug(f"[JSON_VERIFY] Colchetes desbalanceados: {abre_colchetes} [ vs {fecha_colchetes} ]")
+            return False
+
+        # Verifica se não termina no meio de uma string
+        # (heurística: conta aspas não-escapadas)
+        aspas = 0
+        i = 0
+        while i < len(json_str):
+            if json_str[i] == '\\' and i + 1 < len(json_str):
+                i += 2  # Pula caractere escapado
+                continue
+            if json_str[i] == '"':
+                aspas += 1
+            i += 1
+
+        if aspas % 2 != 0:
+            logger.debug(f"[JSON_VERIFY] Aspas desbalanceadas: {aspas} aspas")
+            return False
+
+        return True
 
     def _validar_schema(self, schema: Dict) -> Dict:
         """Valida e normaliza o schema gerado."""
