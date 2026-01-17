@@ -114,8 +114,8 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
                 token = auth_header.split(" ")[1]
 
             # Decodifica o token
-            from auth.utils import decode_access_token
-            payload = decode_access_token(token)
+            from auth.security import decode_token
+            payload = decode_token(token)
             if not payload:
                 return None
 

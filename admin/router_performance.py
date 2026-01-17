@@ -199,8 +199,8 @@ async def diagnose_middleware(
     # Step 5: Decode token
     if token:
         try:
-            from auth.utils import decode_access_token
-            payload = decode_access_token(token)
+            from auth.security import decode_token
+            payload = decode_token(token)
             result["step_5_payload"] = {
                 "user_id": payload.get("user_id") if payload else None,
                 "sub": payload.get("sub") if payload else None,
