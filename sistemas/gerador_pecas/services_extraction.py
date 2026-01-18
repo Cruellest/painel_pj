@@ -27,7 +27,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from services.gemini_service import gemini_service
+from services.gemini_service import gemini_service, get_thinking_level
 from .models_extraction import (
     ExtractionQuestion, ExtractionModel, ExtractionVariable,
     ExtractionQuestionType
@@ -172,11 +172,15 @@ class ExtractionSchemaGenerator:
             # 2. Chama o Gemini para gerar o schema APENAS das perguntas novas
             logger.info(f"Gerando schema incremental para categoria '{categoria_nome}' com {len(perguntas_novas)} perguntas NOVAS")
 
+            # Obtém thinking_level da config
+            thinking_level = get_thinking_level(self.db, "gerador_pecas")
+
             response = await gemini_service.generate(
                 prompt=prompt,
                 system_prompt=self._get_system_prompt(),
                 model=GEMINI_MODEL,
-                temperature=0.1  # Baixa temperatura para consistência
+                temperature=0.1,  # Baixa temperatura para consistência
+                thinking_level=thinking_level  # Configurável em /admin/prompts-config
             )
 
             if not response.success:

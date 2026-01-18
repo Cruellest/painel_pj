@@ -17,9 +17,21 @@ import unicodedata
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 
-from services.gemini_service import gemini_service
+from services.gemini_service import gemini_service, get_thinking_level
 from database.connection import SessionLocal
 from admin.models import PromptConfig, ConfiguracaoIA
+
+
+def _get_pedido_calculo_thinking_level() -> str:
+    """Obtém thinking_level configurado para pedido_calculo"""
+    try:
+        db = SessionLocal()
+        try:
+            return get_thinking_level(db, "pedido_calculo")
+        finally:
+            db.close()
+    except Exception:
+        return "low"  # Default para classificação
 from .ia_logger import get_logger
 
 from .models import (
@@ -267,7 +279,8 @@ XML:
         response = await gemini_service.generate(
             prompt=prompt,
             model="gemini-3-flash-preview",
-            temperature=0.1
+            temperature=0.1,
+            thinking_level=_get_pedido_calculo_thinking_level()
         )
 
         if not response.success:
@@ -506,7 +519,8 @@ Apenas certidoes de CIENCIA/RECEBIMENTO devem retornar is_intimacao_cumprimento:
             response = await gemini_service.generate(
                 prompt=prompt,
                 model=self.modelo,
-                temperature=0.1
+                temperature=0.1,
+                thinking_level=_get_pedido_calculo_thinking_level()
             )
 
             if not response.success:
@@ -806,7 +820,8 @@ Responda APENAS com JSON:
             response = await gemini_service.generate(
                 prompt=prompt,
                 model=self.modelo,
-                temperature=0.1
+                temperature=0.1,
+                thinking_level=_get_pedido_calculo_thinking_level()
             )
 
             if not response.success:
@@ -1000,7 +1015,8 @@ Se nao encontrar, retorne:
             response = await gemini_service.generate(
                 prompt=prompt,
                 model=self.modelo,
-                temperature=0.1
+                temperature=0.1,
+                thinking_level=_get_pedido_calculo_thinking_level()
             )
 
             if not response.success:
@@ -1166,7 +1182,8 @@ Retorne APENAS o JSON, sem explicações adicionais. Use null para campos não e
             response = await gemini_service.generate(
                 prompt=prompt,
                 model=self.modelo,
-                temperature=self.temperatura
+                temperature=self.temperatura,
+                thinking_level=_get_pedido_calculo_thinking_level()
             )
 
             if not response.success:
@@ -1575,7 +1592,8 @@ Use APENAS as informações fornecidas. Use "[A VERIFICAR]" para dados faltantes
             response = await gemini_service.generate(
                 prompt=prompt,
                 model=self.modelo,
-                temperature=self.temperatura
+                temperature=self.temperatura,
+                thinking_level=_get_pedido_calculo_thinking_level()
             )
 
             if not response.success:

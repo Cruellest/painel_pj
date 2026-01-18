@@ -17,7 +17,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from services.gemini_service import gemini_service
+from services.gemini_service import gemini_service, get_thinking_level
 from .models_extraction import (
     ExtractionQuestion, ExtractionVariable, DependencyOperator
 )
@@ -77,11 +77,15 @@ class DependencyInferenceService:
             # Chama Gemini
             logger.info(f"Inferindo dependências para {len(perguntas)} perguntas")
 
+            # Obtém thinking_level da config
+            thinking_level = get_thinking_level(self.db, "gerador_pecas")
+
             response = await gemini_service.generate(
                 prompt=prompt,
                 system_prompt=self._get_system_prompt(),
                 model=GEMINI_MODEL,
-                temperature=0.1
+                temperature=0.1,
+                thinking_level=thinking_level  # Configurável em /admin/prompts-config
             )
 
             if not response.success:
@@ -148,25 +152,29 @@ class DependencyInferenceService:
             prompt = self._montar_prompt_batch(perguntas, nomes_variaveis, categoria_nome)
             
             logger.info(f"Analisando dependências para {len(perguntas)} perguntas em lote")
-            
+
+            # Obtém thinking_level da config
+            thinking_level = get_thinking_level(self.db, "gerador_pecas")
+
             response = await gemini_service.generate(
                 prompt=prompt,
                 system_prompt=self._get_system_prompt_batch(),
                 model=GEMINI_MODEL,
-                temperature=0.1
+                temperature=0.1,
+                thinking_level=thinking_level  # Configurável em /admin/prompts-config
             )
-            
+
             if not response.success:
                 logger.error(f"Erro na chamada Gemini: {response.error}")
                 return {"success": False, "erro": f"Erro na IA: {response.error}"}
-            
+
             # Parseia resposta
             resultado = self._extrair_json_resposta(response.content)
-            
+
             if not resultado:
                 logger.error(f"Resposta IA não é JSON válido: {response.content[:500]}")
                 return {"success": False, "erro": "A IA não retornou um JSON válido"}
-            
+
             # Converte para mapa indexado
             dependencias_map = {}
             for dep in resultado.get("dependencias", []):

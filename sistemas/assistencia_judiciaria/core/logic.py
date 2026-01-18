@@ -334,32 +334,39 @@ A resposta deve ser redigida em **Markdown**, no formato de relatório jurídico
         {"role": "user", "content": user},
     ]
 
-async def call_gemini_async(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60) -> str:
-    """Chama a API do Gemini usando o serviço centralizado (versão assíncrona)"""
+async def call_gemini_async(messages: list, model: str = DEFAULT_MODEL, temperature=0.2, max_tokens=20000, timeout=60, thinking_level: str = None) -> str:
+    """
+    Chama a API do Gemini usando o serviço centralizado (versão assíncrona).
+
+    Args:
+        thinking_level: Nível de raciocínio do Gemini 3 ("minimal", "low", "medium", "high")
+                       Use get_thinking_level(db, "assistencia_judiciaria") para obter da config
+    """
     from services.gemini_service import gemini_service, GeminiService
-    
+
     # Normaliza o modelo
     model = GeminiService.normalize_model(model)
-    
+
     # Extrai system e user prompts das mensagens
     system_prompt = ""
     user_prompt = ""
-    
+
     for msg in messages:
         if msg.get("role") == "system":
             system_prompt = msg.get("content", "")
         elif msg.get("role") == "user":
             user_prompt = msg.get("content", "")
-    
+
     logger.info(f"Chamando Gemini com modelo {model}...")
-    
+
     try:
         response = await gemini_service.generate(
             prompt=user_prompt,
             system_prompt=system_prompt,
             model=model,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            thinking_level=thinking_level  # Configurável em /admin/prompts-config
         )
         
         if not response.success:

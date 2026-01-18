@@ -15,7 +15,7 @@ import json
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 
-from services.gemini_service import gemini_service
+from services.gemini_service import gemini_service, get_thinking_level
 from .models_resumo_json import CategoriaResumoJSON
 
 logger = logging.getLogger(__name__)
@@ -87,12 +87,16 @@ class DocumentClassificationService:
                 metadata=metadata
             )
 
+            # Obtém thinking_level da config
+            thinking_level = get_thinking_level(self.db, "gerador_pecas")
+
             # Chama o Gemini
             response = await gemini_service.generate(
                 prompt=prompt,
                 system_prompt=self._get_system_prompt(),
                 model=GEMINI_MODEL,
-                temperature=0.1
+                temperature=0.1,
+                thinking_level=thinking_level  # Configurável em /admin/prompts-config
             )
 
             if not response.success:

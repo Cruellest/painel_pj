@@ -345,6 +345,7 @@ class GeminiService:
         max_tokens: int = None,
         temperature: float = 0.3,
         use_cache: bool = True,
+        thinking_level: str = None,
         # Contexto para logging
         context: Dict[str, Any] = None
     ) -> GeminiResponse:
@@ -359,6 +360,9 @@ class GeminiService:
             max_tokens: Limite de tokens na resposta (None = sem limite, usa máximo do modelo)
             temperature: Temperatura (0-2)
             use_cache: Se True, usa cache para respostas idênticas (padrão: True)
+            thinking_level: Nível de raciocínio do Gemini 3 ("minimal", "low", "medium", "high")
+                           None = usa padrão do modelo (high/dynamic)
+                           "low" recomendado para classificação JSON (reduz latência ~80%)
             context: Dicionário com contexto para logging (sistema, modulo, user_id, username)
 
         Returns:
@@ -411,7 +415,9 @@ class GeminiService:
             prompt=prompt,
             system_prompt=system_prompt,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            thinking_level=thinking_level,
+            model=model
         )
         metrics.time_prepare_ms = (time.perf_counter() - t_prepare) * 1000
 
@@ -436,6 +442,36 @@ class GeminiService:
 
                 content = self._extract_content(data)
                 tokens = self._extract_tokens(data)
+
+                # Se conteúdo vazio e thinking_level restritivo foi usado, tenta sem
+                if not content and thinking_level in ("minimal", "low"):
+                    logger.warning(
+                        f"[Gemini] Resposta vazia com thinking_level={thinking_level}, tentando sem"
+                    )
+                    # Reconstrói payload SEM thinking_level (usa default)
+                    payload_retry = self._build_payload(
+                        prompt=prompt,
+                        system_prompt=system_prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        thinking_level=None,  # Usa default do modelo
+                        model=model
+                    )
+                    response_retry = await client.post(url, json=payload_retry)
+                    response_retry.raise_for_status()
+                    data = response_retry.json()
+                    content = self._extract_content(data)
+                    tokens = self._extract_tokens(data)
+                    logger.info(f"[Gemini] Retry sem thinking_level: {len(content)} chars")
+
+                # Se ainda vazio, retorna erro
+                if not content:
+                    metrics.success = False
+                    metrics.error = "Resposta vazia do Gemini (sem conteúdo gerado)"
+                    metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                    metrics.log()
+                    asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+                    return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
                 metrics.time_generation_ms = (time.perf_counter() - t_parse) * 1000
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
@@ -502,19 +538,23 @@ class GeminiService:
         model: str = None,
         task: str = None,
         max_tokens: int = None,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        thinking_level: str = None
     ) -> GeminiResponse:
         """
         Gera texto usando uma sessão aiohttp existente.
 
         Útil para chamadas em paralelo.
+
+        Args:
+            thinking_level: "minimal", "low", "medium", "high" ou None (default)
         """
         if not self._api_key:
             return GeminiResponse(
-                success=False, 
+                success=False,
                 error="GEMINI_KEY não configurada"
             )
-        
+
         # Determina o modelo
         if model:
             model = self.normalize_model(model)
@@ -522,18 +562,20 @@ class GeminiService:
             model = self.get_model_for_task(task)
         else:
             model = self.DEFAULT_MODELS["analise"]
-        
+
         # Monta URL
         url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}"
-        
+
         # Monta payload
         payload = self._build_payload(
             prompt=prompt,
             system_prompt=system_prompt,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            thinking_level=thinking_level,
+            model=model
         )
-        
+
         try:
             async with session.post(
                 url,
@@ -542,22 +584,22 @@ class GeminiService:
             ) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
-                
+
                 content = self._extract_content(data)
                 tokens = self._extract_tokens(data)
-                
+
                 return GeminiResponse(
                     success=True,
                     content=content,
                     tokens_used=tokens
                 )
-                
+
         except Exception as e:
             return GeminiResponse(
                 success=False,
                 error=f"Erro: {str(e)}"
             )
-    
+
     async def generate_with_images(
         self,
         prompt: str,
@@ -566,6 +608,7 @@ class GeminiService:
         model: str = None,
         max_tokens: int = None,
         temperature: float = 0.3,
+        thinking_level: str = None,
         context: Dict[str, Any] = None
     ) -> GeminiResponse:
         """
@@ -578,6 +621,7 @@ class GeminiService:
             model: Nome do modelo (opcional)
             max_tokens: Limite de tokens na resposta
             temperature: Temperatura (0-2)
+            thinking_level: "minimal", "low", "medium", "high" ou None (default)
             context: Dicionário com contexto para logging (sistema, modulo, user_id, username)
 
         Returns:
@@ -610,7 +654,9 @@ class GeminiService:
             images_base64=images_base64,
             system_prompt=system_prompt,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            thinking_level=thinking_level,
+            model=model
         )
 
         # Retry com backoff
@@ -629,6 +675,35 @@ class GeminiService:
 
                 content = self._extract_content(data)
                 tokens = self._extract_tokens(data)
+
+                # Se conteúdo vazio e thinking_level restritivo foi usado, tenta sem
+                if not content and thinking_level in ("minimal", "low"):
+                    logger.warning(
+                        f"[Gemini] Resposta vazia com thinking_level={thinking_level} (imagens), tentando sem"
+                    )
+                    payload_retry = self._build_payload_with_images(
+                        prompt=prompt,
+                        images_base64=images_base64,
+                        system_prompt=system_prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        thinking_level=None,  # Usa default do modelo
+                        model=model
+                    )
+                    response_retry = await client.post(url, json=payload_retry)
+                    response_retry.raise_for_status()
+                    data = response_retry.json()
+                    content = self._extract_content(data)
+                    tokens = self._extract_tokens(data)
+                    logger.info(f"[Gemini] Retry sem thinking_level: {len(content)} chars")
+
+                # Se ainda vazio, retorna erro
+                if not content:
+                    metrics.success = False
+                    metrics.error = "Resposta vazia do Gemini (sem conteúdo gerado)"
+                    metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                    asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
+                    return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.response_tokens = tokens
@@ -706,9 +781,10 @@ class GeminiService:
             images_base64=images_base64,
             system_prompt=system_prompt,
             max_tokens=max_tokens,
-            temperature=temperature
+            temperature=temperature,
+            model=model
         )
-        
+
         try:
             async with session.post(
                 url,
@@ -717,35 +793,68 @@ class GeminiService:
             ) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
-                
+
                 content = self._extract_content(data)
                 tokens = self._extract_tokens(data)
-                
+
                 return GeminiResponse(
                     success=True,
                     content=content,
                     tokens_used=tokens
                 )
-                
+
         except Exception as e:
             return GeminiResponse(
                 success=False,
                 error=f"Erro: {str(e)}"
             )
-    
+
     def _build_payload(
         self,
         prompt: str,
         system_prompt: str = "",
         max_tokens: int = None,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        thinking_level: str = None,
+        model: str = None
     ) -> Dict[str, Any]:
-        """Monta o payload para chamada de texto"""
+        """
+        Monta o payload para chamada de texto.
+
+        Args:
+            thinking_level: Nível de raciocínio do Gemini 3. Valores válidos:
+                - None: Usa padrão do modelo (high/dynamic)
+                - "minimal": Quase sem thinking (melhor para chat/alta vazão) - só Flash
+                - "low": Mínimo thinking (bom para classificação simples)
+                - "medium": Balanceado - só Flash
+                - "high": Máximo raciocínio (padrão)
+            model: Nome do modelo (usado para validar thinking_level)
+        """
         generation_config = {"temperature": temperature}
 
         # Só adiciona maxOutputTokens se especificado (None = usa máximo do modelo)
         if max_tokens is not None:
             generation_config["maxOutputTokens"] = max_tokens
+
+        # Configura nível de thinking para Gemini 3
+        # - Gemini 3 Flash: suporta "minimal", "low", "medium", "high"
+        # - Gemini 3 Pro: suporta apenas "low", "high"
+        # - Gemini 2.x: não suporta thinkingConfig
+        if thinking_level and model:
+            model_lower = model.lower()
+            if "gemini-3" in model_lower:
+                if "flash" in model_lower:
+                    # Flash aceita todos os níveis
+                    valid_levels = ("minimal", "low", "medium", "high")
+                else:
+                    # Pro aceita apenas low e high
+                    valid_levels = ("low", "high")
+
+                if thinking_level in valid_levels:
+                    generation_config["thinkingConfig"] = {
+                        "thinkingLevel": thinking_level
+                    }
+                # Se nível inválido para o modelo, simplesmente ignora (usa default)
 
         payload = {
             "contents": [
@@ -767,11 +876,24 @@ class GeminiService:
         images_base64: List[str],
         system_prompt: str = "",
         max_tokens: int = None,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        thinking_level: str = None,
+        model: str = None
     ) -> Dict[str, Any]:
-        """Monta o payload para chamada com imagens"""
+        """
+        Monta o payload para chamada com imagens.
+
+        Args:
+            thinking_level: Nível de raciocínio do Gemini 3. Valores válidos:
+                - None: Usa padrão do modelo (high/dynamic)
+                - "minimal": Quase sem thinking (melhor para chat/alta vazão) - só Flash
+                - "low": Mínimo thinking (bom para classificação simples)
+                - "medium": Balanceado - só Flash
+                - "high": Máximo raciocínio (padrão)
+            model: Nome do modelo (usado para validar thinking_level)
+        """
         parts = []
-        
+
         # Adiciona imagens
         for img_base64 in images_base64:
             if img_base64.startswith("data:"):
@@ -781,20 +903,40 @@ class GeminiService:
             else:
                 mime_type = "image/png"
                 data = img_base64
-            
+
             parts.append({
                 "inline_data": {
                     "mime_type": mime_type,
                     "data": data
                 }
             })
-        
+
         # Adiciona prompt
         parts.append({"text": prompt})
 
         generation_config = {"temperature": temperature}
         if max_tokens is not None:
             generation_config["maxOutputTokens"] = max_tokens
+
+        # Configura nível de thinking para Gemini 3
+        # - Gemini 3 Flash: suporta "minimal", "low", "medium", "high"
+        # - Gemini 3 Pro: suporta apenas "low", "high"
+        # - Gemini 2.x: não suporta thinkingConfig
+        if thinking_level and model:
+            model_lower = model.lower()
+            if "gemini-3" in model_lower:
+                if "flash" in model_lower:
+                    # Flash aceita todos os níveis
+                    valid_levels = ("minimal", "low", "medium", "high")
+                else:
+                    # Pro aceita apenas low e high
+                    valid_levels = ("low", "high")
+
+                if thinking_level in valid_levels:
+                    generation_config["thinkingConfig"] = {
+                        "thinkingLevel": thinking_level
+                    }
+                # Se nível inválido para o modelo, simplesmente ignora (usa default)
 
         payload = {
             "contents": [{"role": "user", "parts": parts}],
@@ -1001,10 +1143,29 @@ class GeminiService:
         """Extrai conteúdo da resposta do Gemini"""
         candidates = data.get("candidates", [])
         if candidates:
+            # Verifica se há bloqueio
+            finish_reason = candidates[0].get("finishReason", "")
+            if finish_reason in ("SAFETY", "RECITATION", "OTHER"):
+                logger.warning(f"[Gemini] Resposta bloqueada: finishReason={finish_reason}")
+
             content = candidates[0].get("content", {})
             parts = content.get("parts", [])
             if parts:
-                return parts[0].get("text", "")
+                # Gemini 2.5 com thinking pode ter múltiplas parts
+                # A primeira pode ser "thought" e a segunda o texto real
+                for part in parts:
+                    text = part.get("text", "")
+                    if text:
+                        return text
+        else:
+            # Log para diagnóstico de respostas vazias
+            prompt_feedback = data.get("promptFeedback", {})
+            if prompt_feedback:
+                block_reason = prompt_feedback.get("blockReason", "")
+                if block_reason:
+                    logger.warning(f"[Gemini] Prompt bloqueado: blockReason={block_reason}")
+            else:
+                logger.warning(f"[Gemini] Resposta sem candidates. Keys: {list(data.keys())}")
         return ""
 
     def _extract_tokens(self, data: Dict) -> int:
@@ -1171,6 +1332,45 @@ async def get_service_status() -> Dict[str, Any]:
             "default_model": gemini_service.DEFAULT_MODELS["analise"],
         }
     }
+
+
+# ============================================
+# FUNÇÕES DE CONFIGURAÇÃO DINÂMICA
+# ============================================
+
+def get_thinking_level(db, sistema: str) -> str:
+    """
+    Obtém o thinking_level configurado para um sistema.
+
+    Args:
+        db: Sessão do SQLAlchemy
+        sistema: Nome do sistema (gerador_pecas, assistencia_judiciaria, etc.)
+
+    Returns:
+        Nível de thinking ("minimal", "low", "medium", "high") ou None para default
+
+    Exemplo:
+        thinking_level = get_thinking_level(db, "gerador_pecas")
+        response = await gemini_service.generate(prompt, thinking_level=thinking_level)
+    """
+    try:
+        from admin.models import ConfiguracaoIA
+
+        config = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == sistema,
+            ConfiguracaoIA.chave == "thinking_level"
+        ).first()
+
+        if config and config.valor and config.valor.strip():
+            valor = config.valor.strip().lower()
+            if valor in ("minimal", "low", "medium", "high"):
+                return valor
+
+        return None  # Usa default do modelo
+
+    except Exception as e:
+        logger.warning(f"[Gemini] Erro ao ler thinking_level para {sistema}: {e}")
+        return None
 
 
 # Exports para outros módulos

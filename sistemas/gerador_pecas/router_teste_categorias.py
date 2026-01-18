@@ -400,12 +400,15 @@ async def classificar_documento_com_ia(
     Returns:
         Tupla (json_extraido, erro, json_raw)
     """
-    from services.gemini_service import gemini_service
+    from services.gemini_service import gemini_service, get_thinking_level
     from sistemas.gerador_pecas.extrator_resumo_json import (
         FormatoResumo, gerar_prompt_extracao_json,
         gerar_prompt_extracao_json_imagem, parsear_resposta_json,
         normalizar_json_com_schema
     )
+
+    # Obtém thinking_level configurado para gerador_pecas
+    thinking_level = get_thinking_level(db, "gerador_pecas")
 
     try:
         # Cria objeto de formato
@@ -445,7 +448,8 @@ async def classificar_documento_com_ia(
                 prompt=prompt,
                 model="gemini-3-flash-preview",
                 temperature=0.1,
-                max_tokens=8000
+                max_tokens=8000,
+                thinking_level=thinking_level  # Configurável em /admin/prompts-config
             )
         else:
             # Usa imagem (PDF digitalizado)
@@ -469,7 +473,8 @@ async def classificar_documento_com_ia(
                     images_base64=imagens_base64,
                     model="gemini-3-flash-preview",
                     temperature=0.1,
-                    max_tokens=8000
+                    max_tokens=8000,
+                    thinking_level=thinking_level  # Configurável em /admin/prompts-config
                 )
             else:
                 return None, "Não foi possível processar o PDF", ""

@@ -538,6 +538,47 @@ DEFAULT_CONFIG_IA = [
         "tipo_valor": "number",
         "descricao": "Tempo de vida do cache de detecções em minutos"
     },
+    # ========================================
+    # Configurações de Thinking Level (Gemini 3)
+    # Valores: "minimal", "low", "medium", "high" ou vazio para default
+    # "low" reduz latência ~80% para tarefas de classificação JSON
+    # ========================================
+    {
+        "sistema": "gerador_pecas",
+        "chave": "thinking_level",
+        "valor": "low",
+        "tipo_valor": "string",
+        "descricao": "Nível de raciocínio do Gemini 3 para extração/classificação (minimal, low, medium, high)"
+    },
+    {
+        "sistema": "assistencia_judiciaria",
+        "chave": "thinking_level",
+        "valor": "low",
+        "tipo_valor": "string",
+        "descricao": "Nível de raciocínio do Gemini 3 para classificação (minimal, low, medium, high)"
+    },
+    {
+        "sistema": "pedido_calculo",
+        "chave": "thinking_level",
+        "valor": "low",
+        "tipo_valor": "string",
+        "descricao": "Nível de raciocínio do Gemini 3 para extração de dados (minimal, low, medium, high)"
+    },
+    {
+        "sistema": "prestacao_contas",
+        "chave": "thinking_level",
+        "valor": "low",
+        "tipo_valor": "string",
+        "descricao": "Nível de raciocínio do Gemini 3 para identificação de petições (minimal, low, medium, high)"
+    },
+    # Matrículas usa default (high) para análise complexa de imagens
+    {
+        "sistema": "matriculas",
+        "chave": "thinking_level",
+        "valor": "",
+        "tipo_valor": "string",
+        "descricao": "Nível de raciocínio do Gemini 3 (vazio = default/high para análise complexa)"
+    },
 ]
 
 

@@ -468,10 +468,19 @@
                     <!-- Nome da variável sugerido -->
                     <div class="mb-4">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Nome base da variável</label>
-                        <input type="text" id="pergunta-nome-variavel"
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                            placeholder="ex: medicamento_solicitado">
-                        <p class="text-xs text-gray-400 mt-1">Apenas letras minúsculas, números e underscores. Prefixo do grupo será adicionado.</p>
+                        <div class="flex items-stretch">
+                            <!-- Prefixo fixo da categoria (não editável) -->
+                            <span id="pergunta-prefixo-variavel"
+                                class="inline-flex items-center px-3 py-2 border border-r-0 border-gray-300 bg-gray-100 text-gray-600 text-sm rounded-l-lg font-mono"
+                                title="Prefixo automático da categoria">
+                                <!-- Preenchido via JS -->
+                            </span>
+                            <!-- Input para o nome base (sem prefixo) -->
+                            <input type="text" id="pergunta-nome-variavel"
+                                class="flex-1 px-3 py-2 border border-gray-300 rounded-r-lg focus:ring-2 focus:ring-purple-500 font-mono"
+                                placeholder="ex: medicamento_solicitado">
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">Apenas letras minúsculas, números e underscores. Prefixo aplicado automaticamente.</p>
                     </div>
 
                     <!-- Tipo de dado -->
@@ -2387,6 +2396,31 @@ Qual o valor da causa?"></textarea>
         // Funções do Modal de Pergunta
         // ==========================================
 
+        // Obtém o namespace/prefixo efetivo da categoria atual
+        function obterNamespaceCategoria() {
+            if (!categoriaAtual) return '';
+            // Usa namespace da API (que é o namespace efetivo calculado pelo backend)
+            // Fallback: usa namespace_prefix ou nome normalizado
+            if (categoriaAtual.namespace) return categoriaAtual.namespace;
+            if (categoriaAtual.namespace_prefix) return categoriaAtual.namespace_prefix;
+            // Último fallback: normaliza o nome
+            const nome = categoriaAtual.nome || '';
+            return nome.toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9]+/g, '_')
+                .replace(/^_+|_+$/g, '');
+        }
+
+        // Remove o prefixo/namespace de um slug para obter o nome base
+        function removerPrefixoSlug(slug, namespace) {
+            if (!slug || !namespace) return slug || '';
+            const prefixo = namespace + '_';
+            if (slug.startsWith(prefixo)) {
+                return slug.substring(prefixo.length);
+            }
+            return slug;
+        }
+
         // Abre modal para nova pergunta ou edição
         async function abrirModalPergunta(index = -1) {
             document.getElementById('pergunta-index').value = index;
@@ -2398,6 +2432,17 @@ Qual o valor da causa?"></textarea>
             document.getElementById('variavel-vinculada-id').value = '';
             document.getElementById('pergunta-fonte-codigo').value = '';
             document.getElementById('pergunta-fonte-tipo').value = '';
+
+            // Exibe o prefixo fixo da categoria no campo de nome da variável
+            const namespace = obterNamespaceCategoria();
+            const prefixoEl = document.getElementById('pergunta-prefixo-variavel');
+            if (namespace) {
+                prefixoEl.textContent = namespace + '_';
+                prefixoEl.classList.remove('hidden');
+            } else {
+                prefixoEl.textContent = '';
+                prefixoEl.classList.add('hidden');
+            }
 
             if (index === -1) {
                 // Nova pergunta
@@ -2424,7 +2469,10 @@ Qual o valor da causa?"></textarea>
                 const p = perguntasSelecionadas[index];
                 document.getElementById('modal-pergunta-titulo').textContent = 'Editar Pergunta';
                 document.getElementById('pergunta-texto').value = p.pergunta || '';
-                document.getElementById('pergunta-nome-variavel').value = p.nome_variavel_sugerido || '';
+                // Exibe apenas o nome base (sem prefixo) no input
+                const nomeCompleto = p.nome_variavel_sugerido || '';
+                const nomeBase = removerPrefixoSlug(nomeCompleto, namespace);
+                document.getElementById('pergunta-nome-variavel').value = nomeBase;
                 document.getElementById('pergunta-tipo').value = p.tipo_sugerido || '';
                 document.getElementById('pergunta-ordem').value = p.ordem || 0;
                 document.getElementById('pergunta-opcoes').value = (p.opcoes_sugeridas || []).join('\n');

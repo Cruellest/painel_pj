@@ -147,6 +147,8 @@ class SyncJsonResponse(BaseModel):
     variaveis_adicionadas_lista: Optional[List[str]] = None
     variaveis_modificadas: int = 0
     variaveis_modificadas_lista: Optional[List[str]] = None
+    variaveis_removidas: int = 0
+    variaveis_removidas_lista: Optional[List[str]] = None
     houve_alteracao: bool = False
     perguntas_incompletas: Optional[List[dict]] = None
     mensagem: Optional[str] = None
@@ -333,6 +335,45 @@ def _get_unique_slug(db: Session, base_slug: str, exclude_question_id: int = Non
         slug = f"{base_slug}_{contador}"
 
 
+def _aplicar_namespace(slug: str, namespace: str) -> str:
+    """
+    Aplica namespace ao slug se ainda não tiver.
+
+    Args:
+        slug: Slug base da variável
+        namespace: Prefixo do namespace
+
+    Returns:
+        Slug com namespace aplicado
+    """
+    if not namespace:
+        return slug
+    # Se já tem o namespace, retorna como está
+    if slug.startswith(f"{namespace}_"):
+        return slug
+    # Aplica o namespace
+    return f"{namespace}_{slug}"
+
+
+def _remover_namespace(slug: str, namespace: str) -> str:
+    """
+    Remove namespace do slug para obter o nome base.
+
+    Args:
+        slug: Slug completo da variável
+        namespace: Prefixo do namespace
+
+    Returns:
+        Slug sem namespace (nome base)
+    """
+    if not namespace:
+        return slug
+    prefixo = f"{namespace}_"
+    if slug.startswith(prefixo):
+        return slug[len(prefixo):]
+    return slug
+
+
 def ensure_variable_for_question(
     db: Session,
     pergunta: ExtractionQuestion,
@@ -343,18 +384,18 @@ def ensure_variable_for_question(
     Garante que existe uma variável correspondente à pergunta.
 
     IMPORTANTE: Esta função PRESERVA variáveis existentes vinculadas à pergunta.
-    Não altera o slug de variáveis já criadas - apenas preenche nome_variavel_sugerido
-    da pergunta para exibição na UI.
+    O slug da variável SEMPRE inclui o prefixo/namespace da categoria.
+    O nome_variavel_sugerido da pergunta armazena o SLUG COMPLETO (com prefixo).
 
     Esta função:
     1. Verifica se a pergunta tem os campos mínimos (texto, slug)
     2. Se já existe variável vinculada, PRESERVA o slug e sincroniza com pergunta
-    3. Se não existe, cria nova variável (usando nome_variavel_sugerido ou gerando slug)
+    3. Se não existe, cria nova variável (aplicando prefixo da categoria ao slug)
 
-    COMPORTAMENTO ATUALIZADO (v2):
-    - Se nome_variavel_sugerido (slug) estiver preenchido, cria a variável IMEDIATAMENTE
-    - Se tipo_sugerido não estiver preenchido, usa "text" como default
-    - Isso permite vincular dependências logo após criar a pergunta com slug
+    COMPORTAMENTO ATUALIZADO (v3):
+    - O prefixo da categoria é SEMPRE aplicado ao slug da variável
+    - O nome_variavel_sugerido da pergunta armazena o slug COMPLETO (com prefixo)
+    - Isso garante consistência entre banco de dados e JSON
 
     Args:
         db: Sessão do banco de dados
@@ -377,6 +418,9 @@ def ensure_variable_for_question(
     # Se criar_sem_tipo=True (default), usa "text" como tipo padrão
     tipo_variavel = pergunta.tipo_sugerido.strip().lower() if pergunta.tipo_sugerido and pergunta.tipo_sugerido.strip() else "text"
 
+    # Obtém o namespace da categoria
+    namespace = categoria.namespace if categoria else ""
+
     # Verifica se já existe variável vinculada a esta pergunta
     variavel_existente = db.query(ExtractionVariable).filter(
         ExtractionVariable.source_question_id == pergunta.id
@@ -394,10 +438,11 @@ def ensure_variable_for_question(
         variavel_existente.opcoes = pergunta.opcoes_sugeridas
         variavel_existente.categoria_id = categoria.id
 
-        # Atualiza dependências
+        # Atualiza dependências (aplicando namespace ao depends_on)
         if pergunta.depends_on_variable:
+            depends_on_com_namespace = _aplicar_namespace(pergunta.depends_on_variable, namespace)
             variavel_existente.is_conditional = True
-            variavel_existente.depends_on_variable = pergunta.depends_on_variable
+            variavel_existente.depends_on_variable = depends_on_com_namespace
             variavel_existente.dependency_config = {
                 "operator": pergunta.dependency_operator or "equals",
                 "value": pergunta.dependency_value
@@ -414,16 +459,21 @@ def ensure_variable_for_question(
 
     # Não existe variável vinculada - determina o slug para criar nova
     if pergunta.nome_variavel_sugerido and pergunta.nome_variavel_sugerido.strip():
-        slug_base = pergunta.nome_variavel_sugerido.strip()
+        slug_informado = pergunta.nome_variavel_sugerido.strip()
+        # Remove namespace se já tiver (para evitar duplicação)
+        slug_base = _remover_namespace(slug_informado, namespace)
     else:
         # Gera slug a partir do texto da pergunta
         slug_base = _slugify(pergunta.pergunta)
         if not slug_base:
             slug_base = f"variavel_{pergunta.id or 'nova'}"
 
+    # APLICA O NAMESPACE/PREFIXO DA CATEGORIA AO SLUG
+    slug_final = _aplicar_namespace(slug_base, namespace)
+
     # Verifica se existe variável com o mesmo slug (de outra pergunta ou manual)
     variavel_mesmo_slug = db.query(ExtractionVariable).filter(
-        ExtractionVariable.slug == slug_base
+        ExtractionVariable.slug == slug_final
     ).first()
 
     if variavel_mesmo_slug:
@@ -438,20 +488,24 @@ def ensure_variable_for_question(
             variavel_mesmo_slug.opcoes = pergunta.opcoes_sugeridas or variavel_mesmo_slug.opcoes
             variavel_mesmo_slug.atualizado_em = datetime.utcnow()
 
-            # Atualiza nome_variavel_sugerido da pergunta
-            if pergunta.nome_variavel_sugerido != slug_base:
-                pergunta.nome_variavel_sugerido = slug_base
+            # Atualiza nome_variavel_sugerido da pergunta com slug COMPLETO
+            pergunta.nome_variavel_sugerido = slug_final
 
             logger.info(f"Variável existente vinculada: {variavel_mesmo_slug.slug} (pergunta_id={pergunta.id})")
             return variavel_mesmo_slug
         else:
             # Variável já vinculada a outra pergunta - usa sufixo
-            slug_unico = _get_unique_slug(db, slug_base, exclude_question_id=pergunta.id)
-            slug_base = slug_unico
+            slug_unico = _get_unique_slug(db, slug_final, exclude_question_id=pergunta.id)
+            slug_final = slug_unico
 
-    # Cria nova variável
+    # Aplica namespace ao depends_on se existir
+    depends_on_final = None
+    if pergunta.depends_on_variable:
+        depends_on_final = _aplicar_namespace(pergunta.depends_on_variable, namespace)
+
+    # Cria nova variável com slug COMPLETO (incluindo prefixo)
     variavel = ExtractionVariable(
-        slug=slug_base,
+        slug=slug_final,
         label=pergunta.pergunta[:200] if pergunta.pergunta else slug_base,
         descricao=pergunta.descricao,
         tipo=tipo_variavel,
@@ -459,7 +513,7 @@ def ensure_variable_for_question(
         opcoes=pergunta.opcoes_sugeridas,
         source_question_id=pergunta.id,
         is_conditional=bool(pergunta.depends_on_variable),
-        depends_on_variable=pergunta.depends_on_variable,
+        depends_on_variable=depends_on_final,
         dependency_config={
             "operator": pergunta.dependency_operator or "equals",
             "value": pergunta.dependency_value
@@ -470,11 +524,10 @@ def ensure_variable_for_question(
     db.add(variavel)
     db.flush()  # Para obter o ID
 
-    # Atualiza nome_variavel_sugerido da pergunta se foi gerado
-    if pergunta.nome_variavel_sugerido != slug_base:
-        pergunta.nome_variavel_sugerido = slug_base
+    # Atualiza nome_variavel_sugerido da pergunta com slug COMPLETO (incluindo prefixo)
+    pergunta.nome_variavel_sugerido = slug_final
 
-    logger.info(f"Variável criada: {variavel.slug} (id={variavel.id}, pergunta_id={pergunta.id})")
+    logger.info(f"Variável criada: {variavel.slug} (id={variavel.id}, pergunta_id={pergunta.id}, namespace={namespace})")
 
     return variavel
 
@@ -772,10 +825,13 @@ async def ordenar_perguntas_ia(
     Reordena todas as perguntas usando IA para determinar a ordem mais lógica.
     Usa gemini-3-flash-preview para análise semântica.
     """
-    from services.gemini_service import gemini_service
+    from services.gemini_service import gemini_service, get_thinking_level
 
     if len(data.perguntas) < 2:
         return {"success": False, "erro": "Necessário pelo menos 2 perguntas para ordenar"}
+
+    # Obtém thinking_level da config
+    thinking_level = get_thinking_level(db, "gerador_pecas")
 
     # Monta prompt para IA com informações de dependência
     perguntas_texto = "\n".join([
@@ -833,7 +889,8 @@ REGRAS DE RESPOSTA:
             prompt=prompt,
             system_prompt="Você reordena perguntas de extração de dados. Responda APENAS com JSON válido.",
             model="gemini-3-flash-preview",
-            temperature=0.1
+            temperature=0.1,
+            thinking_level=thinking_level  # Configurável em /admin/prompts-config
         )
 
         if not response.success:
@@ -1032,10 +1089,13 @@ async def posicionar_pergunta_ia(
     Determina a melhor posição para uma nova pergunta usando IA.
     Usa gemini-3-flash-preview para análise semântica.
     """
-    from services.gemini_service import gemini_service
+    from services.gemini_service import gemini_service, get_thinking_level
 
     if not data.perguntas_existentes:
         return {"success": True, "posicao": 0}
+
+    # Obtém thinking_level da config
+    thinking_level = get_thinking_level(db, "gerador_pecas")
 
     # Monta lista de perguntas existentes com suas posições
     perguntas_existentes = "\n".join([
@@ -1075,7 +1135,8 @@ Se a posição sugerida estiver fora dos limites (0 a {len(data.perguntas_existe
             prompt=prompt,
             system_prompt="Você posiciona perguntas de extração. Responda APENAS com JSON válido.",
             model="gemini-3-flash-preview",
-            temperature=0.1
+            temperature=0.1,
+            thinking_level=thinking_level  # Configurável em /admin/prompts-config
         )
 
         if not response.success:
@@ -1825,10 +1886,13 @@ async def sincronizar_json_sem_ia(
 
         json_novo[slug] = config
 
-    # Adiciona campos do JSON original que não estão nas perguntas (preserva campos manuais)
-    for chave, valor in json_atual.items():
-        if chave not in json_novo:
-            json_novo[chave] = valor
+    # IMPORTANTE: NÃO preserva campos do JSON original que não estão nas perguntas
+    # O JSON deve ser uma projeção EXATA das Perguntas de Extração ativas
+    # Se não existe pergunta ativa, não pode existir variável no JSON
+    # Campos antigos/órfãos são REMOVIDOS propositalmente
+    variaveis_removidas = [chave for chave in json_atual.keys() if chave not in json_novo]
+    if variaveis_removidas:
+        logger.info(f"Variáveis removidas do JSON (sem pergunta ativa): {variaveis_removidas}")
 
     # Detecta se houve alteração real (inclui mudanças na ordem das chaves)
     json_atual_normalizado = _normalizar_para_comparacao(json_atual)
@@ -1836,13 +1900,15 @@ async def sincronizar_json_sem_ia(
     houve_alteracao = json_atual_normalizado != json_novo_normalizado
 
     # Monta resposta com informações detalhadas
-    if variaveis_adicionadas or variaveis_modificadas or houve_alteracao:
+    if variaveis_adicionadas or variaveis_modificadas or variaveis_removidas or houve_alteracao:
         partes_mensagem = []
         if variaveis_adicionadas:
             partes_mensagem.append(f"{len(variaveis_adicionadas)} variável(is) adicionada(s)")
         if variaveis_modificadas:
             partes_mensagem.append(f"{len(variaveis_modificadas)} variável(is) atualizada(s)")
-        if not variaveis_adicionadas and not variaveis_modificadas and houve_alteracao:
+        if variaveis_removidas:
+            partes_mensagem.append(f"{len(variaveis_removidas)} variável(is) órfã(s) removida(s)")
+        if not variaveis_adicionadas and not variaveis_modificadas and not variaveis_removidas and houve_alteracao:
             partes_mensagem.append("estrutura/ordem atualizada")
         mensagem = "JSON atualizado: " + ", ".join(partes_mensagem)
     else:
@@ -1852,6 +1918,7 @@ async def sincronizar_json_sem_ia(
         f"Sincronização JSON categoria {categoria_id}: "
         f"{len(variaveis_adicionadas)} adicionadas, "
         f"{len(variaveis_modificadas)} modificadas, "
+        f"{len(variaveis_removidas)} removidas, "
         f"houve_alteracao={houve_alteracao}"
     )
 
@@ -1862,6 +1929,8 @@ async def sincronizar_json_sem_ia(
         variaveis_adicionadas_lista=variaveis_adicionadas if variaveis_adicionadas else None,
         variaveis_modificadas=len(variaveis_modificadas),
         variaveis_modificadas_lista=variaveis_modificadas if variaveis_modificadas else None,
+        variaveis_removidas=len(variaveis_removidas),
+        variaveis_removidas_lista=variaveis_removidas if variaveis_removidas else None,
         houve_alteracao=houve_alteracao,
         mensagem=mensagem
     )
