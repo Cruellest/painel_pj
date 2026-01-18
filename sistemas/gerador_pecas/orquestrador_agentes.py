@@ -273,7 +273,16 @@ class OrquestradorAgentes:
                     tipo_peca = "contestacao"  # Fallback padrão
                     print(f"   Usando fallback: {tipo_peca}")
             
-            resultado.agente2 = await self._executar_agente2(resumo_consolidado, tipo_peca)
+            # Extrai dados_processo para passar ao Agente 2
+            dados_processo = None
+            if resultado.agente1.dados_brutos and resultado.agente1.dados_brutos.dados_processo:
+                dados_processo = resultado.agente1.dados_brutos.dados_processo
+
+            resultado.agente2 = await self._executar_agente2(
+                resumo_consolidado,
+                tipo_peca,
+                dados_processo=dados_processo
+            )
             resultado.tempo_agente2 = (datetime.now() - inicio).total_seconds()
             
             if resultado.agente2.erro:
@@ -391,23 +400,32 @@ class OrquestradorAgentes:
     async def _executar_agente2(
         self,
         resumo_consolidado: str,
-        tipo_peca: Optional[str] = None
+        tipo_peca: Optional[str] = None,
+        dados_processo: Optional[Any] = None
     ) -> ResultadoAgente2:
         """
         Executa o Agente 2 - Detector de Módulos
-        
+
         Analisa o resumo e monta os prompts modulares.
+        Usa variáveis derivadas do processo para avaliação determinística.
+
+        Args:
+            resumo_consolidado: Resumo dos documentos
+            tipo_peca: Tipo de peça para filtrar módulos
+            dados_processo: DadosProcesso extraídos do XML (opcional)
         """
         resultado = ResultadoAgente2()
-        
+
         try:
-            # Detecta módulos de conteúdo relevantes via IA
-            # Passa tipo_peca para filtrar módulos disponíveis
+            # Detecta módulos de conteúdo relevantes
+            # Passa dados_processo para resolução de variáveis derivadas
+            # Permite fast path se todos os módulos são determinísticos
             modulos_ids = await self.agente2.detectar_modulos_relevantes(
                 documentos_resumo=resumo_consolidado,
                 tipo_peca=tipo_peca,
                 group_id=self.group_id,
-                subcategoria_ids=self.subcategoria_ids
+                subcategoria_ids=self.subcategoria_ids,
+                dados_processo=dados_processo
             )
             resultado.modulos_ids = modulos_ids
             

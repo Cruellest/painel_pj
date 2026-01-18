@@ -2159,6 +2159,52 @@ async def listar_variaveis(
         )
         resultado.append(resp)
 
+    # 4. ADICIONA VARIÁVEIS DO PROCESSO (categoria "Sistema")
+    # Só adiciona se não houver filtro de categoria específica ou se for busca
+    if not categoria_id or busca:
+        from .services_process_variables import ProcessVariableResolver
+        variaveis_processo = ProcessVariableResolver.get_all_definitions()
+
+        # Filtra por busca se necessário
+        if busca:
+            busca_lower = busca.lower()
+            variaveis_processo = [
+                v for v in variaveis_processo
+                if busca_lower in v.slug.lower() or busca_lower in v.label.lower()
+            ]
+
+        # Filtra por tipo se necessário
+        if tipo:
+            variaveis_processo = [v for v in variaveis_processo if v.tipo == tipo]
+
+        # Adiciona ao resultado
+        now = datetime.now()
+        for idx, v in enumerate(variaveis_processo):
+            resp = ExtractionVariableResponse(
+                id=-(idx + 1),  # IDs negativos para variáveis do processo
+                slug=v.slug,
+                label=v.label,
+                descricao=v.descricao,
+                tipo=v.tipo,
+                categoria_id=None,
+                categoria_nome="Sistema",
+                opcoes=None,
+                fonte_verdade_codigo=None,
+                fonte_verdade_tipo="processo_xml",
+                fonte_verdade_override=False,
+                source_question_id=None,
+                ativo=True,
+                criado_em=now,
+                atualizado_em=now,
+                uso_count=0,
+                is_conditional=False,
+                depends_on_variable=None,
+                depth=0,
+                ordem=idx,
+                em_uso_json=False
+            )
+            resultado.append(resp)
+
     return resultado
 
 
@@ -2171,12 +2217,16 @@ async def resumo_variaveis(
     Retorna um resumo das variáveis do sistema.
 
     Inclui:
-    - Total de variáveis
+    - Total de variáveis de extração (PDFs)
+    - Total de variáveis de processo (XML)
     - Distribuição por tipo
     - Variáveis mais usadas
     - Variáveis não utilizadas
     """
     try:
+        # Variáveis derivadas do processo XML
+        from .services_process_variables import ProcessVariableResolver
+        variaveis_processo = ProcessVariableResolver.get_all_definitions()
         # Total de variáveis
         total = db.query(ExtractionVariable).filter(ExtractionVariable.ativo == True).count()
 
@@ -2256,21 +2306,82 @@ async def resumo_variaveis(
 
         return {
             "total": total,
+            "total_extracao": total,
+            "total_processo": len(variaveis_processo),
             "distribuicao_tipos": distribuicao_tipos,
             "variaveis_com_uso": variaveis_com_uso,
             "variaveis_sem_uso": total - variaveis_com_uso,
-            "mais_usadas": mais_usadas
+            "mais_usadas": mais_usadas,
+            "variaveis_processo": [
+                {
+                    "slug": d.slug,
+                    "label": d.label,
+                    "tipo": d.tipo,
+                    "descricao": d.descricao,
+                    "fonte": "processo_xml"
+                }
+                for d in variaveis_processo
+            ]
         }
     except Exception as e:
         logger.error(f"Erro ao carregar resumo de variáveis: {e}")
         # Retorna valores default em caso de erro
         return {
             "total": 0,
+            "total_extracao": 0,
+            "total_processo": 0,
             "distribuicao_tipos": {},
             "variaveis_com_uso": 0,
             "variaveis_sem_uso": 0,
-            "mais_usadas": []
+            "mais_usadas": [],
+            "variaveis_processo": []
         }
+
+
+@router.get("/variaveis/processo")
+async def listar_variaveis_processo(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Lista as variáveis derivadas do processo XML.
+
+    Estas variáveis são calculadas automaticamente a partir do DadosProcesso
+    (extraído do XML do TJ-MS) e podem ser usadas em regras determinísticas.
+
+    Diferente das ExtractionVariable (extraídas de PDFs via IA), estas
+    variáveis são:
+    - Calculadas deterministicamente do XML do processo
+    - Definidas no código (hardcoded)
+    - Sempre disponíveis quando há DadosProcesso
+    """
+    from .services_process_variables import ProcessVariableResolver
+
+    definitions = ProcessVariableResolver.get_all_definitions()
+
+    return {
+        "total": len(definitions),
+        "variaveis": [
+            {
+                "slug": d.slug,
+                "label": d.label,
+                "tipo": d.tipo,
+                "descricao": d.descricao,
+                "fonte": "processo_xml",
+                "editavel": False  # Não pode ser editada pelo usuário
+            }
+            for d in definitions
+        ],
+        "info": {
+            "descricao": "Variáveis calculadas a partir do XML do processo (DadosProcesso)",
+            "uso": "Podem ser usadas em regras determinísticas para ativação de módulos",
+            "exemplo_regra": {
+                "type": "condition",
+                "variable": "processo_ajuizado_apos_2024_04_19",
+                "operator": "equals",
+                "value": True
+            }
+        }
+    }
 
 
 @router.get("/variaveis/{variavel_id}", response_model=VariableDetailResponse)

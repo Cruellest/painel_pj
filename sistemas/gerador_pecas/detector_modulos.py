@@ -2,17 +2,28 @@
 """
 Serviço de detecção inteligente de módulos de CONTEÚDO usando IA.
 Utiliza Gemini Flash Lite para análise rápida e eficiente.
+
+Suporta:
+- Detecção via LLM (modo tradicional)
+- Detecção determinística (sem LLM) usando variáveis de extração
+- Variáveis derivadas do processo XML (ProcessVariableResolver)
+- Fast path: pula LLM quando TODOS os módulos são determinísticos
 """
 
 import os
 import json
 import httpx
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from admin.models_prompts import PromptModulo
 from sistemas.gerador_pecas.gemini_client import chamar_gemini_async, normalizar_modelo
+from sistemas.gerador_pecas.services_deterministic import avaliar_ativacao_prompt
+from sistemas.gerador_pecas.services_process_variables import ProcessVariableResolver
+
+if TYPE_CHECKING:
+    from sistemas.gerador_pecas.agente_tjms import DadosProcesso
 
 
 class DetectorModulosIA:
@@ -51,15 +62,25 @@ class DetectorModulosIA:
         documentos_completos: Optional[str] = None,
         tipo_peca: Optional[str] = None,
         group_id: Optional[int] = None,
-        subcategoria_ids: Optional[List[int]] = None
+        subcategoria_ids: Optional[List[int]] = None,
+        dados_processo: Optional['DadosProcesso'] = None,
+        dados_extracao: Optional[Dict[str, Any]] = None
     ) -> List[int]:
         """
         Analisa os documentos e retorna IDs dos módulos de CONTEÚDO relevantes.
+
+        Suporta dois caminhos:
+        1. Fast Path: Se TODOS os módulos elegíveis são determinísticos, pula LLM
+        2. Modo Misto: Avalia determinísticos localmente + chama LLM para os demais
 
         Args:
             documentos_resumo: Resumo dos documentos do processo
             documentos_completos: Texto completo dos documentos (opcional)
             tipo_peca: Tipo de peça para filtrar módulos disponíveis (opcional)
+            group_id: ID do grupo de prompts (opcional)
+            subcategoria_ids: IDs das subcategorias selecionadas (opcional)
+            dados_processo: DadosProcesso extraídos do XML (opcional)
+            dados_extracao: Dados de extração de PDFs via IA (opcional)
 
         Returns:
             Lista de IDs dos módulos relevantes
@@ -67,6 +88,8 @@ class DetectorModulosIA:
         print(f"\n[AGENTE2] ========== INICIO detectar_modulos_relevantes ==========")
         print(f"[AGENTE2] tipo_peca={tipo_peca}, group_id={group_id}, subcategoria_ids={subcategoria_ids}")
         print(f"[AGENTE2] Tamanho do resumo: {len(documentos_resumo)} chars")
+        print(f"[AGENTE2] dados_processo presente: {dados_processo is not None}")
+        print(f"[AGENTE2] dados_extracao presente: {dados_extracao is not None}")
 
         # Verificar cache (inclui tipo_peca na chave)
         subcategoria_cache = ",".join(str(i) for i in (subcategoria_ids or []))
@@ -92,19 +115,163 @@ class DetectorModulosIA:
         if tipo_peca:
             print(f"[AGENTE2]  {len(modulos)} módulos disponíveis para tipo '{tipo_peca}'")
 
+        # ========================================
+        # RESOLUÇÃO DE VARIÁVEIS DERIVADAS DO PROCESSO
+        # ========================================
+        variaveis = dados_extracao.copy() if dados_extracao else {}
+
+        if dados_processo:
+            resolver = ProcessVariableResolver(dados_processo)
+            variaveis_processo = resolver.resolver_todas()
+            # Merge: variáveis do processo têm precedência
+            variaveis.update(variaveis_processo)
+            print(f"[AGENTE2] Variáveis derivadas do processo: {variaveis_processo}")
+
+        print(f"[AGENTE2] Total de variáveis disponíveis: {len(variaveis)}")
+
+        # ========================================
+        # SEPARAÇÃO: DETERMINÍSTICOS vs LLM
+        # ========================================
+        modulos_det = []
+        modulos_llm = []
+
+        for modulo in modulos:
+            if modulo.modo_ativacao == "deterministic" and modulo.regra_deterministica:
+                modulos_det.append(modulo)
+            else:
+                modulos_llm.append(modulo)
+
+        print(f"[AGENTE2] Módulos determinísticos: {len(modulos_det)}")
+        print(f"[AGENTE2] Módulos LLM: {len(modulos_llm)}")
+
+        # ========================================
+        # FAST PATH: 100% DETERMINÍSTICO
+        # ========================================
+        if modulos_det and not modulos_llm:
+            print(f"[AGENTE2] ⚡ FAST PATH: 100% determinístico, pulando LLM")
+            ids_ativados = self._avaliar_todos_deterministicos(modulos_det, variaveis)
+
+            # Salvar no cache
+            self._salvar_cache(cache_key, ids_ativados)
+
+            print(f"[AGENTE2] 🎯 FAST PATH: {len(ids_ativados)} módulos ativados: {ids_ativados}")
+            print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes (FAST PATH) ==========\n")
+            return ids_ativados
+
+        # ========================================
+        # MODO MISTO: DETERMINÍSTICOS + LLM
+        # ========================================
+        ids_det = []
+        modulos_para_llm = list(modulos_llm)  # Cópia para não modificar original
+
+        # Avalia módulos determinísticos
+        for modulo in modulos_det:
+            resultado = avaliar_ativacao_prompt(
+                prompt_id=modulo.id,
+                modo_ativacao="deterministic",
+                regra_deterministica=modulo.regra_deterministica,
+                dados_extracao=variaveis,
+                db=self.db,
+                regra_secundaria=getattr(modulo, 'regra_deterministica_secundaria', None),
+                fallback_habilitado=getattr(modulo, 'fallback_habilitado', False)
+            )
+
+            if resultado["ativar"] is True:
+                ids_det.append(modulo.id)
+                print(f"[AGENTE2] [DET] ✓ '{modulo.titulo}' ATIVADO (regra: {resultado.get('regra_usada', 'N/A')})")
+            elif resultado["ativar"] is None:
+                # Indeterminado → manda para LLM
+                modulos_para_llm.append(modulo)
+                print(f"[AGENTE2] [DET] ? '{modulo.titulo}' indeterminado → LLM")
+            else:
+                print(f"[AGENTE2] [DET] ✗ '{modulo.titulo}' não ativado")
+
+        # Chama LLM apenas para módulos que precisam
+        ids_llm = []
+        if modulos_para_llm:
+            print(f"[AGENTE2] Enviando {len(modulos_para_llm)} módulos para LLM...")
+            ids_llm = await self._detectar_via_llm(documentos_resumo, documentos_completos, modulos_para_llm)
+        else:
+            print(f"[AGENTE2] Nenhum módulo precisa de LLM")
+
+        # Combina resultados
+        modulos_relevantes = ids_det + ids_llm
+
+        # Salvar no cache
+        self._salvar_cache(cache_key, modulos_relevantes)
+
+        print(f"[AGENTE2] 🎯 Detectados {len(modulos_relevantes)} módulos relevantes: {modulos_relevantes}")
+        print(f"[AGENTE2]    - Determinísticos: {len(ids_det)}")
+        print(f"[AGENTE2]    - LLM: {len(ids_llm)}")
+        print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes ==========\n")
+        return modulos_relevantes
+
+    def _avaliar_todos_deterministicos(
+        self,
+        modulos: List[PromptModulo],
+        variaveis: Dict[str, Any]
+    ) -> List[int]:
+        """
+        Fast path: avalia todos os módulos determinísticos sem chamar LLM.
+
+        Args:
+            modulos: Lista de módulos com regra determinística
+            variaveis: Dicionário com variáveis disponíveis
+
+        Returns:
+            Lista de IDs dos módulos ativados
+        """
+        ids_ativados = []
+
+        for modulo in modulos:
+            resultado = avaliar_ativacao_prompt(
+                prompt_id=modulo.id,
+                modo_ativacao="deterministic",
+                regra_deterministica=modulo.regra_deterministica,
+                dados_extracao=variaveis,
+                db=self.db,
+                regra_secundaria=getattr(modulo, 'regra_deterministica_secundaria', None),
+                fallback_habilitado=getattr(modulo, 'fallback_habilitado', False)
+            )
+
+            if resultado["ativar"] is True:
+                ids_ativados.append(modulo.id)
+                print(f"[AGENTE2] [FAST] ✓ '{modulo.titulo}' ATIVADO")
+            else:
+                print(f"[AGENTE2] [FAST] ✗ '{modulo.titulo}' não ativado")
+
+        return ids_ativados
+
+    async def _detectar_via_llm(
+        self,
+        documentos_resumo: str,
+        documentos_completos: Optional[str],
+        modulos: List[PromptModulo]
+    ) -> List[int]:
+        """
+        Detecta módulos relevantes via chamada à LLM.
+
+        Args:
+            documentos_resumo: Resumo dos documentos
+            documentos_completos: Texto completo (opcional)
+            modulos: Lista de módulos a avaliar
+
+        Returns:
+            Lista de IDs dos módulos detectados como relevantes
+        """
+        if not modulos:
+            return []
+
         # Preparar prompt para a IA
-        print(f"[AGENTE2] Montando prompt de detecção...")
         prompt_deteccao = self._montar_prompt_deteccao(
             documentos_resumo,
             documentos_completos,
             modulos
         )
-        print(f"[AGENTE2] Prompt montado - tamanho: {len(prompt_deteccao)} chars")
 
-        # Chamar a IA para análise
         try:
-            print(f"[AGENTE2] >>> INICIANDO chamada à IA (modelo: {self.modelo})...")
             import time
+            print(f"[AGENTE2] >>> INICIANDO chamada à IA (modelo: {self.modelo})...")
             inicio_ia = time.time()
 
             resultado = await self._chamar_ia(prompt_deteccao)
@@ -113,21 +280,12 @@ class DetectorModulosIA:
             print(f"[AGENTE2] <<< IA respondeu em {tempo_ia:.2f}s")
             print(f"[AGENTE2] Resultado da IA: {resultado}")
 
-            modulos_relevantes = self._processar_resposta_ia(resultado, modulos)
-
-            # Salvar no cache
-            self._salvar_cache(cache_key, modulos_relevantes)
-
-            print(f"[AGENTE2] 🎯 Detectados {len(modulos_relevantes)} módulos relevantes: {modulos_relevantes}")
-            print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes ==========\n")
-            return modulos_relevantes
+            return self._processar_resposta_ia(resultado, modulos)
 
         except Exception as e:
             import traceback
             print(f"[AGENTE2] [ERRO] Erro na detecção por IA: {e}")
             print(f"[AGENTE2] Traceback: {traceback.format_exc()}")
-            print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes (com erro) ==========\n")
-            # Em caso de erro, retorna lista vazia (sem fallback)
             return []
 
     def _carregar_modulos_disponiveis(
