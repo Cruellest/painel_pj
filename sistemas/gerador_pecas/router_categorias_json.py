@@ -202,16 +202,25 @@ def obter_todas_categorias_ativas(db: Session) -> List[CategoriaResumoJSON]:
 @router.get("", response_model=List[CategoriaResumoJSONResponse])
 async def listar_categorias(
     apenas_ativos: bool = True,
+    apenas_com_variaveis: bool = False,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Lista todas as categorias de formato de resumo JSON"""
     perf_ctx.set_action("listar_categorias")
     query = db.query(CategoriaResumoJSON)
-    
+
     if apenas_ativos:
         query = query.filter(CategoriaResumoJSON.ativo == True)
-    
+
+    # Filtra apenas categorias que possuem variáveis de extração
+    if apenas_com_variaveis:
+        from sistemas.gerador_pecas.models_extraction import ExtractionVariable
+        subquery = db.query(ExtractionVariable.categoria_id).filter(
+            ExtractionVariable.categoria_id.isnot(None)
+        ).distinct().subquery()
+        query = query.filter(CategoriaResumoJSON.id.in_(subquery))
+
     categorias = query.order_by(CategoriaResumoJSON.ordem, CategoriaResumoJSON.nome).all()
     return categorias
 

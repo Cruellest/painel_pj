@@ -704,8 +704,13 @@
         // Carregar categorias para filtro e modal
         async function carregarCategorias() {
             try {
-                // Busca todas as categorias (incluindo inativas) para contexto admin
-                const response = await fetch('/admin/api/categorias-resumo-json?apenas_ativos=false', {
+                const mostrarInativas = document.getElementById('mostrar-inativas').checked;
+                // Busca apenas categorias que possuem variáveis; inclui inativas se checkbox marcado
+                let url = '/admin/api/categorias-resumo-json?apenas_com_variaveis=true';
+                if (mostrarInativas) {
+                    url += '&apenas_ativos=false';
+                }
+                const response = await fetch(url, {
                     headers: {
                         'Authorization': `Bearer ${getToken()}`
                     }
@@ -715,13 +720,17 @@
 
                 // Popular select de filtro (ordena por nome)
                 const selectFiltro = document.getElementById('filtro-categoria');
+                const valorAtual = selectFiltro.value; // Preserva seleção atual
                 selectFiltro.innerHTML = '<option value="">Todas as categorias</option>';
                 categorias
                     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
                     .forEach(cat => {
-                        const inativoLabel = cat.ativo === false ? ' (inativa)' : '';
-                        selectFiltro.innerHTML += `<option value="${cat.id}">${cat.nome}${inativoLabel}</option>`;
+                        selectFiltro.innerHTML += `<option value="${cat.id}">${cat.nome}</option>`;
                     });
+                // Restaura seleção se ainda existir
+                if (valorAtual && [...selectFiltro.options].some(o => o.value === valorAtual)) {
+                    selectFiltro.value = valorAtual;
+                }
             } catch (error) {
                 console.error('Erro ao carregar categorias:', error);
             }
@@ -1535,6 +1544,7 @@
 
         document.getElementById('mostrar-inativas').addEventListener('change', () => {
             paginaAtual = 0;
+            carregarCategorias(); // Atualiza dropdown de categorias
             carregarVariaveis();
         });
 
