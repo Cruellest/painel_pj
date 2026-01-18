@@ -27,6 +27,7 @@ from auth.models import User
 from auth.dependencies import get_current_active_user
 from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON
 from sistemas.gerador_pecas.models_teste_categorias import TesteDocumento, TesteObservacao
+from services.text_normalizer import text_normalizer
 
 # PDF manipulation
 try:
@@ -427,6 +428,10 @@ async def classificar_documento_com_ia(
                 for pagina in doc:
                     texto_extraido += pagina.get_text()
                 doc.close()
+                # Normaliza texto extraído
+                if texto_extraido:
+                    result = text_normalizer.normalize(texto_extraido)
+                    texto_extraido = result.text
             except Exception as e:
                 logger.warning(f"Erro ao extrair texto do PDF: {e}")
 

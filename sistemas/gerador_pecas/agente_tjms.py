@@ -32,55 +32,18 @@ import pymupdf4llm
 from dotenv import load_dotenv
 load_dotenv()
 
+# Serviço centralizado de normalização de texto
+from services.text_normalizer import text_normalizer
+
 
 def _normalizar_texto_pdf(texto: str) -> str:
     """
-    Normaliza texto extraído de PDF removendo quebras excessivas e espaços.
+    Normaliza texto extraído de PDF.
+
+    NOTA: Esta função agora usa o serviço centralizado text_normalizer.
     """
-    if not texto:
-        return ""
-    
-    # Remove caracteres de controle exceto \n
-    texto = re.sub(r'[\x00-\x09\x0b\x0c\x0e-\x1f]', '', texto)
-    
-    # Substitui múltiplos espaços por um só
-    texto = re.sub(r'[ \t]+', ' ', texto)
-    
-    # Remove espaços no início e fim de cada linha
-    linhas = [linha.strip() for linha in texto.split('\n')]
-    
-    # Junta linhas que foram quebradas no meio de frases
-    resultado = []
-    buffer = ""
-    
-    for linha in linhas:
-        if not linha:
-            if buffer:
-                resultado.append(buffer)
-                buffer = ""
-            continue
-        
-        if buffer:
-            ultima_char = buffer[-1] if buffer else ''
-            primeira_char = linha[0] if linha else ''
-            
-            if ultima_char not in '.!?;:' and primeira_char.islower():
-                buffer += ' ' + linha
-            elif ultima_char == '-':
-                buffer = buffer[:-1] + linha
-            else:
-                resultado.append(buffer)
-                buffer = linha
-        else:
-            buffer = linha
-    
-    if buffer:
-        resultado.append(buffer)
-    
-    texto_final = '\n\n'.join(resultado)
-    texto_final = re.sub(r'\n{3,}', '\n\n', texto_final)
-    
-    return texto_final.strip()
+    result = text_normalizer.normalize(texto)
+    return result.text
 
 
 # =========================

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
 from auth.models import User
 from database.connection import get_db
+from services.text_normalizer import text_normalizer
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
 from sistemas.gerador_pecas.services import GeradorPecasService
 from sistemas.gerador_pecas.versoes import (
@@ -538,70 +539,12 @@ async def processar_processo_stream(
 
 def _normalizar_texto(texto: str) -> str:
     """
-    Normaliza texto extraído de PDF removendo quebras excessivas e espaços.
-    
-    Args:
-        texto: Texto bruto extraído do PDF
-        
-    Returns:
-        Texto normalizado
+    Normaliza texto extraído de PDF.
+
+    NOTA: Esta função agora usa o serviço centralizado text_normalizer.
     """
-    import re
-    
-    if not texto:
-        return ""
-    
-    # Remove caracteres de controle exceto \n
-    texto = re.sub(r'[\x00-\x09\x0b\x0c\x0e-\x1f]', '', texto)
-    
-    # Substitui múltiplos espaços por um só
-    texto = re.sub(r'[ \t]+', ' ', texto)
-    
-    # Remove espaços no início e fim de cada linha
-    linhas = [linha.strip() for linha in texto.split('\n')]
-    
-    # Junta linhas que foram quebradas no meio de frases
-    # (linha que não termina com pontuação seguida de linha que começa com minúscula)
-    resultado = []
-    buffer = ""
-    
-    for linha in linhas:
-        if not linha:
-            # Linha vazia indica parágrafo
-            if buffer:
-                resultado.append(buffer)
-                buffer = ""
-            continue
-        
-        if buffer:
-            # Verifica se deve juntar com a linha anterior
-            # Junta se: linha anterior não termina com .!?:; e linha atual começa com minúscula
-            ultima_char = buffer[-1] if buffer else ''
-            primeira_char = linha[0] if linha else ''
-            
-            if ultima_char not in '.!?;:' and primeira_char.islower():
-                # Continua a mesma frase
-                buffer += ' ' + linha
-            elif ultima_char == '-':
-                # Palavra hifenizada quebrada
-                buffer = buffer[:-1] + linha
-            else:
-                # Nova frase/parágrafo
-                resultado.append(buffer)
-                buffer = linha
-        else:
-            buffer = linha
-    
-    if buffer:
-        resultado.append(buffer)
-    
-    # Junta parágrafos com dupla quebra de linha
-    texto_final = '\n\n'.join(resultado)
-    
-    # Remove mais de 2 quebras de linha consecutivas
-    texto_final = re.sub(r'\n{3,}', '\n\n', texto_final)
-    
-    return texto_final.strip()
+    result = text_normalizer.normalize(texto)
+    return result.text
 
 
 def _extrair_texto_pdf(pdf_bytes: bytes) -> str:

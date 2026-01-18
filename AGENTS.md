@@ -1,6 +1,6 @@
 # AGENTS.md - Guia para Agentes de IA
 
-> Ultima atualizacao: 16 Janeiro 2026
+> Ultima atualizacao: 17 Janeiro 2026
 
 ---
 
@@ -77,7 +77,9 @@ portal-pge/
 │   └── admin_*.html          # 10+ páginas admin
 │
 ├── services/
-│   └── gemini_service.py     # Wrapper Gemini API (~552 LOC)
+│   ├── gemini_service.py     # Wrapper Gemini API (~552 LOC)
+│   ├── tjms_client.py        # Cliente centralizado TJ-MS
+│   └── text_normalizer/      # Normalização de texto de PDFs
 │
 ├── sistemas/                 # MÓDULOS DE NEGÓCIO
 │   ├── gerador_pecas/        # Gerador de peças jurídicas
@@ -635,6 +637,57 @@ resultado = await diagnostico_tjms()
 #   }
 # }
 ```
+
+### Serviço de Normalização de Texto: `services/text_normalizer/`
+
+**SEMPRE use este módulo para normalizar texto extraído de PDFs antes de enviar para IA.**
+
+```python
+from services.text_normalizer import text_normalizer, NormalizationMode, NormalizationOptions
+
+# Uso básico (modo balanced - padrão)
+result = text_normalizer.normalize(texto_pdf)
+texto_limpo = result.text
+
+# Com modo específico
+options = NormalizationOptions(mode=NormalizationMode.AGGRESSIVE)
+result = text_normalizer.normalize(texto_pdf, options)
+
+# Acessar estatísticas
+print(f"Redução: {result.stats.reduction_percent:.1f}%")
+print(f"Tokens estimados: {result.estimated_tokens}")
+```
+
+**Modos disponíveis:**
+| Modo | Descrição | Quando usar |
+|------|-----------|-------------|
+| `CONSERVATIVE` | Apenas limpezas básicas | Preservar formatação original |
+| `BALANCED` | Limpeza moderada (padrão) | Uso geral, bom equilíbrio |
+| `AGGRESSIVE` | Máxima compressão | Textos muito grandes, reduzir tokens |
+
+**Pipeline de transformações:**
+1. Remover caracteres de controle
+2. Remover unicode invisível
+3. Normalizar unicode (smart quotes, dashes)
+4. Colapsar whitespace
+5. Remover números de página
+6. Detectar/remover headers/footers repetidos
+7. Corrigir hifenização quebrada
+8. Junção inteligente de linhas
+9. Deduplicar blocos (modo aggressive)
+10. Limpeza final
+
+**Endpoints API:**
+- `POST /api/text/normalize` - Normaliza texto
+- `GET /api/text/normalize/modes` - Lista modos disponíveis
+- `POST /api/text/normalize/preview` - Preview sem texto completo
+
+**Arquivos do módulo:**
+- `normalizer.py` - Classe TextNormalizer (core)
+- `models.py` - NormalizationMode, NormalizationOptions, NormalizationStats
+- `patterns.py` - Regex patterns pré-compilados
+- `utils.py` - Helpers (estimate_tokens, normalize_unicode)
+- `router.py` - Endpoints FastAPI
 
 ---
 

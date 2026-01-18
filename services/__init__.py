@@ -14,10 +14,21 @@ from services.tjms_client import (
     ResultadoSubconta,
     diagnostico_tjms,
 )
+from services.text_normalizer import (
+    text_normalizer,
+    TextNormalizer,
+    NormalizationMode,
+    NormalizationOptions,
+    NormalizationResult,
+    text_normalizer_router,
+)
 
 __all__ = [
+    # Gemini
     "GeminiService",
     "gemini_service",
+
+    # TJ-MS
     "TJMSConfig",
     "get_tjms_config",
     "reload_tjms_config",
@@ -26,4 +37,12 @@ __all__ = [
     "extrair_subconta",
     "ResultadoSubconta",
     "diagnostico_tjms",
+
+    # Text Normalizer
+    "text_normalizer",
+    "TextNormalizer",
+    "NormalizationMode",
+    "NormalizationOptions",
+    "NormalizationResult",
+    "text_normalizer_router",
 ]

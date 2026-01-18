@@ -23,6 +23,9 @@ import pymupdf4llm
 from dotenv import load_dotenv
 load_dotenv()
 
+# Serviço centralizado de normalização de texto
+from services.text_normalizer import text_normalizer
+
 
 # Configurações da API TJ-MS
 URL_WSDL = os.getenv('URL_WSDL') or os.getenv('TJ_WSDL_URL') or os.getenv('TJ_URL_WSDL')
@@ -38,51 +41,14 @@ def _limpar_numero_processo(numero: str) -> str:
 
 
 def _normalizar_texto_pdf(texto: str) -> str:
-    """Normaliza texto extraído de PDF"""
-    if not texto:
-        return ""
-    
-    # Remove caracteres de controle
-    texto = re.sub(r'[\x00-\x09\x0b\x0c\x0e-\x1f]', '', texto)
-    
-    # Normaliza espaços
-    texto = re.sub(r'[ \t]+', ' ', texto)
-    
-    # Remove espaços no início/fim de cada linha
-    linhas = [linha.strip() for linha in texto.split('\n')]
-    
-    # Junta linhas quebradas no meio de frases
-    resultado = []
-    buffer = ""
-    
-    for linha in linhas:
-        if not linha:
-            if buffer:
-                resultado.append(buffer)
-                buffer = ""
-            continue
-        
-        if buffer:
-            ultima_char = buffer[-1] if buffer else ''
-            primeira_char = linha[0] if linha else ''
-            
-            if ultima_char not in '.!?;:' and primeira_char.islower():
-                buffer += ' ' + linha
-            elif ultima_char == '-':
-                buffer = buffer[:-1] + linha
-            else:
-                resultado.append(buffer)
-                buffer = linha
-        else:
-            buffer = linha
-    
-    if buffer:
-        resultado.append(buffer)
-    
-    texto_final = '\n\n'.join(resultado)
-    texto_final = re.sub(r'\n{3,}', '\n\n', texto_final)
-    
-    return texto_final.strip()
+    """
+    Normaliza texto extraído de PDF.
+
+    NOTA: Esta função agora usa o serviço centralizado text_normalizer.
+    Mantida por compatibilidade com código existente.
+    """
+    result = text_normalizer.normalize(texto)
+    return result.text
 
 
 async def consultar_processo_async(

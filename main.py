@@ -75,6 +75,9 @@ from admin.router_performance import router as performance_router
 from admin.router_gemini_logs import router as gemini_logs_router
 from admin.middleware_performance import PerformanceMiddleware
 
+# Import do serviço de normalização de texto
+from services.text_normalizer import text_normalizer_router
+
 # Diretórios base
 BASE_DIR = Path(__file__).resolve().parent
 MATRICULAS_TEMPLATES = BASE_DIR / "sistemas" / "matriculas_confrontantes" / "templates"
@@ -365,6 +368,9 @@ app.include_router(pedido_calculo_admin_router)  # Admin router - sem prefixo po
 # Router de Prestação de Contas
 app.include_router(prestacao_contas_router, prefix="/prestacao-contas/api")
 app.include_router(prestacao_contas_admin_router)  # Admin router - sem prefixo pois já tem no router
+
+# Router de Normalização de Texto
+app.include_router(text_normalizer_router)
 
 
 # ==================================================
