@@ -17,6 +17,7 @@ from database.connection import get_db
 from auth.models import User
 from auth.dependencies import get_current_active_user
 from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON, CategoriaResumoJSONHistorico
+from admin.perf_context import perf_ctx
 
 router = APIRouter(prefix="/categorias-resumo-json", tags=["Categorias Resumo JSON"])
 
@@ -205,6 +206,7 @@ async def listar_categorias(
     db: Session = Depends(get_db)
 ):
     """Lista todas as categorias de formato de resumo JSON"""
+    perf_ctx.set_action("listar_categorias")
     query = db.query(CategoriaResumoJSON)
     
     if apenas_ativos:
@@ -291,13 +293,15 @@ async def obter_categoria(
     db: Session = Depends(get_db)
 ):
     """Obtém uma categoria específica"""
+    perf_ctx.set_action("obter_categoria")
+
     categoria = db.query(CategoriaResumoJSON).filter(
         CategoriaResumoJSON.id == categoria_id
     ).first()
-    
+
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
-    
+
     return categoria
 
 
@@ -308,6 +312,7 @@ async def criar_categoria(
     db: Session = Depends(get_db)
 ):
     """Cria uma nova categoria de formato de resumo JSON"""
+    perf_ctx.set_action("criar_categoria")
     verificar_permissao(current_user)
     
     # Verifica se já existe com mesmo nome
@@ -362,6 +367,7 @@ async def atualizar_categoria(
     db: Session = Depends(get_db)
 ):
     """Atualiza uma categoria (cria registro no histórico)"""
+    perf_ctx.set_action("atualizar_categoria")
     verificar_permissao(current_user)
     
     categoria = db.query(CategoriaResumoJSON).filter(
@@ -556,12 +562,13 @@ async def info_extracao(
 ):
     """
     Retorna informações sobre as perguntas e variáveis de uma categoria.
-    
+
     Inclui:
     - Número de perguntas configuradas
     - Se JSON foi gerado por IA
     - Número de variáveis criadas
     """
+    perf_ctx.set_action("info_extracao_categoria")
     categoria = db.query(CategoriaResumoJSON).filter(
         CategoriaResumoJSON.id == categoria_id
     ).first()

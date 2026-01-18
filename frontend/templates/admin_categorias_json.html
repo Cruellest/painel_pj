@@ -266,6 +266,9 @@
                                         <button type="button" onclick="reordenarComIA()" id="btn-reordenar-ia" class="px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm flex items-center gap-1" title="Usar IA para reordenar as perguntas logicamente">
                                             <i class="fas fa-robot"></i> Reordenar
                                         </button>
+                                        <button type="button" onclick="agruparPorDependencias()" id="btn-agrupar-dependencias" class="px-3 py-1.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm flex items-center gap-1" title="Agrupar filhos abaixo das perguntas mães (sem IA)">
+                                            <i class="fas fa-sitemap"></i> Agrupar Filhos
+                                        </button>
                                         <button type="button" onclick="criarDependenciasComIA()" id="btn-dependencias-ia" class="px-3 py-1.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm flex items-center gap-1" title="Usar IA para criar/recriar dependências entre perguntas">
                                             <i class="fas fa-code-branch"></i> Dependências IA
                                         </button>
@@ -729,6 +732,103 @@ Qual o valor da causa?"></textarea>
         let variaveisGeradas = [];
         let perguntasExistentes = []; // Perguntas já salvas no banco
 
+        // ==========================================
+        // Performance Metrics (Frontend)
+        // ==========================================
+        const perfMetrics = {
+            clickTime: 0,
+            loadingShownTime: 0,
+            requestStartTime: 0,
+            requestEndTime: 0,
+            modalOpenTime: 0,
+            currentAction: null
+        };
+
+        function startPerfMeasure(action) {
+            perfMetrics.clickTime = performance.now();
+            perfMetrics.currentAction = action;
+            perfMetrics.loadingShownTime = 0;
+            perfMetrics.requestStartTime = 0;
+            perfMetrics.requestEndTime = 0;
+            perfMetrics.modalOpenTime = 0;
+        }
+
+        function markLoadingShown() {
+            perfMetrics.loadingShownTime = performance.now();
+        }
+
+        function markRequestStart() {
+            perfMetrics.requestStartTime = performance.now();
+        }
+
+        function markRequestEnd() {
+            perfMetrics.requestEndTime = performance.now();
+        }
+
+        function finishPerfMeasure() {
+            perfMetrics.modalOpenTime = performance.now();
+
+            const metrics = {
+                action: perfMetrics.currentAction,
+                click_to_loading_ms: perfMetrics.loadingShownTime - perfMetrics.clickTime,
+                click_to_request_ms: perfMetrics.requestStartTime - perfMetrics.clickTime,
+                request_duration_ms: perfMetrics.requestEndTime - perfMetrics.requestStartTime,
+                click_to_modal_ms: perfMetrics.modalOpenTime - perfMetrics.clickTime,
+                timestamp: new Date().toISOString()
+            };
+
+            // Log no console para debugging
+            console.log('[PERF]', perfMetrics.currentAction, metrics);
+
+            // Envia para o backend (fire-and-forget)
+            sendPerfMetrics(metrics);
+
+            return metrics;
+        }
+
+        async function sendPerfMetrics(metrics) {
+            try {
+                await fetch('/admin/api/performance/frontend-metrics', {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({
+                        route: '/admin/categorias-resumo-json',
+                        ...metrics
+                    })
+                });
+            } catch (e) {
+                // Silently ignore - metrics are best-effort
+            }
+        }
+
+        // Loading overlay global para feedback imediato
+        function showLoadingOverlay(message = 'Carregando...') {
+            let overlay = document.getElementById('loading-overlay-global');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'loading-overlay-global';
+                overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                overlay.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 shadow-xl flex items-center gap-4">
+                        <div class="animate-spin rounded-full h-8 w-8 border-4 border-primary-500 border-t-transparent"></div>
+                        <span class="text-gray-700 font-medium" id="loading-overlay-text">${message}</span>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+            } else {
+                document.getElementById('loading-overlay-text').textContent = message;
+                overlay.classList.remove('hidden');
+            }
+            markLoadingShown();
+        }
+
+        function hideLoadingOverlay() {
+            const overlay = document.getElementById('loading-overlay-global');
+            if (overlay) {
+                overlay.classList.add('hidden');
+            }
+        }
+
         // Autenticação
         function getToken() {
             return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
@@ -979,9 +1079,16 @@ Qual o valor da causa?"></textarea>
 
         // Editar categoria existente
         async function editarCategoria(id) {
+            // PERFORMANCE: Feedback imediato - mostrar loading NO MESMO TICK do click
+            startPerfMeasure('editar_categoria');
+            showLoadingOverlay('Carregando categoria...');
+
             try {
+                // Fetch categoria
+                markRequestStart();
                 const response = await fetch(`${API_BASE}/${id}`, { headers: getHeaders() });
                 const categoria = await response.json();
+                markRequestEnd();
 
                 categoriaAtual = categoria;
                 codigosSelecionados = categoria.codigos_documento || [];
@@ -1030,9 +1137,15 @@ Qual o valor da causa?"></textarea>
                 document.getElementById('categoria-fonte-codigo').value = categoria.fonte_verdade_codigo || '';
                 document.getElementById('categoria-fonte-tipo-llm').value = categoria.fonte_verdade_tipo || '';
 
+                // Esconde loading e abre modal
+                hideLoadingOverlay();
                 document.getElementById('modal-editor').classList.remove('hidden');
+
+                // Registra métricas de performance
+                finishPerfMeasure();
             } catch (error) {
                 console.error('Erro ao carregar categoria:', error);
+                hideLoadingOverlay();
                 alert('Erro ao carregar categoria');
             }
         }
@@ -1656,6 +1769,106 @@ Qual o valor da causa?"></textarea>
             } finally {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-robot"></i> Reordenar';
+            }
+        }
+
+        // Agrupa perguntas por dependências (determinístico, sem IA)
+        async function agruparPorDependencias() {
+            const categoriaId = document.getElementById('categoria-id').value;
+
+            if (!categoriaId) {
+                alert('Salve a categoria primeiro para agrupar por dependências');
+                return;
+            }
+
+            if (perguntasSelecionadas.length < 2) {
+                alert('Adicione pelo menos 2 perguntas para agrupar');
+                return;
+            }
+
+            // Verifica se há dependências definidas
+            const temDependencias = perguntasSelecionadas.some(p => p.depends_on_variable);
+            if (!temDependencias) {
+                alert('Nenhuma pergunta tem dependência definida.\n\nUse "Dependências IA" para criar dependências primeiro, ou defina manualmente em cada pergunta.');
+                return;
+            }
+
+            // Salva perguntas primeiro
+            await salvarPerguntasNoServidor(categoriaId);
+
+            const btn = document.getElementById('btn-agrupar-dependencias');
+            const statusEl = document.getElementById('status-geracao');
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Agrupando...';
+            if (statusEl) {
+                statusEl.textContent = 'Organizando hierarquia de dependências...';
+                statusEl.className = 'text-sm text-blue-500';
+            }
+
+            try {
+                const response = await fetch(`${API_EXTRACTION}/perguntas/agrupar-por-dependencias`, {
+                    method: 'POST',
+                    headers: getHeaders(),
+                    body: JSON.stringify({
+                        categoria_id: parseInt(categoriaId)
+                    })
+                });
+
+                const resultado = await response.json();
+
+                if (!resultado.success) {
+                    throw new Error(resultado.message || resultado.detail || 'Erro ao agrupar');
+                }
+
+                // Aplica nova ordem no frontend (otimista)
+                if (resultado.nova_ordem && resultado.nova_ordem.length > 0) {
+                    const ordemMap = new Map(resultado.nova_ordem.map(item => [item.id, item.ordem]));
+
+                    // Atualiza ordem local
+                    perguntasSelecionadas.forEach(p => {
+                        if (p.id && ordemMap.has(p.id)) {
+                            p.ordem = ordemMap.get(p.id);
+                        }
+                    });
+
+                    // Ordena o array
+                    perguntasSelecionadas.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+
+                    // Atualiza UI
+                    atualizarListaPerguntas();
+
+                    // Reordena JSON para seguir ordem das perguntas
+                    reordenarJSONComPerguntas();
+                }
+
+                // Exibe resultado
+                if (statusEl) {
+                    if (resultado.ciclos_detectados && resultado.ciclos_detectados.length > 0) {
+                        statusEl.textContent = `Agrupado com avisos: ${resultado.ciclos_detectados.join('; ')}`;
+                        statusEl.className = 'text-sm text-amber-600';
+                        console.warn('Ciclos detectados:', resultado.ciclos_detectados);
+                    } else {
+                        statusEl.textContent = resultado.message || 'Hierarquia organizada com sucesso!';
+                        statusEl.className = 'text-sm text-green-600';
+                    }
+                }
+
+                // Toast de sucesso
+                if (typeof showToast === 'function') {
+                    showToast(resultado.message || `${resultado.atualizadas} perguntas reorganizadas`, 'success');
+                }
+
+            } catch (error) {
+                console.error('Erro ao agrupar por dependências:', error);
+                if (statusEl) {
+                    statusEl.textContent = `Erro: ${error.message}`;
+                    statusEl.className = 'text-sm text-red-500';
+                }
+                alert(`Erro ao agrupar: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-sitemap"></i> Agrupar Filhos';
             }
         }
 

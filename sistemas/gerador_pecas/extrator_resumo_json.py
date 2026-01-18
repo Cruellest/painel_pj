@@ -562,6 +562,16 @@ def verificar_irrelevante_json(json_dict: Dict[str, Any]) -> Tuple[bool, str]:
     if not json_dict:
         return False, "{}"
 
+    # Trata caso de lista - extrai primeiro elemento
+    if isinstance(json_dict, list):
+        if json_dict and isinstance(json_dict[0], dict):
+            json_dict = json_dict[0]
+        else:
+            return False, "[]"
+
+    if not isinstance(json_dict, dict):
+        return False, "{}"
+
     is_irrelevante = json_dict.get("irrelevante", False)
 
     if is_irrelevante:
@@ -624,6 +634,24 @@ def normalizar_json_com_schema(
     import logging
     logger = logging.getLogger(__name__)
 
+    # Valida que json_resposta é um dict
+    # A IA pode retornar array JSON, precisamos tratar isso
+    if isinstance(json_resposta, list):
+        logger.warning(
+            f"normalizar_json_com_schema recebeu lista ao invés de dict. "
+            f"Tentando extrair primeiro elemento. Tamanho da lista: {len(json_resposta)}"
+        )
+        if json_resposta and isinstance(json_resposta[0], dict):
+            json_resposta = json_resposta[0]
+            logger.info("Extraído primeiro elemento da lista com sucesso")
+        else:
+            logger.error("Lista vazia ou primeiro elemento não é dict, retornando dict vazio")
+            return {}
+
+    if not isinstance(json_resposta, dict):
+        logger.error(f"json_resposta não é dict nem lista tratável: {type(json_resposta)}")
+        return {}
+
     # Caso especial: documento irrelevante - retorna sem modificações
     if json_resposta.get("irrelevante", False):
         return json_resposta
@@ -674,16 +702,26 @@ def extrair_tipo_documento_json(json_dict: Dict[str, Any]) -> Optional[str]:
     """
     if not json_dict:
         return None
-    
+
+    # Trata caso de lista - extrai primeiro elemento
+    if isinstance(json_dict, list):
+        if json_dict and isinstance(json_dict[0], dict):
+            json_dict = json_dict[0]
+        else:
+            return None
+
+    if not isinstance(json_dict, dict):
+        return None
+
     # Tenta vários campos comuns
     tipo = json_dict.get("tipo_documento")
     if tipo:
         return tipo
-    
+
     tipo = json_dict.get("tipo")
     if tipo:
         return tipo
-    
+
     return None
 
 
@@ -693,14 +731,24 @@ def extrair_processo_origem_json(json_dict: Dict[str, Any]) -> Optional[str]:
     """
     if not json_dict:
         return None
-    
+
+    # Trata caso de lista - extrai primeiro elemento
+    if isinstance(json_dict, list):
+        if json_dict and isinstance(json_dict[0], dict):
+            json_dict = json_dict[0]
+        else:
+            return None
+
+    if not isinstance(json_dict, dict):
+        return None
+
     processo = json_dict.get("processo_origem")
     if processo and isinstance(processo, str) and processo != "null":
         # Valida formato CNJ
         padrao_cnj = r'\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}'
         if re.match(padrao_cnj, processo):
             return processo
-    
+
     return None
 
 
@@ -711,10 +759,21 @@ def json_para_markdown(json_dict: Dict[str, Any], nivel: int = 0) -> str:
     """
     if not json_dict:
         return ""
-    
+
+    # Trata caso de lista - extrai primeiro elemento ou formata como lista
+    if isinstance(json_dict, list):
+        if json_dict and isinstance(json_dict[0], dict):
+            json_dict = json_dict[0]
+        else:
+            # Formata lista simples
+            return "\n".join(f"- {item}" for item in json_dict)
+
+    if not isinstance(json_dict, dict):
+        return str(json_dict)
+
     linhas = []
     indent = "  " * nivel
-    
+
     for chave, valor in json_dict.items():
         if chave in ("irrelevante", "motivo") and nivel == 0:
             continue  # Pula campos de controle no nível raiz

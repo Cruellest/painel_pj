@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from database.connection import get_db
 from auth.dependencies import get_current_active_user
 from auth.models import User
+from admin.perf_context import perf_ctx
 
 from .models_extraction import (
     ExtractionQuestion, ExtractionModel, ExtractionVariable,
@@ -486,6 +487,8 @@ async def listar_perguntas_categoria(
     current_user: User = Depends(get_current_active_user)
 ):
     """Lista todas as perguntas de extração de uma categoria"""
+    perf_ctx.set_action("listar_perguntas_categoria")
+
     # Verifica se a categoria existe
     categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == categoria_id).first()
     if not categoria:
@@ -1311,6 +1314,225 @@ async def atualizar_ordem_perguntas_lote(
         success=True,
         atualizadas=atualizadas,
         message=f"{atualizadas} perguntas reordenadas com sucesso"
+    )
+
+
+# --- Schema para agrupamento por dependências ---
+class AgruparPorDependenciasRequest(BaseModel):
+    """Request para agrupar perguntas por dependências"""
+    categoria_id: int = Field(..., description="ID da categoria")
+
+
+class AgruparPorDependenciasResponse(BaseModel):
+    """Response do agrupamento por dependências"""
+    success: bool
+    nova_ordem: List[Dict[str, Any]] = Field(default_factory=list, description="Nova ordem das perguntas")
+    ciclos_detectados: List[str] = Field(default_factory=list, description="Avisos de ciclos detectados")
+    atualizadas: int = Field(0, description="Número de perguntas reordenadas")
+    message: str
+
+
+def _agrupar_por_dependencias_algoritmo(perguntas: List[ExtractionQuestion]) -> tuple:
+    """
+    Algoritmo determinístico para agrupar perguntas por dependências.
+
+    Regras:
+    1) Para cada pergunta "mãe", coloca imediatamente abaixo dela todas as perguntas que dependem dela (filhos)
+    2) Se houver dependência em múltiplos níveis (netos), mantém a hierarquia
+    3) Mantém ordem relativa original (entre mães e entre filhos de mesma mãe)
+    4) Para múltiplas dependências, usa o pai que aparece primeiro na ordem atual
+    5) Detecta ciclos e mantém ordem atual das envolvidas
+
+    Returns:
+        tuple: (lista_ordenada, lista_ciclos)
+    """
+    if not perguntas:
+        return [], []
+
+    # Cria mapa de slug -> pergunta (para encontrar pais)
+    slug_to_pergunta = {}
+    for p in perguntas:
+        if p.nome_variavel_sugerido:
+            slug = p.nome_variavel_sugerido.strip().lower()
+            if slug and slug not in slug_to_pergunta:
+                slug_to_pergunta[slug] = p
+
+    # Cria mapa de id -> pergunta para acesso rápido
+    id_to_pergunta = {p.id: p for p in perguntas}
+
+    # Cria mapa de id -> filhos (perguntas que dependem desta)
+    filhos_map = {p.id: [] for p in perguntas}
+
+    # Para cada pergunta, identifica seu pai
+    pai_map = {}  # id_pergunta -> id_pai
+    for p in perguntas:
+        if p.depends_on_variable:
+            slug_pai = p.depends_on_variable.strip().lower()
+            pai = slug_to_pergunta.get(slug_pai)
+            if pai and pai.id != p.id:  # Evita auto-referência
+                pai_map[p.id] = pai.id
+                filhos_map[pai.id].append(p)
+
+    # Detecta ciclos usando DFS
+    ciclos = []
+    visitados = set()
+    em_pilha = set()
+
+    def detecta_ciclo(pergunta_id: int, caminho: list) -> bool:
+        """Detecta ciclos no grafo de dependências"""
+        if pergunta_id in em_pilha:
+            # Encontrou ciclo
+            idx = caminho.index(pergunta_id)
+            ciclo_ids = caminho[idx:]
+            ciclo_nomes = [id_to_pergunta[pid].pergunta[:50] for pid in ciclo_ids if pid in id_to_pergunta]
+            ciclos.append(f"Ciclo detectado: {' → '.join(ciclo_nomes)}")
+            return True
+
+        if pergunta_id in visitados:
+            return False
+
+        visitados.add(pergunta_id)
+        em_pilha.add(pergunta_id)
+        caminho.append(pergunta_id)
+
+        for filho in filhos_map.get(pergunta_id, []):
+            detecta_ciclo(filho.id, caminho)
+
+        caminho.pop()
+        em_pilha.remove(pergunta_id)
+        return False
+
+    # Verifica ciclos para todas as perguntas
+    for p in perguntas:
+        if p.id not in visitados:
+            detecta_ciclo(p.id, [])
+
+    # Identifica raízes (perguntas sem pai válido ou cujo pai não existe)
+    raizes = []
+    for p in perguntas:
+        if p.id not in pai_map:
+            raizes.append(p)
+
+    # Ordena filhos de cada pai pela ordem original
+    for pai_id in filhos_map:
+        filhos_map[pai_id].sort(key=lambda x: (x.ordem or 0, x.id))
+
+    # Coleta subárvore recursivamente (DFS)
+    resultado = []
+    processados = set()
+
+    def coletar_subarvore(pergunta: ExtractionQuestion, nivel: int = 0):
+        """Coleta pergunta e seus descendentes em ordem DFS"""
+        if pergunta.id in processados:
+            return
+
+        processados.add(pergunta.id)
+        resultado.append({
+            "pergunta": pergunta,
+            "nivel": nivel
+        })
+
+        # Coleta filhos em ordem original
+        for filho in filhos_map.get(pergunta.id, []):
+            coletar_subarvore(filho, nivel + 1)
+
+    # Processa raízes em ordem original
+    raizes.sort(key=lambda x: (x.ordem or 0, x.id))
+    for raiz in raizes:
+        coletar_subarvore(raiz)
+
+    # Adiciona perguntas órfãs (não processadas - podem estar em ciclos ou ter pai inexistente)
+    for p in perguntas:
+        if p.id not in processados:
+            resultado.append({
+                "pergunta": p,
+                "nivel": 0
+            })
+
+    return resultado, ciclos
+
+
+@router.post("/perguntas/agrupar-por-dependencias", response_model=AgruparPorDependenciasResponse)
+async def agrupar_perguntas_por_dependencias(
+    data: AgruparPorDependenciasRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Agrupa perguntas por dependências de forma determinística (sem IA).
+
+    Move as perguntas dependentes para perto das perguntas mães,
+    mantendo a hierarquia (mãe → filhos → netos) e preservando
+    a ordem relativa original.
+
+    Regras:
+    1. Perguntas "mãe" (raízes) mantêm ordem relativa original
+    2. Filhos ficam imediatamente abaixo de seus pais
+    3. Hierarquia é preservada em múltiplos níveis
+    4. Ciclos são detectados e reportados (perguntas mantêm ordem atual)
+    """
+    # Verifica permissão
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissão para reordenar perguntas")
+
+    # Verifica se a categoria existe
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == data.categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    # Busca todas as perguntas ativas da categoria
+    perguntas = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.categoria_id == data.categoria_id,
+        ExtractionQuestion.ativo == True
+    ).order_by(ExtractionQuestion.ordem, ExtractionQuestion.id).all()
+
+    if len(perguntas) < 2:
+        return AgruparPorDependenciasResponse(
+            success=True,
+            nova_ordem=[],
+            ciclos_detectados=[],
+            atualizadas=0,
+            message="Categoria tem menos de 2 perguntas, nada a reordenar"
+        )
+
+    # Aplica algoritmo de agrupamento
+    resultado, ciclos = _agrupar_por_dependencias_algoritmo(perguntas)
+
+    # Atualiza ordem no banco
+    now = datetime.utcnow()
+    atualizadas = 0
+    nova_ordem = []
+
+    for nova_pos, item in enumerate(resultado):
+        p = item["pergunta"]
+        nova_ordem.append({
+            "id": p.id,
+            "pergunta": p.pergunta[:100],
+            "ordem": nova_pos,
+            "nivel": item["nivel"],
+            "depends_on": p.depends_on_variable
+        })
+
+        if p.ordem != nova_pos:
+            p.ordem = nova_pos
+            p.atualizado_por = current_user.id
+            p.atualizado_em = now
+            atualizadas += 1
+
+    db.commit()
+
+    logger.info(f"Perguntas agrupadas por dependências para categoria {categoria.nome}: {atualizadas} reordenadas")
+
+    if ciclos:
+        logger.warning(f"Ciclos detectados na categoria {categoria.nome}: {ciclos}")
+
+    return AgruparPorDependenciasResponse(
+        success=True,
+        nova_ordem=nova_ordem,
+        ciclos_detectados=ciclos,
+        atualizadas=atualizadas,
+        message=f"{atualizadas} perguntas reordenadas. " +
+                (f"Atenção: {len(ciclos)} ciclo(s) detectado(s)." if ciclos else "Hierarquia organizada com sucesso.")
     )
 
 

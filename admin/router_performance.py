@@ -552,3 +552,74 @@ async def list_systems(
     # Adiciona 'unknown' para filtrar logs sem mapeamento
     systems.append("unknown")
     return {"systems": sorted(set(systems))}
+
+
+# ==================================================
+# FRONTEND METRICS - Métricas do lado do cliente
+# ==================================================
+
+class FrontendMetricsRequest(BaseModel):
+    """Métricas de performance coletadas no frontend."""
+    route: str = Field(..., description="Rota onde a ação foi realizada")
+    action: str = Field(..., description="Ação realizada (ex: editar_categoria)")
+    click_to_loading_ms: float = Field(..., description="Tempo do click até loading aparecer")
+    click_to_request_ms: float = Field(..., description="Tempo do click até request iniciar")
+    request_duration_ms: float = Field(..., description="Duração da request")
+    click_to_modal_ms: float = Field(..., description="Tempo total do click até modal abrir")
+    timestamp: Optional[str] = Field(None, description="Timestamp ISO do evento")
+
+
+@router.post("/frontend-metrics")
+async def receive_frontend_metrics(
+    metrics: FrontendMetricsRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Recebe métricas de performance coletadas no frontend.
+
+    Estas métricas ajudam a diagnosticar problemas de lag que ocorrem
+    antes da request chegar ao backend (ex: renderização, parsing JS).
+
+    Os dados são salvos como um PerformanceLog especial com:
+    - method = "FRONTEND"
+    - action = ação do frontend
+    - total_ms = click_to_modal_ms
+    - json_parse_ms = click_to_loading_ms (tempo até feedback visual)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Cria log de performance especial para métricas do frontend
+        log = PerformanceLog(
+            request_id=f"fe-{datetime.utcnow().strftime('%H%M%S%f')[:10]}",
+            route=metrics.route,
+            method="FRONTEND",
+            action=metrics.action,
+            status="ok",
+            total_ms=metrics.click_to_modal_ms,
+            # Usamos campos existentes para armazenar métricas específicas do frontend
+            # click_to_loading_ms -> json_parse_ms (reaproveitado)
+            json_parse_ms=metrics.click_to_loading_ms,
+            # request_duration_ms -> db_total_ms (reaproveitado para frontend)
+            db_total_ms=metrics.request_duration_ms,
+            # json_size_chars para armazenar click_to_request_ms como inteiro
+            json_size_chars=int(metrics.click_to_request_ms)
+        )
+
+        db.add(log)
+        db.commit()
+
+        logger.info(
+            f"[PERF-FRONTEND] {metrics.action}: "
+            f"click_to_loading={metrics.click_to_loading_ms:.1f}ms, "
+            f"request={metrics.request_duration_ms:.1f}ms, "
+            f"total={metrics.click_to_modal_ms:.1f}ms"
+        )
+
+        return {"success": True, "message": "Metrics recorded"}
+
+    except Exception as e:
+        logger.error(f"Erro ao salvar métricas do frontend: {e}")
+        # Não falha - métricas são best-effort
+        return {"success": False, "message": str(e)}
