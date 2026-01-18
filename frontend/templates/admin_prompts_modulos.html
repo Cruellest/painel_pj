@@ -584,6 +584,7 @@
                             <!-- JSON das regras (hidden para backend) -->
                             <input type="hidden" id="modulo-regra-json">
                             <input type="hidden" id="modulo-regra-secundaria-json">
+                            <input type="hidden" id="modulo-regra-secundaria-texto-original">
                         </div>
                     </div>
 
@@ -3108,6 +3109,10 @@
             if (jsonHidden) {
                 jsonHidden.value = '';
             }
+            const textoHidden = document.getElementById('modulo-regra-secundaria-texto-original');
+            if (textoHidden) {
+                textoHidden.value = '';
+            }
             renderizarCondicoesSecundaria();
             atualizarVisualizadorRegraSecundaria();
             document.getElementById('preview-regra-secundaria-gerada')?.classList.add('hidden');
@@ -3249,7 +3254,15 @@
 
             renderizarCondicoesSecundaria();
 
-            // Limpa preview
+            // Preserva o texto original antes de limpar o textarea
+            const textoOriginal = regraSecundariaGerada.texto_original ||
+                                  document.getElementById('regra-secundaria-linguagem-natural')?.value || '';
+            const textoHidden = document.getElementById('modulo-regra-secundaria-texto-original');
+            if (textoHidden) {
+                textoHidden.value = textoOriginal;
+            }
+
+            // Limpa preview e textarea (mas o texto está preservado no hidden)
             document.getElementById('preview-regra-secundaria-gerada').classList.add('hidden');
             document.getElementById('regra-secundaria-linguagem-natural').value = '';
             regraSecundariaGerada = null;
@@ -3356,7 +3369,7 @@
             container.innerHTML = renderizarRegraHumanizadaIA(regra);
         }
 
-        // Constrói AST da regra secundária
+        // Constrói AST da regra secundária (usando a mesma lógica recursiva da regra primária)
         function construirASTSecundaria() {
             const operadorPrincipal = document.getElementById('regra-secundaria-operador')?.value || 'and';
 
@@ -3364,32 +3377,8 @@
                 return null;
             }
 
-            if (condicoesRegraSecundaria.length === 1 && condicoesRegraSecundaria[0].type === 'condition') {
-                const c = condicoesRegraSecundaria[0];
-                if (!c.variavel) return null;
-                return {
-                    type: 'condition',
-                    variable: c.variavel,
-                    operator: c.operador,
-                    value: parseValorCondicao(c.valor, c.operador)
-                };
-            }
-
-            const conditions = condicoesRegraSecundaria
-                .filter(c => c.variavel)
-                .map(c => ({
-                    type: 'condition',
-                    variable: c.variavel,
-                    operator: c.operador,
-                    value: parseValorCondicao(c.valor, c.operador)
-                }));
-
-            if (conditions.length === 0) return null;
-
-            return {
-                type: operadorPrincipal,
-                conditions: conditions
-            };
+            // Usa a função gerarRegraAST que lida corretamente com grupos aninhados
+            return gerarRegraAST(condicoesRegraSecundaria, operadorPrincipal);
         }
 
         // Renderiza regra em formato humanizado (para preview IA)
@@ -3614,6 +3603,11 @@
                     if (textareaSecundaria) {
                         textareaSecundaria.value = modulo.regra_secundaria_texto_original;
                     }
+                    // Também preenche o campo hidden para garantir persistência
+                    const textoHidden = document.getElementById('modulo-regra-secundaria-texto-original');
+                    if (textoHidden) {
+                        textoHidden.value = modulo.regra_secundaria_texto_original;
+                    }
                 }
                 if (modulo.regra_deterministica_secundaria) {
                     carregarRegraSecundariaModulo(modulo.regra_deterministica_secundaria);
@@ -3662,8 +3656,10 @@
                     console.error('Erro ao parsear regra secundária:', e);
                 }
             }
+            // Texto original: prioriza o campo hidden (preservado ao aplicar), depois o textarea
             const regraSecundariaTextoOriginal = fallbackHabilitado
-                ? (document.getElementById('regra-secundaria-linguagem-natural')?.value || null)
+                ? (document.getElementById('modulo-regra-secundaria-texto-original')?.value ||
+                   document.getElementById('regra-secundaria-linguagem-natural')?.value || null)
                 : null;
 
             const dados = {
