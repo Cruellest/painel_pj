@@ -37,13 +37,19 @@ class TestBasicNormalization:
         result = text_normalizer.normalize(text)
         assert result.text == text
 
-    def test_preserves_paragraphs(self):
-        """Preserva separação entre parágrafos."""
-        text = "Primeiro parágrafo.\n\nSegundo parágrafo."
+    def test_preserves_paragraphs_before_titles(self):
+        """Preserva separação entre parágrafos antes de títulos."""
+        # Quebra dupla preservada apenas antes de títulos/seções
+        text = "Texto normal.\n\nTÍTULO DA SEÇÃO\n\nMais texto."
         result = text_normalizer.normalize(text)
         assert "\n\n" in result.text
-        assert "Primeiro parágrafo" in result.text
-        assert "Segundo parágrafo" in result.text
+        assert "TÍTULO DA SEÇÃO" in result.text
+        # Parágrafos normais são colapsados (sem título)
+        text2 = "Primeiro parágrafo.\n\nSegundo parágrafo."
+        result2 = text_normalizer.normalize(text2)
+        assert "Primeiro parágrafo" in result2.text
+        assert "Segundo parágrafo" in result2.text
+        # Conteúdo preservado, quebra pode ser simples
 
 
 class TestWhitespaceCollapse:
@@ -141,11 +147,14 @@ class TestLineJoining:
         assert "Primeira frase" in result.text
         assert "Segunda frase" in result.text
 
-    def test_preserve_paragraph_break(self):
-        """Preserva quebra de parágrafo (linha vazia)."""
+    def test_collapse_paragraph_break(self):
+        """Colapsa parágrafos normais (sem título)."""
         text = "Primeiro parágrafo.\n\nSegundo parágrafo."
         result = text_normalizer.normalize(text)
-        assert "\n\n" in result.text
+        # Com collapse_paragraphs=True (padrão), parágrafos normais são colapsados
+        assert "Primeiro parágrafo" in result.text
+        assert "Segundo parágrafo" in result.text
+        assert result.stats.paragraphs_collapsed >= 1
 
 
 class TestHeaderFooterRemoval:

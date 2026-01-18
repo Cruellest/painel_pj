@@ -180,3 +180,70 @@ SPECIAL_SPACES = {
 
 # Combinado para substituição rápida
 UNICODE_NORMALIZE_MAP = {**SMART_QUOTES, **SMART_DASHES, **SPECIAL_SPACES}
+
+
+# =============================================================================
+# Títulos e Seções (para colapso de parágrafos)
+# =============================================================================
+
+# Padrões que indicam início de seção (manter quebra dupla antes)
+# - Linhas em MAIÚSCULAS (mínimo 3 palavras ou 15 chars)
+# - Linhas que terminam com ":"
+# - Numeração romana ou arábica seguida de texto (I - , II - , 1. , 1) )
+# - Palavras-chave de seção jurídica
+SECTION_TITLE_PATTERNS = [
+    # Linha toda em maiúsculas (mínimo 10 chars, máximo 150)
+    re.compile(r'^[A-ZÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÜÇ0-9\s\-–—:.,()]{10,150}$'),
+
+    # Numeração romana no início: "I - ", "II - ", "III.", "IV)"
+    re.compile(r'^[IVXLC]+[\s]*[-–—.)]\s*.+', re.IGNORECASE),
+
+    # Numeração arábica no início: "1. ", "1) ", "1 - "
+    re.compile(r'^\d{1,3}[\s]*[.)]\s*.+'),
+    re.compile(r'^\d{1,3}[\s]*[-–—]\s*.+'),
+
+    # Linha que termina com ":" (títulos de seção)
+    re.compile(r'^.{5,100}:\s*$'),
+
+    # Palavras-chave jurídicas comuns em títulos
+    re.compile(
+        r'^(?:DO[S]?\s|DA[S]?\s|CONCLUS|DISPOS|FUNDAMENT|RELAT[OÓ]R|'
+        r'REQUER|PEDIDO|FATOS|DIREITO|MÉRITO|PRELIMINAR|EMENTA|'
+        r'ACORDAM|VOTO|RELATÓRIO|DECISÃO|SENTENÇA|DESPACHO|'
+        r'PARECER|INFORMAÇ|CERTID|TERMO|ATA\s)',
+        re.IGNORECASE
+    ),
+]
+
+
+def is_section_title(line: str) -> bool:
+    """
+    Verifica se uma linha é um título de seção.
+
+    Títulos de seção devem manter quebra dupla antes deles
+    para preservar a estrutura do documento.
+
+    Args:
+        line: Linha de texto para verificar
+
+    Returns:
+        True se a linha parece ser um título de seção
+    """
+    line = line.strip()
+    if not line or len(line) < 3:
+        return False
+
+    # Verifica cada padrão
+    for pattern in SECTION_TITLE_PATTERNS:
+        if pattern.match(line):
+            return True
+
+    # Verifica se é toda em maiúsculas (com algumas exceções)
+    # Ignora linhas muito curtas ou que são apenas números/pontuação
+    if len(line) >= 10:
+        # Remove números e pontuação para verificar
+        letters_only = ''.join(c for c in line if c.isalpha())
+        if letters_only and letters_only.isupper() and len(letters_only) >= 5:
+            return True
+
+    return False

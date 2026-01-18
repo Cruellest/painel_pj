@@ -23,6 +23,7 @@ from .patterns import (
     MULTIPLE_NEWLINES,
     BROKEN_HYPHENATION,
     ISOLATED_PAGE_NUMBER,
+    is_section_title,
 )
 from .utils import (
     normalize_unicode_chars,
@@ -130,12 +131,17 @@ class TextNormalizer:
             result, joined = self._smart_line_join(result)
             stats.lines_joined = joined
 
-        # 9. Deduplicação de blocos (apenas modo aggressive)
+        # 9. Colapsa parágrafos (mantém quebra dupla apenas antes de títulos)
+        if options.collapse_paragraphs:
+            result, collapsed = self._collapse_paragraphs(result)
+            stats.paragraphs_collapsed = collapsed
+
+        # 10. Deduplicação de blocos (apenas modo aggressive)
         if options.deduplicate_blocks:
             result, deduped = remove_duplicate_blocks(result)
             stats.blocks_deduplicated = deduped
 
-        # 10. Limpeza final
+        # 11. Limpeza final
         result = self._final_cleanup(result, options.max_consecutive_newlines)
 
         # Calcula estatísticas finais
@@ -165,6 +171,7 @@ class TextNormalizer:
                 detect_headers_footers=False,
                 fix_hyphenation=True,
                 smart_line_join=False,  # Preserva quebras originais
+                collapse_paragraphs=False,  # Preserva parágrafos originais
                 deduplicate_blocks=False,
                 normalize_unicode=True,
                 max_consecutive_newlines=3,
@@ -179,6 +186,7 @@ class TextNormalizer:
                 detect_headers_footers=True,
                 fix_hyphenation=True,
                 smart_line_join=True,
+                collapse_paragraphs=True,  # Colapsa parágrafos
                 deduplicate_blocks=True,  # Remove blocos duplicados
                 normalize_unicode=True,
                 max_consecutive_newlines=2,
@@ -193,6 +201,7 @@ class TextNormalizer:
                 detect_headers_footers=True,
                 fix_hyphenation=True,
                 smart_line_join=True,
+                collapse_paragraphs=True,  # Colapsa parágrafos
                 deduplicate_blocks=False,
                 normalize_unicode=True,
                 max_consecutive_newlines=2,
@@ -319,6 +328,46 @@ class TextNormalizer:
 
         # Junta parágrafos com dupla quebra de linha
         return '\n\n'.join(resultado), join_count
+
+    def _collapse_paragraphs(self, text: str) -> tuple[str, int]:
+        """
+        Colapsa parágrafos, mantendo quebra dupla apenas antes de títulos/seções.
+
+        Isso reduz a fragmentação do contexto para análise por IA,
+        mantendo apenas as quebras semanticamente importantes.
+
+        Returns:
+            Tupla (texto com parágrafos colapsados, número de parágrafos colapsados)
+        """
+        # Divide em blocos (separados por \n\n)
+        blocks = text.split('\n\n')
+
+        if len(blocks) <= 1:
+            return text, 0
+
+        result = []
+        collapsed_count = 0
+
+        for i, block in enumerate(blocks):
+            block = block.strip()
+            if not block:
+                continue
+
+            if i == 0:
+                # Primeiro bloco sempre entra
+                result.append(block)
+            else:
+                # Verifica se este bloco é um título de seção
+                first_line = block.split('\n')[0] if '\n' in block else block
+                if is_section_title(first_line):
+                    # Mantém quebra dupla antes de títulos
+                    result.append('\n\n' + block)
+                else:
+                    # Colapsa: usa quebra simples
+                    result.append('\n' + block)
+                    collapsed_count += 1
+
+        return ''.join(result), collapsed_count
 
     def _final_cleanup(self, text: str, max_newlines: int = 2) -> str:
         """

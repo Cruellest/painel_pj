@@ -65,6 +65,11 @@ class NormalizationOptions(BaseModel):
         description="Junta linhas quebradas no meio de frases"
     )
 
+    collapse_paragraphs: bool = Field(
+        default=True,
+        description="Colapsa parágrafos, mantendo quebra dupla apenas antes de títulos/seções"
+    )
+
     deduplicate_blocks: bool = Field(
         default=False,
         description="Remove blocos de texto duplicados (apenas modo aggressive)"
@@ -109,6 +114,7 @@ class NormalizationStats:
     footers_removed: int = 0
     page_numbers_removed: int = 0
     blocks_deduplicated: int = 0
+    paragraphs_collapsed: int = 0
     processing_time_ms: float = 0.0
 
     @property
@@ -137,6 +143,7 @@ class NormalizationStats:
             "footers_removed": self.footers_removed,
             "page_numbers_removed": self.page_numbers_removed,
             "blocks_deduplicated": self.blocks_deduplicated,
+            "paragraphs_collapsed": self.paragraphs_collapsed,
             "compression_ratio": round(self.compression_ratio, 4),
             "reduction_percent": round(self.reduction_percent, 2),
             "processing_time_ms": round(self.processing_time_ms, 2)
