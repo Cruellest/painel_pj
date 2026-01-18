@@ -663,7 +663,7 @@
         let variaveis = [];
         let categorias = [];
         let paginaAtual = 0;
-        const itensPorPagina = 20;
+        const itensPorPagina = 200;
         let totalVariaveis = 0;
 
         // Funcao auxiliar para obter o token
@@ -704,7 +704,8 @@
         // Carregar categorias para filtro e modal
         async function carregarCategorias() {
             try {
-                const response = await fetch('/admin/api/categorias-resumo-json', {
+                // Busca todas as categorias (incluindo inativas) para contexto admin
+                const response = await fetch('/admin/api/categorias-resumo-json?apenas_ativos=false', {
                     headers: {
                         'Authorization': `Bearer ${getToken()}`
                     }
@@ -712,12 +713,15 @@
                 if (!response.ok) return;
                 categorias = await response.json();
 
-                // Popular select de filtro
+                // Popular select de filtro (ordena por nome)
                 const selectFiltro = document.getElementById('filtro-categoria');
                 selectFiltro.innerHTML = '<option value="">Todas as categorias</option>';
-                categorias.forEach(cat => {
-                    selectFiltro.innerHTML += `<option value="${cat.id}">${cat.nome}</option>`;
-                });
+                categorias
+                    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+                    .forEach(cat => {
+                        const inativoLabel = cat.ativo === false ? ' (inativa)' : '';
+                        selectFiltro.innerHTML += `<option value="${cat.id}">${cat.nome}${inativoLabel}</option>`;
+                    });
             } catch (error) {
                 console.error('Erro ao carregar categorias:', error);
             }
@@ -906,7 +910,7 @@
                 const catId = `cat-${catNome.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
                 // Determina se o grupo deve estar expandido
-                let expandido = estadoGrupos[catId] !== false; // Padrao: expandido
+                let expandido = estadoGrupos[catId] === true; // Padrao: colapsado
                 if (temBusca) {
                     // Com busca ativa, expande automaticamente
                     expandido = true;
@@ -944,7 +948,7 @@
             // Adiciona variaveis sem categoria no final
             if (semCategoria.length > 0) {
                 const catId = 'cat-sem-categoria';
-                const expandido = estadoGrupos[catId] !== false;
+                const expandido = estadoGrupos[catId] === true;
 
                 html += `
                     <div class="categoria-grupo" data-categoria="">
