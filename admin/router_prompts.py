@@ -5,7 +5,7 @@ Router para gerenciamento de prompts modulares
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 from pydantic import BaseModel
 from datetime import datetime
 import difflib
@@ -17,6 +17,71 @@ from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipo
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
 
 router = APIRouter(prefix="/prompts-modulos", tags=["Prompts Modulares"])
+
+
+# ==========================================
+# Utilitários para normalização de booleanos
+# ==========================================
+
+def normalizar_booleanos_regra(regra: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Normaliza valores booleanos em uma regra determinística (AST JSON).
+    
+    Converte:
+    - 1 -> True
+    - 0 -> False
+    - "1" -> True
+    - "0" -> False
+    - "true" -> True
+    - "false" -> False
+    
+    Isso garante que os valores booleanos sejam sempre persistidos como
+    true/false nativos do JSON, não como 1/0 (comportamento de alguns drivers SQLite).
+    """
+    if regra is None:
+        return None
+    
+    def normalizar_valor(valor: Any) -> Any:
+        """Normaliza um valor individual para boolean se aplicável."""
+        if valor is None:
+            return None
+        # Já é boolean, retorna como está
+        if isinstance(valor, bool):
+            return valor
+        # Inteiro 1/0 -> boolean
+        if isinstance(valor, int) and valor in (0, 1):
+            return bool(valor)
+        # String "1"/"0" ou "true"/"false" -> boolean
+        if isinstance(valor, str):
+            if valor.lower() in ("true", "1"):
+                return True
+            if valor.lower() in ("false", "0"):
+                return False
+        # Outros valores retornam como estão
+        return valor
+    
+    def normalizar_no(no: Dict[str, Any]) -> Dict[str, Any]:
+        """Normaliza um nó da árvore recursivamente."""
+        if not isinstance(no, dict):
+            return no
+        
+        resultado = {}
+        for chave, valor in no.items():
+            if chave == "value":
+                # Normaliza o campo value
+                resultado[chave] = normalizar_valor(valor)
+            elif chave == "conditions" and isinstance(valor, list):
+                # Recursivamente normaliza condições aninhadas
+                resultado[chave] = [normalizar_no(c) for c in valor]
+            elif chave == "condition" and isinstance(valor, dict):
+                # Normaliza condição singular (para 'not')
+                resultado[chave] = normalizar_no(valor)
+            else:
+                resultado[chave] = valor
+        
+        return resultado
+    
+    return normalizar_no(regra)
 
 
 # ==========================================
@@ -365,12 +430,12 @@ async def listar_modulos(
             "titulo": modulo.titulo,
             "condicao_ativacao": modulo.condicao_ativacao,
             "conteudo": modulo.conteudo,
-            # Campos de modo determinístico (primária)
+            # Campos de modo determinístico (primária) - normaliza booleanos 1/0 para true/false
             "modo_ativacao": modulo.modo_ativacao or 'llm',
-            "regra_deterministica": modulo.regra_deterministica,
+            "regra_deterministica": normalizar_booleanos_regra(modulo.regra_deterministica),
             "regra_texto_original": modulo.regra_texto_original,
-            # Campos de regra secundária (fallback)
-            "regra_deterministica_secundaria": modulo.regra_deterministica_secundaria,
+            # Campos de regra secundária (fallback) - normaliza booleanos 1/0 para true/false
+            "regra_deterministica_secundaria": normalizar_booleanos_regra(modulo.regra_deterministica_secundaria),
             "regra_secundaria_texto_original": modulo.regra_secundaria_texto_original,
             "fallback_habilitado": modulo.fallback_habilitado or False,
             "palavras_chave": modulo.palavras_chave,
@@ -892,9 +957,11 @@ async def obter_modulo(
     if not modulo:
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
 
-    # Retorna com subcategoria_ids
+    # Retorna com subcategoria_ids e normaliza booleanos nas regras (1/0 -> true/false)
     response = modulo.__dict__.copy()
     response["subcategoria_ids"] = [s.id for s in modulo.subcategorias]
+    response["regra_deterministica"] = normalizar_booleanos_regra(modulo.regra_deterministica)
+    response["regra_deterministica_secundaria"] = normalizar_booleanos_regra(modulo.regra_deterministica_secundaria)
     return response
 
 
@@ -957,6 +1024,12 @@ async def criar_modulo(
         subgroup_id = None
     
     modulo_payload = modulo_data.model_dump(exclude={"subcategoria_ids"})
+
+    # Normaliza booleanos nas regras determinísticas antes de salvar (1/0 -> true/false)
+    if modulo_payload.get("regra_deterministica"):
+        modulo_payload["regra_deterministica"] = normalizar_booleanos_regra(modulo_payload["regra_deterministica"])
+    if modulo_payload.get("regra_deterministica_secundaria"):
+        modulo_payload["regra_deterministica_secundaria"] = normalizar_booleanos_regra(modulo_payload["regra_deterministica_secundaria"])
 
     # Prompts de peça não devem ter categoria (categoria é usada como identificador único)
     if modulo_data.tipo == "peca":
@@ -1035,6 +1108,13 @@ async def atualizar_modulo(
     
     # Atualiza módulo
     update_data = modulo_data.model_dump(exclude_unset=True, exclude={"motivo", "subcategoria_ids"})
+    
+    # Normaliza booleanos nas regras determinísticas antes de salvar (1/0 -> true/false)
+    if "regra_deterministica" in update_data and update_data["regra_deterministica"]:
+        update_data["regra_deterministica"] = normalizar_booleanos_regra(update_data["regra_deterministica"])
+    if "regra_deterministica_secundaria" in update_data and update_data["regra_deterministica_secundaria"]:
+        update_data["regra_deterministica_secundaria"] = normalizar_booleanos_regra(update_data["regra_deterministica_secundaria"])
+    
     if modulo.tipo == "peca":
         # Prompts de peça não devem ter categoria/subcategoria
         update_data["categoria"] = None

@@ -592,8 +592,8 @@ async def receive_frontend_metrics(
     logger = logging.getLogger(__name__)
 
     # Métricas de frontend requerem usuário autenticado (admin_user_id é NOT NULL)
-    if not current_user:
-        logger.debug("[PERF-FRONTEND] Métrica ignorada: usuário não autenticado")
+    if not current_user or not current_user.id:
+        logger.debug("[PERF-FRONTEND] Métrica ignorada: usuário não autenticado ou sem ID")
         return {"success": False, "message": "User not authenticated"}
 
     try:

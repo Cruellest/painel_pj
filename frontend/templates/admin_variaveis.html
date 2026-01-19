@@ -1372,7 +1372,7 @@
         }
 
         // Excluir variavel (HARD DELETE com limpeza automatica)
-        async function excluirVariavel(id) {
+        async function excluirVariavel(id, forcarExclusao = false) {
             const v = variaveis.find(v => v.id === id);
             if (!v) return;
 
@@ -1411,27 +1411,54 @@
                     }
                 }
 
-                let mensagemConfirmacao = `ATENCAO: Esta acao e IRREVERSIVEL!\n\n`;
-                mensagemConfirmacao += `A variavel "${v.label}" sera EXCLUIDA PERMANENTEMENTE.\n\n`;
+                // Primeira confirmação básica (se não estiver forçando)
+                if (!forcarExclusao) {
+                    let mensagemConfirmacao = `ATENCAO: Esta acao e IRREVERSIVEL!\n\n`;
+                    mensagemConfirmacao += `A variavel "${v.label}" sera EXCLUIDA PERMANENTEMENTE.\n\n`;
 
-                if (avisos.length > 0) {
-                    mensagemConfirmacao += `Limpeza automatica que sera realizada:\n${avisos.join('\n')}\n\n`;
+                    if (avisos.length > 0) {
+                        mensagemConfirmacao += `Limpeza automatica que sera realizada:\n${avisos.join('\n')}\n\n`;
+                    }
+
+                    mensagemConfirmacao += `Deseja continuar?`;
+
+                    if (!confirm(mensagemConfirmacao)) return;
                 }
 
-                mensagemConfirmacao += `Deseja continuar?`;
+                // Tenta excluir (com ou sem confirmação de força)
+                const url = forcarExclusao
+                    ? `/admin/api/extraction/variaveis/${id}?confirmar_exclusao=true`
+                    : `/admin/api/extraction/variaveis/${id}`;
 
-                if (!confirm(mensagemConfirmacao)) return;
-
-                const response = await fetch(`/admin/api/extraction/variaveis/${id}`, {
+                const response = await fetch(url, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${getToken()}`
                     }
                 });
 
+                // Trata erro 409 - Variável em uso como condição de ativação
+                if (response.status === 409) {
+                    const errorData = await response.json();
+                    const detail = errorData.detail;
+
+                    if (detail && detail.error === 'VARIAVEL_EM_USO') {
+                        // Mostra modal de confirmação especial para variáveis em uso
+                        const confirmar = await mostrarModalVariavelEmUso(v, detail);
+                        if (confirmar) {
+                            // Chama novamente com forçar = true
+                            return excluirVariavel(id, true);
+                        }
+                        return; // Usuário cancelou
+                    }
+                }
+
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.detail || 'Erro ao excluir');
+                    const errorMsg = typeof error.detail === 'object'
+                        ? error.detail.message || JSON.stringify(error.detail)
+                        : error.detail || 'Erro ao excluir';
+                    throw new Error(errorMsg);
                 }
 
                 const result = await response.json();
@@ -1458,6 +1485,93 @@
                 console.error('Erro ao excluir variavel:', error);
                 alert('Erro ao excluir variavel: ' + error.message);
             }
+        }
+
+        // Modal de confirmação para variáveis em uso como condição de ativação
+        function mostrarModalVariavelEmUso(variavel, detalhes) {
+            return new Promise((resolve) => {
+                // Remove modal anterior se existir
+                const modalAnterior = document.getElementById('modal-variavel-em-uso');
+                if (modalAnterior) modalAnterior.remove();
+
+                const prompts = detalhes.prompts_vinculados || [];
+                const promptsHtml = prompts.map(p => {
+                    const tipoUso = p.tipo_uso && p.tipo_uso.length > 0
+                        ? ` (${p.tipo_uso.map(t => t === 'regra_primaria' ? 'Regra Primária' : 'Fallback').join(', ')})`
+                        : '';
+                    return `<li class="py-1">${p.titulo || p.nome}${tipoUso}</li>`;
+                }).join('');
+
+                const modal = document.createElement('div');
+                modal.id = 'modal-variavel-em-uso';
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 overflow-hidden">
+                        <div class="bg-amber-500 px-6 py-4">
+                            <h3 class="text-lg font-bold text-white flex items-center">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>
+                                Atenção - Variável em Uso
+                            </h3>
+                        </div>
+                        <div class="px-6 py-4">
+                            <p class="text-gray-700 mb-4">
+                                A variável <strong class="text-amber-700">${variavel.slug}</strong> é utilizada como
+                                <strong>condição de ativação</strong> nos seguintes módulos:
+                            </p>
+                            <ul class="bg-gray-50 rounded-lg p-3 mb-4 text-sm text-gray-600 max-h-48 overflow-y-auto border border-gray-200">
+                                ${promptsHtml}
+                            </ul>
+                            <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                                <p class="text-red-700 text-sm">
+                                    <i class="fas fa-exclamation-circle mr-1"></i>
+                                    <strong>Excluir esta variável pode causar falhas na ativação de regras e módulos.</strong>
+                                </p>
+                            </div>
+                            <p class="text-gray-600 text-sm">Deseja realmente continuar com a exclusão?</p>
+                        </div>
+                        <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3">
+                            <button id="btn-cancelar-exclusao" class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                Cancelar
+                            </button>
+                            <button id="btn-confirmar-exclusao" class="px-4 py-2 text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors">
+                                <i class="fas fa-trash mr-1"></i>
+                                Excluir mesmo assim
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(modal);
+
+                // Event listeners
+                document.getElementById('btn-cancelar-exclusao').onclick = () => {
+                    modal.remove();
+                    resolve(false);
+                };
+
+                document.getElementById('btn-confirmar-exclusao').onclick = () => {
+                    modal.remove();
+                    resolve(true);
+                };
+
+                // Fechar ao clicar fora
+                modal.onclick = (e) => {
+                    if (e.target === modal) {
+                        modal.remove();
+                        resolve(false);
+                    }
+                };
+
+                // Fechar com ESC
+                const escHandler = (e) => {
+                    if (e.key === 'Escape') {
+                        modal.remove();
+                        document.removeEventListener('keydown', escHandler);
+                        resolve(false);
+                    }
+                };
+                document.addEventListener('keydown', escHandler);
+            });
         }
 
         // Toggle opcoes baseado no tipo

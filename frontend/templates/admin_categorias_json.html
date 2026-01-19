@@ -2326,7 +2326,7 @@ qual o valor da causa?"></textarea>
 
         // Aplicar JSON nas Perguntas (JSON → Perguntas/Variáveis)
         // Esta função faz o inverso de atualizarJSON: o JSON vira a fonte de verdade
-        async function aplicarJsonNasPerguntas() {
+        async function aplicarJsonNasPerguntas(confirmarRemocaoVariaveisEmUso = false) {
             const categoriaId = document.getElementById('categoria-id').value;
             if (!categoriaId) {
                 alert('Salve a categoria primeiro para poder aplicar o JSON');
@@ -2347,15 +2347,17 @@ qual o valor da causa?"></textarea>
                 return;
             }
 
-            // Confirmação do usuário
-            const confirmar = confirm(
-                'ATENÇÃO: Esta ação irá sincronizar as perguntas e variáveis com o JSON.\n\n' +
-                '• Campos NOVOS no JSON → criarão novas perguntas/variáveis\n' +
-                '• Campos ALTERADOS → atualizarão tipo, opções, dependências\n' +
-                '• Campos REMOVIDOS do JSON → removerão perguntas/variáveis\n\n' +
-                'Deseja continuar?'
-            );
-            if (!confirmar) return;
+            // Confirmação do usuário (apenas na primeira chamada)
+            if (!confirmarRemocaoVariaveisEmUso) {
+                const confirmar = confirm(
+                    'ATENÇÃO: Esta ação irá sincronizar as perguntas e variáveis com o JSON.\n\n' +
+                    '• Campos NOVOS no JSON → criarão novas perguntas/variáveis\n' +
+                    '• Campos ALTERADOS → atualizarão tipo, opções, dependências\n' +
+                    '• Campos REMOVIDOS do JSON → removerão perguntas/variáveis\n\n' +
+                    'Deseja continuar?'
+                );
+                if (!confirmar) return;
+            }
 
             const btn = document.getElementById('btn-aplicar-json');
             const status = document.getElementById('status-aplicar-json');
@@ -2372,10 +2374,27 @@ qual o valor da causa?"></textarea>
                         ...getHeaders(),
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ json_content: jsonContent })
+                    body: JSON.stringify({
+                        json_content: jsonContent,
+                        confirmar_remocao_variaveis_em_uso: confirmarRemocaoVariaveisEmUso
+                    })
                 });
 
                 const resultado = await response.json();
+
+                // Trata caso de variáveis em uso que precisam de confirmação
+                if (!resultado.success && resultado.requer_confirmacao && resultado.variaveis_em_uso_condicoes) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-arrow-right mr-2"></i>Aplicar JSON nas Perguntas';
+                    status.textContent = '';
+
+                    const confirmarRemocao = await mostrarModalVariaveisEmUsoJson(resultado.variaveis_em_uso_condicoes);
+                    if (confirmarRemocao) {
+                        // Chama novamente com confirmação de remoção
+                        return aplicarJsonNasPerguntas(true);
+                    }
+                    return;
+                }
 
                 if (!resultado.success) {
                     // Mostra erros de validação detalhados
@@ -2428,6 +2447,107 @@ qual o valor da causa?"></textarea>
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-arrow-right mr-2"></i>Aplicar JSON nas Perguntas';
             }
+        }
+
+        // Modal de confirmação para variáveis em uso como condição de ativação (Aplicar JSON)
+        function mostrarModalVariaveisEmUsoJson(variaveisEmUso) {
+            return new Promise((resolve) => {
+                // Remove modal anterior se existir
+                const modalAnterior = document.getElementById('modal-variaveis-em-uso-json');
+                if (modalAnterior) modalAnterior.remove();
+
+                // Monta lista de variáveis e prompts afetados
+                let variaveisHtml = '';
+                variaveisEmUso.forEach(v => {
+                    const promptsNomes = v.prompts.map(p => {
+                        const tipoUso = p.tipo_uso && p.tipo_uso.length > 0
+                            ? ` (${p.tipo_uso.map(t => t === 'regra_primaria' ? 'Primária' : 'Fallback').join(', ')})`
+                            : '';
+                        return `<span class="text-gray-700">${p.titulo || p.nome}${tipoUso}</span>`;
+                    }).join(', ');
+
+                    variaveisHtml += `
+                        <div class="py-2 border-b border-gray-100 last:border-0">
+                            <div class="font-mono text-amber-700 font-medium">${v.slug}</div>
+                            <div class="text-sm text-gray-500 mt-1">
+                                <i class="fas fa-link mr-1"></i>Usada em: ${promptsNomes}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                const modal = document.createElement('div');
+                modal.id = 'modal-variaveis-em-uso-json';
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                modal.innerHTML = `
+                    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 overflow-hidden">
+                        <div class="bg-amber-500 px-6 py-4">
+                            <h3 class="text-lg font-bold text-white flex items-center">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>
+                                Atenção - Variáveis em Uso Serão Removidas
+                            </h3>
+                        </div>
+                        <div class="px-6 py-4">
+                            <p class="text-gray-700 mb-4">
+                                As seguintes variáveis seriam <strong>removidas</strong> pelo JSON, mas estão em uso como
+                                <strong>condição de ativação</strong> em módulos:
+                            </p>
+                            <div class="bg-gray-50 rounded-lg p-4 mb-4 max-h-64 overflow-y-auto border border-gray-200">
+                                ${variaveisHtml}
+                            </div>
+                            <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                                <p class="text-red-700 text-sm">
+                                    <i class="fas fa-exclamation-circle mr-1"></i>
+                                    <strong>Remover estas variáveis pode causar falhas na ativação de regras e módulos.</strong>
+                                    <br><br>
+                                    Se continuar, as variáveis serão <strong>desativadas</strong> (soft delete) para preservar o histórico.
+                                </p>
+                            </div>
+                            <p class="text-gray-600 text-sm">Deseja continuar com a aplicação do JSON?</p>
+                        </div>
+                        <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3">
+                            <button id="btn-cancelar-aplicar" class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                                Cancelar
+                            </button>
+                            <button id="btn-confirmar-aplicar" class="px-4 py-2 text-white bg-amber-600 rounded-lg hover:bg-amber-700 transition-colors">
+                                <i class="fas fa-check mr-1"></i>
+                                Aplicar mesmo assim
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(modal);
+
+                // Event listeners
+                document.getElementById('btn-cancelar-aplicar').onclick = () => {
+                    modal.remove();
+                    resolve(false);
+                };
+
+                document.getElementById('btn-confirmar-aplicar').onclick = () => {
+                    modal.remove();
+                    resolve(true);
+                };
+
+                // Fechar ao clicar fora
+                modal.onclick = (e) => {
+                    if (e.target === modal) {
+                        modal.remove();
+                        resolve(false);
+                    }
+                };
+
+                // Fechar com ESC
+                const escHandler = (e) => {
+                    if (e.key === 'Escape') {
+                        modal.remove();
+                        document.removeEventListener('keydown', escHandler);
+                        resolve(false);
+                    }
+                };
+                document.addEventListener('keydown', escHandler);
+            });
         }
 
         // Salvar perguntas no servidor

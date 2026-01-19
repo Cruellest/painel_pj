@@ -227,6 +227,11 @@
                     <option value="peca">Peca</option>
                     <option value="conteudo">Conteudo</option>
                 </select>
+                <select id="filtro-ativacao" class="flex-shrink-0 w-[160px] px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" onchange="filtrarModulos()">
+                    <option value="">Tipo de Ativacao</option>
+                    <option value="llm">LLM</option>
+                    <option value="deterministic">Regra Deterministica</option>
+                </select>
                 <select id="filtro-grupo" class="flex-shrink-0 w-[150px] px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white" onchange="onGrupoChange()">
                     <option value="">Todos os grupos</option>
                 </select>
@@ -1323,6 +1328,7 @@
             try {
                 const params = new URLSearchParams();
                 const tipo = document.getElementById('filtro-tipo').value;
+                const modoAtivacao = document.getElementById('filtro-ativacao').value;
                 const grupoId = document.getElementById('filtro-grupo').value;
                 const subgrupoId = document.getElementById('filtro-subgrupo').value;
                 const categoria = document.getElementById('filtro-categoria').value;
@@ -1330,6 +1336,7 @@
                 const apenasAtivos = document.getElementById('apenas-ativos').checked;
 
                 if (tipo) params.append('tipo', tipo);
+                if (modoAtivacao) params.append('modo_ativacao', modoAtivacao);
                 if (grupoId) params.append('group_id', grupoId);
                 if (subgrupoId) params.append('subgroup_id', subgrupoId);
                 if (categoria) params.append('categoria', categoria);
@@ -3280,18 +3287,24 @@
         function renderizarCampoValor(condicao, varInfo) {
             const tipo = varInfo?.tipo || 'text'; // Tipo raw para lógica, não traduzir
             const opcoes = varInfo?.opcoes || [];
-            const valor = condicao.valor || '';
+            // Normaliza valor booleano (1/0 -> true/false)
+            let valor = condicao.valor;
+            if (valor === undefined || valor === null) valor = '';
+            valor = normalizarValorBooleano(valor);
             const id = condicao.id;
 
             switch (tipo) {
                 case 'boolean':
+                    // Verifica se é true/false (já normalizados)
+                    const isTrue = valor === true || valor === 'true';
+                    const isFalse = valor === false || valor === 'false';
                     return `
                         <select id="valor-${id}"
                             class="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-[120px]"
                             onchange="atualizarCondicao(${id}, 'valor', this.value)">
                             <option value="">Selecione...</option>
-                            <option value="true" ${valor === 'true' || valor === true ? 'selected' : ''}>Sim (true)</option>
-                            <option value="false" ${valor === 'false' || valor === false ? 'selected' : ''}>Nao (false)</option>
+                            <option value="true" ${isTrue ? 'selected' : ''}>Sim (true)</option>
+                            <option value="false" ${isFalse ? 'selected' : ''}>Nao (false)</option>
                         </select>
                     `;
 
@@ -3537,7 +3550,7 @@
                         id: gerarIdUnico(),
                         variavel: c.variable || '',
                         operador: c.operator || 'equals',
-                        valor: c.value !== undefined ? c.value : ''
+                        valor: normalizarValorBooleano(c.value !== undefined ? c.value : '')
                     }));
 
                     selecionarModoAtivacao('deterministic');
@@ -3561,7 +3574,7 @@
                         id: gerarIdUnico(),
                         variavel: regra.variable || '',
                         operador: regra.operator || 'equals',
-                        valor: regra.value !== undefined ? regra.value : ''
+                        valor: normalizarValorBooleano(regra.value !== undefined ? regra.value : '')
                     }];
 
                     selecionarModoAtivacao('deterministic');
@@ -3574,16 +3587,30 @@
             }
         }
 
+        // Normaliza valor booleano (1/0, "1"/"0" -> true/false)
+        function normalizarValorBooleano(valor) {
+            if (valor === 1 || valor === "1" || valor === "true" || valor === true) {
+                return true;
+            }
+            if (valor === 0 || valor === "0" || valor === "false" || valor === false) {
+                return false;
+            }
+            return valor;
+        }
+
         // Carrega AST recursivamente (converte formato backend para frontend)
         function carregarASTRecursivo(conditions) {
             return conditions.map(c => {
                 if (c.type === 'condition') {
+                    // Normaliza valor booleano (1/0 -> true/false)
+                    let valor = c.value !== undefined ? c.value : '';
+                    valor = normalizarValorBooleano(valor);
                     return {
                         type: 'condition',
                         id: gerarIdUnico(),
                         variavel: c.variable || '',
                         operador: c.operator || 'equals',
-                        valor: c.value !== undefined ? c.value : ''
+                        valor: valor
                     };
                 } else if (c.type === 'and' || c.type === 'or') {
                     return {
@@ -3857,7 +3884,7 @@
                         id: gerarIdUnico(),
                         variavel: regra.variable || '',
                         operador: regra.operator || 'equals',
-                        valor: regra.value !== undefined ? regra.value : ''
+                        valor: normalizarValorBooleano(regra.value !== undefined ? regra.value : '')
                     }];
                 }
                 // Formato antigo: { logic: 'and', conditions: [...] }
@@ -3868,7 +3895,7 @@
                         id: gerarIdUnico(),
                         variavel: c.variable || '',
                         operador: c.operator || 'equals',
-                        valor: c.value !== undefined ? c.value : ''
+                        valor: normalizarValorBooleano(c.value !== undefined ? c.value : '')
                     }));
                 }
                 else {

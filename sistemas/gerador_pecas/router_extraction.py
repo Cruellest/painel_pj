@@ -202,6 +202,17 @@ class SincronizarPerguntasJsonResponse(BaseModel):
 class AplicarJsonRequest(BaseModel):
     """Schema de entrada para aplicação de JSON"""
     json_content: str = Field(..., description="Conteúdo JSON a aplicar (string)")
+    confirmar_remocao_variaveis_em_uso: bool = Field(
+        False,
+        description="Se True, força remoção de variáveis mesmo que estejam em uso como condição de ativação"
+    )
+
+
+class VariavelEmUsoDetalhe(BaseModel):
+    """Detalhe de uma variável em uso como condição de ativação"""
+    slug: str
+    label: str
+    prompts: List[dict]  # [{id, nome, titulo, tipo_uso}]
 
 
 class AplicarJsonResponse(BaseModel):
@@ -224,6 +235,9 @@ class AplicarJsonResponse(BaseModel):
     erros_validacao: Optional[List[dict]] = None
     # Tempo de execução
     tempo_ms: Optional[int] = None
+    # Confirmação necessária para variáveis em uso
+    requer_confirmacao: bool = False
+    variaveis_em_uso_condicoes: List[VariavelEmUsoDetalhe] = []
 
 
 # --- Criação em Lote de Perguntas (com análise de dependências por IA) ---
@@ -2840,6 +2854,60 @@ async def aplicar_json_nas_perguntas(
     to_create = slugs_json - slugs_bd
     to_update = slugs_json & slugs_bd
     to_delete = slugs_bd - slugs_json
+
+    # 5.1 VERIFICAÇÃO DE SEGURANÇA: Checa se variáveis a remover estão em uso como condição de ativação
+    if to_delete and not request.confirmar_remocao_variaveis_em_uso:
+        from admin.models_prompts import PromptModulo
+
+        variaveis_em_uso = []
+        for slug in to_delete:
+            # Verifica uso em prompts como condição de ativação
+            usos = db.query(PromptVariableUsage).filter(
+                PromptVariableUsage.variable_slug == slug
+            ).all()
+
+            if usos:
+                prompt_ids = [u.prompt_id for u in usos]
+                prompts = db.query(PromptModulo).filter(
+                    PromptModulo.id.in_(prompt_ids)
+                ).all()
+
+                prompts_info = []
+                for p in prompts:
+                    tipo_uso = []
+                    if p.regra_deterministica:
+                        regra_json = p.regra_deterministica if isinstance(p.regra_deterministica, dict) else json.loads(p.regra_deterministica)
+                        if _variavel_na_regra(slug, regra_json):
+                            tipo_uso.append("regra_primaria")
+                    if p.regra_deterministica_secundaria:
+                        regra_sec_json = p.regra_deterministica_secundaria if isinstance(p.regra_deterministica_secundaria, dict) else json.loads(p.regra_deterministica_secundaria)
+                        if _variavel_na_regra(slug, regra_sec_json):
+                            tipo_uso.append("regra_secundaria")
+
+                    prompts_info.append({
+                        "id": p.id,
+                        "nome": p.nome,
+                        "titulo": p.titulo,
+                        "tipo_uso": tipo_uso
+                    })
+
+                variavel = variaveis_por_slug.get(slug)
+                variaveis_em_uso.append(VariavelEmUsoDetalhe(
+                    slug=slug,
+                    label=variavel.label if variavel else slug,
+                    prompts=prompts_info
+                ))
+
+        # Se há variáveis em uso, retorna pedindo confirmação
+        if variaveis_em_uso:
+            return AplicarJsonResponse(
+                success=False,
+                requer_confirmacao=True,
+                variaveis_em_uso_condicoes=variaveis_em_uso,
+                mensagem=f"{len(variaveis_em_uso)} variável(is) a remover está(ão) em uso como condição de ativação",
+                erro="VARIAVEIS_EM_USO_CONDICOES",
+                tempo_ms=int((time.time() - start_time) * 1000)
+            )
 
     # Contadores e detalhes
     perguntas_criadas = 0
