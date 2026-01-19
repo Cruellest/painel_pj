@@ -285,21 +285,47 @@ REGRAS CRÍTICAS:
 6. Variáveis devem estar em snake_case"""
 
     def _buscar_variaveis_disponiveis(self) -> List[Dict]:
-        """Busca todas as variáveis disponíveis no sistema."""
-        variaveis = self.db.query(ExtractionVariable).filter(
+        """
+        Busca todas as variáveis disponíveis no sistema.
+        
+        Inclui:
+        - ExtractionVariable: variáveis extraídas de PDFs (tabela do banco)
+        - ProcessVariableDefinition: variáveis derivadas do XML do processo
+        """
+        variaveis = []
+        
+        # 1. Variáveis de extração (PDFs) do banco de dados
+        extraction_vars = self.db.query(ExtractionVariable).filter(
             ExtractionVariable.ativo == True
         ).all()
 
-        return [
-            {
+        for v in extraction_vars:
+            variaveis.append({
                 "slug": v.slug,
                 "label": v.label,
                 "tipo": v.tipo,
                 "descricao": v.descricao,
-                "opcoes": v.opcoes
-            }
-            for v in variaveis
-        ]
+                "opcoes": v.opcoes,
+                "fonte": "extracao"  # Para identificar origem
+            })
+        
+        # 2. Variáveis de processo (XML) - derivadas/calculadas
+        try:
+            from .services_process_variables import ProcessVariableResolver
+            
+            for definition in ProcessVariableResolver.get_all_definitions():
+                variaveis.append({
+                    "slug": definition.slug,
+                    "label": definition.label,
+                    "tipo": definition.tipo,
+                    "descricao": definition.descricao,
+                    "opcoes": None,
+                    "fonte": "processo"  # Variável calculada do XML
+                })
+        except Exception as e:
+            logger.warning(f"[REGRA-DETERMINISTICO] Erro ao carregar variáveis de processo: {e}")
+        
+        return variaveis
 
     def _montar_prompt_geracao(
         self,

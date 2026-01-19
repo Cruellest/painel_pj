@@ -420,6 +420,73 @@ def _resolver_municipio_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
     return False
 
 
+def _resolver_uniao_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
+    """
+    Verifica se a União Federal está no polo passivo (réu).
+
+    Considera como "União":
+    - "União" ou "União Federal"
+    - Órgãos federais: INSS, CEF, FUNASA, IBAMA, etc.
+    - Autarquias federais
+
+    Args:
+        dados: Dados do processo
+
+    Returns:
+        True se União está no polo passivo
+        False se União NÃO está no polo passivo
+        None se não há partes no polo passivo
+    """
+    if not dados.polo_passivo:
+        return None
+
+    termos_uniao = [
+        "uniao",
+        "união",
+        "união federal",
+        "uniao federal",
+        "u.f.",
+        "governo federal",
+    ]
+    
+    # Órgãos/entidades federais comuns em processos
+    orgaos_federais = [
+        "inss",
+        "instituto nacional do seguro social",
+        "cef",
+        "caixa economica federal",
+        "caixa econômica federal",
+        "funasa",
+        "ibama",
+        "incra",
+        "dnit",
+        "anatel",
+        "anvisa",
+        "anac",
+        "ans",
+        "anp",
+        "funai",
+        "receita federal",
+        "ministerio",
+        "ministério",
+    ]
+
+    for parte in dados.polo_passivo:
+        nome_lower = parte.nome.lower()
+        
+        # Verifica termos diretos de União
+        for termo in termos_uniao:
+            if termo in nome_lower:
+                return True
+        
+        # Verifica órgãos federais
+        for orgao in orgaos_federais:
+            if orgao in nome_lower:
+                return True
+
+    return False
+
+
 # =============================================================================
 # REGISTRO DAS VARIÁVEIS
 # =============================================================================
@@ -485,4 +552,13 @@ ProcessVariableResolver.register(ProcessVariableDefinition(
     tipo="boolean",
     descricao="True se algum município de MS está no polo passivo do processo.",
     resolver=_resolver_municipio_polo_passivo
+))
+
+# União Federal no polo passivo
+ProcessVariableResolver.register(ProcessVariableDefinition(
+    slug="uniao_polo_passivo",
+    label="União no Polo Passivo",
+    tipo="boolean",
+    descricao="True se a União Federal ou órgão federal está no polo passivo do processo.",
+    resolver=_resolver_uniao_polo_passivo
 ))
