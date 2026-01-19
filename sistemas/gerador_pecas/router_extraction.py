@@ -15,7 +15,7 @@ from typing import List, Optional, Any, Dict
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from pydantic import BaseModel, Field
 
@@ -1358,16 +1358,23 @@ async def obter_pergunta(
     current_user: User = Depends(get_current_active_user)
 ):
     """Obtém uma pergunta específica"""
-    pergunta = db.query(ExtractionQuestion).filter(ExtractionQuestion.id == pergunta_id).first()
+    perf_ctx.set_action("obter_pergunta")
+
+    # PERFORMANCE: Usa joinedload para evitar N+1 query
+    pergunta = db.query(ExtractionQuestion).options(
+        joinedload(ExtractionQuestion.categoria)
+    ).filter(ExtractionQuestion.id == pergunta_id).first()
+
     if not pergunta:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
 
-    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == pergunta.categoria_id).first()
+    # Usa o relacionamento já carregado (sem query adicional)
+    categoria_nome = pergunta.categoria.nome if pergunta.categoria else None
 
     return ExtractionQuestionResponse(
         id=pergunta.id,
         categoria_id=pergunta.categoria_id,
-        categoria_nome=categoria.nome if categoria else None,
+        categoria_nome=categoria_nome,
         pergunta=pergunta.pergunta,
         nome_variavel_sugerido=pergunta.nome_variavel_sugerido,
         tipo_sugerido=pergunta.tipo_sugerido,

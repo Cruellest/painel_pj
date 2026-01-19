@@ -70,7 +70,60 @@ def setup_db_instrumentation(engine: Engine):
     event.listen(engine, "before_cursor_execute", _before_cursor_execute)
     event.listen(engine, "after_cursor_execute", _after_cursor_execute)
 
+    # PERFORMANCE: Instrumenta tempo de espera por conexão do pool
+    setup_pool_instrumentation(engine)
+
     logger.info("[PerfInstrumentation] Instrumentação de DB configurada")
+
+
+# ==================================================
+# INSTRUMENTAÇÃO DE POOL DE CONEXÕES
+# ==================================================
+
+# Variável thread-local para armazenar tempo de checkout
+import threading
+_checkout_times = threading.local()
+
+
+def _on_checkout(dbapi_conn, connection_record, connection_proxy):
+    """Callback ao obter conexão do pool - marca tempo de espera."""
+    # Calcula tempo de espera (se houve)
+    checkout_start = getattr(_checkout_times, 'start', None)
+    if checkout_start:
+        wait_ms = (time.perf_counter() - checkout_start) * 1000
+        _checkout_times.start = None  # Limpa
+
+        # Registra no contexto de performance
+        metrics = perf_ctx.get_metrics()
+        if metrics:
+            # Adiciona ao db_total_ms como "tempo de pool"
+            if wait_ms > 50:  # > 50ms é significativo
+                perf_ctx.add_db_time(wait_ms)
+                logger.warning(f"[PerfPool] Espera por conexão: {wait_ms:.1f}ms")
+
+
+def _on_connect(dbapi_conn, connection_record):
+    """Callback ao criar nova conexão - marca início da espera."""
+    _checkout_times.start = time.perf_counter()
+
+
+def setup_pool_instrumentation(engine: Engine):
+    """
+    Configura listeners para medir tempo de espera por conexão do pool.
+
+    IMPORTANTE: Isso ajuda a identificar pool exhaustion como gargalo.
+    """
+    from sqlalchemy import event as sa_event
+    from sqlalchemy.pool import Pool
+
+    # Listener para quando uma conexão é retirada do pool
+    if hasattr(engine, 'pool'):
+        try:
+            sa_event.listen(engine.pool, "checkout", _on_checkout)
+            sa_event.listen(engine.pool, "connect", _on_connect)
+            logger.info("[PerfInstrumentation] Instrumentação de Pool configurada")
+        except Exception as e:
+            logger.warning(f"[PerfInstrumentation] Não foi possível instrumentar pool: {e}")
 
 
 # ==================================================

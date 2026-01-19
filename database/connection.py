@@ -50,7 +50,8 @@ else:
     # PERFORMANCE: Pool sizing baseado no ambiente
     POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20" if IS_PRODUCTION else "10"))
     MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "15" if IS_PRODUCTION else "5"))
-    POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "60"))
+    # PERFORMANCE: Reduzido de 60 para 10s - melhor falhar rápido que esperar muito
+    POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "10"))
     POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 min
 
     engine = create_engine(
