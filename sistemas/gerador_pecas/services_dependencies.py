@@ -193,18 +193,111 @@ class DependencyInferenceService:
                     "erro": "A IA não retornou as perguntas normalizadas. Tente novamente."
                 }
 
-            # Valida que todas as perguntas foram processadas
+            # ═══════════════════════════════════════════════════════════════
+            # VALIDAÇÃO RIGOROSA 1:1 - A IA NÃO PODE CRIAR PERGUNTAS EXTRAS
+            # ═══════════════════════════════════════════════════════════════
+            #
+            # Regra: O número de perguntas retornadas DEVE ser EXATAMENTE igual
+            # ao número de perguntas fornecidas pelo usuário.
+            #
+            # A IA pode: reescrever, normalizar, criar dependências, definir variáveis
+            # A IA NÃO pode: adicionar, dividir, fundir ou remover perguntas
+            # ═══════════════════════════════════════════════════════════════
+
+            n_fornecidas = len(perguntas)
+            n_retornadas = len(perguntas_normalizadas)
+
+            # Validação 1: Quantidade exata
+            if n_retornadas != n_fornecidas:
+                logger.error(
+                    f"[VALIDAÇÃO 1:1 FALHOU] Quantidade incorreta de perguntas. "
+                    f"Fornecidas: {n_fornecidas}, Retornadas pela IA: {n_retornadas}. "
+                    f"Perguntas originais: {perguntas[:5]}..."  # Log primeiras 5 para debug
+                )
+                return {
+                    "success": False,
+                    "erro": (
+                        f"A IA retornou {n_retornadas} perguntas, mas foram fornecidas {n_fornecidas}. "
+                        f"Nenhuma pergunta foi criada. A IA não pode adicionar ou remover perguntas."
+                    )
+                }
+
+            # Validação 2: Índices únicos e dentro do range
+            indices_encontrados = []
+            indices_duplicados = []
+            indices_fora_range = []
+
+            for pn in perguntas_normalizadas:
+                idx = pn.get("indice")
+                if idx is None:
+                    indices_fora_range.append("null")
+                    continue
+                if not isinstance(idx, int):
+                    indices_fora_range.append(str(idx))
+                    continue
+                if idx < 0 or idx >= n_fornecidas:
+                    indices_fora_range.append(str(idx))
+                    continue
+                if idx in indices_encontrados:
+                    indices_duplicados.append(idx)
+                else:
+                    indices_encontrados.append(idx)
+
+            if indices_duplicados:
+                logger.error(
+                    f"[VALIDAÇÃO 1:1 FALHOU] Índices duplicados: {indices_duplicados}. "
+                    f"N fornecidas: {n_fornecidas}"
+                )
+                return {
+                    "success": False,
+                    "erro": (
+                        f"A IA retornou índices duplicados: {indices_duplicados}. "
+                        f"Nenhuma pergunta foi criada."
+                    )
+                }
+
+            if indices_fora_range:
+                logger.error(
+                    f"[VALIDAÇÃO 1:1 FALHOU] Índices fora do range [0, {n_fornecidas-1}]: {indices_fora_range}. "
+                )
+                return {
+                    "success": False,
+                    "erro": (
+                        f"A IA retornou índices inválidos: {indices_fora_range}. "
+                        f"Índices válidos: 0 a {n_fornecidas-1}. Nenhuma pergunta foi criada."
+                    )
+                }
+
+            # Validação 3: Todos os índices presentes
+            indices_faltando = set(range(n_fornecidas)) - set(indices_encontrados)
+            if indices_faltando:
+                logger.error(
+                    f"[VALIDAÇÃO 1:1 FALHOU] Índices faltando: {sorted(indices_faltando)}. "
+                    f"Encontrados: {sorted(indices_encontrados)}"
+                )
+                return {
+                    "success": False,
+                    "erro": (
+                        f"A IA não retornou os índices: {sorted(indices_faltando)}. "
+                        f"Todas as {n_fornecidas} perguntas devem ser processadas. Nenhuma pergunta foi criada."
+                    )
+                }
+
+            logger.info(
+                f"[VALIDAÇÃO 1:1 OK] {n_fornecidas} perguntas fornecidas, "
+                f"{n_retornadas} retornadas, todos os índices válidos."
+            )
+
+            # Processa perguntas normalizadas validadas
             perguntas_map = {}
             erros_validacao = []
 
             for pn in perguntas_normalizadas:
                 idx = pn.get("indice")
-                if idx is None or idx < 0 or idx >= len(perguntas):
-                    continue
 
                 texto_final = pn.get("texto_final", "").strip()
                 nome_base = pn.get("nome_base_variavel", "").strip()
-                tipo_sugerido = pn.get("tipo_sugerido", "").strip().lower()
+                tipo_sugerido = pn.get("tipo_sugerido", "").strip().lower() if pn.get("tipo_sugerido") else ""
                 opcoes_sugeridas = pn.get("opcoes_sugeridas")
 
                 # Validações obrigatórias
@@ -240,14 +333,14 @@ class DependencyInferenceService:
                     "opcoes_sugeridas": opcoes_sugeridas if isinstance(opcoes_sugeridas, list) else None
                 }
 
-            # Verifica se todas as perguntas foram processadas
-            if len(perguntas_map) != len(perguntas):
-                faltando = set(range(len(perguntas))) - set(int(k) for k in perguntas_map.keys())
+            # Verifica se todas as perguntas foram processadas com sucesso
+            if len(perguntas_map) != n_fornecidas:
+                faltando = set(range(n_fornecidas)) - set(int(k) for k in perguntas_map.keys())
                 if faltando:
-                    erros_validacao.append(f"Perguntas não processadas: {sorted(faltando)}")
+                    erros_validacao.append(f"Perguntas com dados inválidos: {sorted(faltando)}")
 
             if erros_validacao:
-                logger.error(f"Erros de validação: {erros_validacao}")
+                logger.error(f"Erros de validação de conteúdo: {erros_validacao}")
                 return {
                     "success": False,
                     "erro": f"Erros na normalização: {'; '.join(erros_validacao)}"
@@ -443,6 +536,20 @@ FORMATO DE RESPOSTA (JSON estrito):
     }
 }
 
+═══════════════════════════════════════════════════════════════
+REGRA PROIBITIVA: NÃO CRIE PERGUNTAS EXTRAS
+═══════════════════════════════════════════════════════════════
+
+VOCÊ NÃO PODE:
+- Adicionar perguntas novas que não estejam na lista original
+- Dividir uma pergunta em duas ou mais
+- Fundir duas perguntas em uma
+- Remover perguntas (exceto linhas vazias já filtradas)
+
+O array perguntas_normalizadas DEVE conter EXATAMENTE o mesmo número
+de perguntas que foi enviado, com os mesmos índices (0 a N-1).
+Se violar esta regra, a operação será REJEITADA.
+
 IMPORTANTE:
 - perguntas_normalizadas é OBRIGATÓRIO e deve conter TODAS as perguntas
 - Cada pergunta DEVE ter: texto_final, nome_base_variavel, tipo_sugerido
@@ -498,7 +605,22 @@ REGRAS PARA nome_base_variavel:
 - Máximo 4 palavras separadas por underscore
 - Deve ser autoexplicativo sem ler a pergunta
 
-CRÍTICO: O array perguntas_normalizadas DEVE conter EXATAMENTE {total_perguntas} objetos (índices 0 a {total_perguntas - 1}).
+═══════════════════════════════════════════════════════════════
+CRÍTICO: VALIDAÇÃO DE QUANTIDADE
+═══════════════════════════════════════════════════════════════
+
+O array perguntas_normalizadas DEVE conter EXATAMENTE {total_perguntas} objetos.
+Cada objeto DEVE ter um campo "indice" único de 0 a {total_perguntas - 1}.
+
+PROIBIDO:
+- Criar perguntas adicionais (retornar mais que {total_perguntas})
+- Dividir uma pergunta em múltiplas
+- Fundir perguntas
+- Omitir perguntas (retornar menos que {total_perguntas})
+- Repetir índices
+
+Se você retornar quantidade diferente de {total_perguntas}, a operação será REJEITADA.
+
 Retorne APENAS JSON válido no formato especificado."""
 
     def _get_system_prompt(self) -> str:

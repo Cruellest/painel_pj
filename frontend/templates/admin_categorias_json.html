@@ -281,6 +281,24 @@
                                     </div>
                                 </div>
                                 <p class="text-xs text-gray-400 mb-2"><i class="fas fa-grip-vertical mr-1"></i>Arraste as perguntas para reordenar manualmente</p>
+
+                                <!-- Aviso de inconsistência JSON vs Perguntas -->
+                                <div id="aviso-inconsistencia" class="hidden mb-3 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                                    <div class="flex items-start gap-3">
+                                        <i class="fas fa-exclamation-triangle text-amber-500 mt-0.5"></i>
+                                        <div class="flex-1">
+                                            <p class="text-sm font-medium text-amber-800" id="aviso-inconsistencia-texto">
+                                                Existem variáveis no JSON sem perguntas correspondentes
+                                            </p>
+                                            <p class="text-xs text-amber-600 mt-1" id="aviso-inconsistencia-detalhes"></p>
+                                            <button type="button" onclick="sincronizarPerguntasComJson()"
+                                                class="mt-2 px-3 py-1.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 text-sm flex items-center gap-1">
+                                                <i class="fas fa-sync-alt"></i> Sincronizar Perguntas com JSON
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div id="lista-perguntas" class="space-y-3 max-h-96 overflow-auto border border-gray-200 rounded-lg p-3 bg-gray-50">
                                     <p class="text-gray-400 text-sm text-center py-8">
                                         <i class="fas fa-question-circle text-2xl mb-2 block"></i>
@@ -711,6 +729,17 @@ qual o valor da causa?"></textarea>
                     <label for="analisar-dependencias-lote" class="text-sm text-gray-700">
                         Processar com IA (normalização + dependências)
                     </label>
+                </div>
+
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div class="flex items-start gap-2">
+                        <i class="fas fa-shield-alt text-amber-500 mt-0.5"></i>
+                        <div class="text-xs text-amber-700">
+                            <strong>Garantia 1:1:</strong> A IA pode reescrever e organizar, mas
+                            <span class="underline">não pode criar perguntas extras</span>.
+                            O número final de perguntas será <strong>exatamente igual</strong> ao que você digitou.
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1372,7 +1401,14 @@ qual o valor da causa?"></textarea>
 
             } catch (error) {
                 console.error('Erro:', error);
-                status.textContent = `Erro: ${error.message}`;
+                // Mensagem mais clara para erros de validação 1:1
+                const isValidacao11 = error.message.includes('retornou') &&
+                    (error.message.includes('perguntas') || error.message.includes('índices'));
+                if (isValidacao11) {
+                    status.innerHTML = `<i class="fas fa-exclamation-triangle mr-1"></i>${error.message}`;
+                } else {
+                    status.textContent = `Erro: ${error.message}`;
+                }
                 status.className = 'text-sm text-red-500';
             } finally {
                 btn.disabled = false;
@@ -2085,8 +2121,97 @@ qual o valor da causa?"></textarea>
                 }));
 
                 atualizarListaPerguntas();
+
+                // Verifica consistência JSON vs perguntas
+                await verificarConsistenciaJsonPerguntas(categoriaId);
             } catch (error) {
                 console.error('Erro ao carregar perguntas:', error);
+            }
+        }
+
+        // Verifica consistência entre JSON e perguntas
+        async function verificarConsistenciaJsonPerguntas(categoriaId) {
+            const avisoDiv = document.getElementById('aviso-inconsistencia');
+            const avisoTexto = document.getElementById('aviso-inconsistencia-texto');
+            const avisoDetalhes = document.getElementById('aviso-inconsistencia-detalhes');
+
+            if (!categoriaId) {
+                avisoDiv.classList.add('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_EXTRACTION}/categorias/${categoriaId}/verificar-consistencia`, {
+                    headers: getHeaders()
+                });
+
+                if (!response.ok) {
+                    avisoDiv.classList.add('hidden');
+                    return;
+                }
+
+                const resultado = await response.json();
+
+                if (resultado.consistente) {
+                    avisoDiv.classList.add('hidden');
+                } else {
+                    avisoDiv.classList.remove('hidden');
+                    avisoTexto.textContent = resultado.mensagem;
+
+                    // Monta detalhes
+                    const detalhes = [];
+                    if (resultado.variaveis_sem_pergunta && resultado.variaveis_sem_pergunta.length > 0) {
+                        const slugs = resultado.variaveis_sem_pergunta.map(v => v.slug).join(', ');
+                        detalhes.push(`Variáveis: ${slugs}`);
+                    }
+                    avisoDetalhes.textContent = detalhes.join(' | ');
+                }
+            } catch (error) {
+                console.error('Erro ao verificar consistência:', error);
+                avisoDiv.classList.add('hidden');
+            }
+        }
+
+        // Sincroniza perguntas com o JSON da categoria
+        async function sincronizarPerguntasComJson() {
+            const categoriaId = document.getElementById('categoria-id').value;
+
+            if (!categoriaId) {
+                alert('Salve a categoria primeiro');
+                return;
+            }
+
+            const btn = event.target.closest('button');
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
+
+            try {
+                const response = await fetch(`${API_EXTRACTION}/categorias/${categoriaId}/sincronizar-perguntas-json`, {
+                    method: 'POST',
+                    headers: getHeaders()
+                });
+
+                const resultado = await response.json();
+
+                if (resultado.success) {
+                    // Esconde o aviso
+                    document.getElementById('aviso-inconsistencia').classList.add('hidden');
+
+                    // Recarrega as perguntas
+                    await carregarPerguntasCategoria(categoriaId);
+
+                    // Mostra mensagem de sucesso
+                    alert(resultado.mensagem || 'Sincronização concluída');
+                } else {
+                    alert(resultado.erro || 'Erro ao sincronizar');
+                }
+            } catch (error) {
+                console.error('Erro ao sincronizar:', error);
+                alert('Erro ao sincronizar perguntas com JSON');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
             }
         }
 

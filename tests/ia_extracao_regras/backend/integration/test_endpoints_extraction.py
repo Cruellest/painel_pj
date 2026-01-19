@@ -238,5 +238,182 @@ class TestMigrations(unittest.TestCase):
         Base.metadata.drop_all(bind=engine)
 
 
+class TestBulkQuestionsEndpoint(unittest.TestCase):
+    """
+    Testes de integração para endpoint de criação de perguntas em lote.
+
+    Valida a regra 1:1: A IA não pode criar perguntas extras.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        """Configura banco em memória."""
+        cls.engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False}
+        )
+        cls.TestingSessionLocal = sessionmaker(bind=cls.engine)
+
+        from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON
+        from sistemas.gerador_pecas.models_extraction import (
+            ExtractionQuestion, ExtractionModel, ExtractionVariable,
+            PromptVariableUsage, PromptActivationLog
+        )
+        from admin.models_prompts import PromptModulo
+        from admin.models_prompt_groups import PromptGroup, PromptSubgroup
+        from auth.models import User
+
+        Base.metadata.create_all(bind=cls.engine)
+
+    @classmethod
+    def tearDownClass(cls):
+        """Limpa recursos."""
+        Base.metadata.drop_all(bind=cls.engine)
+
+    def setUp(self):
+        """Configura sessão para cada teste."""
+        self.db = self.TestingSessionLocal()
+
+        def override_get_db():
+            try:
+                yield self.db
+            finally:
+                pass
+
+        app.dependency_overrides[get_db] = override_get_db
+        self.client = TestClient(app)
+
+        # Cria dados de teste
+        self.user = self._criar_usuario_teste()
+        self.categoria = self._criar_categoria_teste()
+
+    def tearDown(self):
+        """Limpa sessão."""
+        self.db.rollback()
+        self.db.close()
+
+    def _criar_usuario_teste(self):
+        """Cria usuário de teste."""
+        from auth.models import User
+
+        user = User(
+            username="bulk_test_user",
+            full_name="Bulk Test User",
+            email="bulk@test.com",
+            hashed_password="$2b$12$test",
+            role="admin",
+            is_active=True
+        )
+        self.db.add(user)
+        self.db.commit()
+        return user
+
+    def _criar_categoria_teste(self):
+        """Cria categoria de teste."""
+        from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON
+
+        categoria = CategoriaResumoJSON(
+            nome="bulk_test",
+            titulo="Bulk Test",
+            descricao="Categoria para teste de bulk",
+            codigos_documento=[999],
+            formato_json='{}'
+        )
+        self.db.add(categoria)
+        self.db.commit()
+        return categoria
+
+    @patch('sistemas.gerador_pecas.services_dependencies.gemini_service')
+    @patch('sistemas.gerador_pecas.services_dependencies.get_thinking_level')
+    def test_endpoint_rejeita_ia_com_perguntas_extras(self, mock_thinking, mock_gemini):
+        """
+        Testa que endpoint rejeita quando IA retorna mais perguntas.
+        """
+        mock_thinking.return_value = "medium"
+
+        # IA retorna 4 perguntas quando usuário enviou 3
+        resposta_ia = {
+            "perguntas_normalizadas": [
+                {"indice": 0, "texto_final": "P1?", "nome_base_variavel": "v1", "tipo_sugerido": "text"},
+                {"indice": 1, "texto_final": "P2?", "nome_base_variavel": "v2", "tipo_sugerido": "text"},
+                {"indice": 2, "texto_final": "P3?", "nome_base_variavel": "v3", "tipo_sugerido": "text"},
+                {"indice": 3, "texto_final": "Extra inventada?", "nome_base_variavel": "v4", "tipo_sugerido": "text"},
+            ],
+            "dependencias": [],
+            "ordem_recomendada": [0, 1, 2, 3],
+            "arvore": {}
+        }
+
+        mock_response = AsyncMock()
+        mock_response.success = True
+        mock_response.content = json.dumps(resposta_ia)
+        mock_gemini.generate = AsyncMock(return_value=mock_response)
+
+        # Patch para retornar JSON mockado
+        with patch('sistemas.gerador_pecas.services_dependencies.DependencyInferenceService._extrair_json_resposta',
+                   return_value=resposta_ia):
+
+            # Chama diretamente o serviço para testar validação
+            from sistemas.gerador_pecas.services_dependencies import DependencyInferenceService
+            import asyncio
+
+            service = DependencyInferenceService(self.db)
+            resultado = asyncio.get_event_loop().run_until_complete(
+                service.analisar_dependencias_batch(
+                    perguntas=["P1 original", "P2 original", "P3 original"],  # 3 perguntas
+                    nomes_variaveis=[None, None, None],
+                    categoria_nome="Teste"
+                )
+            )
+
+        # DEVE falhar - 4 retornadas vs 3 enviadas
+        self.assertFalse(resultado.get("success", True))
+        self.assertIn("retornou 4", resultado.get("erro", ""))
+
+    @patch('sistemas.gerador_pecas.services_dependencies.gemini_service')
+    @patch('sistemas.gerador_pecas.services_dependencies.get_thinking_level')
+    def test_endpoint_aceita_quantidade_correta(self, mock_thinking, mock_gemini):
+        """
+        Testa que endpoint aceita quando IA retorna quantidade correta.
+        """
+        mock_thinking.return_value = "medium"
+
+        # IA retorna exatamente 3 perguntas
+        resposta_ia = {
+            "perguntas_normalizadas": [
+                {"indice": 0, "texto_final": "Pergunta 1 normalizada?", "nome_base_variavel": "var1", "tipo_sugerido": "boolean"},
+                {"indice": 1, "texto_final": "Pergunta 2 normalizada?", "nome_base_variavel": "var2", "tipo_sugerido": "text"},
+                {"indice": 2, "texto_final": "Pergunta 3 normalizada?", "nome_base_variavel": "var3", "tipo_sugerido": "choice", "opcoes_sugeridas": ["a", "b"]},
+            ],
+            "dependencias": [],
+            "ordem_recomendada": [0, 1, 2],
+            "arvore": {}
+        }
+
+        mock_response = AsyncMock()
+        mock_response.success = True
+        mock_response.content = json.dumps(resposta_ia)
+        mock_gemini.generate = AsyncMock(return_value=mock_response)
+
+        with patch('sistemas.gerador_pecas.services_dependencies.DependencyInferenceService._extrair_json_resposta',
+                   return_value=resposta_ia):
+
+            from sistemas.gerador_pecas.services_dependencies import DependencyInferenceService
+            import asyncio
+
+            service = DependencyInferenceService(self.db)
+            resultado = asyncio.get_event_loop().run_until_complete(
+                service.analisar_dependencias_batch(
+                    perguntas=["P1 bagunçada", "P2 bagunçada", "P3 bagunçada"],  # 3 perguntas
+                    nomes_variaveis=[None, None, None],
+                    categoria_nome="Teste"
+                )
+            )
+
+        # DEVE aceitar - quantidade correta
+        self.assertTrue(resultado.get("success", False))
+        self.assertEqual(len(resultado.get("perguntas_normalizadas", {})), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
