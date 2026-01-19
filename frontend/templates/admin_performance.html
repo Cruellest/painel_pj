@@ -552,7 +552,7 @@
     async function loadSystemSummary() {
         const hours = document.getElementById('filterHours').value;
         try {
-            const response = await fetch(`/admin/performance/summary?hours=${hours}`, {
+            const response = await fetch(`/admin/api/performance/summary?hours=${hours}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
@@ -661,7 +661,7 @@
         params.append('limit', '100');
 
         try {
-            const response = await fetch(`/admin/performance/logs?${params}`, {
+            const response = await fetch(`/admin/api/performance/logs?${params}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
@@ -712,7 +712,7 @@
 
     async function loadSystemActions() {
         try {
-            const response = await fetch('/admin/performance/actions', {
+            const response = await fetch('/admin/api/performance/actions', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
@@ -758,7 +758,7 @@
 
     async function loadRouteMappings() {
         try {
-            const response = await fetch('/admin/performance/route-maps', {
+            const response = await fetch('/admin/api/performance/route-maps', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
@@ -804,7 +804,7 @@
     async function loadTopRoutes() {
         const hours = document.getElementById('filterHours').value;
         try {
-            const response = await fetch(`/admin/performance/top-routes?hours=${hours}&limit=15`, {
+            const response = await fetch(`/admin/api/performance/top-routes?hours=${hours}&limit=15`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
@@ -854,7 +854,7 @@
         }
 
         try {
-            const response = await fetch('/admin/performance/route-maps', {
+            const response = await fetch('/admin/api/performance/route-maps', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -894,7 +894,7 @@
 
     async function updateRouteMap(id, data) {
         try {
-            const response = await fetch(`/admin/performance/route-maps/${id}`, {
+            const response = await fetch(`/admin/api/performance/route-maps/${id}`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -921,7 +921,7 @@
         if (!confirm('Remover este mapeamento?')) return;
 
         try {
-            const response = await fetch(`/admin/performance/route-maps/${id}`, {
+            const response = await fetch(`/admin/api/performance/route-maps/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -943,7 +943,7 @@
 
     async function loadSystemFilters() {
         try {
-            const response = await fetch('/admin/performance/systems', {
+            const response = await fetch('/admin/api/performance/systems', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await response.json();
@@ -958,7 +958,7 @@
     async function cleanupSystemLogs() {
         if (!confirm('Remover logs com mais de 7 dias?')) return;
         try {
-            const response = await fetch('/admin/performance/cleanup?days=7', {
+            const response = await fetch('/admin/api/performance/cleanup?days=7', {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
