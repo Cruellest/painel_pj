@@ -204,6 +204,8 @@ class DependencyInferenceService:
 
                 texto_final = pn.get("texto_final", "").strip()
                 nome_base = pn.get("nome_base_variavel", "").strip()
+                tipo_sugerido = pn.get("tipo_sugerido", "").strip().lower()
+                opcoes_sugeridas = pn.get("opcoes_sugeridas")
 
                 # Validações obrigatórias
                 if not texto_final:
@@ -221,10 +223,21 @@ class DependencyInferenceService:
                     erros_validacao.append(f"Pergunta {idx}: nome_base_variavel inválido após normalização")
                     continue
 
+                # Valida tipo_sugerido
+                tipos_validos = ["text", "number", "date", "boolean", "choice", "list", "currency"]
+                if tipo_sugerido and tipo_sugerido not in tipos_validos:
+                    tipo_sugerido = "text"  # Fallback para text se tipo inválido
+
+                # Se tipo é choice mas não tem opções, avisa no log
+                if tipo_sugerido == "choice" and not opcoes_sugeridas:
+                    logger.warning(f"Pergunta {idx}: tipo 'choice' sem opcoes_sugeridas")
+
                 perguntas_map[str(idx)] = {
                     "texto_final": texto_final,
                     "nome_base_variavel": nome_base,
-                    "texto_original": pn.get("texto_original", perguntas[idx])
+                    "texto_original": pn.get("texto_original", perguntas[idx]),
+                    "tipo_sugerido": tipo_sugerido or None,
+                    "opcoes_sugeridas": opcoes_sugeridas if isinstance(opcoes_sugeridas, list) else None
                 }
 
             # Verifica se todas as perguntas foram processadas
@@ -317,8 +330,9 @@ class DependencyInferenceService:
 Sua tarefa é processar uma lista de perguntas de extração de dados e:
 1. **REESCREVER** cada pergunta de forma clara, técnica e institucional
 2. **GERAR** um nome base de variável para cada pergunta
-3. **IDENTIFICAR** dependências entre perguntas
-4. **SUGERIR** a ordem correta de aplicação
+3. **DEFINIR** o tipo de dado correto para cada pergunta
+4. **IDENTIFICAR** dependências entre perguntas
+5. **SUGERIR** a ordem correta de aplicação
 
 ═══════════════════════════════════════════════════════════════
 REGRA CRÍTICA: NORMALIZAÇÃO DAS PERGUNTAS
@@ -337,15 +351,33 @@ Você DEVE:
 3. MANTER o sentido jurídico original
 4. GARANTIR que a pergunta final seja adequada para uso formal
 
-EXEMPLO DE NORMALIZAÇÃO:
-- Entrada: "é ação de medicamento? (pergunta mãe, base para as outras)"
-- Saída: "Trata-se de ação judicial envolvendo medicamentos?"
+═══════════════════════════════════════════════════════════════
+REGRA CRÍTICA: TIPO DE DADO (tipo_sugerido)
+═══════════════════════════════════════════════════════════════
 
-- Entrada: "se sim, perguntar qual o medicamento solicitado pelo autor"
-- Saída: "Qual medicamento está sendo solicitado pelo autor?"
+Para cada pergunta, você DEVE definir o tipo_sugerido seguindo estas regras:
 
-- Entrada: "tem registro anvisa?? (só se for medicamento)"
-- Saída: "O medicamento possui registro válido na ANVISA?"
+1. **boolean**: OBRIGATÓRIO quando a resposta for SIM/NÃO
+   - Exemplos: "Foi concedida liminar?", "O autor é idoso?", "Há prescrição?"
+   - NUNCA use "text" para perguntas de sim/não
+
+2. **choice**: OBRIGATÓRIO quando a resposta for um conjunto fechado de alternativas
+   - DEVE incluir "opcoes_sugeridas" com as alternativas
+   - Opções em minúsculo, sem acentos, com underscore se necessário
+   - Exemplos: resultado, periodicidade, natureza, tipo de ação
+
+3. **text**: APENAS quando a resposta for inevitavelmente livre
+   - Listas descritivas, fundamentos, nomes, descrições abertas
+
+4. **list**: Para respostas que são listas de itens
+
+5. **number**: Valores numéricos puros
+
+6. **currency**: Valores monetários (R$)
+
+7. **date**: Datas
+
+TIPOS DISPONÍVEIS: text, number, date, boolean, choice, list, currency
 
 ═══════════════════════════════════════════════════════════════
 REGRA CRÍTICA: NOME BASE DA VARIÁVEL
@@ -358,20 +390,6 @@ Para cada pergunta, você DEVE gerar um nome_base_variavel seguindo estas regras
 - Deve ser compreensível SEM ler a pergunta
 - NÃO incluir prefixo da categoria (o sistema adiciona automaticamente)
 
-EXEMPLOS DE NOMES CORRETOS:
-- medicamento_registro_anvisa
-- valor_causa
-- alternativa_terapeutica
-- autor_idoso
-- tipo_acao
-- incorporado_sus
-
-EXEMPLOS DE NOMES INCORRETOS:
-- registro (muito genérico)
-- pergunta_1 (não semântico)
-- o_medicamento_tem_registro_na_anvisa (muito longo)
-- médicamento_anvisa (com acento)
-
 ═══════════════════════════════════════════════════════════════
 REGRAS DE DEPENDÊNCIAS
 ═══════════════════════════════════════════════════════════════
@@ -379,7 +397,10 @@ REGRAS DE DEPENDÊNCIAS
 1. Perguntas iniciais/de classificação geralmente são independentes
 2. Perguntas de detalhamento dependem das de classificação
 3. Use o nome_base_variavel para referenciar dependências
-4. O índice é 0-based (primeira pergunta = 0)
+4. dependency_value deve respeitar o tipo da variável pai:
+   - boolean → true/false
+   - choice → valor exatamente igual a uma das opcoes
+5. O índice é 0-based (primeira pergunta = 0)
 
 FORMATO DE RESPOSTA (JSON estrito):
 {
@@ -388,34 +409,44 @@ FORMATO DE RESPOSTA (JSON estrito):
             "indice": 0,
             "texto_original": "é ação de medicamento? (pergunta mãe)",
             "texto_final": "Trata-se de ação judicial envolvendo medicamentos?",
-            "nome_base_variavel": "medicamento"
+            "nome_base_variavel": "medicamento",
+            "tipo_sugerido": "boolean"
         },
         {
             "indice": 1,
-            "texto_original": "tem registro anvisa?? (só se for med)",
+            "texto_original": "qual o resultado da decisão? (deferida/indeferida/parcial)",
+            "texto_final": "Qual foi o resultado da decisão judicial?",
+            "nome_base_variavel": "resultado_decisao",
+            "tipo_sugerido": "choice",
+            "opcoes_sugeridas": ["deferida", "parcialmente_deferida", "indeferida"]
+        },
+        {
+            "indice": 2,
+            "texto_original": "tem registro anvisa?? (só se for medicamento)",
             "texto_final": "O medicamento possui registro válido na ANVISA?",
-            "nome_base_variavel": "medicamento_registro_anvisa"
+            "nome_base_variavel": "medicamento_registro_anvisa",
+            "tipo_sugerido": "boolean"
         }
     ],
     "dependencias": [
         {
-            "indice": 1,
+            "indice": 2,
             "depends_on": "medicamento",
             "operator": "equals",
             "value": true,
             "justificativa": "Só pergunta ANVISA se for ação de medicamento"
         }
     ],
-    "ordem_recomendada": [0, 1, 2, 3],
+    "ordem_recomendada": [0, 1, 2],
     "arvore": {
-        "medicamento": ["medicamento_registro_anvisa"],
-        "medicamento_registro_anvisa": ["incorporado_sus"]
+        "medicamento": ["medicamento_registro_anvisa"]
     }
 }
 
 IMPORTANTE:
 - perguntas_normalizadas é OBRIGATÓRIO e deve conter TODAS as perguntas
-- Cada pergunta DEVE ter texto_final e nome_base_variavel
+- Cada pergunta DEVE ter: texto_final, nome_base_variavel, tipo_sugerido
+- Se tipo_sugerido for "choice", DEVE incluir opcoes_sugeridas
 - Perguntas sem dependência NÃO devem aparecer na lista de dependências"""
 
     def _montar_prompt_batch(

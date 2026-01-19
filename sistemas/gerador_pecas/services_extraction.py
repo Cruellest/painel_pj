@@ -332,7 +332,51 @@ class ExtractionSchemaGenerator:
 
 Sua tarefa é criar um schema JSON de extração a partir de perguntas em linguagem natural.
 
-REGRAS CRÍTICAS:
+═══════════════════════════════════════════════════════════════
+REGRAS OBRIGATÓRIAS PARA ESCOLHA DO TIPO DE DADO
+═══════════════════════════════════════════════════════════════
+
+1. **boolean**: OBRIGATÓRIO quando a resposta for SIM/NÃO
+   - Exemplos: "Foi concedida liminar?", "O autor é idoso?", "Há prescrição?"
+   - NUNCA use "text" para perguntas de sim/não
+
+2. **choice**: OBRIGATÓRIO quando a resposta for um conjunto fechado de alternativas (enum)
+   - DEVE incluir o campo "options" com as alternativas
+   - Opções em minúsculo, sem acentos, com underscore se necessário
+   - Exemplos:
+     - resultado: ["deferida", "parcialmente_deferida", "indeferida"]
+     - periodicidade: ["diaria", "unica", "mensal", "outra"]
+     - natureza: ["liminar", "nao_liminar", "nao_identificavel"]
+     - tipo_acao: ["medicamento", "procedimento", "internacao", "outro"]
+
+3. **text**: APENAS quando a resposta for inevitavelmente livre
+   - Listas descritivas (itens deferidos/indeferidos)
+   - Fundamentos ou justificativas
+   - Nomes de agentes citados
+   - Descrições abertas
+
+4. **list**: Para respostas que são listas de itens
+
+5. **number**: Valores numéricos puros (quantidade, porcentagem sem %)
+
+6. **currency**: Valores monetários (R$)
+
+7. **date**: Datas (formato YYYY-MM-DD)
+
+═══════════════════════════════════════════════════════════════
+REGRAS DE CONSISTÊNCIA PARA DEPENDÊNCIAS
+═══════════════════════════════════════════════════════════════
+
+- Campos condicionais DEVEM ter: conditional, depends_on, dependency_operator, dependency_value
+- dependency_value DEVE respeitar o type da variável pai:
+  - Se pai é boolean → dependency_value: true ou false
+  - Se pai é choice → dependency_value: valor EXATAMENTE igual a uma das options
+- Nunca crie perguntas redundantes quando uma múltipla escolha já resolve
+
+═══════════════════════════════════════════════════════════════
+REGRAS GERAIS
+═══════════════════════════════════════════════════════════════
+
 1. Crie EXATAMENTE UMA variável para CADA pergunta - NÃO invente campos extras
 2. O número de variáveis no schema DEVE ser IGUAL ao número de perguntas fornecidas
 3. Se o usuário sugeriu nome de variável, USE EXATAMENTE esse nome
@@ -341,54 +385,54 @@ REGRAS CRÍTICAS:
 6. Variáveis devem ter slugs em snake_case, sem acentos
 7. NÃO adicione campos que não foram solicitados nas perguntas
 8. Sempre retorne JSON válido, SEM texto adicional
-
-TIPOS DE DADOS SUPORTADOS:
-- text: Texto livre
-- number: Valor numérico
-- date: Data (formato YYYY-MM-DD)
-- boolean: Sim/Não
-- choice: Escolha única entre opções
-- list: Lista de valores
-- currency: Valor monetário
-
-VARIÁVEIS CONDICIONAIS (IMPORTANTE):
-- Se a pergunta tem marcação [CONDICIONAL], você DEVE incluir os campos de dependência
-- No "schema", adicione: "conditional": true, "depends_on": "variavel_pai", "dependency_operator": "equals", "dependency_value": valor
-- No "mapeamento_variaveis", adicione: "is_conditional": true, "depends_on": "variavel_pai", "dependency_operator": "equals", "dependency_value": valor
+9. MESMO que o usuário tenha marcado "deixar a IA decidir", escolha o tipo correto seguindo as regras acima
 
 FORMATO DE RESPOSTA (JSON estrito):
 {
     "schema": {
-        "nome_variavel_1": {
+        "liminar_concedida": {
             "type": "boolean",
-            "description": "descrição do campo"
+            "description": "Se foi concedida liminar/tutela"
         },
-        "nome_variavel_2": {
+        "resultado_decisao": {
+            "type": "choice",
+            "description": "Resultado da decisão",
+            "options": ["deferida", "parcialmente_deferida", "indeferida"]
+        },
+        "itens_deferidos": {
             "type": "text",
-            "description": "descrição do campo",
+            "description": "Lista dos itens/pedidos deferidos",
             "conditional": true,
-            "depends_on": "nome_variavel_1",
-            "dependency_operator": "equals",
-            "dependency_value": true
+            "depends_on": "resultado_decisao",
+            "dependency_operator": "in_list",
+            "dependency_value": ["deferida", "parcialmente_deferida"]
         }
     },
     "mapeamento_variaveis": {
         "123": {
-            "slug": "nome_variavel_1",
-            "label": "Label Humano",
+            "slug": "liminar_concedida",
+            "label": "Liminar Concedida",
             "tipo": "boolean",
-            "descricao": "Descrição",
+            "descricao": "Se foi concedida liminar/tutela",
             "is_conditional": false
         },
         "456": {
-            "slug": "nome_variavel_2",
-            "label": "Label 2",
+            "slug": "resultado_decisao",
+            "label": "Resultado da Decisão",
+            "tipo": "choice",
+            "descricao": "Resultado da decisão",
+            "opcoes": ["deferida", "parcialmente_deferida", "indeferida"],
+            "is_conditional": false
+        },
+        "789": {
+            "slug": "itens_deferidos",
+            "label": "Itens Deferidos",
             "tipo": "text",
-            "descricao": "Descrição 2",
+            "descricao": "Lista dos itens/pedidos deferidos",
             "is_conditional": true,
-            "depends_on": "nome_variavel_1",
-            "dependency_operator": "equals",
-            "dependency_value": true
+            "depends_on": "resultado_decisao",
+            "dependency_operator": "in_list",
+            "dependency_value": ["deferida", "parcialmente_deferida"]
         }
     }
 }"""

@@ -751,14 +751,18 @@ async def criar_perguntas_lote(
                 # Busca dados normalizados pela IA
                 normalizado = perguntas_normalizadas_map.get(str(i), {})
 
-                # Se tem análise de IA, usa texto normalizado e nome gerado
+                # Se tem análise de IA, usa texto normalizado, nome, tipo e opções gerados
                 if data.analisar_dependencias and normalizado:
                     texto_pergunta = normalizado.get("texto_final", p.pergunta)
                     nome_variavel = normalizado.get("nome_base_variavel", p.nome_variavel_sugerido)
+                    tipo_sugerido = normalizado.get("tipo_sugerido") or p.tipo_sugerido
+                    opcoes_sugeridas = normalizado.get("opcoes_sugeridas") or p.opcoes_sugeridas
                 else:
                     # Sem análise de IA, usa dados originais
                     texto_pergunta = p.pergunta
                     nome_variavel = p.nome_variavel_sugerido
+                    tipo_sugerido = p.tipo_sugerido
+                    opcoes_sugeridas = p.opcoes_sugeridas
 
                 # Busca dependência inferida para esta pergunta
                 dep_info = dependencias_map.get(str(i), {})
@@ -770,8 +774,8 @@ async def criar_perguntas_lote(
                     categoria_id=data.categoria_id,
                     pergunta=texto_pergunta,
                     nome_variavel_sugerido=nome_variavel,
-                    tipo_sugerido=p.tipo_sugerido,
-                    opcoes_sugeridas=p.opcoes_sugeridas,
+                    tipo_sugerido=tipo_sugerido,
+                    opcoes_sugeridas=opcoes_sugeridas,
                     depends_on_variable=depends_on,
                     dependency_operator=dep_operator,
                     dependency_value=dep_value,
