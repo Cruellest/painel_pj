@@ -1195,6 +1195,64 @@
             };
             return labels[tipo] || tipo || 'text';
         }
+
+        // Infere o tipo de uma variável baseado no seu slug (fallback quando não encontrada no cache)
+        // Replica a lógica do backend em services_deterministic.py::_inferir_tipo_variavel
+        function inferirTipoPorSlug(slug) {
+            if (!slug) return 'text';
+            const slugLower = slug.toLowerCase();
+
+            // Palavras-chave para booleanos (mais comum de ocorrer o problema)
+            const booleanKeywords = [
+                'idoso', 'ativo', 'possui', 'tem_', 'eh_', 'e_', 'is_', 'has_',
+                'sim_nao', 'aprovado', 'deferido', 'urgente', 'prioritario',
+                'existe', 'habilitado', 'valido', 'residual', 'transferencia'
+            ];
+            if (booleanKeywords.some(kw => slugLower.includes(kw))) {
+                return 'boolean';
+            }
+
+            // Palavras-chave para valores monetários
+            if (['valor', 'custo', 'preco', 'montante', 'total_valor'].some(kw => slugLower.includes(kw))) {
+                return 'currency';
+            }
+
+            // Palavras-chave para datas
+            if (['data', 'date', 'dia', 'nascimento', 'vencimento', 'prazo_'].some(kw => slugLower.includes(kw))) {
+                return 'date';
+            }
+
+            // Palavras-chave para números
+            if (['quantidade', 'numero', 'qtd', 'num_', 'count', 'total_', 'idade', 'dias', 'meses', 'anos'].some(kw => slugLower.includes(kw))) {
+                return 'number';
+            }
+
+            // Default: texto
+            return 'text';
+        }
+
+        // Obtém informações da variável, usando inferência como fallback
+        function obterInfoVariavel(slug) {
+            if (!slug) return null;
+
+            // Primeiro tenta encontrar no cache
+            const varInfo = variaveisDisponiveis.find(v => v.slug === slug);
+            if (varInfo) {
+                return varInfo;
+            }
+
+            // Se não encontrou, infere o tipo pelo slug
+            // Isso acontece quando a variável foi criada recentemente e o cache não foi atualizado
+            console.warn(`[Variáveis] Variável '${slug}' não encontrada no cache. Usando tipo inferido.`);
+            return {
+                slug: slug,
+                label: slug.replace(/_/g, ' '),
+                tipo: inferirTipoPorSlug(slug),
+                opcoes: null,
+                _inferido: true // Flag para identificar que foi inferido
+            };
+        }
+
         let regraSecundariaGerada = null; // Cache da regra secundária gerada pela IA
         // Estado dos comboboxes de variáveis
         let comboboxAberto = null;
@@ -1206,6 +1264,8 @@
         let assuntoDropdownAberto = false; // Estado do dropdown de assuntos
         let comboboxSecAberto = null;
         let comboboxSecHighlightIndex = -1;
+        let variaveisUltimoCarregamento = 0; // Timestamp do último carregamento de variáveis
+        const VARIAVEIS_CACHE_TTL_MS = 30000; // 30 segundos - tempo mínimo entre recarregamentos
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', async () => {
@@ -1233,7 +1293,31 @@
                     fecharAssuntoDropdown();
                 }
             });
+
+            // AUTO-REFRESH: Recarrega variáveis quando a janela volta ao foco
+            // Isso garante que variáveis criadas em outras abas sejam detectadas
+            document.addEventListener('visibilitychange', async () => {
+                if (document.visibilityState === 'visible') {
+                    await recarregarVariaveisSeCacheExpirado();
+                }
+            });
         });
+
+        // Recarrega variáveis apenas se o cache expirou (evita requests excessivos)
+        async function recarregarVariaveisSeCacheExpirado() {
+            const agora = Date.now();
+            if (agora - variaveisUltimoCarregamento > VARIAVEIS_CACHE_TTL_MS) {
+                console.log('[Variáveis] Cache expirado, recarregando...');
+                await carregarVariaveisDisponiveis();
+            }
+        }
+
+        // Força recarregamento de variáveis (para uso após criar/editar variável)
+        async function forcarRecarregamentoVariaveis() {
+            variaveisUltimoCarregamento = 0; // Força expiração do cache
+            await carregarVariaveisDisponiveis();
+            mostrarNotificacao(`Variáveis atualizadas: ${variaveisDisponiveis.length} disponíveis`, 'success');
+        }
 
         async function carregarModulos() {
             try {
@@ -2697,11 +2781,20 @@
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
                 if (response.ok) {
-                    variaveisDisponiveis = await response.json();
-                    console.log(`Carregadas ${variaveisDisponiveis.length} variáveis disponíveis`);
+                    const novasVariaveis = await response.json();
+                    const quantidadeAnterior = variaveisDisponiveis.length;
+                    variaveisDisponiveis = novasVariaveis;
+                    variaveisUltimoCarregamento = Date.now(); // Registra timestamp do carregamento
+
+                    // Log detalhado para debug
+                    if (quantidadeAnterior > 0 && novasVariaveis.length !== quantidadeAnterior) {
+                        console.log(`[Variáveis] Atualizado: ${quantidadeAnterior} -> ${novasVariaveis.length} variáveis`);
+                    } else {
+                        console.log(`[Variáveis] Carregadas ${novasVariaveis.length} variáveis disponíveis`);
+                    }
                 }
             } catch (error) {
-                console.error('Erro ao carregar variáveis:', error);
+                console.error('[Variáveis] Erro ao carregar:', error);
             }
         }
 
@@ -3134,7 +3227,7 @@
 
         // Renderiza uma condição individual
         function renderizarCondicaoItem(c, nivel, operadores) {
-            const varInfo = variaveisDisponiveis.find(v => v.slug === c.variavel);
+            const varInfo = obterInfoVariavel(c.variavel);
             const esconderValor = ['exists', 'not_exists'].includes(c.operador);
             const marginLeft = nivel > 0 ? '' : '';
             const displayValue = c.variavel ? `${c.variavel} (${getTipoLabel(varInfo?.tipo)})` : '';
@@ -3154,8 +3247,12 @@
                         autocomplete="off">
                     ${c.variavel ? `<span class="variable-combobox-clear" onclick="limparCombobox(${c.id})"><i class="fas fa-times text-xs"></i></span>` : ''}
                     <div class="variable-combobox-dropdown" id="combobox-dropdown-${c.id}">
-                        <div class="variable-combobox-hint">
-                            <i class="fas fa-search mr-1"></i> Digite para filtrar (${variaveisDisponiveis.length} variáveis)
+                        <div class="variable-combobox-hint flex justify-between items-center">
+                            <span><i class="fas fa-search mr-1"></i> Digite para filtrar (${variaveisDisponiveis.length} variáveis)</span>
+                            <button type="button" onclick="event.stopPropagation(); forcarRecarregamentoVariaveis().then(() => renderizarItensCombobox(${c.id}, ''))"
+                                class="text-xs text-blue-600 hover:text-blue-800" title="Atualizar lista de variáveis">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
                         </div>
                         <div id="combobox-items-${c.id}"></div>
                     </div>
@@ -3345,9 +3442,11 @@
                         <span class="text-purple-600 text-xs font-bold">)</span>
                     </span>`;
                 } else {
-                    const varInfo = variaveisDisponiveis.find(v => v.slug === item.variavel);
-                    const varLabel = varInfo ? `<span class="font-mono text-indigo-600">${item.variavel}</span>` :
-                        (item.variavel ? `<span class="font-mono text-gray-600">${item.variavel}</span>` : '<span class="text-red-400">[?]</span>');
+                    const varInfo = obterInfoVariavel(item.variavel);
+                    // Se varInfo._inferido é true, a variável não foi encontrada no cache
+                    const varLabel = varInfo && !varInfo._inferido
+                        ? `<span class="font-mono text-indigo-600">${item.variavel}</span>`
+                        : (item.variavel ? `<span class="font-mono text-amber-600" title="Variável não encontrada no cache">${item.variavel}</span>` : '<span class="text-red-400">[?]</span>');
 
                     let valorHtml = '';
                     if (!['exists', 'not_exists'].includes(item.operador)) {
@@ -3930,7 +4029,7 @@
         // Renderiza item de condição secundária (reutiliza lógica da primária)
         function renderizarItemCondicaoSecundaria(item) {
             if (item.type === 'condition') {
-                const varInfo = variaveisDisponiveis.find(v => v.slug === item.variavel);
+                const varInfo = obterInfoVariavel(item.variavel);
                 const displayValue = item.variavel ? `${item.variavel} (${getTipoLabel(varInfo?.tipo)})` : '';
                 const esconderValor = ['exists', 'not_exists'].includes(item.operador);
                 
@@ -4228,10 +4327,13 @@
             }
         }
 
-        function criarModulo() {
+        async function criarModulo() {
+            // Recarrega variáveis se cache expirado (garante tipos atualizados)
+            await recarregarVariaveisSeCacheExpirado();
+
             moduloAtualId = null;
             tagsAtuais = [];
-            
+
             document.getElementById('modulo-id').value = '';
             document.getElementById('modulo-tipo').value = 'conteudo';
             document.getElementById('modulo-categoria').value = '';
@@ -4335,10 +4437,13 @@
 
         async function editarModulo(id) {
             try {
+                // Recarrega variáveis se cache expirado (garante tipos atualizados)
+                await recarregarVariaveisSeCacheExpirado();
+
                 const response = await fetch(`${API_BASE}/${id}`, {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
-                
+
                 if (!response.ok) throw new Error('Módulo não encontrado');
                 
                 const modulo = await response.json();

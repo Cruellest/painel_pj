@@ -282,6 +282,7 @@ async def listar_modulos(
     group_id: Optional[int] = None,
     subgroup_id: Optional[int] = None,
     subcategoria_ids: Optional[List[int]] = Query(None, description="IDs das subcategorias (assuntos) para filtrar"),
+    modo_ativacao: Optional[str] = Query(None, description="Filtrar por modo de ativação: 'llm' ou 'deterministic'"),
     busca: Optional[str] = None,
     apenas_ativos: bool = True,
     current_user: User = Depends(get_current_active_user),
@@ -314,6 +315,17 @@ async def listar_modulos(
             (PromptModulo.subgroup_id == subgroup_id) |
             (PromptModulo.tipo.in_(["peca", "base"]))
         )
+
+    # Filtro por modo de ativação (llm ou deterministic)
+    if modo_ativacao:
+        if modo_ativacao == 'llm':
+            # LLM: modo_ativacao é 'llm' ou NULL (valor padrão)
+            query = query.filter(
+                (PromptModulo.modo_ativacao == 'llm') |
+                (PromptModulo.modo_ativacao.is_(None))
+            )
+        elif modo_ativacao == 'deterministic':
+            query = query.filter(PromptModulo.modo_ativacao == 'deterministic')
 
     # Filtro por subcategorias (assuntos) - lógica OR (qualquer um dos assuntos selecionados)
     if subcategoria_ids:
