@@ -186,6 +186,7 @@ class DadosAnalise:
     peticao_prestacao: str = ""
     documentos_anexos: List[Dict[str, str]] = field(default_factory=list)
     peticoes_contexto: List[Dict[str, str]] = field(default_factory=list)
+    extrato_observacao: Optional[str] = None  # Observação quando extrato não localizado
 
 
 @dataclass
@@ -401,10 +402,18 @@ class AgenteAnalise:
         if todas_imagens:
             docs_descricao += f"\n\n**ATENÇÃO:** {len(todas_imagens)} imagem(ns) de documentos anexos estão anexadas a esta mensagem. Analise-as cuidadosamente para verificar notas fiscais, recibos e comprovantes."
 
+        # Monta texto do extrato (com observação se não disponível)
+        if dados.extrato_subconta:
+            extrato_texto = dados.extrato_subconta
+        elif dados.extrato_observacao:
+            extrato_texto = f"[EXTRATO NÃO DISPONÍVEL]\n\n{dados.extrato_observacao}"
+        else:
+            extrato_texto = "[Extrato não disponível]"
+
         # Monta prompt
         prompt = self._substituir_placeholders(
             self.prompt_analise,
-            extrato_subconta=dados.extrato_subconta or "[Extrato não disponível]",
+            extrato_subconta=extrato_texto,
             peticao_inicial=dados.peticao_inicial or "[Petição inicial não encontrada]",
             peticao_prestacao=dados.peticao_prestacao or "[Petição de prestação não encontrada]",
             peticoes_contexto=peticoes_contexto_texto,

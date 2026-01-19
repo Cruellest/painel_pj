@@ -28,6 +28,11 @@ class GeracaoAnalise(Base):
     extrato_subconta_pdf_base64 = Column(Text, nullable=True)  # PDF em base64
     extrato_subconta_texto = Column(Text, nullable=True)  # Texto extraído
 
+    # Métricas de extração paralela do extrato
+    extrato_source = Column(String(30), nullable=True)  # 'scrapper', 'fallback_documentos', 'none'
+    extrato_metricas = Column(JSON, nullable=True)  # {t_scrapper, t_fallback, t_total, ...}
+    extrato_observacao = Column(Text, nullable=True)  # Observação quando extrato não localizado
+
     # Petição inicial
     peticao_inicial_id = Column(String(50), nullable=True)
     peticao_inicial_texto = Column(Text, nullable=True)
@@ -77,7 +82,7 @@ class GeracaoAnalise(Base):
 
     modelo_usado = Column(String(100), nullable=True)
     tempo_processamento_ms = Column(Integer, nullable=True)
-    status = Column(String(20), default="processando")  # 'processando', 'concluido', 'erro'
+    status = Column(String(30), default="processando")  # 'processando', 'concluido', 'erro', 'aguardando_documentos', 'aguardando_nota_fiscal'
     erro = Column(Text, nullable=True)
 
     criado_em = Column(DateTime, default=datetime.utcnow)

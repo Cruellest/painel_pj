@@ -9,6 +9,7 @@ Endpoints para:
 - Uso de variáveis em prompts
 """
 
+import json
 import logging
 from typing import List, Optional, Any, Dict
 from datetime import datetime
@@ -150,6 +151,9 @@ class SyncJsonResponse(BaseModel):
     variaveis_removidas: int = 0
     variaveis_removidas_lista: Optional[List[str]] = None
     houve_alteracao: bool = False
+    mensagem: Optional[str] = None
+    erro: Optional[str] = None
+    perguntas_incompletas: Optional[List[dict]] = None
 
 
 # --- Verificação de Consistência JSON vs Perguntas ---
@@ -185,6 +189,35 @@ class SincronizarPerguntasJsonResponse(BaseModel):
     detalhes: List[dict] = []
     mensagem: Optional[str] = None
     erro: Optional[str] = None
+
+
+# --- Aplicação de JSON (JSON → Perguntas/Variáveis) ---
+
+class AplicarJsonRequest(BaseModel):
+    """Schema de entrada para aplicação de JSON"""
+    json_content: str = Field(..., description="Conteúdo JSON a aplicar (string)")
+
+
+class AplicarJsonResponse(BaseModel):
+    """Schema de resposta para aplicação de JSON nas perguntas/variáveis"""
+    success: bool
+    # Contadores
+    perguntas_criadas: int = 0
+    perguntas_atualizadas: int = 0
+    perguntas_removidas: int = 0
+    variaveis_criadas: int = 0
+    variaveis_atualizadas: int = 0
+    variaveis_removidas: int = 0
+    # Detalhes
+    criadas: List[str] = []
+    atualizadas: List[str] = []
+    removidas: List[str] = []
+    # Feedback
+    mensagem: Optional[str] = None
+    erro: Optional[str] = None
+    erros_validacao: Optional[List[dict]] = None
+    # Tempo de execução
+    tempo_ms: Optional[int] = None
 
 
 # --- Criação em Lote de Perguntas (com análise de dependências por IA) ---
@@ -268,13 +301,16 @@ class ExtractionVariableResponse(ExtractionVariableBase):
     ativo: bool
     criado_em: datetime
     atualizado_em: datetime
-    uso_count: int = Field(0, description="Quantidade de prompts que usam esta variável")
+    # Campos de USO - separados para JSON e Prompts
+    uso_count: int = Field(0, description="[DEPRECATED] Use uso_count_prompts. Quantidade de prompts que usam esta variável")
+    uso_count_prompts: int = Field(0, description="Quantidade de prompts que usam esta variável como condição")
+    em_uso_json: bool = Field(False, description="Se está presente no JSON da categoria (verificação real)")
+    prompts_usando: Optional[List[str]] = Field(None, description="Lista de nomes de prompts que usam esta variável")
     # Campos de dependência para visualização
     is_conditional: bool = Field(False, description="Se a variável é condicional")
     depends_on_variable: Optional[str] = Field(None, description="Slug da variável da qual depende")
     depth: int = Field(0, description="Profundidade na árvore de dependências (para recuo)")
     ordem: int = Field(0, description="Ordem da pergunta de origem")
-    em_uso_json: bool = Field(False, description="Se está em uso no JSON da categoria")
 
     class Config:
         from_attributes = True
@@ -333,7 +369,11 @@ def _slugify(texto: str) -> str:
 
 def _get_unique_slug(db: Session, base_slug: str, exclude_question_id: int = None) -> str:
     """
-    Garante que o slug seja único, adicionando sufixo se necessário.
+    Garante que o slug seja único entre variáveis ATIVAS, adicionando sufixo se necessário.
+
+    IMPORTANTE: Variáveis inativas NÃO bloqueiam o slug.
+    Se existir variável inativa com o mesmo slug, ela será reutilizada/reativada
+    pela função ensure_variable_for_question, não aqui.
 
     Args:
         db: Sessão do banco
@@ -341,13 +381,17 @@ def _get_unique_slug(db: Session, base_slug: str, exclude_question_id: int = Non
         exclude_question_id: ID da pergunta a excluir da verificação (para updates)
 
     Returns:
-        Slug único
+        Slug único (entre variáveis ativas)
     """
     slug = base_slug
     contador = 1
 
     while True:
-        query = db.query(ExtractionVariable).filter(ExtractionVariable.slug == slug)
+        # CORREÇÃO: Filtra apenas variáveis ATIVAS
+        query = db.query(ExtractionVariable).filter(
+            ExtractionVariable.slug == slug,
+            ExtractionVariable.ativo == True  # Ignora variáveis inativas!
+        )
 
         # Se for update, exclui a variável da própria pergunta
         if exclude_question_id:
@@ -361,6 +405,12 @@ def _get_unique_slug(db: Session, base_slug: str, exclude_question_id: int = Non
         existente = query.first()
 
         if not existente:
+            # Log quando adiciona sufixo
+            if contador > 1:
+                logger.info(
+                    f"Slug único gerado: base='{base_slug}' -> final='{slug}' "
+                    f"(conflito com variável ativa existente)"
+                )
             return slug
 
         contador += 1
@@ -503,15 +553,52 @@ def ensure_variable_for_question(
     # APLICA O NAMESPACE/PREFIXO DA CATEGORIA AO SLUG
     slug_final = _aplicar_namespace(slug_base, namespace)
 
-    # Verifica se existe variável com o mesmo slug (de outra pergunta ou manual)
+    # Verifica se existe variável com o mesmo slug
+    # IMPORTANTE: Variáveis INATIVAS podem ser reativadas/reutilizadas
     variavel_mesmo_slug = db.query(ExtractionVariable).filter(
         ExtractionVariable.slug == slug_final
     ).first()
 
     if variavel_mesmo_slug:
         # Já existe variável com esse slug
-        if variavel_mesmo_slug.source_question_id is None:
-            # Variável manual sem pergunta vinculada - vincula a esta pergunta
+        if not variavel_mesmo_slug.ativo:
+            # CORREÇÃO BUG 1: Variável INATIVA - REATIVAR e vincular à pergunta
+            # Não criar sufixo _2, _3 por causa de variável inativa!
+            variavel_mesmo_slug.ativo = True
+            variavel_mesmo_slug.source_question_id = pergunta.id
+            variavel_mesmo_slug.categoria_id = categoria.id
+            variavel_mesmo_slug.label = pergunta.pergunta[:200] if pergunta.pergunta else slug_base
+            variavel_mesmo_slug.tipo = tipo_variavel
+            variavel_mesmo_slug.descricao = pergunta.descricao or variavel_mesmo_slug.descricao
+            variavel_mesmo_slug.opcoes = pergunta.opcoes_sugeridas or variavel_mesmo_slug.opcoes
+            variavel_mesmo_slug.atualizado_em = datetime.utcnow()
+
+            # Atualiza dependências
+            if pergunta.depends_on_variable:
+                depends_on_final = _aplicar_namespace(pergunta.depends_on_variable, namespace)
+                variavel_mesmo_slug.is_conditional = True
+                variavel_mesmo_slug.depends_on_variable = depends_on_final
+                variavel_mesmo_slug.dependency_config = {
+                    "operator": pergunta.dependency_operator or "equals",
+                    "value": pergunta.dependency_value
+                } if pergunta.dependency_operator else None
+            else:
+                variavel_mesmo_slug.is_conditional = False
+                variavel_mesmo_slug.depends_on_variable = None
+                variavel_mesmo_slug.dependency_config = None
+
+            # Atualiza nome_variavel_sugerido da pergunta com slug COMPLETO
+            pergunta.nome_variavel_sugerido = slug_final
+
+            logger.info(
+                f"Variável REATIVADA e vinculada: {variavel_mesmo_slug.slug} "
+                f"(id={variavel_mesmo_slug.id}, pergunta_id={pergunta.id}) - "
+                f"evitado sufixo _2 por reutilização de variável inativa"
+            )
+            return variavel_mesmo_slug
+
+        elif variavel_mesmo_slug.source_question_id is None:
+            # Variável ATIVA manual sem pergunta vinculada - vincula a esta pergunta
             variavel_mesmo_slug.source_question_id = pergunta.id
             variavel_mesmo_slug.categoria_id = categoria.id
             variavel_mesmo_slug.label = pergunta.pergunta[:200] if pergunta.pergunta else slug_base
@@ -525,9 +612,15 @@ def ensure_variable_for_question(
 
             logger.info(f"Variável existente vinculada: {variavel_mesmo_slug.slug} (pergunta_id={pergunta.id})")
             return variavel_mesmo_slug
+
         else:
-            # Variável já vinculada a outra pergunta - usa sufixo
+            # Variável ATIVA já vinculada a outra pergunta - usa sufixo
             slug_unico = _get_unique_slug(db, slug_final, exclude_question_id=pergunta.id)
+            logger.info(
+                f"Slug com sufixo necessário: '{slug_final}' -> '{slug_unico}' "
+                f"(conflito com variável ativa id={variavel_mesmo_slug.id}, "
+                f"vinculada a pergunta_id={variavel_mesmo_slug.source_question_id})"
+            )
             slug_final = slug_unico
 
     # Aplica namespace ao depends_on se existir
@@ -1686,7 +1779,17 @@ async def excluir_pergunta(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Desativa uma pergunta (soft delete) e a variável associada"""
+    """
+    Exclui uma pergunta e a variável associada (HARD DELETE).
+
+    COMPORTAMENTO:
+    - SEMPRE faz HARD DELETE (apaga do banco)
+    - Remove automaticamente a variável do JSON da categoria
+    - Remove automaticamente referências em PromptVariableUsage
+    - Remove automaticamente dependências de outras perguntas/variáveis
+
+    Isso garante limpeza completa e evita variáveis órfãs no sistema.
+    """
     # Verifica permissão
     if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
         raise HTTPException(status_code=403, detail="Sem permissão para excluir perguntas")
@@ -1695,32 +1798,122 @@ async def excluir_pergunta(
     if not pergunta:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
 
-    # Desativa a pergunta
-    pergunta.ativo = False
-    pergunta.atualizado_por = current_user.id
-    pergunta.atualizado_em = datetime.utcnow()
+    categoria_id = pergunta.categoria_id
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == categoria_id).first()
 
-    # Desativa a variável associada (se existir)
-    variavel_desativada = None
+    # Busca a variável associada
     variavel = db.query(ExtractionVariable).filter(
         ExtractionVariable.source_question_id == pergunta_id
     ).first()
 
+    limpezas_realizadas = {
+        "json_atualizado": False,
+        "prompts_removidos": 0,
+        "dependencias_perguntas_removidas": 0,
+        "dependencias_variaveis_removidas": 0
+    }
+
+    variavel_info = None
+
     if variavel:
-        variavel.ativo = False
-        variavel.atualizado_em = datetime.utcnow()
-        variavel_desativada = variavel.slug
-        logger.info(f"Variável associada desativada: slug={variavel.slug}")
+        slug = variavel.slug
+
+        variavel_info = {
+            "slug": slug,
+            "id": variavel.id
+        }
+
+        # 1. REMOVE DO JSON DA CATEGORIA
+        if categoria and categoria.formato_json:
+            try:
+                json_data = json.loads(categoria.formato_json)
+                if slug in json_data:
+                    del json_data[slug]
+                    categoria.formato_json = json.dumps(json_data, ensure_ascii=False, indent=2)
+                    categoria.atualizado_em = datetime.utcnow()
+                    limpezas_realizadas["json_atualizado"] = True
+                    logger.info(f"Variável '{slug}' removida do JSON da categoria {categoria.nome}")
+            except json.JSONDecodeError:
+                logger.warning(f"JSON inválido na categoria {categoria_id}, não foi possível limpar variável")
+
+        # 2. REMOVE REFERÊNCIAS EM PROMPTS (PromptVariableUsage)
+        usos_prompts = db.query(PromptVariableUsage).filter(
+            PromptVariableUsage.variable_slug == slug
+        ).all()
+
+        for uso in usos_prompts:
+            db.delete(uso)
+
+        limpezas_realizadas["prompts_removidos"] = len(usos_prompts)
+        if usos_prompts:
+            logger.info(f"Removidos {len(usos_prompts)} usos da variável '{slug}' em prompts")
+
+        # 3. REMOVE DEPENDÊNCIAS DE OUTRAS PERGUNTAS
+        perguntas_dependentes = db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.depends_on_variable == slug
+        ).all()
+
+        for p in perguntas_dependentes:
+            p.depends_on_variable = None
+            p.dependency_operator = None
+            p.dependency_value = None
+            p.dependency_inferred = False
+            p.atualizado_em = datetime.utcnow()
+
+        limpezas_realizadas["dependencias_perguntas_removidas"] = len(perguntas_dependentes)
+        if perguntas_dependentes:
+            logger.info(f"Removidas dependências de {len(perguntas_dependentes)} perguntas para '{slug}'")
+
+        # 4. REMOVE DEPENDÊNCIAS DE OUTRAS VARIÁVEIS
+        variaveis_dependentes = db.query(ExtractionVariable).filter(
+            ExtractionVariable.depends_on_variable == slug
+        ).all()
+
+        for v in variaveis_dependentes:
+            v.depends_on_variable = None
+            v.is_conditional = False
+            v.dependency_config = None
+            v.atualizado_em = datetime.utcnow()
+
+        limpezas_realizadas["dependencias_variaveis_removidas"] = len(variaveis_dependentes)
+        if variaveis_dependentes:
+            logger.info(f"Removidas dependências de {len(variaveis_dependentes)} variáveis para '{slug}'")
+
+        # 5. HARD DELETE DA VARIÁVEL
+        db.delete(variavel)
+        logger.info(f"Variável HARD DELETE: slug={slug}")
+
+    # HARD DELETE DA PERGUNTA
+    pergunta_texto = pergunta.pergunta[:100]
+    db.delete(pergunta)
 
     db.commit()
 
-    logger.info(f"Pergunta de extração desativada: id={pergunta_id}")
+    logger.info(f"Pergunta de extração excluída permanentemente: id={pergunta_id}")
 
-    message = "Pergunta desativada com sucesso"
-    if variavel_desativada:
-        message += f" (variável '{variavel_desativada}' também desativada)"
+    # Monta mensagem de retorno
+    message_parts = ["Pergunta excluída permanentemente"]
 
-    return {"success": True, "message": message, "variavel_desativada": variavel_desativada}
+    if variavel_info:
+        message_parts.append(f"variável '{variavel_info['slug']}' excluída")
+
+        if limpezas_realizadas["json_atualizado"]:
+            message_parts.append("removida do JSON")
+
+        if limpezas_realizadas["prompts_removidos"] > 0:
+            message_parts.append(f"removida de {limpezas_realizadas['prompts_removidos']} prompt(s)")
+
+        if limpezas_realizadas["dependencias_perguntas_removidas"] > 0:
+            message_parts.append(
+                f"{limpezas_realizadas['dependencias_perguntas_removidas']} dependência(s) de pergunta(s) limpas"
+            )
+
+    return {
+        "success": True,
+        "message": ", ".join(message_parts),
+        "variavel_info": variavel_info,
+        "limpezas_realizadas": limpezas_realizadas
+    }
 
 
 # ============================================================================
@@ -1862,178 +2055,257 @@ async def sincronizar_json_sem_ia(
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
 
-    # Busca perguntas ativas da categoria, ordenadas
-    perguntas = db.query(ExtractionQuestion).filter(
-        ExtractionQuestion.categoria_id == categoria_id,
-        ExtractionQuestion.ativo == True
-    ).order_by(ExtractionQuestion.ordem, ExtractionQuestion.id).all()
+    try:
+        # Busca perguntas ativas da categoria, ordenadas
+        perguntas = db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.categoria_id == categoria_id,
+            ExtractionQuestion.ativo == True
+        ).order_by(ExtractionQuestion.ordem, ExtractionQuestion.id).all()
 
-    if not perguntas:
+        if not perguntas:
+            return SyncJsonResponse(
+                success=True,
+                schema_json={},
+                variaveis_adicionadas=0,
+                mensagem="Nenhuma pergunta ativa encontrada para esta categoria"
+            )
+
+        # Carrega JSON atual da categoria
+        try:
+            json_atual = json.loads(categoria.formato_json) if categoria.formato_json else {}
+        except json.JSONDecodeError as e:
+            logger.warning(f"JSON inválido na categoria {categoria_id}: {e}")
+            json_atual = {}
+
+        # Valida perguntas e identifica incompletas
+        perguntas_incompletas = []
+        perguntas_validas = []
+
+        # Obtém namespace da categoria para normalização de dependências
+        namespace = categoria.namespace if categoria.namespace else ""
+
+        def _remover_prefixo(slug: str, ns: str) -> str:
+            """Remove prefixo de namespace do slug se presente."""
+            if not slug or not ns:
+                return slug or ""
+            prefixo = ns + "_"
+            if slug.startswith(prefixo):
+                return slug[len(prefixo):]
+            return slug
+
+        def _normalizar_para_lookup(valor: str) -> str:
+            """Normaliza valor para comparação (lowercase, strip)."""
+            return valor.strip().lower() if valor else ""
+
+        # Coleta índice expandido de slugs válidos para validar dependências
+        # Inclui: slug completo, nome base (sem prefixo), ambos em lowercase
+        slugs_validos = set()  # Para lookup rápido
+        slugs_por_id = {}  # id -> slug completo (para referência)
+
+        for p in perguntas:
+            if p.nome_variavel_sugerido and p.nome_variavel_sugerido.strip():
+                slug_completo = p.nome_variavel_sugerido.strip()
+                nome_base = _remover_prefixo(slug_completo, namespace)
+
+                # Adiciona todas as variações possíveis
+                slugs_validos.add(slug_completo)
+                slugs_validos.add(_normalizar_para_lookup(slug_completo))
+                if nome_base != slug_completo:
+                    slugs_validos.add(nome_base)
+                    slugs_validos.add(_normalizar_para_lookup(nome_base))
+
+                # Mapeia por ID
+                slugs_por_id[p.id] = slug_completo
+
+        def _dependencia_existe(depends_on: str) -> bool:
+            """Verifica se dependência existe (por slug completo ou nome base)."""
+            if not depends_on:
+                return True  # Sem dependência = válido
+            valor_normalizado = _normalizar_para_lookup(depends_on)
+            return depends_on in slugs_validos or valor_normalizado in slugs_validos
+
+        for p in perguntas:
+            slug = p.nome_variavel_sugerido
+            tipo = p.tipo_sugerido
+
+            if not slug or not slug.strip():
+                perguntas_incompletas.append({
+                    "id": p.id,
+                    "pergunta": p.pergunta[:100] + "..." if len(p.pergunta) > 100 else p.pergunta,
+                    "problema": "Falta nome/slug da variável"
+                })
+                continue
+
+            if not tipo or not tipo.strip():
+                perguntas_incompletas.append({
+                    "id": p.id,
+                    "pergunta": p.pergunta[:100] + "..." if len(p.pergunta) > 100 else p.pergunta,
+                    "slug": slug,
+                    "problema": "Falta tipo da variável"
+                })
+                continue
+
+            # Valida dependência: depends_on_variable deve existir (por slug ou nome base)
+            if p.depends_on_variable and not _dependencia_existe(p.depends_on_variable):
+                # Monta lista de slugs disponíveis para mensagem de erro clara
+                slugs_disponiveis = sorted([
+                    s for s in slugs_validos
+                    if not s.islower() or s == _normalizar_para_lookup(s)  # Evita duplicatas lowercase
+                ])[:10]  # Limita para não poluir mensagem
+
+                perguntas_incompletas.append({
+                    "id": p.id,
+                    "pergunta": p.pergunta[:100] + "..." if len(p.pergunta) > 100 else p.pergunta,
+                    "slug": slug,
+                    "problema": f"Dependência inválida: variável '{p.depends_on_variable}' não encontrada. "
+                               f"Slugs disponíveis: {slugs_disponiveis}"
+                })
+                continue
+
+            perguntas_validas.append(p)
+
+        # Se há perguntas incompletas, retorna erro
+        if perguntas_incompletas:
+            logger.warning(
+                f"Sincronização JSON categoria {categoria_id} falhou: "
+                f"{len(perguntas_incompletas)} pergunta(s) incompleta(s): "
+                f"{[p['problema'] for p in perguntas_incompletas]}"
+            )
+            return SyncJsonResponse(
+                success=False,
+                perguntas_incompletas=perguntas_incompletas,
+                erro=f"Não foi possível atualizar: {len(perguntas_incompletas)} pergunta(s) incompleta(s)"
+            )
+
+        # SEMPRE reconstrói o JSON a partir do BD (fonte da verdade)
+        # O BD é a fonte da verdade; comparamos estruturalmente para detectar mudanças
+        json_novo = {}
+        variaveis_adicionadas = []
+        variaveis_modificadas = []
+
+        def _normalizar_para_comparacao(obj):
+            """Normaliza objeto para comparação estrutural (ordena chaves, arrays)."""
+            if isinstance(obj, dict):
+                return {k: _normalizar_para_comparacao(obj[k]) for k in sorted(obj.keys())}
+            elif isinstance(obj, list):
+                # Para listas de dicts com 'id' ou 'value', ordena por esse campo
+                if obj and isinstance(obj[0], dict):
+                    if 'id' in obj[0]:
+                        return sorted([_normalizar_para_comparacao(item) for item in obj],
+                                      key=lambda x: str(x.get('id', '')))
+                    elif 'value' in obj[0]:
+                        return sorted([_normalizar_para_comparacao(item) for item in obj],
+                                      key=lambda x: str(x.get('value', '')))
+                return [_normalizar_para_comparacao(item) for item in obj]
+            return obj
+
+        def _configs_sao_iguais(config_bd, config_json):
+            """Compara se duas configurações são estruturalmente iguais."""
+            return _normalizar_para_comparacao(config_bd) == _normalizar_para_comparacao(config_json)
+
+        for p in perguntas_validas:
+            slug = p.nome_variavel_sugerido.strip()
+            tipo = p.tipo_sugerido.strip().lower()
+
+            # SEMPRE constrói a configuração a partir do BD
+            config = {
+                "type": tipo,
+                "description": p.pergunta
+            }
+
+            # Adiciona dependências se configuradas
+            if p.depends_on_variable:
+                config["conditional"] = True
+                config["depends_on"] = p.depends_on_variable
+
+                if p.dependency_operator:
+                    config["dependency_operator"] = p.dependency_operator
+
+                if p.dependency_value is not None:
+                    config["dependency_value"] = p.dependency_value
+
+            # Adiciona dependency_config se existir (configuração complexa)
+            if p.dependency_config:
+                config["dependency_config"] = p.dependency_config
+
+            # Adiciona opções se tipo choice e há opções
+            if tipo == "choice" and p.opcoes_sugeridas:
+                config["options"] = p.opcoes_sugeridas
+
+            # Adiciona campos obrigatórios se existir
+            if hasattr(p, 'required') and p.required is not None:
+                config["required"] = p.required
+
+            # Verifica se é nova ou modificada
+            if slug in json_atual:
+                # Compara estruturalmente para detectar mudanças
+                if not _configs_sao_iguais(config, json_atual[slug]):
+                    variaveis_modificadas.append(slug)
+            else:
+                variaveis_adicionadas.append(slug)
+
+            json_novo[slug] = config
+
+        # IMPORTANTE: NÃO preserva campos do JSON original que não estão nas perguntas
+        # O JSON deve ser uma projeção EXATA das Perguntas de Extração ativas
+        # Se não existe pergunta ativa, não pode existir variável no JSON
+        # Campos antigos/órfãos são REMOVIDOS propositalmente
+        variaveis_removidas = [chave for chave in json_atual.keys() if chave not in json_novo]
+        if variaveis_removidas:
+            logger.info(f"Variáveis removidas do JSON (sem pergunta ativa): {variaveis_removidas}")
+
+        # Detecta se houve alteração real (inclui mudanças na ordem das chaves)
+        json_atual_normalizado = _normalizar_para_comparacao(json_atual)
+        json_novo_normalizado = _normalizar_para_comparacao(json_novo)
+        houve_alteracao = json_atual_normalizado != json_novo_normalizado
+
+        # Monta resposta com informações detalhadas
+        if variaveis_adicionadas or variaveis_modificadas or variaveis_removidas or houve_alteracao:
+            partes_mensagem = []
+            if variaveis_adicionadas:
+                partes_mensagem.append(f"{len(variaveis_adicionadas)} variável(is) adicionada(s)")
+            if variaveis_modificadas:
+                partes_mensagem.append(f"{len(variaveis_modificadas)} variável(is) atualizada(s)")
+            if variaveis_removidas:
+                partes_mensagem.append(f"{len(variaveis_removidas)} variável(is) órfã(s) removida(s)")
+            if not variaveis_adicionadas and not variaveis_modificadas and not variaveis_removidas and houve_alteracao:
+                partes_mensagem.append("estrutura/ordem atualizada")
+            mensagem = "JSON atualizado: " + ", ".join(partes_mensagem)
+        else:
+            mensagem = "Nada para atualizar - JSON já está sincronizado com o banco de dados"
+
+        logger.info(
+            f"Sincronização JSON categoria {categoria_id}: "
+            f"{len(variaveis_adicionadas)} adicionadas, "
+            f"{len(variaveis_modificadas)} modificadas, "
+            f"{len(variaveis_removidas)} removidas, "
+            f"houve_alteracao={houve_alteracao}"
+        )
+
         return SyncJsonResponse(
             success=True,
-            schema_json={},
-            variaveis_adicionadas=0,
-            mensagem="Nenhuma pergunta ativa encontrada para esta categoria"
+            schema_json=json_novo,
+            variaveis_adicionadas=len(variaveis_adicionadas),
+            variaveis_adicionadas_lista=variaveis_adicionadas if variaveis_adicionadas else None,
+            variaveis_modificadas=len(variaveis_modificadas),
+            variaveis_modificadas_lista=variaveis_modificadas if variaveis_modificadas else None,
+            variaveis_removidas=len(variaveis_removidas),
+            variaveis_removidas_lista=variaveis_removidas if variaveis_removidas else None,
+            houve_alteracao=houve_alteracao,
+            mensagem=mensagem
         )
 
-    # Carrega JSON atual da categoria
-    try:
-        json_atual = json.loads(categoria.formato_json) if categoria.formato_json else {}
-    except json.JSONDecodeError:
-        json_atual = {}
-
-    # Valida perguntas e identifica incompletas
-    perguntas_incompletas = []
-    perguntas_validas = []
-
-    for p in perguntas:
-        slug = p.nome_variavel_sugerido
-        tipo = p.tipo_sugerido
-
-        if not slug or not slug.strip():
-            perguntas_incompletas.append({
-                "id": p.id,
-                "pergunta": p.pergunta[:100] + "..." if len(p.pergunta) > 100 else p.pergunta,
-                "problema": "Falta nome/slug da variável"
-            })
-            continue
-
-        if not tipo or not tipo.strip():
-            perguntas_incompletas.append({
-                "id": p.id,
-                "pergunta": p.pergunta[:100] + "..." if len(p.pergunta) > 100 else p.pergunta,
-                "slug": slug,
-                "problema": "Falta tipo da variável"
-            })
-            continue
-
-        perguntas_validas.append(p)
-
-    # Se há perguntas incompletas, retorna erro
-    if perguntas_incompletas:
+    except Exception as e:
+        import traceback
+        erro_detalhado = traceback.format_exc()
+        logger.error(
+            f"Erro ao sincronizar JSON da categoria {categoria_id}: {str(e)}\n"
+            f"Stacktrace:\n{erro_detalhado}"
+        )
         return SyncJsonResponse(
             success=False,
-            perguntas_incompletas=perguntas_incompletas,
-            erro=f"Não foi possível atualizar: {len(perguntas_incompletas)} pergunta(s) incompleta(s)"
+            erro=f"Erro ao sincronizar JSON: {str(e)}"
         )
-
-    # SEMPRE reconstrói o JSON a partir do BD (fonte da verdade)
-    # O BD é a fonte da verdade; comparamos estruturalmente para detectar mudanças
-    json_novo = {}
-    variaveis_adicionadas = []
-    variaveis_modificadas = []
-
-    def _normalizar_para_comparacao(obj):
-        """Normaliza objeto para comparação estrutural (ordena chaves, arrays)."""
-        if isinstance(obj, dict):
-            return {k: _normalizar_para_comparacao(obj[k]) for k in sorted(obj.keys())}
-        elif isinstance(obj, list):
-            # Para listas de dicts com 'id' ou 'value', ordena por esse campo
-            if obj and isinstance(obj[0], dict):
-                if 'id' in obj[0]:
-                    return sorted([_normalizar_para_comparacao(item) for item in obj],
-                                  key=lambda x: str(x.get('id', '')))
-                elif 'value' in obj[0]:
-                    return sorted([_normalizar_para_comparacao(item) for item in obj],
-                                  key=lambda x: str(x.get('value', '')))
-            return [_normalizar_para_comparacao(item) for item in obj]
-        return obj
-
-    def _configs_sao_iguais(config_bd, config_json):
-        """Compara se duas configurações são estruturalmente iguais."""
-        return _normalizar_para_comparacao(config_bd) == _normalizar_para_comparacao(config_json)
-
-    for p in perguntas_validas:
-        slug = p.nome_variavel_sugerido.strip()
-        tipo = p.tipo_sugerido.strip().lower()
-
-        # SEMPRE constrói a configuração a partir do BD
-        config = {
-            "type": tipo,
-            "description": p.pergunta
-        }
-
-        # Adiciona dependências se configuradas
-        if p.depends_on_variable:
-            config["conditional"] = True
-            config["depends_on"] = p.depends_on_variable
-
-            if p.dependency_operator:
-                config["dependency_operator"] = p.dependency_operator
-
-            if p.dependency_value is not None:
-                config["dependency_value"] = p.dependency_value
-
-        # Adiciona dependency_config se existir (configuração complexa)
-        if p.dependency_config:
-            config["dependency_config"] = p.dependency_config
-
-        # Adiciona opções se tipo choice e há opções
-        if tipo == "choice" and p.opcoes_sugeridas:
-            config["options"] = p.opcoes_sugeridas
-
-        # Adiciona campos obrigatórios se existir
-        if hasattr(p, 'required') and p.required is not None:
-            config["required"] = p.required
-
-        # Verifica se é nova ou modificada
-        if slug in json_atual:
-            # Compara estruturalmente para detectar mudanças
-            if not _configs_sao_iguais(config, json_atual[slug]):
-                variaveis_modificadas.append(slug)
-        else:
-            variaveis_adicionadas.append(slug)
-
-        json_novo[slug] = config
-
-    # IMPORTANTE: NÃO preserva campos do JSON original que não estão nas perguntas
-    # O JSON deve ser uma projeção EXATA das Perguntas de Extração ativas
-    # Se não existe pergunta ativa, não pode existir variável no JSON
-    # Campos antigos/órfãos são REMOVIDOS propositalmente
-    variaveis_removidas = [chave for chave in json_atual.keys() if chave not in json_novo]
-    if variaveis_removidas:
-        logger.info(f"Variáveis removidas do JSON (sem pergunta ativa): {variaveis_removidas}")
-
-    # Detecta se houve alteração real (inclui mudanças na ordem das chaves)
-    json_atual_normalizado = _normalizar_para_comparacao(json_atual)
-    json_novo_normalizado = _normalizar_para_comparacao(json_novo)
-    houve_alteracao = json_atual_normalizado != json_novo_normalizado
-
-    # Monta resposta com informações detalhadas
-    if variaveis_adicionadas or variaveis_modificadas or variaveis_removidas or houve_alteracao:
-        partes_mensagem = []
-        if variaveis_adicionadas:
-            partes_mensagem.append(f"{len(variaveis_adicionadas)} variável(is) adicionada(s)")
-        if variaveis_modificadas:
-            partes_mensagem.append(f"{len(variaveis_modificadas)} variável(is) atualizada(s)")
-        if variaveis_removidas:
-            partes_mensagem.append(f"{len(variaveis_removidas)} variável(is) órfã(s) removida(s)")
-        if not variaveis_adicionadas and not variaveis_modificadas and not variaveis_removidas and houve_alteracao:
-            partes_mensagem.append("estrutura/ordem atualizada")
-        mensagem = "JSON atualizado: " + ", ".join(partes_mensagem)
-    else:
-        mensagem = "Nada para atualizar - JSON já está sincronizado com o banco de dados"
-
-    logger.info(
-        f"Sincronização JSON categoria {categoria_id}: "
-        f"{len(variaveis_adicionadas)} adicionadas, "
-        f"{len(variaveis_modificadas)} modificadas, "
-        f"{len(variaveis_removidas)} removidas, "
-        f"houve_alteracao={houve_alteracao}"
-    )
-
-    return SyncJsonResponse(
-        success=True,
-        schema_json=json_novo,
-        variaveis_adicionadas=len(variaveis_adicionadas),
-        variaveis_adicionadas_lista=variaveis_adicionadas if variaveis_adicionadas else None,
-        variaveis_modificadas=len(variaveis_modificadas),
-        variaveis_modificadas_lista=variaveis_modificadas if variaveis_modificadas else None,
-        variaveis_removidas=len(variaveis_removidas),
-        variaveis_removidas_lista=variaveis_removidas if variaveis_removidas else None,
-        houve_alteracao=houve_alteracao,
-        mensagem=mensagem
-    )
 
 
 # ============================================================================
@@ -2345,6 +2617,434 @@ async def sincronizar_perguntas_com_json(
     )
 
 
+@router.post("/categorias/{categoria_id}/aplicar-json", response_model=AplicarJsonResponse)
+async def aplicar_json_nas_perguntas(
+    categoria_id: int,
+    request: AplicarJsonRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Aplica o JSON como fonte de verdade, reconciliando perguntas e variáveis.
+
+    Este endpoint faz uma SINCRONIZAÇÃO BIDIRECIONAL onde o JSON é a fonte de verdade:
+
+    1. PARSEIA o JSON e valida estrutura e dependências
+    2. CRIA perguntas/variáveis para campos novos no JSON
+    3. ATUALIZA perguntas/variáveis existentes (tipo, opções, dependências, descrição)
+    4. REMOVE perguntas/variáveis que não estão mais no JSON:
+       - Se usada por outra categoria: apenas desassocia
+       - Se não usada por nada: hard delete
+       - Se usada por prompts: soft delete (inativa)
+
+    Retorna detalhes completos da reconciliação.
+    """
+    import time
+    start_time = time.time()
+
+    # Verifica permissão
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissão para aplicar JSON")
+
+    # Verifica se a categoria existe
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    # 1. PARSEIA E VALIDA O JSON
+    try:
+        novo_json = json.loads(request.json_content)
+    except json.JSONDecodeError as e:
+        return AplicarJsonResponse(
+            success=False,
+            erro=f"JSON inválido: {str(e)}",
+            tempo_ms=int((time.time() - start_time) * 1000)
+        )
+
+    if not isinstance(novo_json, dict):
+        return AplicarJsonResponse(
+            success=False,
+            erro="JSON deve ser um objeto (dicionário), não um array ou valor primitivo",
+            tempo_ms=int((time.time() - start_time) * 1000)
+        )
+
+    # 2. EXTRAI CAMPOS DO JSON E VALIDA ESTRUTURA
+    campos_json = {}  # slug -> {type, description, options, depends_on, ...}
+    erros_validacao = []
+
+    def _normalizar_tipo(tipo_raw: str) -> str:
+        """Normaliza tipos do JSON para tipos do sistema."""
+        if not tipo_raw:
+            return "text"
+        tipo = tipo_raw.lower().strip()
+        mapeamento = {
+            "string": "text",
+            "texto": "text",
+            "text": "text",
+            "number": "number",
+            "numero": "number",
+            "integer": "number",
+            "int": "number",
+            "float": "number",
+            "boolean": "boolean",
+            "bool": "boolean",
+            "sim/nao": "boolean",
+            "sim/não": "boolean",
+            "date": "date",
+            "data": "date",
+            "datetime": "date",
+            "choice": "choice",
+            "escolha": "choice",
+            "enum": "choice",
+            "select": "choice",
+            "list": "list",
+            "lista": "list",
+            "array": "list",
+            "currency": "currency",
+            "moeda": "currency",
+            "monetario": "currency",
+            "monetário": "currency",
+        }
+        return mapeamento.get(tipo, "text")
+
+    for slug, campo_info in novo_json.items():
+        if not isinstance(campo_info, dict):
+            # Campo simples (ex: "tipo_documento": "string")
+            campos_json[slug] = {
+                "type": _normalizar_tipo(str(campo_info)) if campo_info else "text",
+                "description": f"Campo {slug}",
+                "options": None,
+                "depends_on": None,
+                "depends_value": None,
+                "depends_operator": None
+            }
+            continue
+
+        # Campo completo com metadados
+        tipo = _normalizar_tipo(campo_info.get("type", "text"))
+        descricao = campo_info.get("description", campo_info.get("pergunta", f"Campo {slug}"))
+        opcoes = campo_info.get("options", campo_info.get("opcoes"))
+
+        # Normaliza opções
+        if opcoes and not isinstance(opcoes, list):
+            opcoes = [str(opcoes)]
+
+        # Extrai dependências (suporta vários formatos)
+        depends_on = (
+            campo_info.get("depends_on") or
+            campo_info.get("conditional") or
+            campo_info.get("depends_on_variable")
+        )
+        depends_value = campo_info.get("depends_value", campo_info.get("dependency_value"))
+        depends_operator = campo_info.get("depends_operator", campo_info.get("dependency_operator", "equals"))
+
+        # Se depends_on é um dict (formato {"field": "x", "value": "y"})
+        if isinstance(depends_on, dict):
+            depends_value = depends_on.get("value", depends_on.get("equals"))
+            depends_on = depends_on.get("field", depends_on.get("variable"))
+
+        campos_json[slug] = {
+            "type": tipo,
+            "description": descricao,
+            "options": opcoes,
+            "depends_on": depends_on,
+            "depends_value": depends_value,
+            "depends_operator": depends_operator
+        }
+
+    # 3. VALIDA DEPENDÊNCIAS (todas devem existir no próprio JSON)
+    slugs_json = set(campos_json.keys())
+    for slug, info in campos_json.items():
+        if info["depends_on"]:
+            dep = info["depends_on"]
+            # Normaliza: remove prefixo de namespace se presente
+            namespace = categoria.namespace or ""
+            dep_normalizado = dep
+            if namespace and dep.startswith(namespace + "_"):
+                dep_normalizado = dep[len(namespace) + 1:]
+
+            # Verifica se dependência existe (com ou sem prefixo)
+            if dep not in slugs_json and dep_normalizado not in slugs_json:
+                # Tenta com prefixo adicionado
+                dep_com_prefixo = f"{namespace}_{dep}" if namespace else dep
+                if dep_com_prefixo not in slugs_json:
+                    erros_validacao.append({
+                        "slug": slug,
+                        "erro": f"Dependência inválida: '{dep}' não existe no JSON",
+                        "sugestao": f"Slugs disponíveis: {sorted(list(slugs_json)[:10])}"
+                    })
+
+    if erros_validacao:
+        return AplicarJsonResponse(
+            success=False,
+            erro=f"JSON contém {len(erros_validacao)} erro(s) de validação",
+            erros_validacao=erros_validacao,
+            tempo_ms=int((time.time() - start_time) * 1000)
+        )
+
+    # 4. CARREGA ESTADO ATUAL DO BD
+    perguntas_atuais = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.categoria_id == categoria_id
+    ).all()
+    perguntas_por_slug = {p.nome_variavel_sugerido: p for p in perguntas_atuais if p.nome_variavel_sugerido}
+
+    variaveis_atuais = db.query(ExtractionVariable).filter(
+        ExtractionVariable.categoria_id == categoria_id
+    ).all()
+    variaveis_por_slug = {v.slug: v for v in variaveis_atuais}
+
+    # 5. CALCULA DIFF: to_create, to_update, to_delete
+    slugs_bd = set(perguntas_por_slug.keys()) | set(variaveis_por_slug.keys())
+
+    to_create = slugs_json - slugs_bd
+    to_update = slugs_json & slugs_bd
+    to_delete = slugs_bd - slugs_json
+
+    # Contadores e detalhes
+    perguntas_criadas = 0
+    perguntas_atualizadas = 0
+    perguntas_removidas = 0
+    variaveis_criadas = 0
+    variaveis_atualizadas = 0
+    variaveis_removidas = 0
+    lista_criadas = []
+    lista_atualizadas = []
+    lista_removidas = []
+
+    # 6. PROCESSA CRIAÇÕES (novos campos no JSON)
+    ordem_atual = db.query(func.max(ExtractionQuestion.ordem)).filter(
+        ExtractionQuestion.categoria_id == categoria_id
+    ).scalar() or 0
+    ordem_atual += 1
+
+    for slug in sorted(to_create):
+        info = campos_json[slug]
+
+        # Cria pergunta
+        nova_pergunta = ExtractionQuestion(
+            categoria_id=categoria_id,
+            pergunta=info["description"],
+            nome_variavel_sugerido=slug,
+            tipo_sugerido=info["type"],
+            opcoes_sugeridas=info["options"],
+            depends_on_variable=info["depends_on"],
+            dependency_operator=info["depends_operator"],
+            dependency_value=info["depends_value"],
+            ativo=True,
+            ordem=ordem_atual,
+            criado_por=current_user.id,
+            atualizado_por=current_user.id
+        )
+        db.add(nova_pergunta)
+        db.flush()
+        perguntas_criadas += 1
+        ordem_atual += 1
+
+        # Cria variável
+        nova_variavel = ExtractionVariable(
+            slug=slug,
+            label=info["description"][:200] if len(info["description"]) > 200 else info["description"],
+            descricao=info["description"],
+            tipo=info["type"],
+            opcoes=info["options"],
+            categoria_id=categoria_id,
+            source_question_id=nova_pergunta.id,
+            depends_on_variable=info["depends_on"],
+            is_conditional=bool(info["depends_on"]),
+            ativo=True
+        )
+        db.add(nova_variavel)
+        variaveis_criadas += 1
+        lista_criadas.append(slug)
+
+        logger.info(f"[AplicarJSON] Criado: slug={slug}, tipo={info['type']}")
+
+    # 7. PROCESSA ATUALIZAÇÕES (campos existentes que podem ter mudado)
+    for slug in sorted(to_update):
+        info = campos_json[slug]
+        houve_mudanca = False
+
+        # Atualiza pergunta se existir
+        if slug in perguntas_por_slug:
+            pergunta = perguntas_por_slug[slug]
+
+            # Verifica mudanças
+            if pergunta.tipo_sugerido != info["type"]:
+                pergunta.tipo_sugerido = info["type"]
+                houve_mudanca = True
+            if pergunta.pergunta != info["description"]:
+                pergunta.pergunta = info["description"]
+                houve_mudanca = True
+            if pergunta.opcoes_sugeridas != info["options"]:
+                pergunta.opcoes_sugeridas = info["options"]
+                houve_mudanca = True
+            if pergunta.depends_on_variable != info["depends_on"]:
+                pergunta.depends_on_variable = info["depends_on"]
+                pergunta.dependency_operator = info["depends_operator"]
+                pergunta.dependency_value = info["depends_value"]
+                houve_mudanca = True
+            if not pergunta.ativo:
+                pergunta.ativo = True
+                houve_mudanca = True
+
+            if houve_mudanca:
+                pergunta.atualizado_por = current_user.id
+                pergunta.atualizado_em = datetime.utcnow()
+                perguntas_atualizadas += 1
+
+        # Atualiza variável se existir
+        if slug in variaveis_por_slug:
+            variavel = variaveis_por_slug[slug]
+            var_mudou = False
+
+            if variavel.tipo != info["type"]:
+                variavel.tipo = info["type"]
+                var_mudou = True
+            if variavel.descricao != info["description"]:
+                variavel.descricao = info["description"]
+                variavel.label = info["description"][:200] if len(info["description"]) > 200 else info["description"]
+                var_mudou = True
+            if variavel.opcoes != info["options"]:
+                variavel.opcoes = info["options"]
+                var_mudou = True
+            if variavel.depends_on_variable != info["depends_on"]:
+                variavel.depends_on_variable = info["depends_on"]
+                variavel.is_conditional = bool(info["depends_on"])
+                var_mudou = True
+            if not variavel.ativo:
+                variavel.ativo = True
+                var_mudou = True
+
+            if var_mudou:
+                variavel.atualizado_em = datetime.utcnow()
+                variaveis_atualizadas += 1
+                houve_mudanca = True
+
+        if houve_mudanca:
+            lista_atualizadas.append(slug)
+            logger.info(f"[AplicarJSON] Atualizado: slug={slug}")
+
+    # 8. PROCESSA REMOÇÕES (campos que estavam no BD mas não estão no JSON)
+    for slug in sorted(to_delete):
+        # Verifica se a variável é usada por prompts
+        uso_prompts = db.query(PromptVariableUsage).filter(
+            PromptVariableUsage.variable_slug == slug
+        ).count()
+
+        # Verifica se é usada por outra categoria
+        outras_categorias = db.query(ExtractionVariable).filter(
+            ExtractionVariable.slug == slug,
+            ExtractionVariable.categoria_id != categoria_id,
+            ExtractionVariable.ativo == True
+        ).count()
+
+        # Remove pergunta
+        if slug in perguntas_por_slug:
+            pergunta = perguntas_por_slug[slug]
+            if uso_prompts > 0:
+                # Soft delete - apenas desativa
+                pergunta.ativo = False
+                pergunta.atualizado_por = current_user.id
+                pergunta.atualizado_em = datetime.utcnow()
+            else:
+                # Hard delete
+                db.delete(pergunta)
+            perguntas_removidas += 1
+
+        # Remove variável
+        if slug in variaveis_por_slug:
+            variavel = variaveis_por_slug[slug]
+            if outras_categorias > 0:
+                # Apenas desassocia desta categoria
+                variavel.categoria_id = None
+                variavel.atualizado_em = datetime.utcnow()
+            elif uso_prompts > 0:
+                # Soft delete - apenas desativa
+                variavel.ativo = False
+                variavel.atualizado_em = datetime.utcnow()
+            else:
+                # Hard delete - remove completamente
+                # Primeiro limpa dependências de outras perguntas/variáveis
+                db.query(ExtractionQuestion).filter(
+                    ExtractionQuestion.depends_on_variable == slug
+                ).update({
+                    ExtractionQuestion.depends_on_variable: None,
+                    ExtractionQuestion.dependency_operator: None,
+                    ExtractionQuestion.dependency_value: None
+                })
+                db.query(ExtractionVariable).filter(
+                    ExtractionVariable.depends_on_variable == slug
+                ).update({
+                    ExtractionVariable.depends_on_variable: None,
+                    ExtractionVariable.is_conditional: False
+                })
+                db.delete(variavel)
+            variaveis_removidas += 1
+
+        lista_removidas.append(slug)
+        logger.info(f"[AplicarJSON] Removido: slug={slug}, uso_prompts={uso_prompts}, outras_cats={outras_categorias}")
+
+    # 9. ATUALIZA O JSON DA CATEGORIA
+    categoria.formato_json = request.json_content
+    categoria.atualizado_em = datetime.utcnow()
+
+    # 10. COMMIT DA TRANSAÇÃO
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[AplicarJSON] Erro ao commitar: {e}")
+        return AplicarJsonResponse(
+            success=False,
+            erro=f"Erro ao salvar alterações: {str(e)}",
+            tempo_ms=int((time.time() - start_time) * 1000)
+        )
+
+    # Calcula tempo total
+    tempo_ms = int((time.time() - start_time) * 1000)
+
+    # Monta mensagem
+    partes = []
+    if perguntas_criadas:
+        partes.append(f"{perguntas_criadas} pergunta(s) criada(s)")
+    if perguntas_atualizadas:
+        partes.append(f"{perguntas_atualizadas} pergunta(s) atualizada(s)")
+    if perguntas_removidas:
+        partes.append(f"{perguntas_removidas} pergunta(s) removida(s)")
+    if variaveis_criadas:
+        partes.append(f"{variaveis_criadas} variável(is) criada(s)")
+    if variaveis_atualizadas:
+        partes.append(f"{variaveis_atualizadas} variável(is) atualizada(s)")
+    if variaveis_removidas:
+        partes.append(f"{variaveis_removidas} variável(is) removida(s)")
+
+    if partes:
+        mensagem = "Aplicação concluída: " + ", ".join(partes)
+    else:
+        mensagem = "Nenhuma alteração necessária - JSON já estava sincronizado"
+
+    logger.info(
+        f"[AplicarJSON] categoria_id={categoria_id}, "
+        f"criadas={len(lista_criadas)}, atualizadas={len(lista_atualizadas)}, "
+        f"removidas={len(lista_removidas)}, tempo={tempo_ms}ms"
+    )
+
+    return AplicarJsonResponse(
+        success=True,
+        perguntas_criadas=perguntas_criadas,
+        perguntas_atualizadas=perguntas_atualizadas,
+        perguntas_removidas=perguntas_removidas,
+        variaveis_criadas=variaveis_criadas,
+        variaveis_atualizadas=variaveis_atualizadas,
+        variaveis_removidas=variaveis_removidas,
+        criadas=lista_criadas,
+        atualizadas=lista_atualizadas,
+        removidas=lista_removidas,
+        mensagem=mensagem,
+        tempo_ms=tempo_ms
+    )
+
+
 @router.post("/modelos", response_model=ExtractionModelResponse, status_code=201)
 async def criar_modelo_manual(
     data: ExtractionModelCreate,
@@ -2427,17 +3127,17 @@ async def listar_variaveis(
     from sqlalchemy.orm import aliased
 
     # 1. QUERY PRINCIPAL com JOINs (evita N+1)
-    # Subquery para contar uso de variáveis
+    # Subquery para contar uso de variáveis em prompts
     uso_subquery = db.query(
         PromptVariableUsage.variable_slug,
         sql_func.count(PromptVariableUsage.id).label('uso_count')
     ).group_by(PromptVariableUsage.variable_slug).subquery()
 
-    # Query principal com JOINs
+    # Query principal com JOINs - agora inclui formato_json para verificação real
     query = db.query(
         ExtractionVariable,
         CategoriaResumoJSON.nome.label('categoria_nome'),
-        CategoriaResumoJSON.json_gerado_por_ia.label('json_gerado_por_ia'),
+        CategoriaResumoJSON.formato_json.label('categoria_formato_json'),  # Para verificar se slug está no JSON
         ExtractionQuestion.ordem.label('pergunta_ordem'),
         ExtractionQuestion.depends_on_variable.label('pergunta_depends_on'),
         sql_func.coalesce(uso_subquery.c.uso_count, 0).label('uso_count')
@@ -2515,13 +3215,33 @@ async def listar_variaveis(
     for slug in deps_map:
         calcular_profundidade_local(slug)
 
-    # 3. MONTA RESPOSTA
+    # 3. PRÉ-CARREGAR NOMES DE PROMPTS QUE USAM VARIÁVEIS
+    # Busca todos os usos de variáveis com nomes dos prompts
+    from admin.models_prompts import PromptModulo
+    prompts_por_variavel = {}
+
+    usos_com_nomes = db.query(
+        PromptVariableUsage.variable_slug,
+        PromptModulo.titulo
+    ).join(
+        PromptModulo,
+        PromptVariableUsage.prompt_id == PromptModulo.id
+    ).all()
+
+    for uso in usos_com_nomes:
+        slug = uso.variable_slug
+        if slug not in prompts_por_variavel:
+            prompts_por_variavel[slug] = []
+        if uso.titulo not in prompts_por_variavel[slug]:
+            prompts_por_variavel[slug].append(uso.titulo)
+
+    # 4. MONTA RESPOSTA
     resultado = []
 
     for row in resultados_query:
         v = row[0]  # ExtractionVariable
         categoria_nome = row.categoria_nome
-        json_gerado_por_ia = row.json_gerado_por_ia
+        categoria_formato_json = row.categoria_formato_json
         pergunta_ordem = row.pergunta_ordem
         pergunta_depends_on = row.pergunta_depends_on
         uso_count = row.uso_count or 0
@@ -2540,8 +3260,17 @@ async def listar_variaveis(
         # Usa profundidade pré-calculada
         depth = depth_map.get(v.slug, 0) if depends_on else 0
 
-        # Determina se está em uso no JSON
-        em_uso_json = bool(json_gerado_por_ia) if v.categoria_id else False
+        # VERIFICAÇÃO REAL: Determina se está presente no JSON da categoria
+        em_uso_json = False
+        if categoria_formato_json:
+            try:
+                json_data = json.loads(categoria_formato_json)
+                em_uso_json = v.slug in json_data
+            except json.JSONDecodeError:
+                em_uso_json = False
+
+        # Lista de prompts que usam esta variável
+        prompts_usando = prompts_por_variavel.get(v.slug, [])
 
         resp = ExtractionVariableResponse(
             id=v.id,
@@ -2559,12 +3288,14 @@ async def listar_variaveis(
             ativo=v.ativo if v.ativo is not None else True,
             criado_em=v.criado_em,
             atualizado_em=v.atualizado_em,
-            uso_count=uso_count,
+            uso_count=uso_count,  # Mantém para retrocompatibilidade
+            uso_count_prompts=uso_count,  # Novo campo explícito
             is_conditional=is_conditional,
             depends_on_variable=depends_on,
             depth=depth,
             ordem=ordem,
-            em_uso_json=em_uso_json
+            em_uso_json=em_uso_json,
+            prompts_usando=prompts_usando if prompts_usando else None
         )
         resultado.append(resp)
 
@@ -2589,6 +3320,10 @@ async def listar_variaveis(
         # Adiciona ao resultado
         now = datetime.now()
         for idx, v in enumerate(variaveis_processo):
+            # Verifica se variável do sistema está em uso por prompts
+            prompts_usando_sistema = prompts_por_variavel.get(v.slug, [])
+            uso_count_sistema = len(prompts_usando_sistema)
+
             resp = ExtractionVariableResponse(
                 id=-(idx + 1),  # IDs negativos para variáveis do processo
                 slug=v.slug,
@@ -2605,12 +3340,14 @@ async def listar_variaveis(
                 ativo=True,
                 criado_em=now,
                 atualizado_em=now,
-                uso_count=0,
+                uso_count=uso_count_sistema,
+                uso_count_prompts=uso_count_sistema,
                 is_conditional=False,
                 depends_on_variable=None,
                 depth=0,
                 ordem=idx,
-                em_uso_json=False
+                em_uso_json=False,  # Variáveis de sistema não ficam em JSON de categoria
+                prompts_usando=prompts_usando_sistema if prompts_usando_sistema else None
             )
             resultado.append(resp)
 
@@ -3025,7 +3762,18 @@ async def excluir_variavel(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Desativa uma variável (soft delete)"""
+    """
+    Exclui uma variável permanentemente (HARD DELETE).
+
+    COMPORTAMENTO:
+    - SEMPRE faz HARD DELETE (apaga do banco)
+    - Remove automaticamente do JSON da categoria
+    - Remove automaticamente referências em PromptVariableUsage
+    - Remove automaticamente dependências de outras perguntas/variáveis
+    - Remove a pergunta de origem se existir
+
+    Isso garante limpeza completa e evita variáveis órfãs no sistema.
+    """
     # Verifica permissão
     if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
         raise HTTPException(status_code=403, detail="Sem permissão para excluir variáveis")
@@ -3034,31 +3782,62 @@ async def excluir_variavel(
     if not variavel:
         raise HTTPException(status_code=404, detail="Variável não encontrada")
 
-    # Verifica se está em uso em prompts
-    uso_count = db.query(PromptVariableUsage).filter(
-        PromptVariableUsage.variable_slug == variavel.slug
-    ).count()
+    slug = variavel.slug
 
-    if uso_count > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Variável está em uso por {uso_count} prompt(s). Remova os usos antes de desativar."
-        )
+    limpezas_realizadas = {
+        "json_atualizado": False,
+        "prompts_removidos": 0,
+        "dependencias_perguntas_removidas": 0,
+        "dependencias_variaveis_removidas": 0,
+        "pergunta_origem_removida": False
+    }
 
-    # Busca variáveis que dependem desta e remove a dependência
+    # 1. REMOVE DO JSON DA CATEGORIA
+    if variavel.categoria_id:
+        categoria = db.query(CategoriaResumoJSON).filter(
+            CategoriaResumoJSON.id == variavel.categoria_id
+        ).first()
+
+        if categoria and categoria.formato_json:
+            try:
+                json_data = json.loads(categoria.formato_json)
+                if slug in json_data:
+                    del json_data[slug]
+                    categoria.formato_json = json.dumps(json_data, ensure_ascii=False, indent=2)
+                    categoria.atualizado_em = datetime.utcnow()
+                    limpezas_realizadas["json_atualizado"] = True
+                    logger.info(f"Variável '{slug}' removida do JSON da categoria {categoria.nome}")
+            except json.JSONDecodeError:
+                logger.warning(f"JSON inválido na categoria {variavel.categoria_id}")
+
+    # 2. REMOVE REFERÊNCIAS EM PROMPTS (PromptVariableUsage)
+    usos_prompts = db.query(PromptVariableUsage).filter(
+        PromptVariableUsage.variable_slug == slug
+    ).all()
+
+    for uso in usos_prompts:
+        db.delete(uso)
+
+    limpezas_realizadas["prompts_removidos"] = len(usos_prompts)
+    if usos_prompts:
+        logger.info(f"Removidos {len(usos_prompts)} usos da variável '{slug}' em prompts")
+
+    # 3. REMOVE DEPENDÊNCIAS DE OUTRAS VARIÁVEIS
     variaveis_dependentes = db.query(ExtractionVariable).filter(
-        ExtractionVariable.depends_on_variable == variavel.slug
+        ExtractionVariable.depends_on_variable == slug
     ).all()
 
     for v in variaveis_dependentes:
         v.depends_on_variable = None
-        v.dependency_operator = None
-        v.dependency_value = None
+        v.is_conditional = False
+        v.dependency_config = None
         v.atualizado_em = datetime.utcnow()
 
-    # Busca perguntas que dependem desta e remove a dependência
+    limpezas_realizadas["dependencias_variaveis_removidas"] = len(variaveis_dependentes)
+
+    # 4. REMOVE DEPENDÊNCIAS DE OUTRAS PERGUNTAS
     perguntas_dependentes = db.query(ExtractionQuestion).filter(
-        ExtractionQuestion.depends_on_variable == variavel.slug
+        ExtractionQuestion.depends_on_variable == slug
     ).all()
 
     for p in perguntas_dependentes:
@@ -3068,21 +3847,51 @@ async def excluir_variavel(
         p.dependency_inferred = False
         p.atualizado_em = datetime.utcnow()
 
-    # Desativa a variável
-    variavel.ativo = False
-    variavel.atualizado_em = datetime.utcnow()
+    limpezas_realizadas["dependencias_perguntas_removidas"] = len(perguntas_dependentes)
 
+    # 5. REMOVE PERGUNTA DE ORIGEM (se existir)
+    if variavel.source_question_id:
+        pergunta_origem = db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.id == variavel.source_question_id
+        ).first()
+        if pergunta_origem:
+            db.delete(pergunta_origem)
+            limpezas_realizadas["pergunta_origem_removida"] = True
+            logger.info(f"Pergunta de origem {variavel.source_question_id} removida junto com variável")
+
+    # 6. HARD DELETE DA VARIÁVEL
+    db.delete(variavel)
     db.commit()
 
-    logger.info(f"Variável desativada: slug={variavel.slug}, dependências removidas: {len(variaveis_dependentes)} variáveis, {len(perguntas_dependentes)} perguntas")
+    logger.info(
+        f"Variável HARD DELETE: slug={slug}, "
+        f"json={limpezas_realizadas['json_atualizado']}, "
+        f"prompts={limpezas_realizadas['prompts_removidos']}, "
+        f"deps_vars={limpezas_realizadas['dependencias_variaveis_removidas']}, "
+        f"deps_pergs={limpezas_realizadas['dependencias_perguntas_removidas']}"
+    )
+
+    # Monta mensagem
+    message_parts = [f"Variável '{slug}' excluída permanentemente"]
+
+    if limpezas_realizadas["json_atualizado"]:
+        message_parts.append("removida do JSON")
+
+    if limpezas_realizadas["prompts_removidos"] > 0:
+        message_parts.append(f"removida de {limpezas_realizadas['prompts_removidos']} prompt(s)")
+
+    if limpezas_realizadas["dependencias_perguntas_removidas"] > 0:
+        message_parts.append(
+            f"{limpezas_realizadas['dependencias_perguntas_removidas']} dependência(s) de pergunta(s) limpas"
+        )
+
+    if limpezas_realizadas["pergunta_origem_removida"]:
+        message_parts.append("pergunta de origem removida")
 
     return {
         "success": True,
-        "message": "Variável desativada com sucesso",
-        "dependencias_removidas": {
-            "variaveis": len(variaveis_dependentes),
-            "perguntas": len(perguntas_dependentes)
-        }
+        "message": ", ".join(message_parts),
+        "limpezas_realizadas": limpezas_realizadas
     }
 
 

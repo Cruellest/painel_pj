@@ -30,6 +30,13 @@ from sistemas.prestacao_contas.xml_parser import (
     DocumentoProcesso,
     CODIGOS_NOTA_FISCAL,
 )
+from sistemas.prestacao_contas.extrato_paralelo import (
+    ExtratorParalelo,
+    ConfigExtratoParalelo,
+    ExtratoSource,
+    ResultadoExtratoParalelo,
+    is_valid_extrato,
+)
 from sistemas.prestacao_contas.identificador_peticoes import (
     IdentificadorPeticoes,
     TipoDocumento,
@@ -212,83 +219,34 @@ class OrquestradorPrestacaoContas:
             logger.info(f"{'#'*60}")
             yield EventoSSE(tipo="inicio", mensagem="Iniciando análise de prestação de contas")
 
+            # Gera correlation_id para rastrear métricas
+            import uuid
+            correlation_id = str(uuid.uuid4())[:8]
+            logger.info(f"[{correlation_id}] Iniciando pipeline paralelo")
+
             # =====================================================
-            # ETAPA 1: EXTRATO DA SUBCONTA
+            # ETAPAS 1+2 PARALELAS: XML + EXTRATO
             # =====================================================
-            log_etapa(1, "EXTRATO DA SUBCONTA")
+            # Executa em paralelo:
+            # - Task C: Consulta XML do processo (necessário para fallback e demais etapas)
+            # - Task A+B: Extração paralela de extrato (scrapper + fallback)
+            log_etapa(1, "CONSULTA XML + EXTRATO (PARALELO)")
             yield EventoSSE(
                 tipo="etapa",
                 etapa=1,
-                etapa_nome="Extrato da Subconta",
-                mensagem="Baixando extrato da subconta...",
+                etapa_nome="XML + Extrato (Paralelo)",
+                mensagem="Consultando processo e baixando extrato em paralelo...",
                 progresso=10
             )
 
-            resultado_subconta = await extrair_extrato_subconta(numero_cnj)
+            # TASK C: Consulta XML do processo
+            async def task_c_xml():
+                """Task C: Consulta XML do processo."""
+                async with aiohttp.ClientSession() as session:
+                    return await consultar_processo_async(session, numero_cnj)
 
-            extrato_encontrado_scrapper = False
-            MIN_TEXTO_EXTRATO_SCRAPPER = 200  # Mínimo de caracteres para considerar extrato válido
-
-            if resultado_subconta.status == StatusProcessamento.OK:
-                texto_extrato = resultado_subconta.texto_extraido or ""
-
-                # Verifica se o texto extraído é suficiente (não vazio ou muito curto)
-                if len(texto_extrato) >= MIN_TEXTO_EXTRATO_SCRAPPER:
-                    geracao.extrato_subconta_texto = texto_extrato
-                    # Salva PDF em base64 para visualização
-                    if resultado_subconta.pdf_bytes:
-                        import base64 as b64
-                        geracao.extrato_subconta_pdf_base64 = b64.b64encode(resultado_subconta.pdf_bytes).decode('utf-8')
-                    log_sucesso(f"Extrato da subconta baixado com sucesso ({len(texto_extrato)} caracteres)")
-                    extrato_encontrado_scrapper = True
-                    yield EventoSSE(
-                        tipo="progresso",
-                        etapa=1,
-                        mensagem="Extrato da subconta baixado com sucesso",
-                        progresso=20
-                    )
-                else:
-                    log_aviso(f"Scrapper retornou texto insuficiente ({len(texto_extrato)} chars < {MIN_TEXTO_EXTRATO_SCRAPPER}), buscando nos documentos...")
-                    yield EventoSSE(
-                        tipo="aviso",
-                        etapa=1,
-                        mensagem="Extrato da subconta com texto insuficiente, buscando nos documentos do processo..."
-                    )
-            elif resultado_subconta.status == StatusProcessamento.SEM_SUBCONTA:
-                log_aviso("Processo não possui subconta registrada no sistema TJ-MS")
-                yield EventoSSE(
-                    tipo="aviso",
-                    etapa=1,
-                    mensagem="Subconta não encontrada no sistema TJ-MS, buscando nos documentos do processo..."
-                )
-            else:
-                log_erro(f"Erro ao baixar subconta: {resultado_subconta.erro}")
-                yield EventoSSE(
-                    tipo="aviso",
-                    etapa=1,
-                    mensagem=f"Erro ao baixar subconta: {resultado_subconta.erro}. Buscando nos documentos..."
-                )
-
-            # FALLBACK: Se não encontrou via scrapper (ou texto insuficiente), busca código 71 (Extrato da Conta Única) no XML
-            # Este bloco será executado após a consulta do XML (Etapa 2), então definimos uma flag
-            buscar_extrato_xml = not extrato_encontrado_scrapper
-            log_info(f"Flag buscar_extrato_xml = {buscar_extrato_xml} (extrato_encontrado_scrapper = {extrato_encontrado_scrapper})")
-
-            # =====================================================
-            # ETAPA 2: XML DO PROCESSO
-            # =====================================================
-            log_etapa(2, "CONSULTA XML TJ-MS")
-            yield EventoSSE(
-                tipo="etapa",
-                etapa=2,
-                etapa_nome="Consulta XML TJ-MS",
-                mensagem="Consultando dados do processo no TJ-MS...",
-                progresso=25
-            )
-
-            async with aiohttp.ClientSession() as session:
-                xml_response = await consultar_processo_async(session, numero_cnj)
-
+            # Executa XML primeiro (necessário para o fallback)
+            xml_response = await task_c_xml()
             resultado_xml = parse_xml_processo(xml_response)
 
             if resultado_xml.erro:
@@ -299,7 +257,7 @@ class OrquestradorPrestacaoContas:
 
                 yield EventoSSE(
                     tipo="erro",
-                    etapa=2,
+                    etapa=1,
                     mensagem=f"Erro ao consultar processo: {resultado_xml.erro}"
                 )
                 yield EventoSSE(
@@ -313,6 +271,14 @@ class OrquestradorPrestacaoContas:
             log_sucesso(f"Processo encontrado: {resultado_xml.dados_basicos.autor}")
             log_info(f"Total de documentos no processo: {len(resultado_xml.peticoes_candidatas)} petições candidatas")
 
+            yield EventoSSE(
+                tipo="progresso",
+                etapa=1,
+                mensagem=f"Processo encontrado: {resultado_xml.dados_basicos.autor}",
+                progresso=20,
+                dados={"autor": resultado_xml.dados_basicos.autor}
+            )
+
             # DEBUG: Mostra as primeiras 15 petições candidatas
             logger.warning(f"{'='*60}")
             logger.warning(f"PETICOES CANDIDATAS (primeiras 15 de {len(resultado_xml.peticoes_candidatas)}):")
@@ -320,139 +286,83 @@ class OrquestradorPrestacaoContas:
                 logger.warning(f"  {i+1}. ID={pet.id} | Codigo={pet.tipo_codigo} | {pet.tipo_descricao[:50] if pet.tipo_descricao else 'Sem desc'}")
             logger.warning(f"{'='*60}")
 
+            # =====================================================
+            # EXTRAÇÃO PARALELA DE EXTRATO (Task A + Task B)
+            # =====================================================
             yield EventoSSE(
-                tipo="progresso",
+                tipo="etapa",
                 etapa=2,
-                mensagem=f"Processo encontrado: {resultado_xml.dados_basicos.autor}",
-                progresso=35,
-                dados={"autor": resultado_xml.dados_basicos.autor}
+                etapa_nome="Extrato da Subconta (Paralelo)",
+                mensagem="Executando scrapper e fallback em paralelo...",
+                progresso=25
             )
 
-            # =====================================================
-            # FALLBACK: BUSCAR EXTRATO DA CONTA ÚNICA (CÓDIGO 71)
-            # =====================================================
-            # Lista para armazenar imagens dos extratos (caso sejam PDFs de imagem)
-            extratos_imagens_fallback = []
+            # Carrega configuração de timeouts do banco
+            config_extrato = ConfigExtratoParalelo.from_db(self.db)
 
-            if buscar_extrato_xml:
-                log_info(">>> FALLBACK ATIVADO: Scrapper não retornou extrato válido, buscando nos documentos do processo...")
-                log_info("Buscando 'Extrato da Conta Única' (código 71) nos documentos do processo...")
+            # Executa extração paralela (Task A: scrapper + Task B: fallback)
+            extrator = ExtratorParalelo(config=config_extrato, correlation_id=correlation_id)
+            resultado_extrato = await extrator.extrair_paralelo(
+                numero_cnj=numero_cnj,
+                documentos=resultado_xml.documentos,
+            )
+
+            # Processa resultado da extração paralela
+            extratos_imagens_fallback = resultado_extrato.imagens_fallback
+
+            if resultado_extrato.valido:
+                geracao.extrato_subconta_texto = resultado_extrato.texto
+                geracao.extrato_subconta_pdf_base64 = resultado_extrato.pdf_base64
+
+                # Salva métricas de extração
+                geracao.extrato_source = resultado_extrato.source.value
+                geracao.extrato_metricas = resultado_extrato.metricas.to_dict()
+
+                log_sucesso(f"Extrato obtido via {resultado_extrato.source.value}")
+                log_info(f"  t_scrapper: {resultado_extrato.metricas.t_scrapper:.2f}s" if resultado_extrato.metricas.t_scrapper else "  t_scrapper: N/A")
+                log_info(f"  t_fallback: {resultado_extrato.metricas.t_fallback:.2f}s" if resultado_extrato.metricas.t_fallback else "  t_fallback: N/A")
+                log_info(f"  t_total: {resultado_extrato.metricas.t_total:.2f}s")
+
                 yield EventoSSE(
-                    tipo="info",
+                    tipo="progresso",
                     etapa=2,
-                    mensagem="Buscando Extrato da Conta Única nos documentos..."
+                    mensagem=f"Extrato obtido via {resultado_extrato.source.value} ({len(resultado_extrato.texto or '')} chars)",
+                    progresso=35,
+                    dados={
+                        "extrato_source": resultado_extrato.source.value,
+                        "t_scrapper": resultado_extrato.metricas.t_scrapper,
+                        "t_fallback": resultado_extrato.metricas.t_fallback,
+                        "t_total": resultado_extrato.metricas.t_total,
+                    }
+                )
+            else:
+                # Extrato não encontrado - NÃO interrompe o pipeline
+                geracao.extrato_subconta_texto = None
+                geracao.extrato_source = ExtratoSource.NONE.value
+                geracao.extrato_metricas = resultado_extrato.metricas.to_dict()
+                geracao.extrato_observacao = resultado_extrato.observacao
+
+                log_aviso(f"Extrato não localizado - pipeline continuará sem extrato")
+                log_info(f"  Observação: {resultado_extrato.observacao}")
+
+                yield EventoSSE(
+                    tipo="aviso",
+                    etapa=2,
+                    mensagem="Extrato não localizado - análise continuará sem extrato da subconta",
+                    dados={
+                        "extrato_source": "none",
+                        "observacao": resultado_extrato.observacao,
+                        "t_scrapper": resultado_extrato.metricas.t_scrapper,
+                        "t_fallback": resultado_extrato.metricas.t_fallback,
+                        "t_total": resultado_extrato.metricas.t_total,
+                    }
                 )
 
-                # Busca TODOS os documentos com código 71
-                CODIGO_EXTRATO_CONTA = "71"
-                extratos_conta_unica = [
-                    d for d in resultado_xml.documentos
-                    if str(d.tipo_codigo) == CODIGO_EXTRATO_CONTA
-                ]
-
-                if extratos_conta_unica:
-                    log_info(f"Encontrados {len(extratos_conta_unica)} documentos 'Extrato da Conta Única'")
-                    yield EventoSSE(
-                        tipo="info",
-                        etapa=2,
-                        mensagem=f"Encontrados {len(extratos_conta_unica)} extratos da conta única"
-                    )
-
-                    # Baixa e processa todos os extratos
-                    textos_extratos = []
-                    pdf_bytes_principal = None
-                    MIN_TEXTO_UTIL = 500  # Se texto < 500 chars, considera PDF de imagem
-
-                    async with aiohttp.ClientSession() as session:
-                        for i, extrato in enumerate(extratos_conta_unica):
-                            try:
-                                yield EventoSSE(
-                                    tipo="info",
-                                    etapa=2,
-                                    mensagem=f"Baixando extrato {i+1}/{len(extratos_conta_unica)}..."
-                                )
-
-                                xml_docs = await baixar_documentos_async(session, numero_cnj, [extrato.id])
-
-                                import base64
-                                import xml.etree.ElementTree as ET
-                                root = ET.fromstring(xml_docs)
-                                conteudo_bytes = None
-                                for elem in root.iter():
-                                    if 'conteudo' in elem.tag.lower() and elem.text:
-                                        conteudo_bytes = base64.b64decode(elem.text)
-                                        break
-
-                                if conteudo_bytes:
-                                    texto_extrato = extrair_texto_pdf(conteudo_bytes)
-                                    data_extrato = extrato.data_juntada.strftime('%d/%m/%Y') if extrato.data_juntada else 'Data desconhecida'
-
-                                    # Se texto extraído é muito curto, converte para imagem
-                                    if len(texto_extrato) < MIN_TEXTO_UTIL:
-                                        log_info(f"Extrato {extrato.id}: texto curto ({len(texto_extrato)} chars), convertendo para imagem...")
-                                        imagens = converter_pdf_para_imagens(conteudo_bytes)
-                                        if imagens:
-                                            extratos_imagens_fallback.append({
-                                                "id": extrato.id,
-                                                "tipo": f"Extrato da Conta Única - {data_extrato}",
-                                                "imagens": imagens
-                                            })
-                                            log_sucesso(f"Extrato {extrato.id} convertido para imagem ({len(imagens)} páginas)")
-                                    else:
-                                        textos_extratos.append(f"### Extrato da Conta Única {i+1} (ID: {extrato.id}, Data: {data_extrato})\n{texto_extrato}")
-                                        log_info(f"Extrato {extrato.id} baixado ({len(texto_extrato)} caracteres)")
-
-                                    # Guarda o PDF do primeiro extrato para visualização
-                                    if pdf_bytes_principal is None:
-                                        pdf_bytes_principal = conteudo_bytes
-
-                            except Exception as e:
-                                log_erro(f"Erro ao baixar extrato {extrato.id}: {e}")
-                                continue
-
-                    # Salva textos (se houver)
-                    if textos_extratos:
-                        geracao.extrato_subconta_texto = "## EXTRATOS DA CONTA ÚNICA (FALLBACK DO XML)\n\n" + "\n\n---\n\n".join(textos_extratos)
-                        log_sucesso(f"Fallback: {len(textos_extratos)} extratos com texto extraído")
-                    elif extratos_imagens_fallback:
-                        # Se só tem imagens, marca que extrato foi encontrado (será analisado via visão)
-                        geracao.extrato_subconta_texto = f"## EXTRATOS DA CONTA ÚNICA (IMAGENS)\n\n[{len(extratos_imagens_fallback)} extrato(s) convertido(s) para imagem - serão analisados via visão computacional]"
-                        log_sucesso(f"Fallback: {len(extratos_imagens_fallback)} extratos convertidos para imagem")
-
-                    # Salva PDF do primeiro extrato para visualização
-                    if pdf_bytes_principal:
-                        import base64 as b64
-                        geracao.extrato_subconta_pdf_base64 = b64.b64encode(pdf_bytes_principal).decode('utf-8')
-
-                    # Log do resultado
-                    total_processados = len(textos_extratos) + len(extratos_imagens_fallback)
-                    if total_processados > 0:
-                        log_sucesso(f"Fallback: {len(textos_extratos)} extratos texto + {len(extratos_imagens_fallback)} extratos imagem")
-                        yield EventoSSE(
-                            tipo="progresso",
-                            etapa=2,
-                            mensagem=f"{total_processados} extratos da conta única obtidos ({len(extratos_imagens_fallback)} como imagem)",
-                            progresso=38
-                        )
-                    else:
-                        log_aviso("Nenhum extrato da conta única pôde ser processado")
-                        yield EventoSSE(
-                            tipo="aviso",
-                            etapa=2,
-                            mensagem="Nenhum extrato da conta única pôde ser processado"
-                        )
-                else:
-                    log_aviso("Nenhum documento 'Extrato da Conta Única' (código 71) encontrado no processo")
-                    yield EventoSSE(
-                        tipo="aviso",
-                        etapa=2,
-                        mensagem="Nenhum extrato da conta única encontrado nos documentos"
-                    )
-
-                # =====================================================
-                # FALLBACK ADICIONAL: BUSCAR ALVARÁS (CÓDIGO 3)
-                # =====================================================
-                # Busca Alvarás nos últimos 30 documentos do processo
+            # =====================================================
+            # FALLBACK ADICIONAL: BUSCAR ALVARÁS (CÓDIGO 3)
+            # =====================================================
+            # Só busca alvarás se não encontrou extrato válido
+            if not resultado_extrato.valido:
                 log_info("Buscando 'Alvará' (código 3) nos últimos 30 documentos...")
                 yield EventoSSE(
                     tipo="info",
@@ -531,9 +441,6 @@ class OrquestradorPrestacaoContas:
                         )
                 else:
                     log_info("Nenhum Alvará encontrado nos últimos 30 documentos")
-            else:
-                # Fallback desativado - extrato já obtido via scrapper
-                log_info(">>> FALLBACK DESATIVADO: Extrato já obtido via scrapper da subconta, NÃO buscará nos documentos")
 
             # =====================================================
             # ETAPA 3: CLASSIFICAR DOCUMENTOS DO PROCESSO
@@ -1193,6 +1100,7 @@ class OrquestradorPrestacaoContas:
                 peticao_prestacao=geracao.peticao_prestacao_texto or "",
                 documentos_anexos=documentos_anexos,
                 peticoes_contexto=peticoes_contexto,
+                extrato_observacao=getattr(geracao, 'extrato_observacao', None),
             )
 
             # Log dos dados enviados

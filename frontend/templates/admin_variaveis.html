@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel de Variaveis - Portal PGE-MS</title>
-    <!-- VERSAO: 2026-01-16-v1 - agrupamento por categoria + slug sem prefixo -->
+    <!-- VERSAO: 2026-01-19-v2 - campos uso JSON e uso Prompts separados -->
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
@@ -876,7 +876,8 @@
                         };
                     }
                     grupos[catNome].variaveis.push(v);
-                    if (v.em_uso_json || v.uso_count > 0) {
+                    const temUso = v.em_uso_json || (v.uso_count_prompts || v.uso_count || 0) > 0;
+                    if (temUso) {
                         grupos[catNome].emUso++;
                     } else {
                         grupos[catNome].semUso++;
@@ -1000,7 +1001,7 @@
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider col-label">Label</th>
                             <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
                             ${!ocultarCategoria ? '<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>' : ''}
-                            <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Uso</th>
+                            <th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Uso</th>
                             <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acoes</th>
                         </tr>
                     </thead>
@@ -1016,15 +1017,32 @@
                     ? `<i class="fas fa-caret-right text-gray-300 text-xs" title="Depende de: ${v.depends_on_variable || 'pai'}"></i>`
                     : '';
 
-                // Indicador de uso
-                const emUso = v.em_uso_json || v.uso_count > 0;
-                let usoIcon;
-                if (emUso) {
-                    const usoTitle = v.uso_count > 0 ? `Em uso: ${v.uso_count} prompt(s)` : 'Em uso';
-                    usoIcon = `<i class="fas fa-check-circle text-green-500" title="${usoTitle}"></i>`;
+                // Indicadores de uso separados: JSON e Prompts
+                const emUsoJson = v.em_uso_json === true;
+                const emUsoPrompts = (v.uso_count_prompts || v.uso_count || 0) > 0;
+                const promptsUsando = v.prompts_usando || [];
+
+                // Icone JSON
+                let jsonIcon;
+                if (emUsoJson) {
+                    jsonIcon = `<i class="fas fa-file-code text-blue-500" title="Em uso no JSON da categoria"></i>`;
                 } else {
-                    usoIcon = `<i class="fas fa-times-circle text-red-400" title="Sem uso"></i>`;
+                    jsonIcon = `<i class="fas fa-file-code text-gray-300" title="Nao presente no JSON"></i>`;
                 }
+
+                // Icone Prompts
+                let promptIcon;
+                if (emUsoPrompts) {
+                    const promptCount = v.uso_count_prompts || v.uso_count || 0;
+                    const promptTitle = promptsUsando.length > 0
+                        ? `Em uso por ${promptCount} prompt(s):\n${promptsUsando.join(', ')}`
+                        : `Em uso por ${promptCount} prompt(s)`;
+                    promptIcon = `<i class="fas fa-puzzle-piece text-purple-500" title="${promptTitle}"></i>`;
+                } else {
+                    promptIcon = `<i class="fas fa-puzzle-piece text-gray-300" title="Nao usado por prompts"></i>`;
+                }
+
+                const usoIcons = `<span class="flex items-center justify-center gap-2">${jsonIcon} ${promptIcon}</span>`;
 
                 // Badge de inativa
                 const inativaBadge = !v.ativo
@@ -1059,7 +1077,7 @@
                             <span class="px-2 py-0.5 text-xs rounded-full ${getTipoBadgeClass(v.tipo)}">${getTipoLabel(v.tipo)}</span>
                         </td>
                         ${!ocultarCategoria ? `<td class="px-4 py-2 text-gray-500 text-xs">${v.categoria_nome || '-'}</td>` : ''}
-                        <td class="px-4 py-2 text-center">${usoIcon}</td>
+                        <td class="px-4 py-2 text-center">${usoIcons}</td>
                         <td class="px-4 py-2 text-right">
                             <button onclick="verDetalhes(${v.id})" class="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Ver detalhes">
                                 <i class="fas fa-eye text-sm"></i>
@@ -1068,8 +1086,8 @@
                                 <button onclick="editarVariavel(${v.id})" class="p-1.5 text-yellow-600 hover:bg-yellow-50 rounded transition-colors" title="Editar">
                                     <i class="fas fa-edit text-sm"></i>
                                 </button>
-                                <button onclick="excluirVariavel(${v.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Desativar" ${v.uso_count > 0 || v.em_uso_json ? 'disabled' : ''}>
-                                    <i class="fas fa-ban text-sm"></i>
+                                <button onclick="excluirVariavel(${v.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Excluir">
+                                    <i class="fas fa-trash text-sm"></i>
                                 </button>
                             ` : `
                                 <button onclick="reativarVariavel(${v.id})" class="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" title="Reativar">
@@ -1353,15 +1371,10 @@
             }
         }
 
-        // Excluir variavel (desativar)
+        // Excluir variavel (HARD DELETE com limpeza automatica)
         async function excluirVariavel(id) {
             const v = variaveis.find(v => v.id === id);
             if (!v) return;
-
-            if (v.uso_count > 0 || v.em_uso_json) {
-                alert('Nao e possivel desativar uma variavel que esta em uso por prompts ou categorias JSON.');
-                return;
-            }
 
             try {
                 // Primeiro, busca informacoes sobre dependencias
@@ -1371,23 +1384,41 @@
                     }
                 });
 
-                let mensagemConfirmacao = `Deseja desativar a variavel "${v.label}"?`;
+                let avisos = [];
 
+                // Verifica uso em JSON
+                if (v.em_uso_json) {
+                    avisos.push('- Sera REMOVIDA do JSON da categoria');
+                }
+
+                // Verifica uso em Prompts
+                const promptCount = v.uso_count_prompts || v.uso_count || 0;
+                if (promptCount > 0) {
+                    const promptsLista = v.prompts_usando && v.prompts_usando.length > 0
+                        ? v.prompts_usando.join(', ')
+                        : `${promptCount} prompt(s)`;
+                    avisos.push(`- Sera removida como condicao de: ${promptsLista}`);
+                }
+
+                // Verifica dependencias
                 if (depResponse.ok) {
                     const depData = await depResponse.json();
-                    if (depData.total_dependentes > 0) {
-                        mensagemConfirmacao = `ATENCAO: Existem ${depData.total_dependentes} item(ns) que dependem desta variavel:\n\n`;
-
-                        if (depData.variaveis_dependentes.length > 0) {
-                            mensagemConfirmacao += `Variaveis: ${depData.variaveis_dependentes.map(v => v.slug).join(', ')}\n`;
-                        }
-                        if (depData.perguntas_dependentes.length > 0) {
-                            mensagemConfirmacao += `Perguntas: ${depData.perguntas_dependentes.length} pergunta(s)\n`;
-                        }
-
-                        mensagemConfirmacao += `\nEssas dependencias serao REMOVIDAS.\n\nDeseja continuar e desativar "${v.label}"?`;
+                    if (depData.variaveis_dependentes && depData.variaveis_dependentes.length > 0) {
+                        avisos.push(`- Variaveis dependentes terao a dependencia removida: ${depData.variaveis_dependentes.map(v => v.slug).join(', ')}`);
+                    }
+                    if (depData.perguntas_dependentes && depData.perguntas_dependentes.length > 0) {
+                        avisos.push(`- ${depData.perguntas_dependentes.length} pergunta(s) terao a dependencia removida`);
                     }
                 }
+
+                let mensagemConfirmacao = `ATENCAO: Esta acao e IRREVERSIVEL!\n\n`;
+                mensagemConfirmacao += `A variavel "${v.label}" sera EXCLUIDA PERMANENTEMENTE.\n\n`;
+
+                if (avisos.length > 0) {
+                    mensagemConfirmacao += `Limpeza automatica que sera realizada:\n${avisos.join('\n')}\n\n`;
+                }
+
+                mensagemConfirmacao += `Deseja continuar?`;
 
                 if (!confirm(mensagemConfirmacao)) return;
 
@@ -1400,16 +1431,23 @@
 
                 if (!response.ok) {
                     const error = await response.json();
-                    throw new Error(error.detail || 'Erro ao desativar');
+                    throw new Error(error.detail || 'Erro ao excluir');
                 }
 
                 const result = await response.json();
 
-                let msgSucesso = 'Variavel desativada com sucesso!';
-                if (result.dependencias_removidas) {
-                    const total = result.dependencias_removidas.variaveis + result.dependencias_removidas.perguntas;
-                    if (total > 0) {
-                        msgSucesso += `\n${total} dependencia(s) foram removidas.`;
+                let msgSucesso = 'Variavel excluida com sucesso!';
+                const limpezas_info = result.limpezas_realizadas;
+                if (limpezas_info) {
+                    const limpezas = [];
+                    if (limpezas_info.json_atualizado) limpezas.push('removida do JSON');
+                    if (limpezas_info.prompts_removidos > 0) limpezas.push(`${limpezas_info.prompts_removidos} prompt(s) atualizados`);
+                    if (limpezas_info.dependencias_perguntas_removidas > 0) limpezas.push(`${limpezas_info.dependencias_perguntas_removidas} dependencia(s) de perguntas removidas`);
+                    if (limpezas_info.dependencias_variaveis_removidas > 0) limpezas.push(`${limpezas_info.dependencias_variaveis_removidas} dependencia(s) de variaveis removidas`);
+                    if (limpezas_info.pergunta_origem_removida) limpezas.push('pergunta de origem removida');
+
+                    if (limpezas.length > 0) {
+                        msgSucesso += `\n\nLimpeza realizada: ${limpezas.join(', ')}.`;
                     }
                 }
 
@@ -1417,8 +1455,8 @@
                 carregarVariaveis();
                 carregarResumo();
             } catch (error) {
-                console.error('Erro ao desativar variavel:', error);
-                alert('Erro ao desativar variavel: ' + error.message);
+                console.error('Erro ao excluir variavel:', error);
+                alert('Erro ao excluir variavel: ' + error.message);
             }
         }
 
