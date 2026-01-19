@@ -5,7 +5,7 @@ Modelos do sistema de Geração de Peças Jurídicas
 
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, deferred
 from database.connection import Base
 
 
@@ -45,11 +45,13 @@ class GeracaoPeca(Base):
     
     # Modo de ativação usado pelo Agente 2 (detector de módulos)
     # Valores: 'fast_path' (100% determinístico), 'misto' (det + LLM), 'llm' (100% LLM)
-    modo_ativacao_agente2 = Column(String(20), nullable=True)
-    
+    # NOTA: Usar deferred() para evitar erro se coluna não existir no banco (migration pendente)
+    modo_ativacao_agente2 = deferred(Column(String(20), nullable=True))
+
     # Quantidade de módulos ativados por tipo
-    modulos_ativados_det = Column(Integer, nullable=True)  # Ativados por regra determinística
-    modulos_ativados_llm = Column(Integer, nullable=True)  # Ativados por LLM
+    # NOTA: Usar deferred() para evitar erro se coluna não existir no banco (migration pendente)
+    modulos_ativados_det = deferred(Column(Integer, nullable=True))  # Ativados por regra determinística
+    modulos_ativados_llm = deferred(Column(Integer, nullable=True))  # Ativados por LLM
     
     # Tempo de processamento (segundos)
     tempo_processamento = Column(Integer, nullable=True)

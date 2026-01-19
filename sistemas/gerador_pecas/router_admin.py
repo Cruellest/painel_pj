@@ -47,6 +47,35 @@ class GeracaoDetalhadaResponse(BaseModel):
 # Endpoints de Histórico de Gerações
 # ==========================================
 
+def _safe_get_attr(obj, attr, default=None):
+    """Obtém atributo de forma segura, retornando default se coluna não existe no banco"""
+    try:
+        return getattr(obj, attr, default)
+    except Exception:
+        return default
+
+
+def _geracao_to_dict(geracao: GeracaoPeca) -> dict:
+    """Converte GeracaoPeca para dict, tratando colunas que podem não existir"""
+    return {
+        "id": geracao.id,
+        "numero_cnj": geracao.numero_cnj,
+        "numero_cnj_formatado": geracao.numero_cnj_formatado,
+        "tipo_peca": geracao.tipo_peca,
+        "modelo_usado": geracao.modelo_usado,
+        "tempo_processamento": geracao.tempo_processamento,
+        "prompt_enviado": geracao.prompt_enviado,
+        "resumo_consolidado": geracao.resumo_consolidado,
+        "conteudo_gerado": geracao.conteudo_gerado,
+        "historico_chat": geracao.historico_chat,
+        # Colunas que podem não existir em produção (migration pendente)
+        "modo_ativacao_agente2": _safe_get_attr(geracao, 'modo_ativacao_agente2'),
+        "modulos_ativados_det": _safe_get_attr(geracao, 'modulos_ativados_det'),
+        "modulos_ativados_llm": _safe_get_attr(geracao, 'modulos_ativados_llm'),
+        "criado_em": geracao.criado_em,
+    }
+
+
 @router.get("/geracoes", response_model=List[GeracaoDetalhadaResponse])
 async def listar_geracoes(
     limit: int = 50,
@@ -58,8 +87,8 @@ async def listar_geracoes(
     geracoes = db.query(GeracaoPeca).order_by(
         GeracaoPeca.criado_em.desc()
     ).offset(offset).limit(limit).all()
-    
-    return geracoes
+
+    return [_geracao_to_dict(g) for g in geracoes]
 
 
 @router.get("/geracoes/{geracao_id}", response_model=GeracaoDetalhadaResponse)
@@ -72,7 +101,7 @@ async def obter_geracao(
     geracao = db.query(GeracaoPeca).filter(GeracaoPeca.id == geracao_id).first()
     if not geracao:
         raise HTTPException(status_code=404, detail="Geração não encontrada")
-    return geracao
+    return _geracao_to_dict(geracao)
 
 
 @router.get("/geracoes/{geracao_id}/prompt")

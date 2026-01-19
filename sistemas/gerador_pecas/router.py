@@ -498,14 +498,38 @@ async def processar_processo_stream(
                     resumo_consolidado=resumo_para_geracao,
                     documentos_processados=documentos_processados,
                     modelo_usado=modelo,
-                    usuario_id=current_user.id,
-                    modo_ativacao_agente2=resultado_agente2.modo_ativacao,
-                    modulos_ativados_det=resultado_agente2.modulos_ativados_det,
-                    modulos_ativados_llm=resultado_agente2.modulos_ativados_llm
+                    usuario_id=current_user.id
                 )
-                db.add(geracao)
-                db.commit()
-                db.refresh(geracao)
+
+                # Campos de modo de ativação (podem não existir no banco se migration pendente)
+                try:
+                    geracao.modo_ativacao_agente2 = resultado_agente2.modo_ativacao
+                    geracao.modulos_ativados_det = resultado_agente2.modulos_ativados_det
+                    geracao.modulos_ativados_llm = resultado_agente2.modulos_ativados_llm
+                except AttributeError:
+                    pass
+
+                try:
+                    db.add(geracao)
+                    db.commit()
+                    db.refresh(geracao)
+                except Exception as e:
+                    # Se falhou por colunas inexistentes, tenta sem os campos de modo de ativação
+                    if 'modo_ativacao_agente2' in str(e) or 'modulos_ativados' in str(e):
+                        db.rollback()
+                        geracao.modo_ativacao_agente2 = None
+                        geracao.modulos_ativados_det = None
+                        geracao.modulos_ativados_llm = None
+                        from sqlalchemy import inspect
+                        state = inspect(geracao)
+                        for attr in ['modo_ativacao_agente2', 'modulos_ativados_det', 'modulos_ativados_llm']:
+                            if attr in state.dict:
+                                del state.dict[attr]
+                        db.add(geracao)
+                        db.commit()
+                        db.refresh(geracao)
+                    else:
+                        raise
 
                 # Cria versão inicial no histórico de versões
                 criar_versao_inicial(db, geracao.id, resultado_agente3.conteudo_markdown)

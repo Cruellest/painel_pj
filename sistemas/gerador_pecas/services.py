@@ -440,16 +440,43 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
             resumo_consolidado=resultado.agente1.resumo_consolidado if resultado.agente1 else None,
             modelo_usado=self.modelo,
             tempo_processamento=int(resultado.tempo_total) if resultado.tempo_total else None,
-            usuario_id=usuario_id,
-            modo_ativacao_agente2=resultado.agente2.modo_ativacao if resultado.agente2 else None,
-            modulos_ativados_det=resultado.agente2.modulos_ativados_det if resultado.agente2 else None,
-            modulos_ativados_llm=resultado.agente2.modulos_ativados_llm if resultado.agente2 else None
+            usuario_id=usuario_id
         )
-        
+
+        # Campos de modo de ativação (podem não existir no banco se migration pendente)
+        # Atribuídos após criação para permitir fallback
+        try:
+            geracao.modo_ativacao_agente2 = resultado.agente2.modo_ativacao if resultado.agente2 else None
+            geracao.modulos_ativados_det = resultado.agente2.modulos_ativados_det if resultado.agente2 else None
+            geracao.modulos_ativados_llm = resultado.agente2.modulos_ativados_llm if resultado.agente2 else None
+        except AttributeError:
+            # Colunas não existem no modelo (improvável, mas defensivo)
+            pass
+
         if self.db:
-            self.db.add(geracao)
-            self.db.commit()
-            self.db.refresh(geracao)
+            try:
+                self.db.add(geracao)
+                self.db.commit()
+                self.db.refresh(geracao)
+            except Exception as e:
+                # Se falhou por colunas inexistentes, tenta sem os campos de modo de ativação
+                if 'modo_ativacao_agente2' in str(e) or 'modulos_ativados' in str(e):
+                    self.db.rollback()
+                    # Remove os campos problemáticos e tenta novamente
+                    geracao.modo_ativacao_agente2 = None
+                    geracao.modulos_ativados_det = None
+                    geracao.modulos_ativados_llm = None
+                    # Força exclusão dos campos do estado do objeto
+                    from sqlalchemy import inspect
+                    state = inspect(geracao)
+                    for attr in ['modo_ativacao_agente2', 'modulos_ativados_det', 'modulos_ativados_llm']:
+                        if attr in state.dict:
+                            del state.dict[attr]
+                    self.db.add(geracao)
+                    self.db.commit()
+                    self.db.refresh(geracao)
+                else:
+                    raise
         
         # NOTA: Geração de DOCX desabilitada temporariamente para novo fluxo markdown
         # O DOCX será implementado com conversor MD->DOCX no futuro
