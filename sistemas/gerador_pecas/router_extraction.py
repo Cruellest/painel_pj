@@ -667,17 +667,19 @@ async def criar_perguntas_lote(
 ):
     """
     Cria múltiplas perguntas de extração de uma vez.
-    
+
     Se analisar_dependencias=True:
     1. Envia todas as perguntas para a IA (Gemini)
-    2. A IA analisa relações de dependência entre elas
-    3. Cria as perguntas na ordem correta (respeitando dependências)
-    4. Retorna as perguntas criadas com suas dependências inferidas
-    
-    Exemplo de uso:
-    - Envie: ["O medicamento é incorporado ao SUS?", "Qual alternativa terapêutica foi tentada?"]
-    - IA detecta: A segunda pergunta só faz sentido se o medicamento NÃO é incorporado
-    - Resultado: Segunda pergunta depende da primeira com condição "equals: false"
+    2. A IA NORMALIZA cada pergunta (reescreve de forma clara e institucional)
+    3. A IA GERA o nome_base_variavel para cada pergunta
+    4. A IA analisa relações de dependência entre elas
+    5. Cria as perguntas com texto normalizado e variáveis definidas
+    6. Retorna as perguntas criadas com suas dependências inferidas
+
+    IMPORTANTE:
+    - O texto da pergunta salvo é o NORMALIZADO pela IA (não o texto bruto)
+    - O nome_variavel_sugerido é GERADO pela IA automaticamente
+    - Se a IA falhar em normalizar, a operação é abortada com rollback
     """
     # Verifica permissão
     if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
@@ -694,40 +696,80 @@ async def criar_perguntas_lote(
     grafo_dependencias = None
 
     try:
-        # Se deve analisar dependências com IA
+        # Mapas para dados normalizados e dependências
+        perguntas_normalizadas_map = {}
         dependencias_map = {}
-        if data.analisar_dependencias and len(data.perguntas) > 1:
+
+        # Análise com IA (normalização + dependências)
+        if data.analisar_dependencias:
             from .services_dependencies import DependencyInferenceService
-            
+
             service = DependencyInferenceService(db)
             resultado_analise = await service.analisar_dependencias_batch(
                 perguntas=[p.pergunta for p in data.perguntas],
                 nomes_variaveis=[p.nome_variavel_sugerido for p in data.perguntas],
                 categoria_nome=categoria.nome
             )
-            
-            if resultado_analise.get("success"):
-                dependencias_map = resultado_analise.get("dependencias", {})
-                grafo_dependencias = resultado_analise.get("grafo")
-        
+
+            # Se a IA falhou, aborta a operação
+            if not resultado_analise.get("success"):
+                erro_ia = resultado_analise.get("erro", "Erro desconhecido na análise com IA")
+                logger.error(f"Falha na análise com IA: {erro_ia}")
+                return BulkQuestionsResponse(
+                    success=False,
+                    total_enviadas=len(data.perguntas),
+                    total_criadas=0,
+                    total_com_dependencias=0,
+                    perguntas=[],
+                    erro=f"Erro na normalização com IA: {erro_ia}"
+                )
+
+            perguntas_normalizadas_map = resultado_analise.get("perguntas_normalizadas", {})
+            dependencias_map = resultado_analise.get("dependencias", {})
+            grafo_dependencias = resultado_analise.get("grafo")
+
+            # Valida que todas as perguntas foram normalizadas
+            if len(perguntas_normalizadas_map) != len(data.perguntas):
+                faltando = len(data.perguntas) - len(perguntas_normalizadas_map)
+                return BulkQuestionsResponse(
+                    success=False,
+                    total_enviadas=len(data.perguntas),
+                    total_criadas=0,
+                    total_com_dependencias=0,
+                    perguntas=[],
+                    erro=f"A IA não conseguiu normalizar {faltando} pergunta(s). Tente novamente."
+                )
+
         # Conta perguntas existentes para definir ordem
         perguntas_existentes = db.query(ExtractionQuestion).filter(
             ExtractionQuestion.categoria_id == data.categoria_id
         ).count()
-        
-        # Cria as perguntas na ordem, aplicando dependências se houver
+
+        # Cria as perguntas na ordem, aplicando normalização e dependências
         for i, p in enumerate(data.perguntas):
             try:
+                # Busca dados normalizados pela IA
+                normalizado = perguntas_normalizadas_map.get(str(i), {})
+
+                # Se tem análise de IA, usa texto normalizado e nome gerado
+                if data.analisar_dependencias and normalizado:
+                    texto_pergunta = normalizado.get("texto_final", p.pergunta)
+                    nome_variavel = normalizado.get("nome_base_variavel", p.nome_variavel_sugerido)
+                else:
+                    # Sem análise de IA, usa dados originais
+                    texto_pergunta = p.pergunta
+                    nome_variavel = p.nome_variavel_sugerido
+
                 # Busca dependência inferida para esta pergunta
                 dep_info = dependencias_map.get(str(i), {})
                 depends_on = dep_info.get("depends_on_variable")
                 dep_operator = dep_info.get("operator", "equals") if depends_on else None
                 dep_value = dep_info.get("value") if depends_on else None
-                
+
                 pergunta = ExtractionQuestion(
                     categoria_id=data.categoria_id,
-                    pergunta=p.pergunta,
-                    nome_variavel_sugerido=p.nome_variavel_sugerido,
+                    pergunta=texto_pergunta,
+                    nome_variavel_sugerido=nome_variavel,
                     tipo_sugerido=p.tipo_sugerido,
                     opcoes_sugeridas=p.opcoes_sugeridas,
                     depends_on_variable=depends_on,
@@ -740,33 +782,38 @@ async def criar_perguntas_lote(
                 )
                 db.add(pergunta)
                 db.flush()  # Obtém o ID antes do commit
-                
+
                 perguntas_resultado.append(BulkQuestionResult(
                     index=i,
-                    pergunta_texto=p.pergunta,
+                    pergunta_texto=texto_pergunta,
                     id=pergunta.id,
-                    slug_sugerido=p.nome_variavel_sugerido,
+                    slug_sugerido=nome_variavel,
                     depends_on_variable=depends_on,
                     dependency_operator=dep_operator,
                     dependency_value=dep_value
                 ))
-                
+
                 total_criadas += 1
                 if depends_on:
                     total_com_dependencias += 1
-                    
+
             except Exception as e:
+                # Em caso de erro, faz rollback de tudo
+                db.rollback()
                 logger.error(f"Erro ao criar pergunta {i}: {e}")
-                perguntas_resultado.append(BulkQuestionResult(
-                    index=i,
-                    pergunta_texto=p.pergunta,
-                    erro=str(e)
-                ))
-        
+                return BulkQuestionsResponse(
+                    success=False,
+                    total_enviadas=len(data.perguntas),
+                    total_criadas=0,
+                    total_com_dependencias=0,
+                    perguntas=[],
+                    erro=f"Erro ao criar pergunta {i + 1}: {str(e)}"
+                )
+
         db.commit()
-        
+
         logger.info(f"Criadas {total_criadas} perguntas em lote para categoria {categoria.nome}")
-        
+
         return BulkQuestionsResponse(
             success=True,
             total_enviadas=len(data.perguntas),
@@ -775,7 +822,7 @@ async def criar_perguntas_lote(
             perguntas=perguntas_resultado,
             grafo_dependencias=grafo_dependencias
         )
-        
+
     except Exception as e:
         db.rollback()
         logger.error(f"Erro na criação em lote: {e}")

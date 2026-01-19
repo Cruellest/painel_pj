@@ -126,32 +126,37 @@ class DependencyInferenceService:
         categoria_nome: str
     ) -> Dict[str, Any]:
         """
-        Analisa dependências entre perguntas em lote (antes de serem criadas).
-        
-        Diferente de inferir_dependencias, este método:
-        - Recebe apenas textos de perguntas (não objetos do banco)
-        - Retorna um mapa indexado por posição na lista original
-        - É usado para criação em lote com análise de dependências
-        
+        Analisa, normaliza e gera nomenclatura para perguntas em lote.
+
+        Este método:
+        - Recebe textos brutos de perguntas (podem conter instruções internas)
+        - Reescreve cada pergunta de forma clara e institucional
+        - Gera nome_base_variavel para cada pergunta
+        - Identifica dependências entre perguntas
+        - Retorna tudo indexado por posição na lista original
+
         Args:
-            perguntas: Lista de textos das perguntas
+            perguntas: Lista de textos das perguntas (brutas)
             nomes_variaveis: Lista de nomes sugeridos (pode conter None)
             categoria_nome: Nome da categoria para contexto
-            
+
         Returns:
             Dict com:
             - success: bool
+            - perguntas_normalizadas: Dict[str, Dict] mapeando índice -> {texto_final, nome_base_variavel}
             - dependencias: Dict[str, Dict] mapeando índice -> info de dependência
             - grafo: estrutura de visualização
+            - erro: mensagem de erro (se success=False)
         """
-        if not perguntas or len(perguntas) < 2:
-            return {"success": True, "dependencias": {}, "grafo": None}
-        
+        # Caso especial: apenas 1 pergunta - ainda precisa normalizar
+        if not perguntas:
+            return {"success": True, "perguntas_normalizadas": {}, "dependencias": {}, "grafo": None}
+
         try:
             # Monta prompt para IA
             prompt = self._montar_prompt_batch(perguntas, nomes_variaveis, categoria_nome)
-            
-            logger.info(f"Analisando dependências para {len(perguntas)} perguntas em lote")
+
+            logger.info(f"Analisando e normalizando {len(perguntas)} perguntas em lote")
 
             # Obtém thinking_level da config
             thinking_level = get_thinking_level(self.db, "gerador_pecas")
@@ -175,7 +180,63 @@ class DependencyInferenceService:
                 logger.error(f"Resposta IA não é JSON válido: {response.content[:500]}")
                 return {"success": False, "erro": "A IA não retornou um JSON válido"}
 
-            # Converte para mapa indexado
+            # Processa perguntas normalizadas (OBRIGATÓRIO)
+            perguntas_normalizadas = resultado.get("perguntas_normalizadas", [])
+            if not perguntas_normalizadas:
+                logger.error("IA não retornou perguntas_normalizadas")
+                return {
+                    "success": False,
+                    "erro": "A IA não retornou as perguntas normalizadas. Tente novamente."
+                }
+
+            # Valida que todas as perguntas foram processadas
+            perguntas_map = {}
+            erros_validacao = []
+
+            for pn in perguntas_normalizadas:
+                idx = pn.get("indice")
+                if idx is None or idx < 0 or idx >= len(perguntas):
+                    continue
+
+                texto_final = pn.get("texto_final", "").strip()
+                nome_base = pn.get("nome_base_variavel", "").strip()
+
+                # Validações obrigatórias
+                if not texto_final:
+                    erros_validacao.append(f"Pergunta {idx}: texto_final vazio")
+                    continue
+
+                if not nome_base:
+                    erros_validacao.append(f"Pergunta {idx}: nome_base_variavel não definido")
+                    continue
+
+                # Normaliza nome_base_variavel (remove acentos, caracteres inválidos)
+                nome_base = self._normalizar_nome_variavel(nome_base)
+
+                if not nome_base:
+                    erros_validacao.append(f"Pergunta {idx}: nome_base_variavel inválido após normalização")
+                    continue
+
+                perguntas_map[str(idx)] = {
+                    "texto_final": texto_final,
+                    "nome_base_variavel": nome_base,
+                    "texto_original": pn.get("texto_original", perguntas[idx])
+                }
+
+            # Verifica se todas as perguntas foram processadas
+            if len(perguntas_map) != len(perguntas):
+                faltando = set(range(len(perguntas))) - set(int(k) for k in perguntas_map.keys())
+                if faltando:
+                    erros_validacao.append(f"Perguntas não processadas: {sorted(faltando)}")
+
+            if erros_validacao:
+                logger.error(f"Erros de validação: {erros_validacao}")
+                return {
+                    "success": False,
+                    "erro": f"Erros na normalização: {'; '.join(erros_validacao)}"
+                }
+
+            # Converte dependências para mapa indexado
             dependencias_map = {}
             for dep in resultado.get("dependencias", []):
                 idx = dep.get("indice")
@@ -186,55 +247,152 @@ class DependencyInferenceService:
                         "value": dep.get("value"),
                         "justificativa": dep.get("justificativa", "")
                     }
-            
+
             # Constrói grafo simples
             grafo = {
                 "ordem_recomendada": resultado.get("ordem_recomendada", list(range(len(perguntas)))),
                 "arvore": resultado.get("arvore", {})
             }
-            
-            logger.info(f"Analisadas {len(dependencias_map)} dependências em lote")
-            
+
+            logger.info(
+                f"Normalizadas {len(perguntas_map)} perguntas, "
+                f"{len(dependencias_map)} com dependências"
+            )
+
             return {
                 "success": True,
+                "perguntas_normalizadas": perguntas_map,
                 "dependencias": dependencias_map,
                 "grafo": grafo
             }
-            
+
         except Exception as e:
             logger.exception(f"Erro ao analisar dependências em lote: {e}")
             return {"success": False, "erro": str(e)}
+
+    def _normalizar_nome_variavel(self, nome: str) -> str:
+        """
+        Normaliza o nome da variável removendo acentos e caracteres inválidos.
+
+        Args:
+            nome: Nome bruto da variável
+
+        Returns:
+            Nome normalizado (lowercase, sem acentos, apenas [a-z0-9_])
+        """
+        import unicodedata
+
+        if not nome:
+            return ""
+
+        # Remove acentos
+        nome = unicodedata.normalize('NFD', nome)
+        nome = ''.join(c for c in nome if unicodedata.category(c) != 'Mn')
+
+        # Converte para minúsculas
+        nome = nome.lower()
+
+        # Substitui espaços e hífens por underscore
+        nome = re.sub(r'[\s\-]+', '_', nome)
+
+        # Remove caracteres não permitidos
+        nome = re.sub(r'[^a-z0-9_]', '', nome)
+
+        # Remove underscores duplicados
+        nome = re.sub(r'_+', '_', nome)
+
+        # Remove underscores no início e fim
+        nome = nome.strip('_')
+
+        return nome
     
     def _get_system_prompt_batch(self) -> str:
-        """Prompt de sistema para análise de dependências em lote."""
-        return """Você é um especialista em análise de questionários e fluxos condicionais.
+        """Prompt de sistema para análise, normalização e nomenclatura de perguntas em lote."""
+        return """Você é um especialista em questionários jurídicos e fluxos condicionais para a Procuradoria-Geral do Estado.
 
-Sua tarefa é analisar uma lista de perguntas de extração de dados e:
-1. Identificar quais perguntas dependem de outras
-2. Sugerir a ordem correta de aplicação
-3. Definir as condições de dependência
+Sua tarefa é processar uma lista de perguntas de extração de dados e:
+1. **REESCREVER** cada pergunta de forma clara, técnica e institucional
+2. **GERAR** um nome base de variável para cada pergunta
+3. **IDENTIFICAR** dependências entre perguntas
+4. **SUGERIR** a ordem correta de aplicação
 
-EXEMPLOS DE DEPENDÊNCIAS:
+═══════════════════════════════════════════════════════════════
+REGRA CRÍTICA: NORMALIZAÇÃO DAS PERGUNTAS
+═══════════════════════════════════════════════════════════════
 
-Perguntas:
-0: "É ação de medicamento?"
-1: "O medicamento tem registro na ANVISA?"
-2: "É incorporado ao SUS?"
-3: "Qual alternativa foi tentada antes?"
+O usuário pode escrever perguntas "bagunçadas" com instruções internas como:
+- "(pergunta mãe)"
+- "(essa depende da anterior)"
+- "se sim, perguntar..."
+- "usar só se aplicável"
+- Notas pessoais entre parênteses
 
-Dependências identificadas:
-- Pergunta 1 depende de pergunta 0 (só faz sentido perguntar ANVISA se for medicamento)
-- Pergunta 2 depende de pergunta 1 (só pergunta SUS se tiver registro ANVISA)
-- Pergunta 3 depende de pergunta 2 com valor FALSE (só pergunta alternativa se NÃO for incorporado)
+Você DEVE:
+1. REMOVER todas as instruções/metalinguagem do texto
+2. REESCREVER a pergunta em português claro, direto e técnico
+3. MANTER o sentido jurídico original
+4. GARANTIR que a pergunta final seja adequada para uso formal
 
-REGRAS:
+EXEMPLO DE NORMALIZAÇÃO:
+- Entrada: "é ação de medicamento? (pergunta mãe, base para as outras)"
+- Saída: "Trata-se de ação judicial envolvendo medicamentos?"
+
+- Entrada: "se sim, perguntar qual o medicamento solicitado pelo autor"
+- Saída: "Qual medicamento está sendo solicitado pelo autor?"
+
+- Entrada: "tem registro anvisa?? (só se for medicamento)"
+- Saída: "O medicamento possui registro válido na ANVISA?"
+
+═══════════════════════════════════════════════════════════════
+REGRA CRÍTICA: NOME BASE DA VARIÁVEL
+═══════════════════════════════════════════════════════════════
+
+Para cada pergunta, você DEVE gerar um nome_base_variavel seguindo estas regras:
+- Apenas letras minúsculas, números e underscore (_)
+- Sem acentos ou caracteres especiais
+- Nome curto (2-4 palavras) mas semanticamente claro
+- Deve ser compreensível SEM ler a pergunta
+- NÃO incluir prefixo da categoria (o sistema adiciona automaticamente)
+
+EXEMPLOS DE NOMES CORRETOS:
+- medicamento_registro_anvisa
+- valor_causa
+- alternativa_terapeutica
+- autor_idoso
+- tipo_acao
+- incorporado_sus
+
+EXEMPLOS DE NOMES INCORRETOS:
+- registro (muito genérico)
+- pergunta_1 (não semântico)
+- o_medicamento_tem_registro_na_anvisa (muito longo)
+- médicamento_anvisa (com acento)
+
+═══════════════════════════════════════════════════════════════
+REGRAS DE DEPENDÊNCIAS
+═══════════════════════════════════════════════════════════════
+
 1. Perguntas iniciais/de classificação geralmente são independentes
 2. Perguntas de detalhamento dependem das de classificação
-3. Use o slug sugerido ou infira baseado na pergunta
+3. Use o nome_base_variavel para referenciar dependências
 4. O índice é 0-based (primeira pergunta = 0)
 
 FORMATO DE RESPOSTA (JSON estrito):
 {
+    "perguntas_normalizadas": [
+        {
+            "indice": 0,
+            "texto_original": "é ação de medicamento? (pergunta mãe)",
+            "texto_final": "Trata-se de ação judicial envolvendo medicamentos?",
+            "nome_base_variavel": "medicamento"
+        },
+        {
+            "indice": 1,
+            "texto_original": "tem registro anvisa?? (só se for med)",
+            "texto_final": "O medicamento possui registro válido na ANVISA?",
+            "nome_base_variavel": "medicamento_registro_anvisa"
+        }
+    ],
     "dependencias": [
         {
             "indice": 1,
@@ -242,22 +400,19 @@ FORMATO DE RESPOSTA (JSON estrito):
             "operator": "equals",
             "value": true,
             "justificativa": "Só pergunta ANVISA se for ação de medicamento"
-        },
-        {
-            "indice": 3,
-            "depends_on": "incorporado_sus",
-            "operator": "equals",
-            "value": false,
-            "justificativa": "Só pergunta alternativa se não for incorporado"
         }
     ],
     "ordem_recomendada": [0, 1, 2, 3],
     "arvore": {
-        "medicamento": ["registro_anvisa"],
-        "registro_anvisa": ["incorporado_sus"],
-        "incorporado_sus": ["alternativa_tentada"]
+        "medicamento": ["medicamento_registro_anvisa"],
+        "medicamento_registro_anvisa": ["incorporado_sus"]
     }
-}"""
+}
+
+IMPORTANTE:
+- perguntas_normalizadas é OBRIGATÓRIO e deve conter TODAS as perguntas
+- Cada pergunta DEVE ter texto_final e nome_base_variavel
+- Perguntas sem dependência NÃO devem aparecer na lista de dependências"""
 
     def _montar_prompt_batch(
         self,
@@ -265,31 +420,44 @@ FORMATO DE RESPOSTA (JSON estrito):
         nomes_variaveis: List[Optional[str]],
         categoria_nome: str
     ) -> str:
-        """Monta o prompt para análise de dependências em lote."""
+        """Monta o prompt para análise, normalização e nomenclatura de perguntas em lote."""
         perguntas_formatadas = []
-        
+
         for i, (pergunta, nome_var) in enumerate(zip(perguntas, nomes_variaveis)):
             linha = f"{i}: \"{pergunta}\""
             if nome_var:
-                linha += f" (slug sugerido: {nome_var})"
+                linha += f" (sugestão de variável: {nome_var})"
             perguntas_formatadas.append(linha)
-        
-        return f"""Analise as seguintes perguntas de extração para a categoria "{categoria_nome}" e identifique dependências:
 
-PERGUNTAS:
+        return f"""Processe as seguintes perguntas de extração para a categoria "{categoria_nome}".
+
+PERGUNTAS BRUTAS (podem conter instruções internas do usuário):
 {chr(10).join(perguntas_formatadas)}
 
-INSTRUÇÕES:
-1. Identifique quais perguntas dependem de outras (use o índice 0-based)
-2. Para cada dependência, indique:
-   - indice: número da pergunta dependente
-   - depends_on: slug da variável da qual depende (use o sugerido ou infira)
-   - operator: equals, not_equals, exists, etc.
-   - value: valor esperado (true, false, ou texto)
-3. Sugira a ordem ideal de aplicação
-4. Retorne APENAS JSON válido
+TAREFAS OBRIGATÓRIAS:
+1. Para CADA pergunta, retorne em perguntas_normalizadas:
+   - indice: posição original (0-based)
+   - texto_original: a pergunta como foi digitada
+   - texto_final: pergunta REESCRITA de forma clara, técnica e institucional
+   - nome_base_variavel: nome curto e semântico para a variável
 
-IMPORTANTE: Perguntas sem dependência não devem aparecer na lista de dependências."""
+2. Identifique dependências entre perguntas (se houver)
+
+3. Sugira a ordem ideal de aplicação
+
+REGRAS DE NORMALIZAÇÃO:
+- Remova TODA metalinguagem: "(pergunta mãe)", "se sim...", "(depende de...)", etc.
+- Reescreva em português formal adequado para documentos jurídicos
+- Mantenha o sentido original da pergunta
+- Use letras maiúsculas no início e ponto de interrogação no final
+
+REGRAS PARA nome_base_variavel:
+- Apenas letras minúsculas, números e underscore
+- Sem acentos ou caracteres especiais
+- Máximo 4 palavras separadas por underscore
+- Deve ser autoexplicativo sem ler a pergunta
+
+Retorne APENAS JSON válido no formato especificado."""
 
     def _get_system_prompt(self) -> str:
         """Prompt de sistema para inferência de dependências."""
