@@ -16,6 +16,7 @@ from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from admin.perf_context import perf_ctx
+from admin.ia_context import ia_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,15 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
         # Disponibiliza request_id para outras camadas
         request.state.perf_request_id = request_id
 
+        # Inicia contexto de IA (para rastreabilidade de chamadas Gemini)
+        ia_ctx.start_request(
+            request_id=request_id,
+            route=route,
+            method=request.method,
+            user_id=user_info.get('id') if user_info else None,
+            username=user_info.get('username') if user_info else None
+        )
+
         # Processa request
         response = None
         try:
@@ -79,6 +89,9 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
             # Finaliza e persiste metricas
             status_code = response.status_code if response else 500
             metrics = perf_ctx.finish_request(status_code)
+
+            # Limpa contexto de IA
+            ia_ctx.clear()
 
             if metrics and metrics.total_ms > 50:  # Ignora requests muito rapidas
                 self._persist_metrics(metrics)

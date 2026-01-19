@@ -36,6 +36,8 @@ def log_gemini_call(
     has_images: bool = False,
     has_search: bool = False,
     temperature: float = None,
+    request_id: str = None,
+    route: str = None,
     db: Session = None
 ) -> Optional[int]:
     """
@@ -50,6 +52,8 @@ def log_gemini_call(
         has_images: Se a chamada incluiu imagens
         has_search: Se usou Google Search Grounding
         temperature: Temperatura usada na chamada
+        request_id: ID da request HTTP (para rastreabilidade)
+        route: Rota HTTP que originou a chamada
         db: Sessão do banco (se None, cria uma nova)
 
     Returns:
@@ -66,6 +70,8 @@ def log_gemini_call(
             username=username,
             sistema=sistema or "unknown",
             modulo=modulo,
+            request_id=request_id,
+            route=route,
             model=metrics.model if hasattr(metrics, 'model') else "unknown",
             prompt_chars=metrics.prompt_chars if hasattr(metrics, 'prompt_chars') else 0,
             prompt_tokens_estimated=metrics.prompt_tokens_estimated if hasattr(metrics, 'prompt_tokens_estimated') else None,
@@ -108,7 +114,9 @@ async def log_gemini_call_async(
     username: str = None,
     has_images: bool = False,
     has_search: bool = False,
-    temperature: float = None
+    temperature: float = None,
+    request_id: str = None,
+    route: str = None
 ) -> Optional[int]:
     """
     Registra uma chamada de forma assíncrona (não bloqueante).
@@ -126,7 +134,9 @@ async def log_gemini_call_async(
             username=username,
             has_images=has_images,
             has_search=has_search,
-            temperature=temperature
+            temperature=temperature,
+            request_id=request_id,
+            route=route
         )
     )
 

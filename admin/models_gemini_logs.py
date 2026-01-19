@@ -32,6 +32,10 @@ class GeminiApiLog(Base):
     sistema = Column(String(100), nullable=False, index=True)  # gerador_pecas, pedido_calculo, etc
     modulo = Column(String(100), nullable=True)  # agentes, services_classificacao, etc
 
+    # Rastreabilidade de request HTTP
+    request_id = Column(String(36), nullable=True, index=True)  # UUID da request
+    route = Column(String(255), nullable=True)  # Rota HTTP que originou a chamada
+
     # Request info
     model = Column(String(100), nullable=False, index=True)  # gemini-3-flash-preview, etc
     prompt_chars = Column(Integer, nullable=False)  # Tamanho do prompt em caracteres
@@ -79,6 +83,8 @@ class GeminiApiLog(Base):
             "username": self.username,
             "sistema": self.sistema,
             "modulo": self.modulo,
+            "request_id": self.request_id,
+            "route": self.route,
             "model": self.model,
             "prompt_chars": self.prompt_chars,
             "prompt_tokens_estimated": self.prompt_tokens_estimated,

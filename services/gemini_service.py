@@ -1211,6 +1211,9 @@ class GeminiService:
         """
         Registra a chamada no banco de dados de forma assíncrona.
 
+        IMPORTANTE: Se o contexto não for passado explicitamente ou estiver incompleto,
+        tenta obter automaticamente do ia_context (middleware HTTP).
+
         Args:
             metrics: Métricas da chamada
             context: Dicionário com sistema, modulo, user_id, username
@@ -1220,15 +1223,40 @@ class GeminiService:
         """
         try:
             from admin.services_gemini_logs import log_gemini_call_async
+
+            # Se não temos sistema ou está como unknown, tenta obter do ia_context
+            sistema = context.get('sistema')
+            if not sistema or sistema == 'unknown':
+                try:
+                    from admin.ia_context import ia_ctx
+                    auto_context = ia_ctx.get_context()
+                    # Mescla contexto automático com o passado (passado tem prioridade se não for unknown)
+                    if auto_context.get('sistema') and auto_context['sistema'] != 'unknown':
+                        sistema = auto_context['sistema']
+                    if not context.get('modulo') and auto_context.get('modulo'):
+                        context['modulo'] = auto_context['modulo']
+                    if not context.get('user_id') and auto_context.get('user_id'):
+                        context['user_id'] = auto_context['user_id']
+                    if not context.get('username') and auto_context.get('username'):
+                        context['username'] = auto_context['username']
+                    if not context.get('request_id') and auto_context.get('request_id'):
+                        context['request_id'] = auto_context['request_id']
+                    if not context.get('route') and auto_context.get('route'):
+                        context['route'] = auto_context['route']
+                except Exception as ctx_err:
+                    logger.debug(f"[Gemini] Não foi possível obter ia_context: {ctx_err}")
+
             await log_gemini_call_async(
                 metrics=metrics,
-                sistema=context.get('sistema', 'unknown'),
+                sistema=sistema or 'unknown',
                 modulo=context.get('modulo'),
                 user_id=context.get('user_id'),
                 username=context.get('username'),
                 has_images=has_images,
                 has_search=has_search,
-                temperature=temperature
+                temperature=temperature,
+                request_id=context.get('request_id'),
+                route=context.get('route')
             )
         except Exception as e:
             # Não falha a chamada principal por erro de logging

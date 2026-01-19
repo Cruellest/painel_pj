@@ -1349,6 +1349,37 @@ def run_migrations():
             db.rollback()
             print(f"[WARN] Criação de índices performance_logs: {e}")
 
+    # Migração: Adicionar colunas de rastreabilidade em gemini_api_logs
+    if table_exists('gemini_api_logs'):
+        # Adiciona coluna request_id
+        if not column_exists('gemini_api_logs', 'request_id'):
+            try:
+                db.execute(text("ALTER TABLE gemini_api_logs ADD COLUMN request_id VARCHAR(36)"))
+                db.commit()
+                print("[OK] Migração: coluna request_id adicionada em gemini_api_logs")
+            except Exception as e:
+                db.rollback()
+                print(f"[WARN] Migração request_id gemini_api_logs: {e}")
+
+        # Adiciona coluna route
+        if not column_exists('gemini_api_logs', 'route'):
+            try:
+                db.execute(text("ALTER TABLE gemini_api_logs ADD COLUMN route VARCHAR(255)"))
+                db.commit()
+                print("[OK] Migração: coluna route adicionada em gemini_api_logs")
+            except Exception as e:
+                db.rollback()
+                print(f"[WARN] Migração route gemini_api_logs: {e}")
+
+        # Criar índices para rastreabilidade
+        try:
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_gemini_logs_request_id ON gemini_api_logs(request_id)"))
+            db.commit()
+            print("[OK] Índice idx_gemini_logs_request_id criado/verificado")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Criação de índice gemini_api_logs request_id: {e}")
+
     seed_prompt_groups(db)
 
 
