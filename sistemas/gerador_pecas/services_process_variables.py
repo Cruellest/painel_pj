@@ -218,6 +218,9 @@ def _resolver_valor_causa_numerico(dados: 'DadosProcesso') -> Optional[float]:
 # Referência: salário mínimo 2024
 LIMITE_60_SALARIOS_MINIMOS = 97260.0
 
+# Limite de 210 salários mínimos (R$ 340.410,00)
+LIMITE_210_SALARIOS_MINIMOS = 340410.0
+
 
 def _resolver_valor_causa_inferior_60sm(dados: 'DadosProcesso') -> Optional[bool]:
     """
@@ -246,6 +249,37 @@ def _resolver_valor_causa_inferior_60sm(dados: 'DadosProcesso') -> Optional[bool
     logger.debug(
         f"[valor_causa_inferior_60sm] valor_numerico={valor_numerico}, "
         f"limite={LIMITE_60_SALARIOS_MINIMOS}, resultado={resultado}"
+    )
+    return resultado
+
+
+def _resolver_valor_causa_superior_210sm(dados: 'DadosProcesso') -> Optional[bool]:
+    """
+    Verifica se o valor da causa é superior a 210 salários mínimos (R$ 340.410,00).
+
+    Regra:
+    - Se valor_causa_numerico > 340410.0 -> True
+    - Se valor_causa_numerico <= 340410.0 -> False
+    - Se valor_causa_numerico é None -> None (não chuta)
+
+    Args:
+        dados: Dados do processo
+
+    Returns:
+        True se valor é superior a 210 SM
+        False se valor é igual ou inferior a 210 SM
+        None se valor não disponível/inválido
+    """
+    valor_numerico = _resolver_valor_causa_numerico(dados)
+
+    if valor_numerico is None:
+        logger.debug(f"[valor_causa_superior_210sm] valor_numerico=None, resultado=None")
+        return None
+
+    resultado = valor_numerico > LIMITE_210_SALARIOS_MINIMOS
+    logger.debug(
+        f"[valor_causa_superior_210sm] valor_numerico={valor_numerico}, "
+        f"limite={LIMITE_210_SALARIOS_MINIMOS}, resultado={resultado}"
     )
     return resultado
 
@@ -516,6 +550,15 @@ ProcessVariableResolver.register(ProcessVariableDefinition(
     tipo="boolean",
     descricao="True se valor da causa é inferior a 60 salários mínimos (R$ 97.260,00).",
     resolver=_resolver_valor_causa_inferior_60sm
+))
+
+# Valor da causa superior a 210 salários mínimos
+ProcessVariableResolver.register(ProcessVariableDefinition(
+    slug="valor_causa_superior_210sm",
+    label="Valor da Causa Superior a 210 SM",
+    tipo="boolean",
+    descricao="True se valor da causa é superior a 210 salários mínimos (R$ 340.410,00).",
+    resolver=_resolver_valor_causa_superior_210sm
 ))
 
 # Estado no polo passivo
