@@ -100,8 +100,10 @@ class ExtractionQuestionResponse(ExtractionQuestionBase):
 
 class ExtractionModelBase(BaseModel):
     """Schema base para modelo de extração"""
+    model_config = {"populate_by_name": True}
+
     modo: str = Field("manual", description="Modo: ai_generated ou manual")
-    schema_json: dict = Field(..., description="Schema JSON de extração")
+    extraction_schema: dict = Field(..., alias="schema_json", description="Schema JSON de extração")
     mapeamento_variaveis: Optional[dict] = Field(None, description="Mapeamento de perguntas para variáveis")
 
 
@@ -131,8 +133,10 @@ class GenerateSchemaRequest(BaseModel):
 
 class GenerateSchemaResponse(BaseModel):
     """Schema de resposta para geração de schema"""
+    model_config = {"populate_by_name": True}
+
     success: bool
-    schema_json: Optional[dict] = None
+    extraction_schema: Optional[dict] = Field(None, alias="schema_json")
     mapeamento_variaveis: Optional[dict] = None
     variaveis_criadas: Optional[List[dict]] = None
     erro: Optional[str] = None
@@ -142,8 +146,10 @@ class GenerateSchemaResponse(BaseModel):
 
 class SyncJsonResponse(BaseModel):
     """Schema de resposta para sincronização de JSON sem IA"""
+    model_config = {"populate_by_name": True}
+
     success: bool
-    schema_json: Optional[dict] = None
+    extraction_schema: Optional[dict] = Field(None, alias="schema_json")
     variaveis_adicionadas: int = 0
     variaveis_adicionadas_lista: Optional[List[str]] = None
     variaveis_modificadas: int = 0
@@ -1946,7 +1952,7 @@ async def obter_modelo_categoria(
         categoria_id=modelo.categoria_id,
         categoria_nome=categoria.nome,
         modo=modelo.modo,
-        schema_json=modelo.schema_json,
+        extraction_schema=modelo.schema_json,
         mapeamento_variaveis=modelo.mapeamento_variaveis,
         versao=modelo.versao,
         ativo=modelo.ativo,
@@ -2006,7 +2012,7 @@ async def gerar_schema_ia(
 
         return GenerateSchemaResponse(
             success=True,
-            schema_json=resultado.get("schema_json"),
+            extraction_schema=resultado.get("schema_json"),
             mapeamento_variaveis=resultado.get("mapeamento_variaveis"),
             variaveis_criadas=resultado.get("variaveis_criadas")
         )
@@ -2065,7 +2071,7 @@ async def sincronizar_json_sem_ia(
         if not perguntas:
             return SyncJsonResponse(
                 success=True,
-                schema_json={},
+                extraction_schema={},
                 variaveis_adicionadas=0,
                 mensagem="Nenhuma pergunta ativa encontrada para esta categoria"
             )
@@ -2284,7 +2290,7 @@ async def sincronizar_json_sem_ia(
 
         return SyncJsonResponse(
             success=True,
-            schema_json=json_novo,
+            extraction_schema=json_novo,
             variaveis_adicionadas=len(variaveis_adicionadas),
             variaveis_adicionadas_lista=variaveis_adicionadas if variaveis_adicionadas else None,
             variaveis_modificadas=len(variaveis_modificadas),
@@ -3081,7 +3087,7 @@ async def criar_modelo_manual(
     modelo = ExtractionModel(
         categoria_id=data.categoria_id,
         modo=data.modo,
-        schema_json=data.schema_json,
+        schema_json=data.extraction_schema,
         mapeamento_variaveis=data.mapeamento_variaveis,
         versao=max_versao + 1,
         ativo=True,
@@ -3098,7 +3104,7 @@ async def criar_modelo_manual(
         categoria_id=modelo.categoria_id,
         categoria_nome=categoria.nome,
         modo=modelo.modo,
-        schema_json=modelo.schema_json,
+        extraction_schema=modelo.schema_json,
         mapeamento_variaveis=modelo.mapeamento_variaveis,
         versao=modelo.versao,
         ativo=modelo.ativo,

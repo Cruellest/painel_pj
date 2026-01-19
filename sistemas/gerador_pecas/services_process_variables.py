@@ -168,6 +168,7 @@ def _resolver_valor_causa_numerico(dados: 'DadosProcesso') -> Optional[float]:
     Converte o valor da causa para número.
 
     Suporta formatos:
+    - "17317.35" -> 17317.35 (formato XML TJ-MS com ponto decimal)
     - "250000" -> 250000.0
     - "250.000,00" -> 250000.0
     - "R$ 250.000,00" -> 250000.0
@@ -178,11 +179,14 @@ def _resolver_valor_causa_numerico(dados: 'DadosProcesso') -> Optional[float]:
     Returns:
         Valor da causa como float, ou None se não disponível/inválido
     """
-    if not dados.valor_causa:
+    valor_raw = dados.valor_causa if dados else None
+
+    if not valor_raw:
+        logger.debug(f"[valor_causa] raw=None, motivo=missing")
         return None
 
     try:
-        valor = dados.valor_causa
+        valor = valor_raw.strip()
 
         # Remove símbolos de moeda e espaços
         valor = valor.replace("R$", "").replace("$", "").strip()
@@ -200,10 +204,50 @@ def _resolver_valor_causa_numerico(dados: 'DadosProcesso') -> Optional[float]:
             else:
                 # Vírgula como milhar
                 valor = valor.replace(",", "")
+        # Formato XML padrão (17317.35) - ponto como decimal, já está correto
 
-        return float(valor)
-    except (ValueError, TypeError):
+        resultado = float(valor)
+        logger.debug(f"[valor_causa] raw='{valor_raw}', numerico={resultado}")
+        return resultado
+    except (ValueError, TypeError) as e:
+        logger.debug(f"[valor_causa] raw='{valor_raw}', motivo=parse_error, erro={e}")
         return None
+
+
+# Limite de 60 salários mínimos (R$ 1.621,00 x 60 = R$ 97.260,00)
+# Referência: salário mínimo 2024
+LIMITE_60_SALARIOS_MINIMOS = 97260.0
+
+
+def _resolver_valor_causa_inferior_60sm(dados: 'DadosProcesso') -> Optional[bool]:
+    """
+    Verifica se o valor da causa é inferior a 60 salários mínimos (R$ 97.260,00).
+
+    Regra:
+    - Se valor_causa_numerico < 97260.0 -> True
+    - Se valor_causa_numerico >= 97260.0 -> False
+    - Se valor_causa_numerico é None -> None (não chuta)
+
+    Args:
+        dados: Dados do processo
+
+    Returns:
+        True se valor é inferior a 60 SM
+        False se valor é igual ou superior a 60 SM
+        None se valor não disponível/inválido
+    """
+    valor_numerico = _resolver_valor_causa_numerico(dados)
+
+    if valor_numerico is None:
+        logger.debug(f"[valor_causa_inferior_60sm] valor_numerico=None, resultado=None")
+        return None
+
+    resultado = valor_numerico < LIMITE_60_SALARIOS_MINIMOS
+    logger.debug(
+        f"[valor_causa_inferior_60sm] valor_numerico={valor_numerico}, "
+        f"limite={LIMITE_60_SALARIOS_MINIMOS}, resultado={resultado}"
+    )
+    return resultado
 
 
 def _resolver_estado_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
@@ -396,6 +440,15 @@ ProcessVariableResolver.register(ProcessVariableDefinition(
     tipo="number",
     descricao="Valor da causa convertido para número (float).",
     resolver=_resolver_valor_causa_numerico
+))
+
+# Valor da causa inferior a 60 salários mínimos
+ProcessVariableResolver.register(ProcessVariableDefinition(
+    slug="valor_causa_inferior_60sm",
+    label="Valor da Causa Inferior a 60 SM",
+    tipo="boolean",
+    descricao="True se valor da causa é inferior a 60 salários mínimos (R$ 97.260,00).",
+    resolver=_resolver_valor_causa_inferior_60sm
 ))
 
 # Estado no polo passivo
