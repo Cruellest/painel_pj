@@ -236,7 +236,11 @@ class DetectorModulosIA:
 
             if resultado["ativar"] is True:
                 ids_ativados.append(modulo.id)
-                print(f"[AGENTE2] [FAST] ✓ '{modulo.titulo}' ATIVADO")
+                print(f"[AGENTE2] [FAST] ✓ '{modulo.titulo}' ATIVADO (regra: {resultado.get('regra_usada', 'N/A')})")
+            elif resultado["ativar"] is None:
+                # Variáveis não disponíveis - não ativa (sem fallback para LLM no fast path)
+                detalhes = resultado.get('detalhes', 'variáveis indisponíveis')
+                print(f"[AGENTE2] [FAST] ○ '{modulo.titulo}' não avaliável ({detalhes})")
             else:
                 print(f"[AGENTE2] [FAST] ✗ '{modulo.titulo}' não ativado")
 

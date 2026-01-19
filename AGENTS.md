@@ -1,6 +1,6 @@
 # AGENTS.md - Guia para Agentes de IA
 
-> Ultima atualizacao: 17 Janeiro 2026
+> Ultima atualizacao: 19 Janeiro 2026
 
 ---
 
@@ -114,9 +114,10 @@ portal-pge/
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ AGENTE 2: Detector (DetectorModulosIA)                      │
-│ - Analisa resumo com Gemini Flash                           │
-│ - Ativa módulos de CONTEÚDO relevantes                      │
-│ - Retorna: tipo_peca, modulos_ids[], justificativa          │
+│ - Fast Path: avalia regras determinísticas sem LLM          │
+│ - Modo Misto: determinístico + LLM para módulos sem regra   │
+│ - Modo LLM: analisa resumo com Gemini Flash                 │
+│ - Retorna: modulos_ids[], justificativa                     │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -157,6 +158,20 @@ PROMPT_FINAL = BASE_SYSTEM + PROMPT_PEÇA + PROMPT_CONTEÚDO_1 + ... + PROMPT_CO
 O sistema suporta dois modos de ativação de prompts:
 1. **LLM (padrão)**: IA decide se ativa o módulo
 2. **Determinístico**: Regras JSON avaliadas sem LLM
+
+**Fast Path (Determinístico):**
+
+Quando **TODOS** os prompts de conteúdo estão em modo determinístico:
+- O Agente 2 **NÃO chama LLM** para ativação de módulos
+- As regras são avaliadas localmente usando variáveis disponíveis
+- Logs indicam: `[AGENTE2] ⚡ FAST PATH: 100% determinístico, pulando LLM`
+
+**Fontes de Variáveis para Avaliação Determinística:**
+1. **Variáveis de Sistema** (XML do processo): `valor_causa_superior_210sm`, `uniao_polo_passivo`, etc.
+   - Calculadas por `ProcessVariableResolver` em `services_process_variables.py`
+2. **Variáveis de Extração** (resumos JSON dos PDFs): `medicamento_nao_incorporado_sus`, etc.
+   - Consolidadas por `consolidar_dados_extracao()` em `orquestrador_agentes.py`
+   - Regras de consolidação: booleanos usam OR, listas concatenam, outros mantêm primeiro valor
 
 **Geração de Regras via Linguagem Natural:**
 ```
@@ -213,6 +228,13 @@ O sistema suporta dois modos de ativação de prompts:
 - exists, not_exists, is_empty, is_not_empty
 - in_list, not_in_list, matches_regex
 - and, or, not (lógicos com suporte a nesting)
+
+**Normalização de Booleanos (Bug Fix - 19/01/2026):**
+O sistema normaliza automaticamente valores booleanos salvos como `1/0` ou `"1"/"0"` para `true/false`:
+- Backend: `normalizar_booleanos_regra()` em `router_prompts.py` - aplicada ao salvar e ao retornar
+- Frontend: `normalizarValorBooleano()` em `admin_prompts_modulos.html` - aplicada ao carregar regras
+- Avaliador: `DeterministicRuleEvaluator._comparar_igual()` trata 1/0 como booleanos (compatibilidade)
+- Teste: `tests/test_boolean_normalization.py`
 
 **Builder Visual (frontend):**
 - Botão "Adicionar Condição" - adiciona condição simples

@@ -28,6 +28,104 @@ from admin.models_prompts import PromptModulo
 
 # Modelos padrão (usados se não houver configuração no banco)
 MODELO_AGENTE1_PADRAO = "gemini-3-flash-preview"
+
+
+def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, Any]:
+    """
+    Consolida dados extraídos dos resumos JSON dos documentos.
+    
+    Percorre todos os documentos com resumo em formato JSON e extrai
+    as variáveis para um dicionário consolidado.
+    
+    Regras de consolidação:
+    - Para booleanos: lógica OR (se qualquer documento tem True, resultado é True)
+    - Para listas: concatena valores únicos
+    - Para strings/números: mantém o primeiro valor encontrado (ou lista se múltiplos)
+    
+    Args:
+        resultado_agente1: Resultado do Agente 1 com documentos analisados
+        
+    Returns:
+        Dicionário {slug: valor} com variáveis consolidadas
+    """
+    dados_consolidados = {}
+    
+    if not resultado_agente1.dados_brutos:
+        return dados_consolidados
+    
+    documentos = resultado_agente1.dados_brutos.documentos_com_resumo()
+    
+    for doc in documentos:
+        if not doc.resumo:
+            continue
+        
+        # Tenta parsear o resumo como JSON
+        try:
+            # Remove possíveis marcadores de código markdown
+            resumo_limpo = doc.resumo.strip()
+            if resumo_limpo.startswith('```json'):
+                resumo_limpo = resumo_limpo[7:]
+            elif resumo_limpo.startswith('```'):
+                resumo_limpo = resumo_limpo[3:]
+            if resumo_limpo.endswith('```'):
+                resumo_limpo = resumo_limpo[:-3]
+            resumo_limpo = resumo_limpo.strip()
+            
+            # Se não parece JSON, pula
+            if not resumo_limpo.startswith('{'):
+                continue
+                
+            dados_doc = json.loads(resumo_limpo)
+            
+            if not isinstance(dados_doc, dict):
+                continue
+            
+            # Consolida cada variável do documento
+            for slug, valor in dados_doc.items():
+                if slug.startswith('_'):  # Ignora campos internos/metadata
+                    continue
+                    
+                if slug not in dados_consolidados:
+                    # Primeira ocorrência
+                    dados_consolidados[slug] = valor
+                else:
+                    # Consolidação
+                    valor_existente = dados_consolidados[slug]
+                    
+                    # Booleanos: lógica OR
+                    if isinstance(valor, bool) and isinstance(valor_existente, bool):
+                        dados_consolidados[slug] = valor_existente or valor
+                    # Listas: concatena valores únicos
+                    elif isinstance(valor, list):
+                        if isinstance(valor_existente, list):
+                            for v in valor:
+                                if v not in valor_existente:
+                                    valor_existente.append(v)
+                        else:
+                            dados_consolidados[slug] = [valor_existente] + valor
+                    # Outros: mantém lista de valores
+                    elif valor != valor_existente:
+                        if isinstance(valor_existente, list):
+                            if valor not in valor_existente:
+                                valor_existente.append(valor)
+                        else:
+                            dados_consolidados[slug] = [valor_existente, valor]
+                            
+        except (json.JSONDecodeError, TypeError, ValueError):
+            # Resumo não é JSON válido, ignora
+            continue
+    
+    if dados_consolidados:
+        print(f"[EXTRAÇÃO] Variáveis extraídas dos resumos JSON: {len(dados_consolidados)}")
+        # Log de algumas variáveis para debug
+        for slug, valor in list(dados_consolidados.items())[:5]:
+            print(f"   - {slug}: {valor}")
+        if len(dados_consolidados) > 5:
+            print(f"   ... e mais {len(dados_consolidados) - 5} variáveis")
+    
+    return dados_consolidados
+
+
 MODELO_AGENTE2_PADRAO = "gemini-3-flash-preview"
 MODELO_AGENTE3_PADRAO = "gemini-3-pro-preview"
 
@@ -292,10 +390,14 @@ class OrquestradorAgentes:
             if resultado.agente1.dados_brutos and resultado.agente1.dados_brutos.dados_processo:
                 dados_processo = resultado.agente1.dados_brutos.dados_processo
 
+            # Consolida dados extraídos dos resumos JSON para avaliação determinística
+            dados_extracao = consolidar_dados_extracao(resultado.agente1)
+
             resultado.agente2 = await self._executar_agente2(
                 resumo_consolidado,
                 tipo_peca,
-                dados_processo=dados_processo
+                dados_processo=dados_processo,
+                dados_extracao=dados_extracao
             )
             resultado.tempo_agente2 = (datetime.now() - inicio).total_seconds()
             
@@ -415,7 +517,8 @@ class OrquestradorAgentes:
         self,
         resumo_consolidado: str,
         tipo_peca: Optional[str] = None,
-        dados_processo: Optional[Any] = None
+        dados_processo: Optional[Any] = None,
+        dados_extracao: Optional[Dict[str, Any]] = None
     ) -> ResultadoAgente2:
         """
         Executa o Agente 2 - Detector de Módulos
@@ -427,19 +530,22 @@ class OrquestradorAgentes:
             resumo_consolidado: Resumo dos documentos
             tipo_peca: Tipo de peça para filtrar módulos
             dados_processo: DadosProcesso extraídos do XML (opcional)
+            dados_extracao: Variáveis extraídas dos resumos JSON (opcional)
         """
         resultado = ResultadoAgente2()
 
         try:
             # Detecta módulos de conteúdo relevantes
             # Passa dados_processo para resolução de variáveis derivadas
+            # Passa dados_extracao para avaliação determinística
             # Permite fast path se todos os módulos são determinísticos
             modulos_ids = await self.agente2.detectar_modulos_relevantes(
                 documentos_resumo=resumo_consolidado,
                 tipo_peca=tipo_peca,
                 group_id=self.group_id,
                 subcategoria_ids=self.subcategoria_ids,
-                dados_processo=dados_processo
+                dados_processo=dados_processo,
+                dados_extracao=dados_extracao
             )
             resultado.modulos_ids = modulos_ids
             
