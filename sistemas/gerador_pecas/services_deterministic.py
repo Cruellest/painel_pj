@@ -753,6 +753,10 @@ class DeterministicRuleEvaluator:
 
         Suporta variáveis condicionais que podem estar ausentes quando
         sua condição pai não é satisfeita.
+
+        Regras especiais:
+        1. Se variável não existe ou é None → considera como False (para booleanos)
+        2. Se variável é uma lista → usa lógica OR (pelo menos um True = True)
         """
         variavel = condicao.get("variable")
         operador = condicao.get("operator")
@@ -771,8 +775,49 @@ class DeterministicRuleEvaluator:
                 # Para operadores de comparação, retorna False
                 return False
 
+            # REGRA 1: Se variável não existe ou é None, considera como False para booleanos
+            # Isso permite que condições como "variavel = false" sejam TRUE quando a variável não existe
+            if valor_esperado in (True, False, "true", "false"):
+                valor_atual = False
+                logger.debug(
+                    f"[REGRA-DETERMINISTICO] Variável '{variavel}' não existe/null, "
+                    f"considerando como False para comparação booleana"
+                )
+
+        # REGRA 2: Se valor_atual é uma lista, aplica lógica OR
+        # Se pelo menos um valor na lista satisfaz a condição, considera True
+        if isinstance(valor_atual, list):
+            # Para booleanos: se qualquer valor for True, considera True
+            if valor_esperado in (True, "true"):
+                # Verifica se ALGUM valor na lista é True
+                valor_atual = any(self._normalizar_booleano(v) for v in valor_atual)
+            elif valor_esperado in (False, "false"):
+                # Verifica se TODOS os valores na lista são False (nenhum True)
+                valor_atual = not any(self._normalizar_booleano(v) for v in valor_atual)
+            else:
+                # Para outros tipos: verifica se algum valor na lista satisfaz
+                for v in valor_atual:
+                    if self._aplicar_operador(operador, v, valor_esperado):
+                        return True
+                return False
+
+            logger.debug(
+                f"[REGRA-DETERMINISTICO] Variável '{variavel}' é lista, "
+                f"aplicando lógica OR: valor consolidado = {valor_atual}"
+            )
+
         # Avalia operador
         return self._aplicar_operador(operador, valor_atual, valor_esperado)
+
+    def _normalizar_booleano(self, valor: Any) -> bool:
+        """Normaliza um valor para booleano."""
+        if valor is None:
+            return False
+        if isinstance(valor, bool):
+            return valor
+        if isinstance(valor, str):
+            return valor.lower() in ("true", "1", "yes", "sim")
+        return bool(valor)
 
     def _aplicar_operador(
         self,
