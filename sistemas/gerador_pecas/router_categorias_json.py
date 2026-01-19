@@ -467,7 +467,6 @@ async def atualizar_categoria(
             for variavel in variaveis_categoria:
                 if variavel.slug not in slugs_no_json:
                     variavel.ativo = False
-                    variavel.atualizado_por = current_user.id
                     variavel.atualizado_em = datetime.utcnow()
                     logger.info(f"Variável órfã desativada: slug={variavel.slug} (removida do JSON)")
 

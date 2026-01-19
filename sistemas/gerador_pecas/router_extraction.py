@@ -1708,7 +1708,6 @@ async def excluir_pergunta(
 
     if variavel:
         variavel.ativo = False
-        variavel.atualizado_por = current_user.id
         variavel.atualizado_em = datetime.utcnow()
         variavel_desativada = variavel.slug
         logger.info(f"Variável associada desativada: slug={variavel.slug}")
@@ -2277,7 +2276,6 @@ async def sincronizar_perguntas_com_json(
             variavel = variaveis_por_slug[slug]
             if not variavel.ativo:
                 variavel.ativo = True
-                variavel.atualizado_por = current_user.id
                 variavel.atualizado_em = datetime.utcnow()
                 variaveis_reativadas += 1
                 detalhes.append({
@@ -2308,9 +2306,7 @@ async def sincronizar_perguntas_com_json(
                 opcoes=opcoes if opcoes else None,
                 categoria_id=categoria_id,
                 source_question_id=source_question_id,
-                ativo=True,
-                criado_por=current_user.id,
-                atualizado_por=current_user.id
+                ativo=True
             )
             db.add(nova_variavel)
             variaveis_criadas += 1
