@@ -26,7 +26,7 @@ from auth.dependencies import require_admin
 from auth.models import User
 from admin.models_performance import PerformanceLog, RouteSystemMap
 
-router = APIRouter(prefix="/admin/performance", tags=["Performance Logs"])
+router = APIRouter(prefix="/admin/api/performance", tags=["Performance Logs"])
 
 
 # ==================================================
