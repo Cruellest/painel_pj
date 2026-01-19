@@ -87,6 +87,8 @@ class CategoriaResumoJSONUpdate(BaseModel):
     # Origem do JSON
     json_gerado_por_ia: Optional[bool] = None
     motivo: str  # Obrigatório para rastrear alterações
+    # Sincronização de variáveis (SEGURANÇA: desativado por padrão)
+    sincronizar_variaveis: bool = False  # Se True, desativa variáveis órfãs
 
     @field_validator('formato_json')
     @classmethod
@@ -443,8 +445,10 @@ async def atualizar_categoria(
     categoria.atualizado_por = current_user.id
     categoria.atualizado_em = datetime.utcnow()
 
-    # Sincroniza variáveis se o JSON foi alterado
-    if categoria_data.formato_json is not None:
+    # Sincroniza variáveis APENAS se explicitamente solicitado (flag de segurança)
+    # IMPORTANTE: Por padrão NÃO desativa variáveis ao atualizar JSON
+    # Use "Aplicar JSON nas Perguntas" para sincronização completa
+    if categoria_data.formato_json is not None and categoria_data.sincronizar_variaveis:
         try:
             import json
             from .models_extraction import ExtractionVariable, ExtractionQuestion
@@ -464,6 +468,7 @@ async def atualizar_categoria(
             ).all()
 
             # Desativa variáveis que não estão mais no JSON (órfãs)
+            # SEGURANÇA: Só executa se sincronizar_variaveis=True
             for variavel in variaveis_categoria:
                 if variavel.slug not in slugs_no_json:
                     variavel.ativo = False
