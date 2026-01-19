@@ -3124,7 +3124,7 @@ async def listar_variaveis(
     tipo: Optional[str] = Query(None, description="Filtrar por tipo"),
     busca: Optional[str] = Query(None, description="Buscar por slug ou label"),
     apenas_ativos: bool = Query(True, description="Filtrar apenas ativos"),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(500, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)

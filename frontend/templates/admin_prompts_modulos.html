@@ -58,6 +58,96 @@
         .drag-handle:active {
             cursor: grabbing;
         }
+
+        /* Combobox pesquisável de variáveis */
+        .variable-combobox {
+            position: relative;
+            flex: 1;
+        }
+        .variable-combobox-input {
+            width: 100%;
+            padding: 0.5rem 2rem 0.5rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            background: white;
+        }
+        .variable-combobox-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        .variable-combobox-input.has-value {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+        }
+        .variable-combobox-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 280px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 50;
+            display: none;
+        }
+        .variable-combobox-dropdown.open {
+            display: block;
+        }
+        .variable-combobox-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .variable-combobox-item:hover, .variable-combobox-item.highlighted {
+            background: #eff6ff;
+        }
+        .variable-combobox-item .slug {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: #1f2937;
+        }
+        .variable-combobox-item .tipo {
+            font-size: 0.65rem;
+            color: #6b7280;
+            margin-left: 0.5rem;
+        }
+        .variable-combobox-item .label {
+            font-size: 0.7rem;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+        .variable-combobox-clear {
+            position: absolute;
+            right: 0.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        .variable-combobox-clear:hover {
+            color: #ef4444;
+        }
+        .variable-combobox-no-results {
+            padding: 0.75rem;
+            color: #9ca3af;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+        .variable-combobox-hint {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.7rem;
+            color: #6b7280;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -1053,6 +1143,12 @@
         let variaveisDisponiveis = []; // Cache de variáveis para autocomplete
         let contadorIdCondicao = 0; // Contador para IDs únicos
         let regraSecundariaGerada = null; // Cache da regra secundária gerada pela IA
+        // Estado dos comboboxes de variáveis
+        let comboboxAberto = null;
+        let comboboxHighlightIndex = -1;
+        let comboboxDebounceTimer = null;
+        let comboboxSecAberto = null;
+        let comboboxSecHighlightIndex = -1;
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', async () => {
@@ -2306,16 +2402,236 @@
         // Carrega variáveis disponíveis para autocomplete
         async function carregarVariaveisDisponiveis() {
             try {
-                const response = await fetch('/admin/api/extraction/variaveis?apenas_ativos=true', {
+                // Carrega TODAS as variáveis ativas (limit=2000 para garantir)
+                const response = await fetch('/admin/api/extraction/variaveis?apenas_ativos=true&limit=2000', {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
                 });
                 if (response.ok) {
                     variaveisDisponiveis = await response.json();
+                    console.log(`Carregadas ${variaveisDisponiveis.length} variáveis disponíveis`);
                 }
             } catch (error) {
                 console.error('Erro ao carregar variáveis:', error);
             }
         }
+
+        // ==========================================
+        // Funções do Combobox de Variáveis
+        // ==========================================
+
+        // Abre o dropdown do combobox
+        function abrirCombobox(condId) {
+            // Fecha qualquer combobox aberto antes
+            if (comboboxAberto !== null && comboboxAberto !== condId) {
+                fecharCombobox(comboboxAberto);
+            }
+            
+            const dropdown = document.getElementById(`combobox-dropdown-${condId}`);
+            const input = document.getElementById(`combobox-input-${condId}`);
+            
+            if (dropdown && input) {
+                dropdown.classList.add('open');
+                comboboxAberto = condId;
+                comboboxHighlightIndex = -1;
+                
+                // Limpa o input para facilitar a busca (guarda o valor original)
+                const selectedSlug = input.dataset.selectedSlug || '';
+                if (selectedSlug) {
+                    input.dataset.originalValue = input.value;
+                    input.value = '';
+                    input.classList.remove('has-value');
+                }
+                
+                // Renderiza as primeiras variáveis
+                renderizarItensCombobox(condId, '');
+            }
+        }
+
+        // Fecha o dropdown do combobox
+        function fecharCombobox(condId) {
+            const dropdown = document.getElementById(`combobox-dropdown-${condId}`);
+            const input = document.getElementById(`combobox-input-${condId}`);
+            
+            if (dropdown) {
+                dropdown.classList.remove('open');
+            }
+            
+            // Restaura o valor original se nenhum foi selecionado
+            if (input) {
+                const selectedSlug = input.dataset.selectedSlug || '';
+                if (selectedSlug) {
+                    const varInfo = variaveisDisponiveis.find(v => v.slug === selectedSlug);
+                    input.value = `${selectedSlug} (${varInfo?.tipo || 'text'})`;
+                    input.classList.add('has-value');
+                } else if (input.dataset.originalValue) {
+                    input.value = '';
+                }
+            }
+            
+            if (comboboxAberto === condId) {
+                comboboxAberto = null;
+            }
+        }
+
+        // Filtra as opções do combobox com debounce
+        function filtrarCombobox(condId, termo) {
+            clearTimeout(comboboxDebounceTimer);
+            comboboxDebounceTimer = setTimeout(() => {
+                renderizarItensCombobox(condId, termo);
+            }, 150);
+        }
+
+        // Renderiza os itens filtrados no dropdown
+        function renderizarItensCombobox(condId, termo) {
+            const container = document.getElementById(`combobox-items-${condId}`);
+            if (!container) return;
+            
+            const termoLower = termo.toLowerCase().trim();
+            
+            // Filtra variáveis por slug ou label
+            let filtradas = variaveisDisponiveis;
+            if (termoLower) {
+                filtradas = variaveisDisponiveis.filter(v => {
+                    const slugMatch = v.slug.toLowerCase().includes(termoLower);
+                    const labelMatch = v.label && v.label.toLowerCase().includes(termoLower);
+                    return slugMatch || labelMatch;
+                });
+            }
+            
+            // Limita a 50 para performance
+            const limite = 50;
+            const mostradas = filtradas.slice(0, limite);
+            
+            if (mostradas.length === 0) {
+                container.innerHTML = `
+                    <div class="variable-combobox-no-results">
+                        <i class="fas fa-search mr-1"></i>
+                        Nenhuma variável encontrada para "${termo}"
+                    </div>`;
+                return;
+            }
+            
+            container.innerHTML = mostradas.map((v, idx) => `
+                <div class="variable-combobox-item ${idx === comboboxHighlightIndex ? 'highlighted' : ''}"
+                    data-slug="${v.slug}"
+                    onclick="selecionarVariavelCombobox(${condId}, '${v.slug}')"
+                    onmouseenter="comboboxHighlightIndex = ${idx}">
+                    <div>
+                        <span class="slug">${destacarTermo(v.slug, termoLower)}</span>
+                        <span class="tipo">${v.tipo}</span>
+                    </div>
+                    ${v.label ? `<div class="label">${destacarTermo(v.label, termoLower)}</div>` : ''}
+                </div>
+            `).join('');
+            
+            if (filtradas.length > limite) {
+                container.innerHTML += `
+                    <div class="variable-combobox-hint">
+                        <i class="fas fa-ellipsis-h mr-1"></i>
+                        +${filtradas.length - limite} variáveis (refine sua busca)
+                    </div>`;
+            }
+        }
+
+        // Destaca o termo buscado no texto
+        function destacarTermo(texto, termo) {
+            if (!termo) return texto;
+            const regex = new RegExp(`(${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return texto.replace(regex, '<mark style="background:#fef08a;padding:0 2px;border-radius:2px;">$1</mark>');
+        }
+
+        // Seleciona uma variável do combobox
+        function selecionarVariavelCombobox(condId, slug) {
+            const input = document.getElementById(`combobox-input-${condId}`);
+            const varInfo = variaveisDisponiveis.find(v => v.slug === slug);
+            
+            if (input && varInfo) {
+                input.value = `${slug} (${varInfo.tipo})`;
+                input.dataset.selectedSlug = slug;
+                input.classList.add('has-value');
+            }
+            
+            // Atualiza a condição
+            onVariavelChange(condId, slug);
+            
+            // Fecha o dropdown
+            fecharCombobox(condId);
+        }
+
+        // Limpa a seleção do combobox
+        function limparCombobox(condId) {
+            const input = document.getElementById(`combobox-input-${condId}`);
+            if (input) {
+                input.value = '';
+                input.dataset.selectedSlug = '';
+                input.classList.remove('has-value');
+            }
+            
+            // Atualiza a condição
+            onVariavelChange(condId, '');
+            
+            // Re-renderiza a condição
+            renderizarCondicoes();
+        }
+
+        // Navegação por teclado no combobox
+        function navegarCombobox(event, condId) {
+            const container = document.getElementById(`combobox-items-${condId}`);
+            if (!container) return;
+            
+            const items = container.querySelectorAll('.variable-combobox-item');
+            
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    comboboxHighlightIndex = Math.min(comboboxHighlightIndex + 1, items.length - 1);
+                    atualizarHighlight(items);
+                    break;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    comboboxHighlightIndex = Math.max(comboboxHighlightIndex - 1, 0);
+                    atualizarHighlight(items);
+                    break;
+                case 'Enter':
+                    event.preventDefault();
+                    if (comboboxHighlightIndex >= 0 && items[comboboxHighlightIndex]) {
+                        const slug = items[comboboxHighlightIndex].dataset.slug;
+                        selecionarVariavelCombobox(condId, slug);
+                    }
+                    break;
+                case 'Escape':
+                    fecharCombobox(condId);
+                    break;
+            }
+        }
+
+        // Atualiza a classe de destaque nos itens
+        function atualizarHighlight(items) {
+            items.forEach((item, idx) => {
+                item.classList.toggle('highlighted', idx === comboboxHighlightIndex);
+                if (idx === comboboxHighlightIndex) {
+                    item.scrollIntoView({ block: 'nearest' });
+                }
+            });
+        }
+
+        // Fecha combobox ao clicar fora
+        document.addEventListener('click', (e) => {
+            // Fecha combobox primário
+            if (comboboxAberto !== null) {
+                const combobox = document.getElementById(`combobox-${comboboxAberto}`);
+                if (combobox && !combobox.contains(e.target)) {
+                    fecharCombobox(comboboxAberto);
+                }
+            }
+            // Fecha combobox secundário
+            if (comboboxSecAberto !== null) {
+                const comboboxSec = document.getElementById(`combobox-sec-${comboboxSecAberto}`);
+                if (comboboxSec && !comboboxSec.contains(e.target)) {
+                    fecharComboboxSecundaria(comboboxSecAberto);
+                }
+            }
+        });
 
         // Seleciona modo de ativação (LLM ou Determinístico)
         function selecionarModoAtivacao(modo) {
@@ -2531,18 +2847,29 @@
             const varInfo = variaveisDisponiveis.find(v => v.slug === c.variavel);
             const esconderValor = ['exists', 'not_exists'].includes(c.operador);
             const marginLeft = nivel > 0 ? '' : '';
+            const displayValue = c.variavel ? `${c.variavel} (${varInfo?.tipo || 'text'})` : '';
 
             return `
             <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 ${marginLeft}" data-id="${c.id}" data-type="condition">
-                <select class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                    onchange="onVariavelChange(${c.id}, this.value)">
-                    <option value="">Selecione a variável...</option>
-                    ${variaveisDisponiveis.map(v => `
-                        <option value="${v.slug}" ${c.variavel === v.slug ? 'selected' : ''}>
-                            ${v.slug} (${v.tipo})
-                        </option>
-                    `).join('')}
-                </select>
+                <div class="variable-combobox" id="combobox-${c.id}">
+                    <input type="text"
+                        class="variable-combobox-input ${c.variavel ? 'has-value' : ''}"
+                        id="combobox-input-${c.id}"
+                        placeholder="Digite para buscar variável..."
+                        value="${displayValue}"
+                        data-selected-slug="${c.variavel || ''}"
+                        onfocus="abrirCombobox(${c.id})"
+                        oninput="filtrarCombobox(${c.id}, this.value)"
+                        onkeydown="navegarCombobox(event, ${c.id})"
+                        autocomplete="off">
+                    ${c.variavel ? `<span class="variable-combobox-clear" onclick="limparCombobox(${c.id})"><i class="fas fa-times text-xs"></i></span>` : ''}
+                    <div class="variable-combobox-dropdown" id="combobox-dropdown-${c.id}">
+                        <div class="variable-combobox-hint">
+                            <i class="fas fa-search mr-1"></i> Digite para filtrar (${variaveisDisponiveis.length} variáveis)
+                        </div>
+                        <div id="combobox-items-${c.id}"></div>
+                    </div>
+                </div>
                 <select class="px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     onchange="atualizarCondicao(${c.id}, 'operador', this.value); toggleValorCondicao(${c.id}, this.value)">
                     ${operadores.map(op => `
@@ -3313,13 +3640,31 @@
         // Renderiza item de condição secundária (reutiliza lógica da primária)
         function renderizarItemCondicaoSecundaria(item) {
             if (item.type === 'condition') {
+                const varInfo = variaveisDisponiveis.find(v => v.slug === item.variavel);
+                const displayValue = item.variavel ? `${item.variavel} (${varInfo?.tipo || 'text'})` : '';
+                const esconderValor = ['exists', 'not_exists'].includes(item.operador);
+                
                 return `
-                    <div class="flex items-center gap-1.5 p-1.5 bg-amber-50 rounded border border-amber-200" data-id-sec="${item.id}">
-                        <select class="px-1.5 py-1 border border-gray-300 rounded text-xs flex-1 min-w-[100px]"
-                            onchange="atualizarCondicaoSecundaria('${item.id}', 'variavel', this.value)">
-                            <option value="">Selecione...</option>
-                            ${variaveisDisponiveis.map(v => `<option value="${v.slug}" ${v.slug === item.variavel ? 'selected' : ''}>${v.slug}</option>`).join('')}
-                        </select>
+                    <div class="flex items-center gap-1.5 p-2 bg-amber-50 rounded border border-amber-200" data-id-sec="${item.id}">
+                        <div class="variable-combobox flex-1 min-w-[150px]" id="combobox-sec-${item.id}">
+                            <input type="text"
+                                class="variable-combobox-input text-xs ${item.variavel ? 'has-value' : ''}"
+                                id="combobox-sec-input-${item.id}"
+                                placeholder="Buscar variável..."
+                                value="${displayValue}"
+                                data-selected-slug="${item.variavel || ''}"
+                                onfocus="abrirComboboxSecundaria('${item.id}')"
+                                oninput="filtrarComboboxSecundaria('${item.id}', this.value)"
+                                onkeydown="navegarComboboxSecundaria(event, '${item.id}')"
+                                autocomplete="off">
+                            ${item.variavel ? `<span class="variable-combobox-clear" onclick="limparComboboxSecundaria('${item.id}')"><i class="fas fa-times text-xs"></i></span>` : ''}
+                            <div class="variable-combobox-dropdown" id="combobox-sec-dropdown-${item.id}">
+                                <div class="variable-combobox-hint">
+                                    <i class="fas fa-search mr-1"></i> Digite para filtrar
+                                </div>
+                                <div id="combobox-sec-items-${item.id}"></div>
+                            </div>
+                        </div>
                         <select class="px-1.5 py-1 border border-gray-300 rounded text-xs"
                             onchange="atualizarCondicaoSecundaria('${item.id}', 'operador', this.value)">
                             <option value="equals" ${item.operador === 'equals' ? 'selected' : ''}>=</option>
@@ -3328,9 +3673,11 @@
                             <option value="exists" ${item.operador === 'exists' ? 'selected' : ''}>existe</option>
                             <option value="not_exists" ${item.operador === 'not_exists' ? 'selected' : ''}>não existe</option>
                         </select>
-                        <input type="text" value="${item.valor || ''}" placeholder="valor"
-                            class="px-1.5 py-1 border border-gray-300 rounded text-xs w-20"
-                            onchange="atualizarCondicaoSecundaria('${item.id}', 'valor', this.value)">
+                        <div id="valor-sec-container-${item.id}" class="${esconderValor ? 'hidden' : ''}">
+                            <input type="text" value="${item.valor || ''}" placeholder="valor"
+                                class="px-1.5 py-1 border border-gray-300 rounded text-xs w-20"
+                                onchange="atualizarCondicaoSecundaria('${item.id}', 'valor', this.value)">
+                        </div>
                         <button type="button" onclick="removerItemSecundaria('${item.id}')"
                             class="p-1 text-red-500 hover:bg-red-100 rounded">
                             <i class="fas fa-times text-xs"></i>
@@ -3339,6 +3686,159 @@
                 `;
             }
             return '';
+        }
+
+        // Funções do combobox para regra secundária
+        function abrirComboboxSecundaria(condId) {
+            if (comboboxSecAberto !== null && comboboxSecAberto !== condId) {
+                fecharComboboxSecundaria(comboboxSecAberto);
+            }
+            
+            const dropdown = document.getElementById(`combobox-sec-dropdown-${condId}`);
+            const input = document.getElementById(`combobox-sec-input-${condId}`);
+            
+            if (dropdown && input) {
+                dropdown.classList.add('open');
+                comboboxSecAberto = condId;
+                comboboxSecHighlightIndex = -1;
+                
+                const selectedSlug = input.dataset.selectedSlug || '';
+                if (selectedSlug) {
+                    input.dataset.originalValue = input.value;
+                    input.value = '';
+                    input.classList.remove('has-value');
+                }
+                
+                renderizarItensComboboxSecundaria(condId, '');
+            }
+        }
+
+        function fecharComboboxSecundaria(condId) {
+            const dropdown = document.getElementById(`combobox-sec-dropdown-${condId}`);
+            const input = document.getElementById(`combobox-sec-input-${condId}`);
+            
+            if (dropdown) {
+                dropdown.classList.remove('open');
+            }
+            
+            if (input) {
+                const selectedSlug = input.dataset.selectedSlug || '';
+                if (selectedSlug) {
+                    const varInfo = variaveisDisponiveis.find(v => v.slug === selectedSlug);
+                    input.value = `${selectedSlug} (${varInfo?.tipo || 'text'})`;
+                    input.classList.add('has-value');
+                }
+            }
+            
+            if (comboboxSecAberto === condId) {
+                comboboxSecAberto = null;
+            }
+        }
+
+        function filtrarComboboxSecundaria(condId, termo) {
+            clearTimeout(comboboxDebounceTimer);
+            comboboxDebounceTimer = setTimeout(() => {
+                renderizarItensComboboxSecundaria(condId, termo);
+            }, 150);
+        }
+
+        function renderizarItensComboboxSecundaria(condId, termo) {
+            const container = document.getElementById(`combobox-sec-items-${condId}`);
+            if (!container) return;
+            
+            const termoLower = termo.toLowerCase().trim();
+            let filtradas = variaveisDisponiveis;
+            if (termoLower) {
+                filtradas = variaveisDisponiveis.filter(v => {
+                    const slugMatch = v.slug.toLowerCase().includes(termoLower);
+                    const labelMatch = v.label && v.label.toLowerCase().includes(termoLower);
+                    return slugMatch || labelMatch;
+                });
+            }
+            
+            const limite = 50;
+            const mostradas = filtradas.slice(0, limite);
+            
+            if (mostradas.length === 0) {
+                container.innerHTML = `<div class="variable-combobox-no-results">Nenhuma variável encontrada</div>`;
+                return;
+            }
+            
+            container.innerHTML = mostradas.map((v, idx) => `
+                <div class="variable-combobox-item ${idx === comboboxSecHighlightIndex ? 'highlighted' : ''}"
+                    data-slug="${v.slug}"
+                    onclick="selecionarVariavelComboboxSecundaria('${condId}', '${v.slug}')">
+                    <div>
+                        <span class="slug">${destacarTermo(v.slug, termoLower)}</span>
+                        <span class="tipo">${v.tipo}</span>
+                    </div>
+                    ${v.label ? `<div class="label">${destacarTermo(v.label, termoLower)}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function selecionarVariavelComboboxSecundaria(condId, slug) {
+            const input = document.getElementById(`combobox-sec-input-${condId}`);
+            const varInfo = variaveisDisponiveis.find(v => v.slug === slug);
+            
+            if (input && varInfo) {
+                input.value = `${slug} (${varInfo.tipo})`;
+                input.dataset.selectedSlug = slug;
+                input.classList.add('has-value');
+            }
+            
+            atualizarCondicaoSecundaria(condId, 'variavel', slug);
+            fecharComboboxSecundaria(condId);
+        }
+
+        function limparComboboxSecundaria(condId) {
+            const input = document.getElementById(`combobox-sec-input-${condId}`);
+            if (input) {
+                input.value = '';
+                input.dataset.selectedSlug = '';
+                input.classList.remove('has-value');
+            }
+            atualizarCondicaoSecundaria(condId, 'variavel', '');
+            renderizarCondicoesSecundaria();
+        }
+
+        function navegarComboboxSecundaria(event, condId) {
+            const container = document.getElementById(`combobox-sec-items-${condId}`);
+            if (!container) return;
+            
+            const items = container.querySelectorAll('.variable-combobox-item');
+            
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    comboboxSecHighlightIndex = Math.min(comboboxSecHighlightIndex + 1, items.length - 1);
+                    atualizarHighlightSec(items);
+                    break;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    comboboxSecHighlightIndex = Math.max(comboboxSecHighlightIndex - 1, 0);
+                    atualizarHighlightSec(items);
+                    break;
+                case 'Enter':
+                    event.preventDefault();
+                    if (comboboxSecHighlightIndex >= 0 && items[comboboxSecHighlightIndex]) {
+                        const slug = items[comboboxSecHighlightIndex].dataset.slug;
+                        selecionarVariavelComboboxSecundaria(condId, slug);
+                    }
+                    break;
+                case 'Escape':
+                    fecharComboboxSecundaria(condId);
+                    break;
+            }
+        }
+
+        function atualizarHighlightSec(items) {
+            items.forEach((item, idx) => {
+                item.classList.toggle('highlighted', idx === comboboxSecHighlightIndex);
+                if (idx === comboboxSecHighlightIndex) {
+                    item.scrollIntoView({ block: 'nearest' });
+                }
+            });
         }
 
         // Atualiza campo de condição secundária
