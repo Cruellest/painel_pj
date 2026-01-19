@@ -161,12 +161,16 @@ class DependencyInferenceService:
             # Obtém thinking_level da config
             thinking_level = get_thinking_level(self.db, "gerador_pecas")
 
+            # Calcula tokens necessários: ~200 tokens por pergunta na resposta JSON
+            max_tokens_resposta = max(4096, len(perguntas) * 250)
+
             response = await gemini_service.generate(
                 prompt=prompt,
                 system_prompt=self._get_system_prompt_batch(),
                 model=GEMINI_MODEL,
                 temperature=0.1,
-                thinking_level=thinking_level  # Configurável em /admin/prompts-config
+                thinking_level=thinking_level,  # Configurável em /admin/prompts-config
+                max_tokens=max_tokens_resposta  # Garante resposta completa para muitas perguntas
             )
 
             if not response.success:
@@ -429,13 +433,19 @@ IMPORTANTE:
                 linha += f" (sugestão de variável: {nome_var})"
             perguntas_formatadas.append(linha)
 
-        return f"""Processe as seguintes perguntas de extração para a categoria "{categoria_nome}".
+        total_perguntas = len(perguntas)
+
+        return f"""Processe as seguintes {total_perguntas} perguntas de extração para a categoria "{categoria_nome}".
 
 PERGUNTAS BRUTAS (podem conter instruções internas do usuário):
 {chr(10).join(perguntas_formatadas)}
 
+═══════════════════════════════════════════════════════════════
+ATENÇÃO: VOCÊ DEVE PROCESSAR TODAS AS {total_perguntas} PERGUNTAS!
+═══════════════════════════════════════════════════════════════
+
 TAREFAS OBRIGATÓRIAS:
-1. Para CADA pergunta, retorne em perguntas_normalizadas:
+1. Para CADA uma das {total_perguntas} perguntas (índices 0 a {total_perguntas - 1}), retorne em perguntas_normalizadas:
    - indice: posição original (0-based)
    - texto_original: a pergunta como foi digitada
    - texto_final: pergunta REESCRITA de forma clara, técnica e institucional
@@ -457,6 +467,7 @@ REGRAS PARA nome_base_variavel:
 - Máximo 4 palavras separadas por underscore
 - Deve ser autoexplicativo sem ler a pergunta
 
+CRÍTICO: O array perguntas_normalizadas DEVE conter EXATAMENTE {total_perguntas} objetos (índices 0 a {total_perguntas - 1}).
 Retorne APENAS JSON válido no formato especificado."""
 
     def _get_system_prompt(self) -> str:
