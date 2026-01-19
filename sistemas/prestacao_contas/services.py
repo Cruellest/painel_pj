@@ -16,7 +16,7 @@ import asyncio
 import logging
 import os
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, AsyncGenerator, Dict, Any, List
 
 from sqlalchemy.orm import Session
@@ -84,6 +84,76 @@ def log_erro(msg: str):
 def log_ia(msg: str):
     """Log específico de IA"""
     logger.info(f"   🤖 {msg}")
+
+
+# =====================================================
+# HELPER: DEFINIR ESTADO AGUARDANDO DOCUMENTOS
+# =====================================================
+
+ESTADO_EXPIRACAO_HORAS = 24  # Tempo de expiração do estado salvo
+
+def definir_aguardando_documentos(
+    geracao: GeracaoAnalise,
+    documentos_faltantes: List[str],
+    mensagem_usuario: str,
+    documentos_ja_baixados: Optional[List[Dict]] = None,
+):
+    """
+    Define o estado de aguardando documentos com todos os dados necessários.
+
+    Args:
+        geracao: Objeto GeracaoAnalise a ser atualizado
+        documentos_faltantes: Lista de documentos faltantes ['extrato_subconta', 'notas_fiscais']
+        mensagem_usuario: Mensagem amigável para exibir ao usuário
+        documentos_ja_baixados: Documentos já baixados para salvar (extratos, anexos, etc.)
+    """
+    geracao.status = "aguardando_documentos"
+    geracao.documentos_faltantes = documentos_faltantes
+    geracao.mensagem_erro_usuario = mensagem_usuario
+    geracao.estado_expira_em = datetime.utcnow() + timedelta(hours=ESTADO_EXPIRACAO_HORAS)
+
+    # Salva documentos já baixados para não perder
+    if documentos_ja_baixados:
+        geracao.documentos_anexos = documentos_ja_baixados
+
+    log_info(f"Estado salvo: aguardando {documentos_faltantes}, expira em {ESTADO_EXPIRACAO_HORAS}h")
+
+
+def definir_aguardando_nota_fiscal(
+    geracao: GeracaoAnalise,
+    mensagem_usuario: str,
+    documentos_ja_baixados: Optional[List[Dict]] = None,
+):
+    """
+    Define o estado de aguardando nota fiscal especificamente.
+
+    Args:
+        geracao: Objeto GeracaoAnalise a ser atualizado
+        mensagem_usuario: Mensagem amigável para exibir ao usuário
+        documentos_ja_baixados: Documentos já baixados para salvar
+    """
+    geracao.status = "aguardando_nota_fiscal"
+    geracao.documentos_faltantes = ["notas_fiscais"]
+    geracao.mensagem_erro_usuario = mensagem_usuario
+    geracao.estado_expira_em = datetime.utcnow() + timedelta(hours=ESTADO_EXPIRACAO_HORAS)
+
+    # Salva documentos já baixados para não perder
+    if documentos_ja_baixados:
+        geracao.documentos_anexos = documentos_ja_baixados
+
+    log_info(f"Estado salvo: aguardando nota fiscal, expira em {ESTADO_EXPIRACAO_HORAS}h")
+
+
+def verificar_estado_expirado(geracao: GeracaoAnalise) -> bool:
+    """
+    Verifica se o estado salvo expirou.
+
+    Returns:
+        True se expirou ou não tem data de expiração
+    """
+    if not geracao.estado_expira_em:
+        return True
+    return datetime.utcnow() > geracao.estado_expira_em
 
 
 def converter_pdf_para_imagens(pdf_bytes: bytes, max_paginas: int = 10) -> List[str]:
@@ -171,7 +241,8 @@ class OrquestradorPrestacaoContas:
     async def processar_completo(
         self,
         numero_cnj: str,
-        sobrescrever: bool = False
+        sobrescrever: bool = False,
+        documentos_manuais: Optional[Dict[str, Any]] = None
     ) -> AsyncGenerator[EventoSSE, None]:
         """
         Executa o pipeline completo com streaming de eventos.
@@ -179,6 +250,9 @@ class OrquestradorPrestacaoContas:
         Args:
             numero_cnj: Número CNJ do processo
             sobrescrever: Se True, refaz análise mesmo se já existir
+            documentos_manuais: Dict com documentos pré-anexados (para reprocessamento após expiração)
+                - extrato_pdf_bytes: bytes do PDF do extrato
+                - notas_fiscais: List[{bytes, filename}] das notas fiscais
 
         Yields:
             EventoSSE com progresso do processamento
@@ -212,6 +286,49 @@ class OrquestradorPrestacaoContas:
         self.db.add(geracao)
         self.db.commit()
         self.db.refresh(geracao)
+
+        # Se há documentos manuais (reprocessamento após expiração), processa-os primeiro
+        documentos_manuais_processados = []
+        if documentos_manuais:
+            import base64
+            log_info("Processando documentos manuais pré-anexados...")
+
+            # Processa extrato manual
+            if documentos_manuais.get("extrato_pdf_bytes"):
+                pdf_bytes = documentos_manuais["extrato_pdf_bytes"]
+                texto_extrato = extrair_texto_pdf(pdf_bytes)
+
+                if len(texto_extrato) < 500:
+                    imagens = converter_pdf_para_imagens(pdf_bytes)
+                    documentos_manuais_processados.append({
+                        "id": "extrato_manual",
+                        "tipo": "Extrato da Subconta (enviado manualmente)",
+                        "imagens": imagens
+                    })
+                    geracao.extrato_subconta_texto = f"[EXTRATO ENVIADO MANUALMENTE - {len(imagens)} páginas como imagem]"
+                else:
+                    geracao.extrato_subconta_texto = f"## EXTRATO DA SUBCONTA (ENVIADO MANUALMENTE)\n\n{texto_extrato}"
+
+                geracao.extrato_subconta_pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+                log_sucesso(f"Extrato manual processado ({len(texto_extrato)} chars)")
+
+            # Processa notas fiscais manuais
+            if documentos_manuais.get("notas_fiscais"):
+                for i, nota_data in enumerate(documentos_manuais["notas_fiscais"]):
+                    pdf_bytes = nota_data["bytes"]
+                    filename = nota_data.get("filename", f"nota_{i+1}.pdf")
+                    imagens = converter_pdf_para_imagens(pdf_bytes)
+                    if imagens:
+                        documentos_manuais_processados.append({
+                            "id": f"nota_manual_{i+1}",
+                            "tipo": f"Nota Fiscal (enviada manualmente) - {filename}",
+                            "imagens": imagens
+                        })
+                log_sucesso(f"{len(documentos_manuais['notas_fiscais'])} notas fiscais manuais processadas")
+
+            if documentos_manuais_processados:
+                geracao.documentos_anexos = documentos_manuais_processados
+                self.db.commit()
 
         try:
             logger.info(f"\n{'#'*60}")
@@ -695,19 +812,21 @@ class OrquestradorPrestacaoContas:
                     else:
                         # SOLICITA UPLOAD: Notas fiscais não puderam ser processadas
                         log_aviso("Solicitando upload manual de documentos ao usuário")
-                        geracao.status = "aguardando_documentos"
-
-                        # Salva extratos de imagem já capturados para não perder quando continuar
-                        if extratos_imagens_fallback:
-                            geracao.documentos_anexos = extratos_imagens_fallback
-                            log_info(f"Salvando {len(extratos_imagens_fallback)} extratos de imagem para continuação")
-
-                        self.db.commit()
 
                         # Verifica se também falta extrato
                         docs_faltantes = ["notas_fiscais"]
                         if not geracao.extrato_subconta_texto or len(geracao.extrato_subconta_texto or '') < 100:
                             docs_faltantes.append("extrato_subconta")
+
+                        mensagem = "O sistema não encontrou as notas fiscais e comprovantes de pagamento no processo. Por favor, anexe os documentos manualmente para continuar a análise."
+                        definir_aguardando_documentos(
+                            geracao=geracao,
+                            documentos_faltantes=docs_faltantes,
+                            mensagem_usuario=mensagem,
+                            documentos_ja_baixados=extratos_imagens_fallback if extratos_imagens_fallback else None,
+                        )
+
+                        self.db.commit()
 
                         yield EventoSSE(
                             tipo="solicitar_documentos",
@@ -717,26 +836,29 @@ class OrquestradorPrestacaoContas:
                                 "geracao_id": geracao.id,
                                 "numero_cnj": numero_cnj,
                                 "documentos_faltantes": docs_faltantes,
-                                "mensagem": "O sistema não encontrou as notas fiscais e comprovantes de pagamento no processo. Por favor, anexe os documentos manualmente para continuar a análise."
+                                "mensagem": mensagem,
+                                "expira_em": geracao.estado_expira_em.isoformat() if geracao.estado_expira_em else None,
                             }
                         )
                         return
                 else:
                     # SOLICITA UPLOAD: Nenhuma nota fiscal encontrada
                     log_aviso("Solicitando upload manual de documentos ao usuário")
-                    geracao.status = "aguardando_documentos"
-
-                    # Salva extratos de imagem já capturados para não perder quando continuar
-                    if extratos_imagens_fallback:
-                        geracao.documentos_anexos = extratos_imagens_fallback
-                        log_info(f"Salvando {len(extratos_imagens_fallback)} extratos de imagem para continuação")
-
-                    self.db.commit()
 
                     # Verifica se também falta extrato
                     docs_faltantes = ["notas_fiscais"]
                     if not geracao.extrato_subconta_texto or len(geracao.extrato_subconta_texto or '') < 100:
                         docs_faltantes.append("extrato_subconta")
+
+                    mensagem = "O sistema não encontrou a petição de prestação de contas nem as notas fiscais no processo. Por favor, anexe os documentos manualmente para continuar a análise."
+                    definir_aguardando_documentos(
+                        geracao=geracao,
+                        documentos_faltantes=docs_faltantes,
+                        mensagem_usuario=mensagem,
+                        documentos_ja_baixados=extratos_imagens_fallback if extratos_imagens_fallback else None,
+                    )
+
+                    self.db.commit()
 
                     yield EventoSSE(
                         tipo="solicitar_documentos",
@@ -746,7 +868,8 @@ class OrquestradorPrestacaoContas:
                             "geracao_id": geracao.id,
                             "numero_cnj": numero_cnj,
                             "documentos_faltantes": docs_faltantes,
-                            "mensagem": "O sistema não encontrou a petição de prestação de contas nem as notas fiscais no processo. Por favor, anexe os documentos manualmente para continuar a análise."
+                            "mensagem": mensagem,
+                            "expira_em": geracao.estado_expira_em.isoformat() if geracao.estado_expira_em else None,
                         }
                     )
                     return
@@ -1024,12 +1147,15 @@ class OrquestradorPrestacaoContas:
             # Se não tem extrato E não tem documentos, solicita upload obrigatório
             if not tem_extrato and not tem_documentos:
                 log_aviso("Documentos insuficientes para análise - solicitando upload manual")
-                geracao.status = "aguardando_documentos"
 
-                # Salva documentos já capturados para não perder quando continuar
-                if documentos_anexos:
-                    geracao.documentos_anexos = documentos_anexos
-                    log_info(f"Salvando {len(documentos_anexos)} documentos para continuação")
+                docs_faltantes = ["extrato_subconta", "notas_fiscais"]
+                mensagem = "O sistema não encontrou o extrato da subconta nem as notas fiscais/comprovantes necessários para a análise. Por favor, anexe os documentos manualmente."
+                definir_aguardando_documentos(
+                    geracao=geracao,
+                    documentos_faltantes=docs_faltantes,
+                    mensagem_usuario=mensagem,
+                    documentos_ja_baixados=documentos_anexos if documentos_anexos else None,
+                )
 
                 self.db.commit()
 
@@ -1040,8 +1166,9 @@ class OrquestradorPrestacaoContas:
                     dados={
                         "geracao_id": geracao.id,
                         "numero_cnj": numero_cnj,
-                        "documentos_faltantes": ["extrato_subconta", "notas_fiscais"],
-                        "mensagem": "O sistema não encontrou o extrato da subconta nem as notas fiscais/comprovantes necessários para a análise. Por favor, anexe os documentos manualmente."
+                        "documentos_faltantes": docs_faltantes,
+                        "mensagem": mensagem,
+                        "expira_em": geracao.estado_expira_em.isoformat() if geracao.estado_expira_em else None,
                     }
                 )
                 return
@@ -1049,10 +1176,10 @@ class OrquestradorPrestacaoContas:
             # Se não encontrou NOTA FISCAL, solicita ao usuário (com opção de continuar sem)
             if not tem_nota_fiscal:
                 log_aviso("Nota fiscal não encontrada - solicitando ao usuário")
-                geracao.status = "aguardando_nota_fiscal"
 
-                # Salva documentos já capturados para não perder quando continuar
-                geracao.documentos_anexos = documentos_anexos
+                mensagem = "O sistema não encontrou a nota fiscal da prestação de contas no processo. Você pode anexar a nota fiscal manualmente ou continuar a análise sem ela."
+
+                # Salva petições relevantes antes de definir aguardando
                 geracao.peticoes_relevantes = [
                     {
                         "id": pr["doc"].id,
@@ -1061,6 +1188,13 @@ class OrquestradorPrestacaoContas:
                     }
                     for pr in peticoes_relevantes
                 ]
+
+                definir_aguardando_nota_fiscal(
+                    geracao=geracao,
+                    mensagem_usuario=mensagem,
+                    documentos_ja_baixados=documentos_anexos,
+                )
+
                 self.db.commit()
 
                 yield EventoSSE(
@@ -1072,7 +1206,8 @@ class OrquestradorPrestacaoContas:
                         "numero_cnj": numero_cnj,
                         "documentos_encontrados": len(documentos_anexos),
                         "permite_continuar_sem": True,
-                        "mensagem": "O sistema não encontrou a nota fiscal da prestação de contas no processo. Você pode anexar a nota fiscal manualmente ou continuar a análise sem ela."
+                        "mensagem": mensagem,
+                        "expira_em": geracao.estado_expira_em.isoformat() if geracao.estado_expira_em else None,
                     }
                 )
                 return
@@ -1205,18 +1340,20 @@ class OrquestradorPrestacaoContas:
 
         except Exception as e:
             logger.exception(f"Erro no processamento: {e}")
-            geracao.status = "erro"
-            geracao.erro = str(e)
-            self.db.commit()
+            # NÃO sobrescreve status se já está aguardando documentos (foi interrompido propositalmente)
+            if geracao.status not in ("aguardando_documentos", "aguardando_nota_fiscal"):
+                geracao.status = "erro"
+                geracao.erro = str(e)
+                self.db.commit()
 
-            yield EventoSSE(
-                tipo="erro",
-                mensagem=f"Erro no processamento: {str(e)}"
-            )
-            yield EventoSSE(
-                tipo="fim",
-                mensagem="Processamento finalizado com erro"
-            )
+                yield EventoSSE(
+                    tipo="erro",
+                    mensagem=f"Erro no processamento: {str(e)}"
+                )
+                yield EventoSSE(
+                    tipo="fim",
+                    mensagem="Processamento finalizado com erro"
+                )
 
     async def responder_duvida(
         self,
@@ -1308,6 +1445,38 @@ class OrquestradorPrestacaoContas:
             logger.info(f"# CONTINUANDO ANÁLISE COM DOCUMENTOS MANUAIS - {geracao.numero_cnj}")
             logger.info(f"{'#'*60}")
 
+            # =====================================================
+            # BUSCA PETIÇÃO INICIAL (se não estiver salva)
+            # =====================================================
+            if not geracao.peticao_inicial_texto and geracao.dados_processo_xml:
+                peticao_inicial_id = geracao.dados_processo_xml.get("peticao_inicial_id")
+                if peticao_inicial_id:
+                    yield EventoSSE(
+                        tipo="etapa",
+                        etapa=4,
+                        etapa_nome="Buscar Petições",
+                        mensagem="Baixando petição inicial do ESAJ...",
+                        progresso=60
+                    )
+                    log_info(f"Buscando petição inicial (ID: {peticao_inicial_id})...")
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            xml_docs = await baixar_documentos_async(
+                                session, geracao.numero_cnj, [peticao_inicial_id]
+                            )
+                            import base64
+                            import xml.etree.ElementTree as ET
+                            root = ET.fromstring(xml_docs)
+                            for elem in root.iter():
+                                if 'conteudo' in elem.tag.lower() and elem.text:
+                                    conteudo = base64.b64decode(elem.text)
+                                    geracao.peticao_inicial_texto = extrair_texto_pdf(conteudo)
+                                    self.db.commit()
+                                    log_sucesso(f"Petição inicial baixada ({len(geracao.peticao_inicial_texto)} caracteres)")
+                                    break
+                    except Exception as e:
+                        log_erro(f"Erro ao baixar petição inicial: {e}")
+
             yield EventoSSE(
                 tipo="etapa",
                 etapa=5,
@@ -1328,6 +1497,7 @@ class OrquestradorPrestacaoContas:
             # Log dos dados
             log_ia(f"Dados para análise (documentos manuais):")
             log_ia(f"  - Extrato subconta: {len(geracao.extrato_subconta_texto or '')} caracteres")
+            log_ia(f"  - Petição inicial: {len(geracao.peticao_inicial_texto or '')} caracteres")
             log_ia(f"  - Documentos anexos: {len(geracao.documentos_anexos or [])} docs")
 
             agente = AgenteAnalise(
@@ -1340,9 +1510,12 @@ class OrquestradorPrestacaoContas:
             log_ia("Enviando para análise...")
             resultado = await agente.analisar(dados_analise)
 
-            # Log do resultado
+            # Log do resultado com detalhes para debug
             log_sucesso(f"Análise concluída!")
             log_ia(f"  📋 PARECER: {resultado.parecer.upper()}")
+            log_ia(f"  📝 FUNDAMENTACAO: {len(resultado.fundamentacao or '')} caracteres")
+            if resultado.fundamentacao and len(resultado.fundamentacao) < 100:
+                log_ia(f"  ⚠️ Fundamentação curta: {resultado.fundamentacao[:200]}")
 
             # Salva resultado
             geracao.parecer = resultado.parecer
@@ -1399,15 +1572,17 @@ class OrquestradorPrestacaoContas:
 
         except Exception as e:
             logger.exception(f"Erro ao continuar análise: {e}")
-            geracao.status = "erro"
-            geracao.erro = str(e)
-            self.db.commit()
+            # NÃO sobrescreve status se já está aguardando documentos
+            if geracao.status not in ("aguardando_documentos", "aguardando_nota_fiscal"):
+                geracao.status = "erro"
+                geracao.erro = str(e)
+                self.db.commit()
 
-            yield EventoSSE(
-                tipo="erro",
-                mensagem=f"Erro ao processar: {str(e)}"
-            )
-            yield EventoSSE(
-                tipo="fim",
-                mensagem="Processamento finalizado com erro"
-            )
+                yield EventoSSE(
+                    tipo="erro",
+                    mensagem=f"Erro ao processar: {str(e)}"
+                )
+                yield EventoSSE(
+                    tipo="fim",
+                    mensagem="Processamento finalizado com erro"
+                )

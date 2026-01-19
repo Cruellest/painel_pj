@@ -3,7 +3,7 @@
 Scrapper de Extratos de Subconta - TJ-MS
 Adaptado para uso assíncrono com FastAPI.
 
-Baseado no projeto E:\Projetos\Ressarcimento\Scrapper Subconta
+Baseado no projeto E:/Projetos/Ressarcimento/Scrapper Subconta
 """
 
 import asyncio

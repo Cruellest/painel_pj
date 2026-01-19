@@ -229,18 +229,43 @@ async def exportar_parecer(
 @router.post("/upload-documentos-faltantes")
 async def upload_documentos_faltantes(
     geracao_id: int = Form(...),
-    numero_cnj: str = Form(...),
-    extrato_subconta: Optional[UploadFile] = File(None),
-    notas_fiscais: Optional[List[UploadFile]] = File(None),
+    numero_cnj: Optional[str] = Form(default=None),
+    arquivos: List[UploadFile] = File(default=[]),
+    notas_fiscais: List[UploadFile] = File(default=[]),
+    extrato_subconta: Optional[UploadFile] = File(default=None),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     Recebe documentos enviados manualmente pelo usuário quando o sistema
     não conseguiu encontrá-los automaticamente.
+
+    Aceita arquivos via:
+    - arquivos: Lista genérica de arquivos
+    - notas_fiscais: Notas fiscais específicas
+    - extrato_subconta: Extrato da subconta
+
+    Retorna JSON simples indicando sucesso e se reprocessamento é necessário.
+    O usuário pode então ir para a página de análise para reprocessar.
     """
     from sistemas.pedido_calculo.document_downloader import extrair_texto_pdf
-    from sistemas.prestacao_contas.services import converter_pdf_para_imagens
+    from sistemas.prestacao_contas.services import converter_pdf_para_imagens, verificar_estado_expirado
+
+    # Combina todos os arquivos recebidos (de qualquer campo)
+    todos_arquivos = []
+    
+    # Adiciona arquivos genéricos
+    todos_arquivos.extend([a for a in arquivos if a.filename and a.size and a.size > 0])
+    
+    # Adiciona notas fiscais
+    todos_arquivos.extend([a for a in notas_fiscais if a.filename and a.size and a.size > 0])
+    
+    # Adiciona extrato da subconta
+    if extrato_subconta and extrato_subconta.filename and extrato_subconta.size and extrato_subconta.size > 0:
+        todos_arquivos.append(extrato_subconta)
+
+    if not todos_arquivos:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo enviado. Selecione pelo menos um documento.")
 
     geracao = db.query(GeracaoAnalise).filter(
         GeracaoAnalise.id == geracao_id
@@ -253,82 +278,73 @@ async def upload_documentos_faltantes(
     if geracao.usuario_id != current_user.id:
         raise HTTPException(status_code=403, detail="Sem permissão")
 
-    try:
-        # Processa extrato da subconta
-        if extrato_subconta:
-            logger.info(f"Processando extrato da subconta enviado pelo usuário")
-            pdf_bytes = await extrato_subconta.read()
+    # Verifica se o estado expirou (mais de 24h)
+    estado_expirado = verificar_estado_expirado(geracao)
 
-            # Extrai texto
-            texto_extrato = extrair_texto_pdf(pdf_bytes)
+    try:
+        # Processa todos os arquivos enviados
+        docs_anexos = geracao.documentos_anexos or []
+        arquivos_processados = []
+
+        for i, arquivo in enumerate(todos_arquivos):
+            pdf_bytes = await arquivo.read()
+            filename = arquivo.filename or f"documento_{i+1}.pdf"
+
+            # Tenta extrair texto
+            texto_extraido = extrair_texto_pdf(pdf_bytes)
 
             # Se texto muito curto, converte para imagem
-            if len(texto_extrato) < 500:
-                logger.info("Extrato com pouco texto, convertendo para imagem...")
+            if len(texto_extraido) < 500:
+                logger.info(f"Documento {filename} com pouco texto, convertendo para imagem...")
                 imagens = converter_pdf_para_imagens(pdf_bytes)
-                # Armazena imagens no campo de documentos anexos
-                docs_anexos = geracao.documentos_anexos or []
-                docs_anexos.insert(0, {
-                    "id": "extrato_manual",
-                    "tipo": "Extrato da Subconta (enviado manualmente)",
-                    "imagens": imagens
+                docs_anexos.append({
+                    "id": f"manual_{i+1}",
+                    "tipo": f"Documento Manual - {filename}",
+                    "imagens": imagens,
+                    "texto": None
                 })
-                geracao.documentos_anexos = docs_anexos
-                geracao.extrato_subconta_texto = f"[EXTRATO ENVIADO MANUALMENTE - {len(imagens)} páginas como imagem]"
+                arquivos_processados.append(f"{filename} (como imagem, {len(imagens)} páginas)")
             else:
-                geracao.extrato_subconta_texto = f"## EXTRATO DA SUBCONTA (ENVIADO MANUALMENTE)\n\n{texto_extrato}"
+                docs_anexos.append({
+                    "id": f"manual_{i+1}",
+                    "tipo": f"Documento Manual - {filename}",
+                    "texto": texto_extraido,
+                    "imagens": None
+                })
+                arquivos_processados.append(f"{filename} (texto extraído)")
 
-            # Salva PDF para visualização
-            geracao.extrato_subconta_pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+            # Se parece ser extrato da subconta, salva também nos campos específicos
+            if "extrato" in filename.lower() or "subconta" in filename.lower():
+                geracao.extrato_subconta_texto = f"## EXTRATO DA SUBCONTA (ENVIADO MANUALMENTE)\n\n{texto_extraido}"
+                geracao.extrato_subconta_pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
-        # Processa notas fiscais
-        if notas_fiscais:
-            logger.info(f"Processando {len(notas_fiscais)} nota(s) fiscal(is) enviada(s) pelo usuário")
-            docs_anexos = geracao.documentos_anexos or []
+        geracao.documentos_anexos = docs_anexos
 
-            for i, nota in enumerate(notas_fiscais):
-                pdf_bytes = await nota.read()
+        if estado_expirado:
+            # Estado expirou - marca para reprocessamento completo
+            logger.info(f"Estado expirado para geração {geracao_id} - documentos salvos para nova análise")
+            geracao.status = "expirado_com_documentos"
+            geracao.erro = "Estado expirado - execute nova análise"
+            mensagem = f"Documentos salvos! Como passaram mais de 24h, execute uma nova análise do processo {geracao.numero_cnj}."
+        else:
+            # Estado válido - marca como pronto para continuar
+            logger.info(f"Documentos salvos para geração {geracao_id} - pronto para continuar análise")
+            geracao.status = "documentos_recebidos"
+            geracao.erro = None
+            geracao.documentos_faltantes = None
+            geracao.mensagem_erro_usuario = None
+            mensagem = f"Documentos recebidos! Execute nova análise para processar os documentos anexados."
 
-                # Converte para imagem
-                imagens = converter_pdf_para_imagens(pdf_bytes)
-
-                if imagens:
-                    docs_anexos.append({
-                        "id": f"nota_manual_{i+1}",
-                        "tipo": f"Nota Fiscal (enviada manualmente) - {nota.filename}",
-                        "imagens": imagens
-                    })
-                    logger.info(f"Nota fiscal {nota.filename} convertida ({len(imagens)} páginas)")
-
-            geracao.documentos_anexos = docs_anexos
-
-        # Atualiza status para permitir reprocessamento
-        geracao.status = "documentos_recebidos"
-        geracao.erro = None
         db.commit()
 
-        logger.info(f"Documentos recebidos com sucesso para geração {geracao_id}")
-
-        # Continua a análise com os novos documentos
-        async def continuar_analise():
-            orquestrador = OrquestradorPrestacaoContas(
-                db=db,
-                usuario_id=current_user.id
-            )
-
-            async for evento in orquestrador.continuar_com_documentos_manuais(geracao_id):
-                evento_json = evento.model_dump_json()
-                yield f"data: {evento_json}\n\n"
-
-        return StreamingResponse(
-            continuar_analise(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            }
-        )
+        return {
+            "sucesso": True,
+            "mensagem": mensagem,
+            "arquivos_processados": arquivos_processados,
+            "reprocessando": False,
+            "estado_expirado": estado_expirado,
+            "numero_cnj": geracao.numero_cnj
+        }
 
     except Exception as e:
         logger.exception(f"Erro ao processar documentos: {e}")
@@ -422,6 +438,74 @@ async def continuar_sem_nota_fiscal(
     db.commit()
 
     logger.info(f"Usuário optou por continuar análise {request.geracao_id} sem nota fiscal")
+
+    # Continua a análise
+    async def continuar_analise():
+        orquestrador = OrquestradorPrestacaoContas(
+            db=db,
+            usuario_id=current_user.id
+        )
+
+        async for evento in orquestrador.continuar_com_documentos_manuais(request.geracao_id):
+            evento_json = evento.model_dump_json()
+            yield f"data: {evento_json}\n\n"
+
+    return StreamingResponse(
+        continuar_analise(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+# =====================================================
+# REPROCESSAR COM DOCUMENTOS SALVOS
+# =====================================================
+
+class ReprocessarComDocumentosRequest(BaseModel):
+    geracao_id: int
+
+
+@router.post("/reprocessar-com-documentos")
+async def reprocessar_com_documentos(
+    request: ReprocessarComDocumentosRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reprocessa uma análise existente usando os documentos já salvos.
+    Não deleta o registro, apenas continua a análise de onde parou.
+    """
+    geracao = db.query(GeracaoAnalise).filter(
+        GeracaoAnalise.id == request.geracao_id
+    ).first()
+
+    if not geracao:
+        raise HTTPException(status_code=404, detail="Análise não encontrada")
+
+    # Verifica permissão
+    if geracao.usuario_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    # Verifica se tem documentos salvos
+    tem_extrato = bool(geracao.extrato_subconta_pdf_base64 or geracao.extrato_subconta_texto)
+    tem_docs_anexos = bool(geracao.documentos_anexos and len(geracao.documentos_anexos) > 0)
+
+    if not tem_extrato and not tem_docs_anexos:
+        raise HTTPException(
+            status_code=400,
+            detail="Nenhum documento salvo para reprocessar. Anexe os documentos primeiro."
+        )
+
+    # Atualiza status para permitir continuação
+    geracao.status = "reprocessando"
+    geracao.erro = None
+    db.commit()
+
+    logger.info(f"Reprocessando análise {request.geracao_id} com documentos salvos")
 
     # Continua a análise
     async def continuar_analise():
@@ -584,6 +668,36 @@ async def verificar_processo_existente(
 # HISTÓRICO
 # =====================================================
 
+def _calcular_estado_expirado(geracao: GeracaoAnalise) -> bool:
+    """Verifica se o estado salvo expirou."""
+    if not geracao.estado_expira_em:
+        return True
+    from datetime import datetime
+    return datetime.utcnow() > geracao.estado_expira_em
+
+
+def _pode_anexar_documentos(geracao: GeracaoAnalise) -> bool:
+    """Verifica se pode anexar documentos.
+
+    Permite anexar se:
+    1. Status é aguardando_documentos/aguardando_nota_fiscal E não expirou, OU
+    2. Status é erro MAS tem documentos_faltantes (para permitir retry)
+    """
+    # Se tem documentos faltantes registrados, sempre permite (para retry)
+    if geracao.documentos_faltantes and len(geracao.documentos_faltantes) > 0:
+        # Verifica se não expirou
+        if geracao.estado_expira_em:
+            from datetime import datetime
+            if datetime.utcnow() > geracao.estado_expira_em:
+                return True  # Expirou mas ainda pode anexar para reprocessar
+        return True
+
+    # Lógica original para status aguardando
+    if geracao.status not in ("aguardando_documentos", "aguardando_nota_fiscal"):
+        return False
+    return not _calcular_estado_expirado(geracao)
+
+
 @router.get("/historico", response_model=HistoricoResponse)
 async def listar_historico(
     limit: int = Query(default=20, le=100),
@@ -628,6 +742,12 @@ async def listar_historico(
                 tempo_processamento_ms=g.tempo_processamento_ms,
                 erro=g.erro,
                 criado_em=g.criado_em,
+                # Campos para retomada de análise
+                documentos_faltantes=g.documentos_faltantes,
+                mensagem_erro_usuario=g.mensagem_erro_usuario,
+                estado_expira_em=g.estado_expira_em,
+                estado_expirado=_calcular_estado_expirado(g) if g.status in ("aguardando_documentos", "aguardando_nota_fiscal") else None,
+                permite_anexar=_pode_anexar_documentos(g),
             )
             for g in geracoes
         ]
@@ -653,6 +773,11 @@ async def obter_geracao(
     if geracao.usuario_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Sem permissão para acessar esta análise")
 
+    # Calcula campos de estado
+    is_aguardando = geracao.status in ("aguardando_documentos", "aguardando_nota_fiscal")
+    estado_expirado = _calcular_estado_expirado(geracao) if is_aguardando else None
+    permite_anexar = _pode_anexar_documentos(geracao)
+
     return GeracaoDetalhadaResponse(
         id=geracao.id,
         numero_cnj=geracao.numero_cnj,
@@ -671,6 +796,13 @@ async def obter_geracao(
         tempo_processamento_ms=geracao.tempo_processamento_ms,
         erro=geracao.erro,
         criado_em=geracao.criado_em,
+        # Campos de estado para retomada de análise
+        documentos_faltantes=geracao.documentos_faltantes,
+        mensagem_erro_usuario=geracao.mensagem_erro_usuario,
+        estado_expira_em=geracao.estado_expira_em,
+        estado_expirado=estado_expirado,
+        permite_anexar=permite_anexar,
+        # Campos detalhados
         extrato_subconta_texto=geracao.extrato_subconta_texto,
         extrato_subconta_pdf_base64=geracao.extrato_subconta_pdf_base64,
         peticao_inicial_id=geracao.peticao_inicial_id,

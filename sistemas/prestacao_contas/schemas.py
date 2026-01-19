@@ -136,6 +136,13 @@ class GeracaoResponse(BaseModel):
     erro: Optional[str] = None
     criado_em: datetime
 
+    # Estado para retomada (quando aguardando documentos)
+    documentos_faltantes: Optional[List[str]] = None  # ['extrato_subconta', 'notas_fiscais']
+    mensagem_erro_usuario: Optional[str] = None  # Mensagem amigável sobre o que falta
+    estado_expira_em: Optional[datetime] = None  # Quando expira o estado salvo
+    estado_expirado: Optional[bool] = None  # True se já expirou (calculado)
+    permite_anexar: Optional[bool] = None  # True se pode anexar documentos
+
     class Config:
         from_attributes = True
 

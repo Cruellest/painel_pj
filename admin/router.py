@@ -1690,6 +1690,46 @@ async def obter_consulta_detalhes(
                 } if feedback else None
             }
 
+        elif sistema == "prestacao_contas":
+            geracao = db.query(
+                GeracaoAnalise,
+                User.username,
+                User.full_name
+            ).join(
+                User, GeracaoAnalise.usuario_id == User.id
+            ).filter(
+                GeracaoAnalise.id == consulta_id
+            ).first()
+
+            if not geracao:
+                raise HTTPException(status_code=404, detail="Análise não encontrada")
+
+            g, username, full_name = geracao
+
+            # Busca feedback se existir
+            feedback = db.query(FeedbackPrestacao).filter(
+                FeedbackPrestacao.geracao_id == consulta_id
+            ).first()
+
+            return {
+                "id": g.id,
+                "sistema": "prestacao_contas",
+                "identificador": g.numero_cnj_formatado or g.numero_cnj,
+                "numero_processo": g.numero_cnj,
+                "parecer": g.parecer,
+                "dados": g.dados_processo_xml,
+                "relatorio": g.fundamentacao,
+                "modelo": g.modelo_usado,
+                "usuario": full_name or username,
+                "criado_em": g.criado_em.isoformat() if g.criado_em else None,
+                "feedback": {
+                    "avaliacao": feedback.avaliacao if feedback else None,
+                    "comentario": feedback.comentario if feedback else None,
+                    "campos_incorretos": None,
+                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                } if feedback else None
+            }
+
         else:
             raise HTTPException(status_code=400, detail="Sistema inválido")
     

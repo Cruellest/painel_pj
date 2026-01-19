@@ -85,6 +85,17 @@ class GeracaoAnalise(Base):
     status = Column(String(30), default="processando")  # 'processando', 'concluido', 'erro', 'aguardando_documentos', 'aguardando_nota_fiscal'
     erro = Column(Text, nullable=True)
 
+    # =====================================================
+    # ESTADO PARA RETOMADA (quando aguardando documentos)
+    # =====================================================
+
+    # Documentos faltantes para exibir ao usuário
+    documentos_faltantes = Column(JSON, nullable=True)  # ['extrato_subconta', 'notas_fiscais']
+    mensagem_erro_usuario = Column(Text, nullable=True)  # Mensagem amigável sobre o que falta
+
+    # Expiração do estado salvo (24h após criação)
+    estado_expira_em = Column(DateTime, nullable=True)  # Se None ou expirado, recomeça do zero
+
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

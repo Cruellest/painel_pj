@@ -87,10 +87,11 @@ class PerformanceLog(Base):
 
     # Identificacao
     request_id = Column(String(36), nullable=True, index=True)  # UUID da request
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    username = Column(String(100), nullable=True)
+    admin_user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    admin_username = Column(String(100), nullable=True)
     route = Column(String(500), nullable=False, index=True)  # endpoint
     method = Column(String(10), nullable=True)  # GET, POST, etc
+    layer = Column(String(50), nullable=False, default='middleware')  # middleware, controller, service, db, io
     action = Column(String(100), nullable=True, index=True)  # label: gerar_json_ia, atualizar_json, etc
     status = Column(String(20), nullable=False, default='ok')  # ok, error
 
@@ -117,7 +118,7 @@ class PerformanceLog(Base):
     __table_args__ = (
         Index('ix_perf_logs_date_route', 'created_at', 'route'),
         Index('ix_perf_logs_date_action', 'created_at', 'action'),
-        Index('ix_perf_logs_user_date', 'user_id', 'created_at'),
+        Index('ix_perf_logs_user_date', 'admin_user_id', 'created_at'),
     )
 
     def to_dict(self):
@@ -126,10 +127,11 @@ class PerformanceLog(Base):
             "id": self.id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "request_id": self.request_id,
-            "user_id": self.user_id,
-            "username": self.username,
+            "admin_user_id": self.admin_user_id,
+            "admin_username": self.admin_username,
             "route": self.route,
             "method": self.method,
+            "layer": self.layer,
             "action": self.action,
             "status": self.status,
             "total_ms": self.total_ms,

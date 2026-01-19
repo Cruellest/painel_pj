@@ -154,6 +154,10 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
     def _persist_metrics(self, metrics):
         """Persiste metricas no banco de dados."""
         try:
+            # Ignora requests sem usuario autenticado (admin_user_id é NOT NULL)
+            if not metrics.user_id:
+                return
+
             from database.connection import SessionLocal
             from admin.models_performance import PerformanceLog
 
@@ -161,10 +165,11 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
             try:
                 log = PerformanceLog(
                     request_id=metrics.request_id,
-                    user_id=metrics.user_id,
-                    username=metrics.username,
+                    admin_user_id=metrics.user_id,
+                    admin_username=metrics.username,
                     route=metrics.route,
                     method=metrics.method,
+                    layer='middleware',
                     action=metrics.action,
                     status=metrics.status,
                     total_ms=metrics.total_ms,

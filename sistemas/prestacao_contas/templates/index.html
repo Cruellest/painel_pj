@@ -293,6 +293,74 @@
                         Enviar Respostas
                     </button>
                 </div>
+
+                <!-- Documentos Faltantes (se aguardando_documentos) -->
+                <div id="docs-faltantes-section" class="hidden mt-4 bg-amber-50 rounded-xl border border-amber-200 p-6">
+                    <h3 class="font-semibold text-amber-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-file-upload text-amber-500"></i>
+                        Documentos Pendentes
+                    </h3>
+                    <p id="docs-faltantes-mensagem" class="text-sm text-amber-700 mb-4"></p>
+
+                    <!-- Lista de documentos faltantes -->
+                    <div id="docs-faltantes-lista" class="space-y-3 mb-4"></div>
+
+                    <!-- Área de upload -->
+                    <div id="upload-area-modal" class="space-y-3">
+                        <div id="upload-extrato-modal-container" class="hidden">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-university text-blue-500 mr-1"></i>
+                                Extrato da Subconta (PDF)
+                            </label>
+                            <div class="relative">
+                                <input type="file" id="upload-extrato-modal" accept=".pdf" class="hidden" onchange="handleFileUploadModal('extrato', this)">
+                                <label for="upload-extrato-modal" class="flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-amber-400 hover:bg-amber-50/50 transition-colors">
+                                    <i class="fas fa-cloud-upload-alt text-gray-400"></i>
+                                    <span id="upload-extrato-modal-label" class="text-sm text-gray-500">Clique para selecionar o PDF do extrato</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="upload-notas-modal-container" class="hidden">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-file-invoice text-green-500 mr-1"></i>
+                                Notas Fiscais / Comprovantes (PDF)
+                            </label>
+                            <div class="relative">
+                                <input type="file" id="upload-notas-modal" accept=".pdf" multiple class="hidden" onchange="handleFileUploadModal('notas', this)">
+                                <label for="upload-notas-modal" class="flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-amber-400 hover:bg-amber-50/50 transition-colors">
+                                    <i class="fas fa-cloud-upload-alt text-gray-400"></i>
+                                    <span id="upload-notas-modal-label" class="text-sm text-gray-500">Clique para selecionar as notas fiscais</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Arquivos selecionados -->
+                    <div id="arquivos-modal-selecionados" class="hidden mt-4 bg-white rounded-xl p-3 border border-amber-200">
+                        <p class="text-xs font-medium text-gray-500 uppercase mb-2">Arquivos Selecionados</p>
+                        <div id="lista-arquivos-modal" class="space-y-1 text-sm"></div>
+                    </div>
+
+                    <!-- Tempo restante -->
+                    <div id="tempo-restante-container" class="hidden mt-4 p-3 bg-amber-100 rounded-lg">
+                        <p id="tempo-restante-texto" class="text-sm text-amber-800"></p>
+                    </div>
+
+                    <!-- Botões -->
+                    <div class="flex gap-3 mt-4">
+                        <button onclick="enviarDocumentosModal()" id="btn-enviar-docs-modal" disabled
+                            class="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed rounded-xl text-white font-medium transition-colors">
+                            <i class="fas fa-upload mr-1"></i>
+                            Enviar Documentos
+                        </button>
+                        <button onclick="reprocessarAnalise()" id="btn-reprocessar"
+                            class="flex-1 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 rounded-xl text-white font-medium transition-colors">
+                            <i class="fas fa-redo mr-1"></i>
+                            Reprocessar
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <!-- Footer -->
@@ -565,24 +633,54 @@
 
                 const container = document.getElementById('historico-cards');
                 if (data.geracoes && data.geracoes.length > 0) {
-                    container.innerHTML = data.geracoes.map(g => `
-                        <div onclick="abrirResultado(${g.id})" class="p-4 border border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50/50 cursor-pointer transition-all">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <p class="font-medium text-gray-800">${g.numero_cnj_formatado || g.numero_cnj}</p>
-                                    <p class="text-xs text-gray-500">${new Date(g.criado_em).toLocaleDateString('pt-BR')}</p>
+                    container.innerHTML = data.geracoes.map(g => {
+                        const isAguardandoDocs = g.status === 'aguardando_documentos' || g.status === 'aguardando_nota_fiscal';
+                        const temDocsFaltantes = g.documentos_faltantes && g.documentos_faltantes.length > 0;
+                        // Considera como "precisando de docs" se status aguardando OU erro com docs faltantes
+                        const precisaDeDocumentos = isAguardandoDocs || (g.status === 'erro' && temDocsFaltantes);
+
+                        // Badge de status
+                        let badgeClass, badgeText;
+                        if (precisaDeDocumentos) {
+                            badgeClass = 'bg-amber-100 text-amber-700';
+                            badgeText = '<i class="fas fa-file-upload mr-1"></i>Aguardando docs';
+                        } else if (g.parecer === 'favoravel') {
+                            badgeClass = 'bg-green-100 text-green-700';
+                            badgeText = 'Favorável';
+                        } else if (g.parecer === 'desfavoravel') {
+                            badgeClass = 'bg-red-100 text-red-700';
+                            badgeText = 'Desfavorável';
+                        } else if (g.parecer === 'duvida') {
+                            badgeClass = 'bg-yellow-100 text-yellow-700';
+                            badgeText = 'Dúvida';
+                        } else if (g.status === 'erro') {
+                            badgeClass = 'bg-red-100 text-red-700';
+                            badgeText = '<i class="fas fa-exclamation-circle mr-1"></i>Erro';
+                        } else {
+                            badgeClass = 'bg-gray-100 text-gray-700';
+                            badgeText = g.status || 'Processando';
+                        }
+
+                        return `
+                            <div onclick="abrirResultado(${g.id})" class="p-4 border ${precisaDeDocumentos ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100'} rounded-xl hover:border-primary-200 hover:bg-primary-50/50 cursor-pointer transition-all">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <p class="font-medium text-gray-800">${g.numero_cnj_formatado || g.numero_cnj}</p>
+                                        <p class="text-xs text-gray-500">${new Date(g.criado_em).toLocaleDateString('pt-BR')}</p>
+                                    </div>
+                                    <span class="px-3 py-1 rounded-full text-xs font-medium ${badgeClass}">
+                                        ${badgeText}
+                                    </span>
                                 </div>
-                                <span class="px-3 py-1 rounded-full text-xs font-medium ${
-                                    g.parecer === 'favoravel' ? 'bg-green-100 text-green-700' :
-                                    g.parecer === 'desfavoravel' ? 'bg-red-100 text-red-700' :
-                                    g.parecer === 'duvida' ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-gray-100 text-gray-700'
-                                }">
-                                    ${g.parecer || g.status}
-                                </span>
+                                ${precisaDeDocumentos ? `
+                                <div class="mt-2 text-xs text-amber-600">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Clique para anexar documentos e continuar
+                                </div>
+                                ` : ''}
                             </div>
-                        </div>
-                    `).join('');
+                        `;
+                    }).join('');
                 } else {
                     container.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">Nenhuma análise realizada ainda</p>';
                 }
@@ -943,6 +1041,135 @@
                 `).join('');
             } else {
                 perguntasSection.classList.add('hidden');
+            }
+
+            // Documentos Faltantes - mostra se tiver docs faltantes (independente do status)
+            const docsFaltantesSection = document.getElementById('docs-faltantes-section');
+            const isAguardandoDocs = dados.status === 'aguardando_documentos' || dados.status === 'aguardando_nota_fiscal';
+            const temDocsFaltantes = dados.documentos_faltantes && dados.documentos_faltantes.length > 0;
+
+            // Mostra seção sempre que tiver documentos faltantes registrados
+            if (temDocsFaltantes) {
+                docsFaltantesSection.classList.remove('hidden');
+
+                // Mensagem
+                const mensagem = dados.mensagem_erro_usuario || 'O sistema não conseguiu localizar alguns documentos necessários para a análise.';
+                document.getElementById('docs-faltantes-mensagem').textContent = mensagem;
+
+                // Lista de documentos faltantes com detalhes
+                const nomesDocumentos = {
+                    'extrato_subconta': {
+                        nome: 'Extrato da Subconta',
+                        icone: 'fa-university',
+                        cor: 'text-blue-500',
+                        motivo: 'Não foi possível baixar o extrato automaticamente do sistema de subcontas.'
+                    },
+                    'notas_fiscais': {
+                        nome: 'Notas Fiscais / Comprovantes',
+                        icone: 'fa-file-invoice',
+                        cor: 'text-green-500',
+                        motivo: 'Não foram encontradas notas fiscais ou comprovantes anexados ao processo.'
+                    },
+                    'nota_fiscal': {
+                        nome: 'Nota Fiscal',
+                        icone: 'fa-file-invoice',
+                        cor: 'text-green-500',
+                        motivo: 'A nota fiscal específica da prestação não foi localizada.'
+                    },
+                    'peticao_prestacao': {
+                        nome: 'Petição de Prestação de Contas',
+                        icone: 'fa-file-alt',
+                        cor: 'text-teal-500',
+                        motivo: 'Não foi encontrada a petição de prestação de contas no processo.'
+                    }
+                };
+
+                let listaHtml = '';
+                dados.documentos_faltantes.forEach(doc => {
+                    const info = nomesDocumentos[doc] || { nome: doc, icone: 'fa-file', cor: 'text-gray-500', motivo: 'Documento não localizado.' };
+                    listaHtml += `
+                        <div class="flex items-start gap-3 p-3 bg-white rounded-lg border border-amber-200">
+                            <div class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas ${info.icone} ${info.cor}"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="font-medium text-gray-800">${info.nome}</p>
+                                <p class="text-sm text-gray-500">${info.motivo}</p>
+                            </div>
+                            <span class="px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
+                                <i class="fas fa-times-circle mr-1"></i>Não encontrado
+                            </span>
+                        </div>
+                    `;
+                });
+                document.getElementById('docs-faltantes-lista').innerHTML = listaHtml;
+
+                // Mostrar containers de upload conforme documentos faltantes
+                const extratoContainer = document.getElementById('upload-extrato-modal-container');
+                const notasContainer = document.getElementById('upload-notas-modal-container');
+
+                extratoContainer.classList.add('hidden');
+                notasContainer.classList.add('hidden');
+
+                dados.documentos_faltantes.forEach(doc => {
+                    if (doc === 'extrato_subconta') {
+                        extratoContainer.classList.remove('hidden');
+                    } else if (doc === 'notas_fiscais' || doc === 'nota_fiscal') {
+                        notasContainer.classList.remove('hidden');
+                    }
+                });
+
+                // Resetar estado de upload
+                uploadModalState = {
+                    geracaoId: dados.id || dados.geracao_id,
+                    numeroCnj: dados.numero_cnj,
+                    arquivosExtrato: null,
+                    arquivosNotas: []
+                };
+                document.getElementById('upload-extrato-modal-label').textContent = 'Clique para selecionar o PDF do extrato';
+                document.getElementById('upload-notas-modal-label').textContent = 'Clique para selecionar as notas fiscais';
+                document.getElementById('upload-extrato-modal').value = '';
+                document.getElementById('upload-notas-modal').value = '';
+                document.getElementById('arquivos-modal-selecionados').classList.add('hidden');
+                document.getElementById('btn-enviar-docs-modal').disabled = true;
+
+                // Tempo restante
+                const tempoContainer = document.getElementById('tempo-restante-container');
+                if (dados.estado_expira_em && !dados.estado_expirado) {
+                    const expiraEm = new Date(dados.estado_expira_em);
+                    const agora = new Date();
+                    const diffMs = expiraEm - agora;
+                    const diffHoras = Math.floor(diffMs / (1000 * 60 * 60));
+                    const diffMinutos = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+                    if (diffMs > 0) {
+                        tempoContainer.classList.remove('hidden');
+                        document.getElementById('tempo-restante-texto').innerHTML = `
+                            <i class="fas fa-clock mr-2"></i>
+                            <strong>Tempo restante:</strong> ${diffHoras}h ${diffMinutos}min para anexar documentos.
+                            Após esse período, será necessário reprocessar do início.
+                        `;
+                    } else {
+                        tempoContainer.classList.add('hidden');
+                    }
+                } else if (dados.estado_expirado) {
+                    tempoContainer.classList.remove('hidden');
+                    document.getElementById('tempo-restante-texto').innerHTML = `
+                        <i class="fas fa-exclamation-triangle mr-2 text-amber-600"></i>
+                        <strong>Estado expirado.</strong> Anexe os documentos e clique em "Reprocessar" para iniciar nova análise.
+                    `;
+                } else {
+                    tempoContainer.classList.add('hidden');
+                }
+
+                // Controlar visibilidade dos botões
+                if (!dados.permite_anexar) {
+                    document.getElementById('btn-enviar-docs-modal').classList.add('hidden');
+                } else {
+                    document.getElementById('btn-enviar-docs-modal').classList.remove('hidden');
+                }
+            } else {
+                docsFaltantesSection.classList.add('hidden');
             }
 
             modal.classList.remove('hidden');
@@ -1605,39 +1832,23 @@
                     body: formData
                 });
 
+                const data = await response.json();
+                console.log('[Upload] Resposta do servidor:', data);
+
                 if (!response.ok) {
-                    throw new Error('Erro ao enviar documentos');
+                    throw new Error(data.detail || 'Erro ao enviar documentos');
                 }
+
+                console.log('[Upload] Upload bem-sucedido, fechando modal e iniciando reprocessamento...');
+                console.log('[Upload] uploadState:', uploadState.geracaoId, uploadState.numeroCnj);
 
                 // Fecha modal de upload
                 document.getElementById('modal-upload-docs').classList.add('hidden');
 
-                // Mostra modal de progresso novamente
-                document.getElementById('modal-progresso').classList.remove('hidden');
-                document.getElementById('progresso-mensagem').textContent = 'Analisando documentos enviados...';
-
-                // Processa stream SSE da continuação da análise
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const text = decoder.decode(value);
-                    const lines = text.split('\n');
-
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            try {
-                                const evento = JSON.parse(line.slice(6));
-                                await processarEvento(evento);
-                            } catch (e) {
-                                console.warn('Erro ao parsear evento SSE:', e);
-                            }
-                        }
-                    }
-                }
+                // Agora reprocessa com os documentos salvos
+                console.log('[Upload] Chamando reprocessarComDocumentosSalvos...');
+                await reprocessarComDocumentosSalvos(uploadState.geracaoId, uploadState.numeroCnj);
+                console.log('[Upload] reprocessarComDocumentosSalvos concluído');
 
                 // Resolve promise com sucesso
                 if (uploadState.resolvePromise) {
@@ -1646,10 +1857,298 @@
 
             } catch (error) {
                 console.error('Erro ao enviar documentos:', error);
-                document.getElementById('modal-progresso').classList.add('hidden');
+                const modalProgresso = document.getElementById('modal-progresso');
+                if (modalProgresso) {
+                    modalProgresso.classList.add('hidden');
+                }
                 mostrarErro('Erro ao enviar documentos: ' + error.message);
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-check mr-1"></i> Continuar Análise';
+            }
+        }
+
+        // =====================================================
+        // UPLOAD DE DOCUMENTOS NO MODAL DE RESULTADO
+        // =====================================================
+
+        // Estado do upload no modal
+        let uploadModalState = {
+            geracaoId: null,
+            numeroCnj: null,
+            arquivosExtrato: null,
+            arquivosNotas: []
+        };
+
+        // Handler para seleção de arquivo no modal
+        function handleFileUploadModal(tipo, input) {
+            const files = input.files;
+
+            if (tipo === 'extrato' && files.length > 0) {
+                uploadModalState.arquivosExtrato = files[0];
+                document.getElementById('upload-extrato-modal-label').innerHTML = `
+                    <i class="fas fa-check-circle text-green-500 mr-1"></i>
+                    ${files[0].name}
+                `;
+            } else if (tipo === 'notas' && files.length > 0) {
+                uploadModalState.arquivosNotas = Array.from(files);
+                document.getElementById('upload-notas-modal-label').innerHTML = `
+                    <i class="fas fa-check-circle text-green-500 mr-1"></i>
+                    ${files.length} arquivo(s) selecionado(s)
+                `;
+            }
+
+            // Atualiza lista de arquivos selecionados
+            atualizarListaArquivosModal();
+
+            // Habilita botão se tem pelo menos um arquivo
+            const temArquivos = uploadModalState.arquivosExtrato || uploadModalState.arquivosNotas.length > 0;
+            document.getElementById('btn-enviar-docs-modal').disabled = !temArquivos;
+        }
+
+        function atualizarListaArquivosModal() {
+            const container = document.getElementById('arquivos-modal-selecionados');
+            const lista = document.getElementById('lista-arquivos-modal');
+
+            const arquivos = [];
+            if (uploadModalState.arquivosExtrato) {
+                arquivos.push({ nome: uploadModalState.arquivosExtrato.name, tipo: 'Extrato', icone: 'fa-university', cor: 'text-blue-500' });
+            }
+            uploadModalState.arquivosNotas.forEach(f => {
+                arquivos.push({ nome: f.name, tipo: 'Nota Fiscal', icone: 'fa-file-invoice', cor: 'text-green-500' });
+            });
+
+            if (arquivos.length > 0) {
+                container.classList.remove('hidden');
+                lista.innerHTML = arquivos.map(a => `
+                    <div class="flex items-center gap-2 text-gray-600">
+                        <i class="fas ${a.icone} ${a.cor}"></i>
+                        <span class="truncate flex-1">${a.nome}</span>
+                        <span class="text-xs text-gray-400">${a.tipo}</span>
+                    </div>
+                `).join('');
+            } else {
+                container.classList.add('hidden');
+            }
+        }
+
+        // Enviar documentos do modal de resultado
+        async function enviarDocumentosModal() {
+            if (!uploadModalState.geracaoId) {
+                mostrarErro('Nenhuma análise selecionada');
+                return;
+            }
+
+            const temArquivos = uploadModalState.arquivosExtrato || uploadModalState.arquivosNotas.length > 0;
+            if (!temArquivos) {
+                mostrarErro('Selecione pelo menos um arquivo');
+                return;
+            }
+
+            const btn = document.getElementById('btn-enviar-docs-modal');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Enviando...';
+
+            try {
+                const formData = new FormData();
+                formData.append('geracao_id', uploadModalState.geracaoId);
+
+                if (uploadModalState.arquivosExtrato) {
+                    formData.append('arquivos', uploadModalState.arquivosExtrato);
+                }
+
+                uploadModalState.arquivosNotas.forEach(file => {
+                    formData.append('arquivos', file);
+                });
+
+                const response = await fetch('/prestacao-contas/api/upload-documentos-faltantes', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${getToken()}`
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Erro ao enviar documentos');
+                }
+
+                // Sucesso
+                alert(data.mensagem || 'Documentos enviados com sucesso!');
+
+                // Fecha modal e recarrega
+                fecharResultado();
+                carregarHistorico();
+
+                // Pergunta se quer reprocessar USANDO os documentos salvos
+                const reprocessar = confirm('Deseja reprocessar a análise agora com os documentos anexados?');
+                if (reprocessar) {
+                    // Usa o endpoint correto que preserva os documentos
+                    await reprocessarComDocumentosSalvos(uploadModalState.geracaoId, uploadModalState.numeroCnj);
+                }
+
+            } catch (error) {
+                console.error('Erro ao enviar documentos:', error);
+                mostrarErro('Erro ao enviar documentos: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-upload mr-1"></i> Enviar Documentos';
+            }
+        }
+
+        // Reprocessar com documentos salvos (chamado após upload)
+        async function reprocessarComDocumentosSalvos(geracaoId, numeroCnj) {
+            console.log('[Reprocessar] INICIANDO - Usando documentos salvos para geração:', geracaoId, 'CNJ:', numeroCnj);
+
+            // Mostra o modal de progresso
+            const modalProgresso = document.getElementById('modal-progresso');
+            if (modalProgresso) {
+                modalProgresso.classList.remove('hidden');
+            }
+            const progressoMsg = document.getElementById('progresso-mensagem');
+            if (progressoMsg) {
+                progressoMsg.textContent = 'Analisando documentos enviados...';
+            }
+
+            try {
+                console.log('[Reprocessar] Fazendo requisição para /reprocessar-com-documentos...');
+                const response = await fetch('/prestacao-contas/api/reprocessar-com-documentos', {
+                    method: 'POST',
+                    headers: {
+                        ...getAuthHeaders(true),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ geracao_id: geracaoId })
+                });
+
+                console.log('[Reprocessar] Resposta recebida:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Erro ao reprocessar');
+                }
+
+                console.log('[Reprocessar] Processando eventos SSE...');
+
+                // Processa eventos SSE
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        console.log('[Reprocessar] Stream SSE finalizado');
+                        break;
+                    }
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const evento = JSON.parse(line.substring(6));
+                                console.log('[Reprocessar] Evento SSE:', evento.tipo, evento.mensagem);
+                                processarEvento(evento);
+                            } catch (e) {
+                                console.warn('Erro ao parsear evento:', e);
+                            }
+                        }
+                    }
+                }
+                console.log('[Reprocessar] Concluído com sucesso');
+            } catch (error) {
+                console.error('[Reprocessar] Erro:', error);
+                mostrarErro('Erro ao reprocessar: ' + error.message);
+                homeArea.classList.remove('hidden');
+                processArea.classList.add('hidden');
+            }
+        }
+
+        // Reprocessar análise - usa documentos já salvos
+        async function reprocessarAnalise() {
+            if (!geracaoAtual) {
+                mostrarErro('Nenhuma análise selecionada');
+                return;
+            }
+
+            const geracaoId = geracaoAtual.id;
+            const numeroCnj = geracaoAtual.numero_cnj;
+
+            if (!geracaoId) {
+                mostrarErro('ID da análise não encontrado');
+                return;
+            }
+
+            // Verifica se tem documentos salvos
+            const temExtrato = geracaoAtual.extrato_subconta_pdf_base64 || geracaoAtual.extrato_subconta_texto;
+            const temDocsAnexos = geracaoAtual.documentos_anexos && geracaoAtual.documentos_anexos.length > 0;
+
+            // Fecha o modal de resultado
+            fecharResultado();
+
+            // Mostra o modal de progresso
+            const modalProgresso = document.getElementById('modal-progresso');
+            if (modalProgresso) {
+                modalProgresso.classList.remove('hidden');
+            }
+            const progressoMsg = document.getElementById('progresso-mensagem');
+            if (progressoMsg) {
+                progressoMsg.textContent = 'Reprocessando análise...';
+            }
+
+            // Se tem documentos salvos, usa o endpoint de reprocessamento
+            if (temExtrato || temDocsAnexos) {
+                console.log('[Reprocessar] Usando documentos salvos para geração:', geracaoId);
+
+                try {
+                    const response = await fetch('/prestacao-contas/api/reprocessar-com-documentos', {
+                        method: 'POST',
+                        headers: {
+                            ...getAuthHeaders(true),
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ geracao_id: geracaoId })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || 'Erro ao reprocessar');
+                    }
+
+                    // Processa eventos SSE
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value);
+                        const lines = chunk.split('\n');
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const evento = JSON.parse(line.substring(6));
+                                    processarEvento(evento);
+                                } catch (e) {
+                                    console.warn('Erro ao parsear evento:', e);
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('[Reprocessar] Erro:', error);
+                    mostrarErro('Erro ao reprocessar: ' + error.message);
+                    homeArea.classList.remove('hidden');
+                    processArea.classList.add('hidden');
+                }
+            } else {
+                // Se não tem documentos, faz análise nova
+                console.log('[Reprocessar] Sem documentos salvos, iniciando nova análise');
+                await iniciarAnalise(numeroCnj, true);
             }
         }
 
@@ -1669,6 +2168,10 @@
         window.cancelarUploadDocs = cancelarUploadDocs;
         window.confirmarUploadDocs = confirmarUploadDocs;
         window.mostrarModalUploadDocs = mostrarModalUploadDocs;
+        window.handleFileUploadModal = handleFileUploadModal;
+        window.enviarDocumentosModal = enviarDocumentosModal;
+        window.reprocessarAnalise = reprocessarAnalise;
+        window.reprocessarComDocumentosSalvos = reprocessarComDocumentosSalvos;
     </script>
 
 </body>

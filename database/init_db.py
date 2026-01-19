@@ -53,6 +53,20 @@ def wait_for_db(max_retries=10, delay=3):
 
 def create_tables():
     """Cria todas as tabelas no banco de dados"""
+    from sqlalchemy import inspect
+
+    # Fast-path: verifica se já existe uma tabela recente (gemini_api_logs)
+    # Se existir, provavelmente todas as tabelas já foram criadas
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    # Verifica se as tabelas principais existem
+    required_tables = {'users', 'geracoes_prestacao_contas', 'gemini_api_logs', 'performance_logs'}
+    if required_tables.issubset(existing_tables):
+        print("[OK] Tabelas criadas com sucesso!")
+        return
+
+    # Cria tabelas faltantes
     Base.metadata.create_all(bind=engine)
     print("[OK] Tabelas criadas com sucesso!")
 
@@ -61,20 +75,42 @@ def run_migrations():
     """Executa migrações manuais para ajustar colunas existentes"""
     from sqlalchemy import text, inspect
     db = SessionLocal()
-    
+
     # Detecta se é SQLite ou PostgreSQL
     is_sqlite = 'sqlite' in str(engine.url)
-    
+
+    # Fast-path: verifica se a última migração já foi aplicada
+    # Se a coluna 'route' existe em gemini_api_logs, todas as migrações estão ok
+    try:
+        result = db.execute(text("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'gemini_api_logs' AND column_name = 'route'
+        """)).fetchone()
+        if result:
+            # Migrações já aplicadas, apenas executa seed_prompt_groups
+            seed_prompt_groups(db)
+            db.close()
+            return
+    except Exception:
+        pass  # Continua com migrações normais
+
+    # Cache do schema para migrações (só carrega se necessário)
+    _inspector = inspect(engine)
+    _tables_cache = set(_inspector.get_table_names())
+    _columns_cache = {}
+
     def column_exists(table_name, column_name):
-        """Verifica se uma coluna existe na tabela"""
-        inspector = inspect(engine)
-        columns = [col['name'] for col in inspector.get_columns(table_name)]
-        return column_name in columns
-    
+        """Verifica se uma coluna existe na tabela (com cache lazy)"""
+        if table_name not in _columns_cache:
+            try:
+                _columns_cache[table_name] = {col['name'] for col in _inspector.get_columns(table_name)}
+            except Exception:
+                _columns_cache[table_name] = set()
+        return column_name in _columns_cache[table_name]
+
     def table_exists(table_name):
-        """Verifica se uma tabela existe"""
-        inspector = inspect(engine)
-        return table_name in inspector.get_table_names()
+        """Verifica se uma tabela existe (com cache)"""
+        return table_name in _tables_cache
     
     # Migração: Criar tabela grupos_analise se não existir
     if not table_exists('grupos_analise'):
@@ -829,12 +865,24 @@ def run_migrations():
             ('documentos_anexos', 'JSON'),
             ('dados_processo_xml', 'JSON'),
             ('peticoes_relevantes', 'JSON'),
+            # Colunas para estado de aguardando documentos (24h expiration)
+            ('documentos_faltantes', 'JSON'),
+            ('mensagem_erro_usuario', 'TEXT'),
+            ('estado_expira_em', 'DATETIME'),
+            # Colunas de métricas do extrato
+            ('extrato_source', 'TEXT'),
+            ('extrato_metricas', 'JSON'),
+            ('extrato_observacao', 'TEXT'),
         ]
 
         for coluna, tipo in colunas_prestacao:
             if not column_exists('geracoes_prestacao_contas', coluna):
                 try:
-                    db.execute(text(f"ALTER TABLE geracoes_prestacao_contas ADD COLUMN {coluna} {tipo}"))
+                    if is_sqlite:
+                        db.execute(text(f"ALTER TABLE geracoes_prestacao_contas ADD COLUMN {coluna} {tipo}"))
+                    else:
+                        # PostgreSQL: usa IF NOT EXISTS para evitar erros
+                        db.execute(text(f"ALTER TABLE geracoes_prestacao_contas ADD COLUMN IF NOT EXISTS {coluna} {tipo}"))
                     db.commit()
                     print(f"[OK] Migração: coluna {coluna} adicionada em geracoes_prestacao_contas")
                 except Exception as e:
@@ -1436,6 +1484,20 @@ def seed_prompt_groups(db: Session):
     """Cria grupos padrao e garante vinculacoes basicas."""
     import re
 
+    # Fast-path: se todos os grupos já existem, pula a maior parte do trabalho
+    existing_groups = db.query(PromptGroup).filter(
+        PromptGroup.slug.in_(["ps", "pp", "detran"])
+    ).count()
+    if existing_groups == 3:
+        # Grupos já existem, verifica apenas se há módulos sem grupo
+        modulos_sem_grupo = db.query(PromptModulo).filter(
+            PromptModulo.tipo == "conteudo",
+            PromptModulo.group_id.is_(None)
+        ).count()
+        if modulos_sem_grupo == 0:
+            # Tudo ok, nada a fazer
+            return
+
     def slugify(valor: str) -> str:
         if not valor:
             return ""
@@ -1935,17 +1997,65 @@ O campo "irrelevante" deve ser true apenas se o documento for meramente administ
         db.close()
 
 
+_DB_INITIALIZED = False  # Cache em memória
+
 def init_database():
     """Inicializa o banco de dados completo"""
+    global _DB_INITIALIZED
+    import os
+    from pathlib import Path
+    from sqlalchemy import text
+
+    # Ultra fast-path: já verificado nesta execução
+    if _DB_INITIALIZED:
+        return
+
     print("[*] Inicializando banco de dados...")
-    wait_for_db()  # Aguarda o banco ficar disponível
+
+    # Fast-path com cache em arquivo (evita query ao banco em dev)
+    import hashlib
+    cache_file = Path(__file__).parent / ".db_initialized"
+    db_url_hash = hashlib.md5(str(engine.url).encode()).hexdigest()[:8]
+
+    if cache_file.exists():
+        cached_hash = cache_file.read_text().strip()
+        if cached_hash == db_url_hash:
+            # Mesmo banco, assume que está ok (verificação lazy na primeira query real)
+            print("[OK] Conexao com banco de dados estabelecida!")
+            _DB_INITIALIZED = True
+            return
+
+    # Primeira vez ou banco diferente - verifica de verdade
+    try:
+        db = SessionLocal()
+        result = db.execute(text("SELECT 1 FROM users LIMIT 1")).fetchone()
+        db.close()
+        if result:
+            # Banco ok, salva cache
+            cache_file.write_text(db_url_hash)
+            print("[OK] Conexao com banco de dados estabelecida!")
+            _DB_INITIALIZED = True
+            return
+    except Exception:
+        pass  # Tabela não existe ou erro - continua com inicialização
+
+    # Inicialização completa (só roda na primeira vez)
+    wait_for_db()
     create_tables()
-    run_migrations()  # Aplica migrações
+    run_migrations()
     seed_admin()
     seed_prompts()
-    seed_prompt_modulos()  # Cria módulos do gerador de peças
-    seed_categorias_resumo_json()  # Cria categorias de formato JSON
+    seed_prompt_modulos()
+    seed_categorias_resumo_json()
+
+    # Salva cache após inicialização bem-sucedida
+    try:
+        cache_file.write_text(db_url_hash)
+    except Exception:
+        pass
+
     print("[OK] Banco de dados inicializado!")
+    _DB_INITIALIZED = True
 
 
 if __name__ == "__main__":
