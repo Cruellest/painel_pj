@@ -308,7 +308,6 @@ EXEMPLOS:
 
 IMPORTANTE - VARIÁVEIS DO GRUPO "SISTEMA" (PRÉ-CALCULADAS):
 Estas variáveis são calculadas automaticamente a partir do processo e SEMPRE existem:
-- processo_ajuizado_apos_2024_04_19: TRUE se ajuizado APÓS 19/04/2024 (Tema 106 STF)
 - processo_ajuizado_apos_2024_09_19: TRUE se ajuizado APÓS 19/09/2024
 - valor_causa_numerico: Valor da causa como número (float)
 - valor_causa_inferior_60sm: TRUE se valor < 60 salários mínimos (R$ 97.260)
@@ -327,7 +326,7 @@ IMPORTANTE - VARIÁVEIS DE PARECERES (NAT):
 PREFIRA usar essas variáveis booleanas pré-calculadas quando a condição envolver:
 - Valores em salários mínimos → use valor_causa_inferior_60sm ou valor_causa_superior_210sm
 - Competência/litisconsórcio → use uniao_polo_passivo, municipio_polo_passivo, estado_polo_passivo
-- Datas de ajuizamento → use processo_ajuizado_apos_2024_04_19 ou processo_ajuizado_apos_2024_09_19
+- Datas de ajuizamento → use processo_ajuizado_apos_2024_09_19
 - Parecer NAT com medicamento → use pareceres_medicamento_nao_incorporado_sus ou pareceres_medicamento_incorporado_sus
 
 FORMATO DE RESPOSTA (JSON estrito):

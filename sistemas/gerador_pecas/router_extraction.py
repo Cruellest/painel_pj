@@ -3533,7 +3533,7 @@ async def listar_variaveis_processo(
             "uso": "Podem ser usadas em regras determinísticas para ativação de módulos",
             "exemplo_regra": {
                 "type": "condition",
-                "variable": "processo_ajuizado_apos_2024_04_19",
+                "variable": "processo_ajuizado_apos_2024_09_19",
                 "operator": "equals",
                 "value": True
             }

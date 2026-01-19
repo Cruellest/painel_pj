@@ -134,35 +134,6 @@ class ProcessVariableResolver:
 # DEFINIÇÕES DE VARIÁVEIS MVP
 # =============================================================================
 
-def _resolver_ajuizado_apos_tema_106(dados: 'DadosProcesso') -> Optional[bool]:
-    """
-    Verifica se o processo foi ajuizado APÓS 19/04/2024.
-
-    Contexto: Tema 106 STF - modulação de efeitos.
-    A data 19/04/2024 é relevante para aplicação de teses jurídicas
-    relacionadas à modulação de efeitos do Tema 106.
-
-    Args:
-        dados: Dados do processo
-
-    Returns:
-        True se ajuizado APÓS 19/04/2024
-        False se ajuizado ATÉ 19/04/2024 (inclusive)
-        None se data_ajuizamento não disponível
-    """
-    if not dados.data_ajuizamento:
-        return None
-
-    # Data de corte: 19/04/2024
-    data_corte = date(2024, 4, 19)
-
-    # Extrai apenas a data (sem hora) para comparação
-    data_processo = dados.data_ajuizamento.date()
-
-    # É MAIOR QUE (não maior ou igual)
-    return data_processo > data_corte
-
-
 def _resolver_ajuizado_apos_2024_09_19(dados: 'DadosProcesso') -> Optional[bool]:
     """
     Verifica se o processo foi ajuizado APÓS 19/09/2024.
@@ -552,15 +523,6 @@ def _resolver_uniao_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
 # =============================================================================
 # REGISTRO DAS VARIÁVEIS
 # =============================================================================
-
-# Variável principal para Tema 106 STF
-ProcessVariableResolver.register(ProcessVariableDefinition(
-    slug="processo_ajuizado_apos_2024_04_19",
-    label="Processo Ajuizado Após 19/04/2024",
-    tipo="boolean",
-    descricao="Tema 106 STF - modulação de efeitos. True se ajuizado APÓS 19/04/2024.",
-    resolver=_resolver_ajuizado_apos_tema_106
-))
 
 # Variável para data de corte 19/09/2024
 ProcessVariableResolver.register(ProcessVariableDefinition(
