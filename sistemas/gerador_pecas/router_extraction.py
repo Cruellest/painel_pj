@@ -2811,120 +2811,125 @@ async def aplicar_json_nas_perguntas(
     lista_atualizadas = []
     lista_removidas = []
 
-    # 6. PROCESSA CRIAÇÕES (novos campos no JSON)
-    ordem_atual = db.query(func.max(ExtractionQuestion.ordem)).filter(
-        ExtractionQuestion.categoria_id == categoria_id
-    ).scalar() or 0
-    ordem_atual += 1
+    # 6. PROCESSA CRIAÇÕES E ATUALIZAÇÕES NA ORDEM DO JSON
+    # A ordem é baseada na posição do campo no JSON (dicts Python 3.7+ preservam ordem)
+    slugs_json_ordenados = list(novo_json.keys())
 
-    for slug in sorted(to_create):
+    for ordem_json, slug in enumerate(slugs_json_ordenados):
+        if slug not in campos_json:
+            continue  # Campo não processado (ex: valor primitivo inválido)
+
         info = campos_json[slug]
 
-        # Cria pergunta
-        nova_pergunta = ExtractionQuestion(
-            categoria_id=categoria_id,
-            pergunta=info["description"],
-            nome_variavel_sugerido=slug,
-            tipo_sugerido=info["type"],
-            opcoes_sugeridas=info["options"],
-            depends_on_variable=info["depends_on"],
-            dependency_operator=info["depends_operator"],
-            dependency_value=info["depends_value"],
-            ativo=True,
-            ordem=ordem_atual,
-            criado_por=current_user.id,
-            atualizado_por=current_user.id
-        )
-        db.add(nova_pergunta)
-        db.flush()
-        perguntas_criadas += 1
-        ordem_atual += 1
+        if slug in to_create:
+            # CRIAÇÃO: novo campo no JSON
+            nova_pergunta = ExtractionQuestion(
+                categoria_id=categoria_id,
+                pergunta=info["description"],
+                nome_variavel_sugerido=slug,
+                tipo_sugerido=info["type"],
+                opcoes_sugeridas=info["options"],
+                depends_on_variable=info["depends_on"],
+                dependency_operator=info["depends_operator"],
+                dependency_value=info["depends_value"],
+                ativo=True,
+                ordem=ordem_json,  # Ordem baseada na posição no JSON
+                criado_por=current_user.id,
+                atualizado_por=current_user.id
+            )
+            db.add(nova_pergunta)
+            db.flush()
+            perguntas_criadas += 1
 
-        # Cria variável
-        nova_variavel = ExtractionVariable(
-            slug=slug,
-            label=info["description"][:200] if len(info["description"]) > 200 else info["description"],
-            descricao=info["description"],
-            tipo=info["type"],
-            opcoes=info["options"],
-            categoria_id=categoria_id,
-            source_question_id=nova_pergunta.id,
-            depends_on_variable=info["depends_on"],
-            is_conditional=bool(info["depends_on"]),
-            ativo=True
-        )
-        db.add(nova_variavel)
-        variaveis_criadas += 1
-        lista_criadas.append(slug)
+            # Cria variável
+            nova_variavel = ExtractionVariable(
+                slug=slug,
+                label=info["description"][:200] if len(info["description"]) > 200 else info["description"],
+                descricao=info["description"],
+                tipo=info["type"],
+                opcoes=info["options"],
+                categoria_id=categoria_id,
+                source_question_id=nova_pergunta.id,
+                depends_on_variable=info["depends_on"],
+                is_conditional=bool(info["depends_on"]),
+                ativo=True
+            )
+            db.add(nova_variavel)
+            variaveis_criadas += 1
+            lista_criadas.append(slug)
 
-        logger.info(f"[AplicarJSON] Criado: slug={slug}, tipo={info['type']}")
+            logger.info(f"[AplicarJSON] Criado: slug={slug}, tipo={info['type']}, ordem={ordem_json}")
 
-    # 7. PROCESSA ATUALIZAÇÕES (campos existentes que podem ter mudado)
-    for slug in sorted(to_update):
-        info = campos_json[slug]
-        houve_mudanca = False
+        elif slug in to_update:
+            # ATUALIZAÇÃO: campo existente que pode ter mudado
+            houve_mudanca = False
 
-        # Atualiza pergunta se existir
-        if slug in perguntas_por_slug:
-            pergunta = perguntas_por_slug[slug]
+            # Atualiza pergunta se existir
+            if slug in perguntas_por_slug:
+                pergunta = perguntas_por_slug[slug]
 
-            # Verifica mudanças
-            if pergunta.tipo_sugerido != info["type"]:
-                pergunta.tipo_sugerido = info["type"]
-                houve_mudanca = True
-            if pergunta.pergunta != info["description"]:
-                pergunta.pergunta = info["description"]
-                houve_mudanca = True
-            if pergunta.opcoes_sugeridas != info["options"]:
-                pergunta.opcoes_sugeridas = info["options"]
-                houve_mudanca = True
-            if pergunta.depends_on_variable != info["depends_on"]:
-                pergunta.depends_on_variable = info["depends_on"]
-                pergunta.dependency_operator = info["depends_operator"]
-                pergunta.dependency_value = info["depends_value"]
-                houve_mudanca = True
-            if not pergunta.ativo:
-                pergunta.ativo = True
-                houve_mudanca = True
+                # Atualiza ordem para refletir posição no JSON
+                if pergunta.ordem != ordem_json:
+                    pergunta.ordem = ordem_json
+                    houve_mudanca = True
+
+                # Verifica outras mudanças
+                if pergunta.tipo_sugerido != info["type"]:
+                    pergunta.tipo_sugerido = info["type"]
+                    houve_mudanca = True
+                if pergunta.pergunta != info["description"]:
+                    pergunta.pergunta = info["description"]
+                    houve_mudanca = True
+                if pergunta.opcoes_sugeridas != info["options"]:
+                    pergunta.opcoes_sugeridas = info["options"]
+                    houve_mudanca = True
+                if pergunta.depends_on_variable != info["depends_on"]:
+                    pergunta.depends_on_variable = info["depends_on"]
+                    pergunta.dependency_operator = info["depends_operator"]
+                    pergunta.dependency_value = info["depends_value"]
+                    houve_mudanca = True
+                if not pergunta.ativo:
+                    pergunta.ativo = True
+                    houve_mudanca = True
+
+                if houve_mudanca:
+                    pergunta.atualizado_por = current_user.id
+                    pergunta.atualizado_em = datetime.utcnow()
+                    perguntas_atualizadas += 1
+
+            # Atualiza variável se existir
+            if slug in variaveis_por_slug:
+                variavel = variaveis_por_slug[slug]
+                var_mudou = False
+
+                if variavel.tipo != info["type"]:
+                    variavel.tipo = info["type"]
+                    var_mudou = True
+                if variavel.descricao != info["description"]:
+                    variavel.descricao = info["description"]
+                    variavel.label = info["description"][:200] if len(info["description"]) > 200 else info["description"]
+                    var_mudou = True
+                if variavel.opcoes != info["options"]:
+                    variavel.opcoes = info["options"]
+                    var_mudou = True
+                if variavel.depends_on_variable != info["depends_on"]:
+                    variavel.depends_on_variable = info["depends_on"]
+                    variavel.is_conditional = bool(info["depends_on"])
+                    var_mudou = True
+                if not variavel.ativo:
+                    variavel.ativo = True
+                    var_mudou = True
+
+                if var_mudou:
+                    variavel.atualizado_em = datetime.utcnow()
+                    variaveis_atualizadas += 1
+                    houve_mudanca = True
 
             if houve_mudanca:
-                pergunta.atualizado_por = current_user.id
-                pergunta.atualizado_em = datetime.utcnow()
-                perguntas_atualizadas += 1
+                lista_atualizadas.append(slug)
+                logger.info(f"[AplicarJSON] Atualizado: slug={slug}, ordem={ordem_json}")
 
-        # Atualiza variável se existir
-        if slug in variaveis_por_slug:
-            variavel = variaveis_por_slug[slug]
-            var_mudou = False
-
-            if variavel.tipo != info["type"]:
-                variavel.tipo = info["type"]
-                var_mudou = True
-            if variavel.descricao != info["description"]:
-                variavel.descricao = info["description"]
-                variavel.label = info["description"][:200] if len(info["description"]) > 200 else info["description"]
-                var_mudou = True
-            if variavel.opcoes != info["options"]:
-                variavel.opcoes = info["options"]
-                var_mudou = True
-            if variavel.depends_on_variable != info["depends_on"]:
-                variavel.depends_on_variable = info["depends_on"]
-                variavel.is_conditional = bool(info["depends_on"])
-                var_mudou = True
-            if not variavel.ativo:
-                variavel.ativo = True
-                var_mudou = True
-
-            if var_mudou:
-                variavel.atualizado_em = datetime.utcnow()
-                variaveis_atualizadas += 1
-                houve_mudanca = True
-
-        if houve_mudanca:
-            lista_atualizadas.append(slug)
-            logger.info(f"[AplicarJSON] Atualizado: slug={slug}")
-
-    # 8. PROCESSA REMOÇÕES (campos que estavam no BD mas não estão no JSON)
+    # 7. PROCESSA REMOÇÕES (campos que estavam no BD mas não estão no JSON)
     for slug in sorted(to_delete):
         # Verifica se a variável é usada por prompts
         uso_prompts = db.query(PromptVariableUsage).filter(
@@ -2984,11 +2989,11 @@ async def aplicar_json_nas_perguntas(
         lista_removidas.append(slug)
         logger.info(f"[AplicarJSON] Removido: slug={slug}, uso_prompts={uso_prompts}, outras_cats={outras_categorias}")
 
-    # 9. ATUALIZA O JSON DA CATEGORIA
+    # 8. ATUALIZA O JSON DA CATEGORIA
     categoria.formato_json = request.json_content
     categoria.atualizado_em = datetime.utcnow()
 
-    # 10. COMMIT DA TRANSAÇÃO
+    # 9. COMMIT DA TRANSAÇÃO
     try:
         db.commit()
     except Exception as e:
