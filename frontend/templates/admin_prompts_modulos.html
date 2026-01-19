@@ -1181,6 +1181,20 @@
         let condicoesRegraSecundaria = []; // Array de condições/grupos para regra SECUNDÁRIA (fallback)
         let variaveisDisponiveis = []; // Cache de variáveis para autocomplete
         let contadorIdCondicao = 0; // Contador para IDs únicos
+
+        // Função para traduzir tipos de variáveis (consistente com admin_variaveis.html)
+        function getTipoLabel(tipo) {
+            const labels = {
+                'text': 'Texto',
+                'number': 'Número',
+                'date': 'Data',
+                'boolean': 'Sim/Não',
+                'choice': 'Escolha',
+                'list': 'Lista',
+                'currency': 'Monetário'
+            };
+            return labels[tipo] || tipo || 'text';
+        }
         let regraSecundariaGerada = null; // Cache da regra secundária gerada pela IA
         // Estado dos comboboxes de variáveis
         let comboboxAberto = null;
@@ -2737,7 +2751,7 @@
                 const selectedSlug = input.dataset.selectedSlug || '';
                 if (selectedSlug) {
                     const varInfo = variaveisDisponiveis.find(v => v.slug === selectedSlug);
-                    input.value = `${selectedSlug} (${varInfo?.tipo || 'text'})`;
+                    input.value = `${selectedSlug} (${getTipoLabel(varInfo?.tipo)})`;
                     input.classList.add('has-value');
                 } else if (input.dataset.originalValue) {
                     input.value = '';
@@ -2794,7 +2808,7 @@
                     onmouseenter="comboboxHighlightIndex = ${idx}">
                     <div>
                         <span class="slug">${destacarTermo(v.slug, termoLower)}</span>
-                        <span class="tipo">${v.tipo}</span>
+                        <span class="tipo">${getTipoLabel(v.tipo)}</span>
                     </div>
                     ${v.label ? `<div class="label">${destacarTermo(v.label, termoLower)}</div>` : ''}
                 </div>
@@ -2822,7 +2836,7 @@
             const varInfo = variaveisDisponiveis.find(v => v.slug === slug);
             
             if (input && varInfo) {
-                input.value = `${slug} (${varInfo.tipo})`;
+                input.value = `${slug} (${getTipoLabel(varInfo.tipo)})`;
                 input.dataset.selectedSlug = slug;
                 input.classList.add('has-value');
             }
@@ -3123,7 +3137,7 @@
             const varInfo = variaveisDisponiveis.find(v => v.slug === c.variavel);
             const esconderValor = ['exists', 'not_exists'].includes(c.operador);
             const marginLeft = nivel > 0 ? '' : '';
-            const displayValue = c.variavel ? `${c.variavel} (${varInfo?.tipo || 'text'})` : '';
+            const displayValue = c.variavel ? `${c.variavel} (${getTipoLabel(varInfo?.tipo)})` : '';
 
             return `
             <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200 ${marginLeft}" data-id="${c.id}" data-type="condition">
@@ -3167,7 +3181,7 @@
 
         // Renderiza campo de valor baseado no tipo da variavel
         function renderizarCampoValor(condicao, varInfo) {
-            const tipo = varInfo?.tipo || 'text';
+            const tipo = varInfo?.tipo || 'text'; // Tipo raw para lógica, não traduzir
             const opcoes = varInfo?.opcoes || [];
             const valor = condicao.valor || '';
             const id = condicao.id;
@@ -3590,7 +3604,7 @@
                             <div class="flex items-center gap-2 text-sm bg-amber-50 p-2 rounded border border-amber-200 mb-1">
                                 <span class="font-mono bg-amber-100 px-1.5 py-0.5 rounded text-amber-800">${v.slug_sugerido}</span>
                                 <span class="text-gray-600 flex-1">${v.descricao || ''}</span>
-                                <span class="text-xs text-gray-500">(${v.tipo_sugerido || 'text'})</span>
+                                <span class="text-xs text-gray-500">(${getTipoLabel(v.tipo_sugerido)})</span>
                                 <button type="button"
                                     onclick="criarVariavelFaltante('${v.slug_sugerido}', '${v.tipo_sugerido || 'text'}', '${v.descricao || ''}')"
                                     class="px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
@@ -3917,7 +3931,7 @@
         function renderizarItemCondicaoSecundaria(item) {
             if (item.type === 'condition') {
                 const varInfo = variaveisDisponiveis.find(v => v.slug === item.variavel);
-                const displayValue = item.variavel ? `${item.variavel} (${varInfo?.tipo || 'text'})` : '';
+                const displayValue = item.variavel ? `${item.variavel} (${getTipoLabel(varInfo?.tipo)})` : '';
                 const esconderValor = ['exists', 'not_exists'].includes(item.operador);
                 
                 return `
@@ -4001,7 +4015,7 @@
                 const selectedSlug = input.dataset.selectedSlug || '';
                 if (selectedSlug) {
                     const varInfo = variaveisDisponiveis.find(v => v.slug === selectedSlug);
-                    input.value = `${selectedSlug} (${varInfo?.tipo || 'text'})`;
+                    input.value = `${selectedSlug} (${getTipoLabel(varInfo?.tipo)})`;
                     input.classList.add('has-value');
                 }
             }
@@ -4046,7 +4060,7 @@
                     onclick="selecionarVariavelComboboxSecundaria('${condId}', '${v.slug}')">
                     <div>
                         <span class="slug">${destacarTermo(v.slug, termoLower)}</span>
-                        <span class="tipo">${v.tipo}</span>
+                        <span class="tipo">${getTipoLabel(v.tipo)}</span>
                     </div>
                     ${v.label ? `<div class="label">${destacarTermo(v.label, termoLower)}</div>` : ''}
                 </div>
@@ -4058,7 +4072,7 @@
             const varInfo = variaveisDisponiveis.find(v => v.slug === slug);
             
             if (input && varInfo) {
-                input.value = `${slug} (${varInfo.tipo})`;
+                input.value = `${slug} (${getTipoLabel(varInfo.tipo)})`;
                 input.dataset.selectedSlug = slug;
                 input.classList.add('has-value');
             }
