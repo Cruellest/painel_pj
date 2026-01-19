@@ -295,8 +295,21 @@ EXEMPLOS:
     ]
 }
 
-IMPORTANTE - VARIÁVEIS DO GRUPO "SISTEMA":
-As variáveis abaixo são PRÉ-CALCULADAS a partir do processo e já existem no sistema:
+10. "Parecer do NAT analisou medicamento não incorporado E valor >= 210 SM E União não está no polo passivo E ajuizado após 19/09/2024"
+{
+    "type": "and",
+    "conditions": [
+        {"type": "condition", "variable": "pareceres_medicamento_nao_incorporado_sus", "operator": "equals", "value": true},
+        {"type": "condition", "variable": "valor_causa_superior_210sm", "operator": "equals", "value": true},
+        {"type": "condition", "variable": "uniao_polo_passivo", "operator": "equals", "value": false},
+        {"type": "condition", "variable": "processo_ajuizado_apos_2024_09_19", "operator": "equals", "value": true}
+    ]
+}
+
+IMPORTANTE - VARIÁVEIS DO GRUPO "SISTEMA" (PRÉ-CALCULADAS):
+Estas variáveis são calculadas automaticamente a partir do processo e SEMPRE existem:
+- processo_ajuizado_apos_2024_04_19: TRUE se ajuizado APÓS 19/04/2024 (Tema 106 STF)
+- processo_ajuizado_apos_2024_09_19: TRUE se ajuizado APÓS 19/09/2024
 - valor_causa_numerico: Valor da causa como número (float)
 - valor_causa_inferior_60sm: TRUE se valor < 60 salários mínimos (R$ 97.260)
 - valor_causa_superior_210sm: TRUE se valor > 210 salários mínimos (R$ 340.410)
@@ -306,9 +319,16 @@ As variáveis abaixo são PRÉ-CALCULADAS a partir do processo e já existem no 
 - autor_com_assistencia_judiciaria: TRUE se autor tem assistência judiciária
 - autor_com_defensoria: TRUE se autor é representado por Defensoria
 
+IMPORTANTE - VARIÁVEIS DE PARECERES (NAT):
+- pareceres_medicamento_nao_incorporado_sus: TRUE se parecer do NAT analisou medicamento NÃO incorporado ao SUS
+- pareceres_medicamento_incorporado_sus: TRUE se parecer do NAT analisou medicamento incorporado ao SUS
+- pareceres_analisou_medicamento: TRUE se parecer analisou qualquer medicamento
+
 PREFIRA usar essas variáveis booleanas pré-calculadas quando a condição envolver:
 - Valores em salários mínimos → use valor_causa_inferior_60sm ou valor_causa_superior_210sm
 - Competência/litisconsórcio → use uniao_polo_passivo, municipio_polo_passivo, estado_polo_passivo
+- Datas de ajuizamento → use processo_ajuizado_apos_2024_04_19 ou processo_ajuizado_apos_2024_09_19
+- Parecer NAT com medicamento → use pareceres_medicamento_nao_incorporado_sus ou pareceres_medicamento_incorporado_sus
 
 FORMATO DE RESPOSTA (JSON estrito):
 

@@ -163,6 +163,34 @@ def _resolver_ajuizado_apos_tema_106(dados: 'DadosProcesso') -> Optional[bool]:
     return data_processo > data_corte
 
 
+def _resolver_ajuizado_apos_2024_09_19(dados: 'DadosProcesso') -> Optional[bool]:
+    """
+    Verifica se o processo foi ajuizado APÓS 19/09/2024.
+
+    Contexto: Data relevante para teses jurídicas específicas
+    (ex.: medicamentos não incorporados com valor > 210 SM).
+
+    Args:
+        dados: Dados do processo
+
+    Returns:
+        True se ajuizado APÓS 19/09/2024
+        False se ajuizado ATÉ 19/09/2024 (inclusive)
+        None se data_ajuizamento não disponível
+    """
+    if not dados.data_ajuizamento:
+        return None
+
+    # Data de corte: 19/09/2024
+    data_corte = date(2024, 9, 19)
+
+    # Extrai apenas a data (sem hora) para comparação
+    data_processo = dados.data_ajuizamento.date()
+
+    # É MAIOR QUE (não maior ou igual)
+    return data_processo > data_corte
+
+
 def _resolver_valor_causa_numerico(dados: 'DadosProcesso') -> Optional[float]:
     """
     Converte o valor da causa para número.
@@ -532,6 +560,15 @@ ProcessVariableResolver.register(ProcessVariableDefinition(
     tipo="boolean",
     descricao="Tema 106 STF - modulação de efeitos. True se ajuizado APÓS 19/04/2024.",
     resolver=_resolver_ajuizado_apos_tema_106
+))
+
+# Variável para data de corte 19/09/2024
+ProcessVariableResolver.register(ProcessVariableDefinition(
+    slug="processo_ajuizado_apos_2024_09_19",
+    label="Processo Ajuizado Após 19/09/2024",
+    tipo="boolean",
+    descricao="True se processo foi ajuizado APÓS 19/09/2024. Usado em regras de medicamentos não incorporados com valor > 210 SM.",
+    resolver=_resolver_ajuizado_apos_2024_09_19
 ))
 
 # Valor da causa como número
