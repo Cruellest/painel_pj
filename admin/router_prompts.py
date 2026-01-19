@@ -3,7 +3,7 @@
 Router para gerenciamento de prompts modulares
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 from pydantic import BaseModel
@@ -281,20 +281,23 @@ async def listar_modulos(
     categoria: Optional[str] = None,
     group_id: Optional[int] = None,
     subgroup_id: Optional[int] = None,
+    subcategoria_ids: Optional[List[int]] = Query(None, description="IDs das subcategorias (assuntos) para filtrar"),
     busca: Optional[str] = None,
     apenas_ativos: bool = True,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Lista todos os módulos de prompts com filtros"""
+    from admin.models_prompts import prompt_modulo_subcategorias
+
     query = db.query(PromptModulo)
-    
+
     if apenas_ativos:
         query = query.filter(PromptModulo.ativo == True)
-    
+
     if tipo:
         query = query.filter(PromptModulo.tipo == tipo)
-    
+
     if categoria:
         query = query.filter(PromptModulo.categoria == categoria)
 
@@ -311,7 +314,16 @@ async def listar_modulos(
             (PromptModulo.subgroup_id == subgroup_id) |
             (PromptModulo.tipo.in_(["peca", "base"]))
         )
-    
+
+    # Filtro por subcategorias (assuntos) - lógica OR (qualquer um dos assuntos selecionados)
+    if subcategoria_ids:
+        query = query.join(
+            prompt_modulo_subcategorias,
+            PromptModulo.id == prompt_modulo_subcategorias.c.modulo_id
+        ).filter(
+            prompt_modulo_subcategorias.c.subcategoria_id.in_(subcategoria_ids)
+        ).distinct()
+
     if busca:
         busca_like = f"%{busca}%"
         query = query.filter(
@@ -319,7 +331,7 @@ async def listar_modulos(
             (PromptModulo.nome.ilike(busca_like)) |
             (PromptModulo.conteudo.ilike(busca_like))
         )
-    
+
     # Eager loading para evitar N+1 queries nas subcategorias
     query = query.options(joinedload(PromptModulo.subcategorias))
 
@@ -706,6 +718,37 @@ async def deletar_subgrupo(
 # ==========================================
 # Endpoints Subcategorias
 # ==========================================
+
+@router.get("/subcategorias")
+async def listar_todas_subcategorias(
+    apenas_ativas: bool = True,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Lista todas as subcategorias (assuntos) de todos os grupos"""
+    query = db.query(PromptSubcategoria).join(PromptGroup)
+    if apenas_ativas:
+        query = query.filter(PromptSubcategoria.active == True)
+    subcategorias = query.order_by(PromptGroup.name, PromptSubcategoria.order, PromptSubcategoria.nome).all()
+
+    # Retorna com nome do grupo para facilitar exibição
+    result = []
+    for sub in subcategorias:
+        grupo = db.query(PromptGroup).filter(PromptGroup.id == sub.group_id).first()
+        result.append({
+            "id": sub.id,
+            "group_id": sub.group_id,
+            "group_name": grupo.name if grupo else "",
+            "nome": sub.nome,
+            "slug": sub.slug,
+            "descricao": sub.descricao,
+            "active": sub.active,
+            "order": sub.order,
+            "created_at": sub.created_at,
+            "updated_at": sub.updated_at
+        })
+    return result
+
 
 @router.get("/grupos/{group_id}/subcategorias", response_model=List[PromptSubcategoriaResponse])
 async def listar_subcategorias(

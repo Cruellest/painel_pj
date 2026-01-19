@@ -55,12 +55,18 @@ class DeterministicRuleGenerator:
         try:
             # 1. Busca variáveis disponíveis para contexto
             variaveis_disponiveis = self._buscar_variaveis_disponiveis()
-            
+
             # Log detalhado das variáveis disponíveis para diagnóstico
             slugs_disponiveis = [v['slug'] for v in variaveis_disponiveis]
+            vars_sistema = [v for v in variaveis_disponiveis if v.get('fonte') == 'processo_sistema']
+            slugs_sistema = [v['slug'] for v in vars_sistema]
+
             logger.info(
-                f"[REGRA-DETERMINISTICO] Variáveis disponíveis ({len(variaveis_disponiveis)}): "
-                f"{slugs_disponiveis[:20]}{'...' if len(slugs_disponiveis) > 20 else ''}"
+                f"[REGRA-DETERMINISTICO] Variáveis disponíveis: {len(variaveis_disponiveis)} total"
+            )
+            logger.info(
+                f"[REGRA-DETERMINISTICO] Variáveis de SISTEMA incluídas: {len(vars_sistema)} - "
+                f"Slugs: {slugs_sistema}"
             )
 
             # 2. Monta prompt para a IA
@@ -111,7 +117,8 @@ class DeterministicRuleGenerator:
                 logger.warning(
                     f"[REGRA-DETERMINISTICO] IA indicou variáveis insuficientes. "
                     f"Condição: '{condicao_texto}'. "
-                    f"Variáveis disponíveis: {slugs_disponiveis}. "
+                    f"Total variáveis disponíveis: {len(slugs_disponiveis)}. "
+                    f"Variáveis de SISTEMA disponíveis: {slugs_sistema}. "
                     f"Mensagem IA: {resultado.get('mensagem')}. "
                     f"Variáveis necessárias sugeridas: {resultado.get('variaveis_necessarias')}"
                 )
@@ -202,7 +209,7 @@ EXEMPLOS:
 1. "O valor da causa é maior que 100000"
 {
     "type": "condition",
-    "variable": "valor_causa",
+    "variable": "valor_causa_numerico",
     "operator": "greater_than",
     "value": 100000
 }
@@ -255,6 +262,54 @@ EXEMPLOS:
     ]
 }
 
+6. "Valor da causa igual ou superior a 210 salários mínimos" (usa variável booleana pré-calculada)
+{
+    "type": "condition",
+    "variable": "valor_causa_superior_210sm",
+    "operator": "equals",
+    "value": true
+}
+
+7. "Valor da causa inferior a 60 salários mínimos" (usa variável booleana pré-calculada)
+{
+    "type": "condition",
+    "variable": "valor_causa_inferior_60sm",
+    "operator": "equals",
+    "value": true
+}
+
+8. "A União está no polo passivo" (usa variável do grupo Sistema)
+{
+    "type": "condition",
+    "variable": "uniao_polo_passivo",
+    "operator": "equals",
+    "value": true
+}
+
+9. "Município no polo passivo e valor da causa superior a 210 SM"
+{
+    "type": "and",
+    "conditions": [
+        {"type": "condition", "variable": "municipio_polo_passivo", "operator": "equals", "value": true},
+        {"type": "condition", "variable": "valor_causa_superior_210sm", "operator": "equals", "value": true}
+    ]
+}
+
+IMPORTANTE - VARIÁVEIS DO GRUPO "SISTEMA":
+As variáveis abaixo são PRÉ-CALCULADAS a partir do processo e já existem no sistema:
+- valor_causa_numerico: Valor da causa como número (float)
+- valor_causa_inferior_60sm: TRUE se valor < 60 salários mínimos (R$ 97.260)
+- valor_causa_superior_210sm: TRUE se valor > 210 salários mínimos (R$ 340.410)
+- uniao_polo_passivo: TRUE se União/órgão federal está no polo passivo
+- municipio_polo_passivo: TRUE se algum município está no polo passivo
+- estado_polo_passivo: TRUE se o Estado está no polo passivo
+- autor_com_assistencia_judiciaria: TRUE se autor tem assistência judiciária
+- autor_com_defensoria: TRUE se autor é representado por Defensoria
+
+PREFIRA usar essas variáveis booleanas pré-calculadas quando a condição envolver:
+- Valores em salários mínimos → use valor_causa_inferior_60sm ou valor_causa_superior_210sm
+- Competência/litisconsórcio → use uniao_polo_passivo, municipio_polo_passivo, estado_polo_passivo
+
 FORMATO DE RESPOSTA (JSON estrito):
 
 CASO 1 - Se existirem variáveis suficientes para expressar a condição:
@@ -287,13 +342,13 @@ REGRAS CRÍTICAS:
     def _buscar_variaveis_disponiveis(self) -> List[Dict]:
         """
         Busca todas as variáveis disponíveis no sistema.
-        
+
         Inclui:
         - ExtractionVariable: variáveis extraídas de PDFs (tabela do banco)
-        - ProcessVariableDefinition: variáveis derivadas do XML do processo
+        - ProcessVariableDefinition: variáveis derivadas do XML do processo (grupo "Sistema")
         """
         variaveis = []
-        
+
         # 1. Variáveis de extração (PDFs) do banco de dados
         extraction_vars = self.db.query(ExtractionVariable).filter(
             ExtractionVariable.ativo == True
@@ -308,23 +363,48 @@ REGRAS CRÍTICAS:
                 "opcoes": v.opcoes,
                 "fonte": "extracao"  # Para identificar origem
             })
-        
-        # 2. Variáveis de processo (XML) - derivadas/calculadas
+
+        logger.info(f"[REGRA-DETERMINISTICO] Variáveis de extração (banco): {len(extraction_vars)}")
+
+        # 2. Variáveis de processo (XML) - derivadas/calculadas (grupo "Sistema")
+        # IMPORTANTE: Estas variáveis incluem valor_causa_superior_210sm, uniao_polo_passivo, etc.
+        vars_processo_count = 0
         try:
             from .services_process_variables import ProcessVariableResolver
-            
-            for definition in ProcessVariableResolver.get_all_definitions():
+
+            definitions = ProcessVariableResolver.get_all_definitions()
+            vars_processo_count = len(definitions)
+
+            for definition in definitions:
                 variaveis.append({
                     "slug": definition.slug,
                     "label": definition.label,
                     "tipo": definition.tipo,
                     "descricao": definition.descricao,
                     "opcoes": None,
-                    "fonte": "processo"  # Variável calculada do XML
+                    "fonte": "processo_sistema"  # Variável do grupo Sistema (calculada do XML)
                 })
+
+            # Log explícito das variáveis de Sistema carregadas
+            slugs_sistema = [d.slug for d in definitions]
+            logger.info(
+                f"[REGRA-DETERMINISTICO] Variáveis de Sistema (processo): {vars_processo_count} - "
+                f"Slugs: {slugs_sistema}"
+            )
+
         except Exception as e:
-            logger.warning(f"[REGRA-DETERMINISTICO] Erro ao carregar variáveis de processo: {e}")
-        
+            logger.error(
+                f"[REGRA-DETERMINISTICO] ERRO CRÍTICO ao carregar variáveis de processo (Sistema): {e}. "
+                f"Variáveis como valor_causa_superior_210sm NÃO estarão disponíveis!"
+            )
+            import traceback
+            logger.error(traceback.format_exc())
+
+        logger.info(
+            f"[REGRA-DETERMINISTICO] TOTAL de variáveis disponíveis: {len(variaveis)} "
+            f"(extração: {len(extraction_vars)}, sistema: {vars_processo_count})"
+        )
+
         return variaveis
 
     def _montar_prompt_geracao(
