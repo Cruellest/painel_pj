@@ -16,7 +16,7 @@ from typing import List, Dict, Any, Optional, Set, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from services.gemini_service import gemini_service, get_thinking_level
+from services.gemini_service import gemini_service
 from .models_extraction import ExtractionVariable, PromptVariableUsage
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,13 @@ class DeterministicRuleGenerator:
         try:
             # 1. Busca variáveis disponíveis para contexto
             variaveis_disponiveis = self._buscar_variaveis_disponiveis()
+            
+            # Log detalhado das variáveis disponíveis para diagnóstico
+            slugs_disponiveis = [v['slug'] for v in variaveis_disponiveis]
+            logger.info(
+                f"[REGRA-DETERMINISTICO] Variáveis disponíveis ({len(variaveis_disponiveis)}): "
+                f"{slugs_disponiveis[:20]}{'...' if len(slugs_disponiveis) > 20 else ''}"
+            )
 
             # 2. Monta prompt para a IA
             prompt = self._montar_prompt_geracao(
@@ -66,20 +73,31 @@ class DeterministicRuleGenerator:
             # 3. Chama o Gemini
             logger.info(f"Gerando regra determinística: '{condicao_texto[:100]}...'")
 
-            # Obtém thinking_level da config
-            thinking_level = get_thinking_level(self.db, "gerador_pecas")
+            # FORÇAR thinking_level="low" para esta chamada específica
+            # Isso reduz drasticamente tokens e latência (~80%) para tarefas de classificação JSON
+            thinking_level = "low"
+            
+            logger.info(f"[REGRA-DETERMINISTICO] Usando thinking_level={thinking_level}, modelo={GEMINI_MODEL}")
 
             response = await gemini_service.generate(
                 prompt=prompt,
                 system_prompt=self._get_system_prompt(),
                 model=GEMINI_MODEL,
                 temperature=0.1,
-                thinking_level=thinking_level  # Configurável em /admin/prompts-config
+                thinking_level=thinking_level,
+                context={
+                    "sistema": "extracao",
+                    "modulo": "regras_deterministicas",
+                    "operacao": "gerar_regra"
+                }
             )
 
             if not response.success:
                 logger.error(f"Erro na chamada Gemini: {response.error}")
                 return {"success": False, "erro": f"Erro na IA: {response.error}"}
+
+            # Log da resposta bruta para diagnóstico
+            logger.info(f"[REGRA-DETERMINISTICO] Resposta IA (primeiros 500 chars): {response.content[:500]}")
 
             # 4. Parseia a resposta JSON
             resultado = self._extrair_json_resposta(response.content)
@@ -90,7 +108,13 @@ class DeterministicRuleGenerator:
 
             # 4.1 Verifica se IA indicou variáveis insuficientes
             if resultado.get("erro") == "variaveis_insuficientes":
-                logger.info("IA indicou variáveis insuficientes para a condição")
+                logger.warning(
+                    f"[REGRA-DETERMINISTICO] IA indicou variáveis insuficientes. "
+                    f"Condição: '{condicao_texto}'. "
+                    f"Variáveis disponíveis: {slugs_disponiveis}. "
+                    f"Mensagem IA: {resultado.get('mensagem')}. "
+                    f"Variáveis necessárias sugeridas: {resultado.get('variaveis_necessarias')}"
+                )
                 return {
                     "success": False,
                     "erro": "variaveis_insuficientes",
@@ -108,6 +132,11 @@ class DeterministicRuleGenerator:
             validacao = self._validar_regra(regra, variaveis_disponiveis)
 
             if not validacao["valid"]:
+                logger.warning(
+                    f"[REGRA-DETERMINISTICO] Regra inválida. "
+                    f"Erros: {validacao['errors']}. "
+                    f"Variáveis faltantes: {validacao.get('variaveis_faltantes')}"
+                )
                 return {
                     "success": False,
                     "erro": "Regra inválida",

@@ -254,11 +254,18 @@ class IdentificadorPeticoes:
             # Monta o prompt usando o template (do admin ou padrão)
             prompt = self.prompt_template.format(texto=texto_truncado)
 
+            # Contexto para logging
+            log_context = {
+                "sistema": "prestacao_contas",
+                "modulo": "identificador_peticoes",
+            }
+
             service = GeminiService()
             resposta_obj = await service.generate(
                 prompt=prompt,
                 model=self.modelo_llm,
                 temperature=self.temperatura_llm,
+                context=log_context,
             )
 
             # Extrai conteúdo do GeminiResponse

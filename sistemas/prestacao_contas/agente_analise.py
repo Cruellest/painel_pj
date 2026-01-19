@@ -437,6 +437,12 @@ class AgenteAnalise:
 
         try:
             service = GeminiService()
+            
+            # Contexto para logging
+            log_context = {
+                "sistema": "prestacao_contas",
+                "modulo": "agente_analise",
+            }
 
             if todas_imagens:
                 logger.info(f"Enviando {len(todas_imagens)} imagens para análise")
@@ -449,6 +455,7 @@ class AgenteAnalise:
                         temperature=self.temperatura,
                         system_prompt=self.system_prompt,
                         search_threshold=0.2,  # Limiar baixo = mais buscas
+                        context=log_context,
                     )
                 else:
                     resposta_obj = await service.generate_with_images(
@@ -457,6 +464,7 @@ class AgenteAnalise:
                         model=self.modelo,
                         temperature=self.temperatura,
                         system_prompt=self.system_prompt,
+                        context=log_context,
                     )
             else:
                 if self.usar_busca_google:
@@ -467,6 +475,7 @@ class AgenteAnalise:
                         model=self.modelo,
                         temperature=self.temperatura,
                         search_threshold=0.2,
+                        context=log_context,
                     )
                 else:
                     resposta_obj = await service.generate(
@@ -474,6 +483,7 @@ class AgenteAnalise:
                         system_prompt=self.system_prompt,
                         model=self.modelo,
                         temperature=self.temperatura,
+                        context=log_context,
                     )
 
             if not resposta_obj.success:

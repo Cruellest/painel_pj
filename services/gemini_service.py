@@ -957,7 +957,8 @@ class GeminiService:
         model: str = None,
         max_tokens: int = None,
         temperature: float = 0.3,
-        search_threshold: float = 0.3
+        search_threshold: float = 0.3,
+        context: Dict[str, Any] = None
     ) -> GeminiResponse:
         """
         Gera texto com Google Search Grounding habilitado.
@@ -972,14 +973,23 @@ class GeminiService:
             max_tokens: Limite de tokens na resposta
             temperature: Temperatura (0-2)
             search_threshold: Limiar para ativar busca (0-1, menor = mais buscas)
+            context: Dicionário com contexto para logging (sistema, modulo, user_id, username)
 
         Returns:
             GeminiResponse com o resultado
         """
+        ctx = context or {}
+        metrics = GeminiMetrics()
+        t_start = time.perf_counter()
+
         if not self._api_key:
+            metrics.success = False
+            metrics.error = "GEMINI_KEY não configurada"
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
             return GeminiResponse(
                 success=False,
-                error="GEMINI_KEY não configurada"
+                error="GEMINI_KEY não configurada",
+                metrics=metrics
             )
 
         # Determina o modelo
@@ -1013,9 +1023,19 @@ class GeminiService:
                 "parts": [{"text": system_prompt}]
             }
 
+        # Métricas
+        metrics.model = model
+        metrics.prompt_chars = len(prompt)
+        metrics.prompt_tokens_estimated = len(prompt) // 4
+
+        t_request_start = time.perf_counter()
+        
         try:
             async with httpx.AsyncClient(timeout=300.0) as client:
+                t_connect_start = time.perf_counter()
                 response = await client.post(url, json=payload)
+                metrics.time_connect_ms = (time.perf_counter() - t_connect_start) * 1000
+                
                 response.raise_for_status()
                 data = response.json()
 
@@ -1027,21 +1047,42 @@ class GeminiService:
                 if grounding_metadata:
                     content += f"\n\n---\n**Fontes consultadas:** {grounding_metadata}"
 
+                metrics.success = True
+                metrics.response_tokens = tokens
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.log()
+                
+                # Loga no banco de dados
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature))
+
                 return GeminiResponse(
                     success=True,
                     content=content,
-                    tokens_used=tokens
+                    tokens_used=tokens,
+                    metrics=metrics
                 )
 
         except httpx.HTTPStatusError as e:
+            metrics.success = False
+            metrics.error = f"HTTP {e.response.status_code}"
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+            metrics.log()
+            asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature))
             return GeminiResponse(
                 success=False,
-                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
+                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}",
+                metrics=metrics
             )
         except Exception as e:
+            metrics.success = False
+            metrics.error = str(e)[:100]
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+            metrics.log()
+            asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature))
             return GeminiResponse(
                 success=False,
-                error=f"Erro: {str(e)}"
+                error=f"Erro: {str(e)}",
+                metrics=metrics
             )
 
     async def generate_with_images_and_search(
@@ -1052,7 +1093,8 @@ class GeminiService:
         model: str = None,
         max_tokens: int = None,
         temperature: float = 0.3,
-        search_threshold: float = 0.3
+        search_threshold: float = 0.3,
+        context: Dict[str, Any] = None
     ) -> GeminiResponse:
         """
         Gera texto analisando imagens COM Google Search Grounding.
@@ -1060,10 +1102,18 @@ class GeminiService:
         Combina análise de imagens com busca na internet.
         Ideal para verificar informações em notas fiscais, medicamentos, etc.
         """
+        ctx = context or {}
+        metrics = GeminiMetrics()
+        t_start = time.perf_counter()
+
         if not self._api_key:
+            metrics.success = False
+            metrics.error = "GEMINI_KEY não configurada"
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
             return GeminiResponse(
                 success=False,
-                error="GEMINI_KEY não configurada"
+                error="GEMINI_KEY não configurada",
+                metrics=metrics
             )
 
         # Modelo padrão para visão
@@ -1071,6 +1121,10 @@ class GeminiService:
             model = self.normalize_model(model)
         else:
             model = self.DEFAULT_MODELS["visao"]
+
+        metrics.model = model
+        metrics.prompt_chars = len(prompt)
+        metrics.prompt_tokens_estimated = len(prompt) // 4
 
         # Monta URL
         url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}"
@@ -1115,28 +1169,52 @@ class GeminiService:
 
         try:
             async with httpx.AsyncClient(timeout=300.0) as client:
+                t_connect_start = time.perf_counter()
                 response = await client.post(url, json=payload)
+                metrics.time_connect_ms = (time.perf_counter() - t_connect_start) * 1000
+
                 response.raise_for_status()
                 data = response.json()
 
                 content = self._extract_content(data)
                 tokens = self._extract_tokens(data)
 
+                metrics.success = True
+                metrics.response_tokens = tokens
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.log()
+
+                # Loga no banco de dados
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature))
+
                 return GeminiResponse(
                     success=True,
                     content=content,
-                    tokens_used=tokens
+                    tokens_used=tokens,
+                    metrics=metrics
                 )
 
         except httpx.HTTPStatusError as e:
+            metrics.success = False
+            metrics.error = f"HTTP {e.response.status_code}"
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+            metrics.log()
+            asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature))
             return GeminiResponse(
                 success=False,
-                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
+                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}",
+                metrics=metrics
             )
         except Exception as e:
+            metrics.success = False
+            metrics.error = str(e)[:100]
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+            metrics.log()
+            asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature))
             return GeminiResponse(
                 success=False,
-                error=f"Erro: {str(e)}"
+                error=f"Erro: {str(e)}",
+                metrics=metrics
             )
 
     def _extract_content(self, data: Dict) -> str:
