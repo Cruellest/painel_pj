@@ -235,12 +235,10 @@
         }
 
         function formatarModoAtivacao(g) {
-            if (!g.modo_ativacao_agente2) return '';
-            
             const modo = g.modo_ativacao_agente2;
             const det = g.modulos_ativados_det || 0;
             const llm = g.modulos_ativados_llm || 0;
-            
+
             if (modo === 'fast_path') {
                 return `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded-full" title="100% determinístico, sem LLM">
                     <i class="fas fa-bolt mr-1"></i>Fast Path (${det} módulos)
@@ -254,7 +252,10 @@
                     <i class="fas fa-brain mr-1"></i>LLM (${llm} módulos)
                 </span>`;
             }
-            return '';
+            // Gerações anteriores à implementação do tracking de modo
+            return `<span class="bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full" title="Modo de ativação não registrado (geração anterior ao tracking)">
+                <i class="fas fa-question-circle mr-1"></i>Modo não registrado
+            </span>`;
         }
 
         async function verDetalhes(id) {
