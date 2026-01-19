@@ -70,14 +70,36 @@ DEFAULT_USER_PASSWORD = os.getenv("DEFAULT_USER_PASSWORD", "mudar123")
 # CONFIGURAÇÕES DO TJ-MS (Assistência Judiciária)
 # ==================================================
 TJ_WSDL_URL = os.getenv("TJ_WSDL_URL", "https://proxytjms.fly.dev")
-# ATENÇÃO: Credenciais DEVEM ser definidas via variáveis de ambiente
 TJ_WS_USER = os.getenv("TJ_WS_USER", "")
 TJ_WS_PASS = os.getenv("TJ_WS_PASS", "")
+if not TJ_WS_USER or not TJ_WS_PASS:
+    if IS_PRODUCTION:
+        raise RuntimeError(
+            "ERRO FATAL: TJ_WS_USER e TJ_WS_PASS não definidas em ambiente de produção! "
+            "Defina as variáveis de ambiente com as credenciais do webservice TJ-MS."
+        )
+    import warnings
+    warnings.warn(
+        "TJ_WS_USER/TJ_WS_PASS não definidas! Integração com TJ-MS estará indisponível.",
+        RuntimeWarning
+    )
 
 # ==================================================
 # CONFIGURAÇÕES DO GOOGLE GEMINI (IA)
 # ==================================================
 GEMINI_API_KEY = os.getenv("GEMINI_KEY", "")
+if not GEMINI_API_KEY:
+    if IS_PRODUCTION:
+        raise RuntimeError(
+            "ERRO FATAL: GEMINI_KEY não definida em ambiente de produção! "
+            "Defina a variável de ambiente GEMINI_KEY com sua API key do Google Gemini."
+        )
+    import warnings
+    warnings.warn(
+        "GEMINI_KEY não definida! Funcionalidades de IA estarão indisponíveis.",
+        RuntimeWarning
+    )
+
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 

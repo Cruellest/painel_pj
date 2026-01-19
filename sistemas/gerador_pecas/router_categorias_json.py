@@ -12,6 +12,9 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, field_validator
 from datetime import datetime
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database.connection import get_db
 from auth.models import User
@@ -444,11 +447,42 @@ async def atualizar_categoria(
     if categoria_data.formato_json is not None:
         try:
             import json
-            from .models_extraction import ExtractionVariable
+            from .models_extraction import ExtractionVariable, ExtractionQuestion
 
             schema = json.loads(categoria_data.formato_json)
 
-            # Para cada campo no JSON, atualiza a variável correspondente
+            # Extrai slugs do novo JSON
+            slugs_no_json = set()
+            for slug, campo_info in schema.items():
+                if isinstance(campo_info, dict):
+                    slugs_no_json.add(slug)
+
+            # Busca todas as variáveis ativas da categoria
+            variaveis_categoria = db.query(ExtractionVariable).filter(
+                ExtractionVariable.categoria_id == categoria_id,
+                ExtractionVariable.ativo == True
+            ).all()
+
+            # Desativa variáveis que não estão mais no JSON (órfãs)
+            for variavel in variaveis_categoria:
+                if variavel.slug not in slugs_no_json:
+                    variavel.ativo = False
+                    variavel.atualizado_por = current_user.id
+                    variavel.atualizado_em = datetime.utcnow()
+                    logger.info(f"Variável órfã desativada: slug={variavel.slug} (removida do JSON)")
+
+                    # Desativa a pergunta associada, se existir
+                    if variavel.source_question_id:
+                        pergunta = db.query(ExtractionQuestion).filter(
+                            ExtractionQuestion.id == variavel.source_question_id
+                        ).first()
+                        if pergunta and pergunta.ativo:
+                            pergunta.ativo = False
+                            pergunta.atualizado_por = current_user.id
+                            pergunta.atualizado_em = datetime.utcnow()
+                            logger.info(f"Pergunta órfã desativada: id={pergunta.id}")
+
+            # Atualiza variáveis existentes no JSON
             for slug, campo_info in schema.items():
                 if isinstance(campo_info, dict):
                     variavel = db.query(ExtractionVariable).filter(

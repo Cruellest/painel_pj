@@ -150,7 +150,39 @@ class SyncJsonResponse(BaseModel):
     variaveis_removidas: int = 0
     variaveis_removidas_lista: Optional[List[str]] = None
     houve_alteracao: bool = False
-    perguntas_incompletas: Optional[List[dict]] = None
+
+
+# --- Verificação de Consistência JSON vs Perguntas ---
+
+class VariavelSemPergunta(BaseModel):
+    """Detalhe de uma variável no JSON sem pergunta correspondente"""
+    slug: str
+    tipo: Optional[str] = None
+    descricao: Optional[str] = None
+    tem_variavel_bd: bool = False
+    variavel_ativa: bool = False
+    tem_pergunta_inativa: bool = False
+    pergunta_inativa_id: Optional[int] = None
+
+
+class ConsistenciaJsonResponse(BaseModel):
+    """Schema de resposta para verificação de consistência JSON vs perguntas"""
+    consistente: bool
+    total_campos_json: int = 0
+    total_perguntas_ativas: int = 0
+    variaveis_sem_pergunta: List[VariavelSemPergunta] = []
+    perguntas_sem_variavel_json: List[dict] = []
+    mensagem: str = ""
+
+
+class SincronizarPerguntasJsonResponse(BaseModel):
+    """Schema de resposta para sincronização de perguntas com JSON"""
+    success: bool
+    perguntas_criadas: int = 0
+    perguntas_reativadas: int = 0
+    variaveis_criadas: int = 0
+    variaveis_reativadas: int = 0
+    detalhes: List[dict] = []
     mensagem: Optional[str] = None
     erro: Optional[str] = None
 
@@ -1654,7 +1686,7 @@ async def excluir_pergunta(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """Desativa uma pergunta (soft delete)"""
+    """Desativa uma pergunta (soft delete) e a variável associada"""
     # Verifica permissão
     if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
         raise HTTPException(status_code=403, detail="Sem permissão para excluir perguntas")
@@ -1663,15 +1695,33 @@ async def excluir_pergunta(
     if not pergunta:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
 
+    # Desativa a pergunta
     pergunta.ativo = False
     pergunta.atualizado_por = current_user.id
     pergunta.atualizado_em = datetime.utcnow()
+
+    # Desativa a variável associada (se existir)
+    variavel_desativada = None
+    variavel = db.query(ExtractionVariable).filter(
+        ExtractionVariable.source_question_id == pergunta_id
+    ).first()
+
+    if variavel:
+        variavel.ativo = False
+        variavel.atualizado_por = current_user.id
+        variavel.atualizado_em = datetime.utcnow()
+        variavel_desativada = variavel.slug
+        logger.info(f"Variável associada desativada: slug={variavel.slug}")
 
     db.commit()
 
     logger.info(f"Pergunta de extração desativada: id={pergunta_id}")
 
-    return {"success": True, "message": "Pergunta desativada com sucesso"}
+    message = "Pergunta desativada com sucesso"
+    if variavel_desativada:
+        message += f" (variável '{variavel_desativada}' também desativada)"
+
+    return {"success": True, "message": message, "variavel_desativada": variavel_desativada}
 
 
 # ============================================================================
@@ -1983,6 +2033,318 @@ async def sincronizar_json_sem_ia(
         variaveis_removidas=len(variaveis_removidas),
         variaveis_removidas_lista=variaveis_removidas if variaveis_removidas else None,
         houve_alteracao=houve_alteracao,
+        mensagem=mensagem
+    )
+
+
+# ============================================================================
+# ENDPOINTS - VERIFICAÇÃO E SINCRONIZAÇÃO DE CONSISTÊNCIA JSON vs PERGUNTAS
+# ============================================================================
+
+@router.get("/categorias/{categoria_id}/verificar-consistencia", response_model=ConsistenciaJsonResponse)
+async def verificar_consistencia_json_perguntas(
+    categoria_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Verifica a consistência entre o JSON da categoria e as perguntas cadastradas.
+
+    Detecta:
+    - Campos no JSON que não têm perguntas ativas correspondentes
+    - Perguntas ativas que não estão no JSON
+
+    Retorna informações para decidir se é necessário sincronizar.
+    """
+    import json
+
+    # Verifica se a categoria existe
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    # Carrega JSON da categoria
+    try:
+        schema_json = json.loads(categoria.formato_json) if categoria.formato_json else {}
+    except json.JSONDecodeError:
+        schema_json = {}
+
+    # Busca perguntas ativas da categoria
+    perguntas_ativas = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.categoria_id == categoria_id,
+        ExtractionQuestion.ativo == True
+    ).all()
+
+    # Cria mapeamento de perguntas por slug
+    perguntas_por_slug = {}
+    for p in perguntas_ativas:
+        if p.nome_variavel_sugerido:
+            perguntas_por_slug[p.nome_variavel_sugerido] = p
+
+    # Busca perguntas INATIVAS da categoria (para saber se podemos reativar)
+    perguntas_inativas = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.categoria_id == categoria_id,
+        ExtractionQuestion.ativo == False
+    ).all()
+    perguntas_inativas_por_slug = {}
+    for p in perguntas_inativas:
+        if p.nome_variavel_sugerido:
+            perguntas_inativas_por_slug[p.nome_variavel_sugerido] = p
+
+    # Busca variáveis da categoria
+    variaveis = db.query(ExtractionVariable).filter(
+        ExtractionVariable.categoria_id == categoria_id
+    ).all()
+    variaveis_por_slug = {v.slug: v for v in variaveis}
+
+    # Detecta campos no JSON sem perguntas ativas
+    variaveis_sem_pergunta = []
+    for slug, campo_info in schema_json.items():
+        if isinstance(campo_info, dict) and slug not in perguntas_por_slug:
+            variavel_bd = variaveis_por_slug.get(slug)
+            pergunta_inativa = perguntas_inativas_por_slug.get(slug)
+
+            variaveis_sem_pergunta.append(VariavelSemPergunta(
+                slug=slug,
+                tipo=campo_info.get("type"),
+                descricao=campo_info.get("description"),
+                tem_variavel_bd=variavel_bd is not None,
+                variavel_ativa=variavel_bd.ativo if variavel_bd else False,
+                tem_pergunta_inativa=pergunta_inativa is not None,
+                pergunta_inativa_id=pergunta_inativa.id if pergunta_inativa else None
+            ))
+
+    # Detecta perguntas ativas que não estão no JSON
+    slugs_no_json = set(schema_json.keys())
+    perguntas_sem_variavel_json = []
+    for p in perguntas_ativas:
+        if p.nome_variavel_sugerido and p.nome_variavel_sugerido not in slugs_no_json:
+            perguntas_sem_variavel_json.append({
+                "id": p.id,
+                "pergunta": p.pergunta[:100] + "..." if len(p.pergunta) > 100 else p.pergunta,
+                "slug": p.nome_variavel_sugerido
+            })
+
+    # Determina consistência e mensagem
+    consistente = len(variaveis_sem_pergunta) == 0 and len(perguntas_sem_variavel_json) == 0
+
+    if consistente:
+        mensagem = "JSON e perguntas estão sincronizados"
+    else:
+        partes = []
+        if variaveis_sem_pergunta:
+            partes.append(f"{len(variaveis_sem_pergunta)} variável(is) no JSON sem pergunta")
+        if perguntas_sem_variavel_json:
+            partes.append(f"{len(perguntas_sem_variavel_json)} pergunta(s) sem variável no JSON")
+        mensagem = "Inconsistência detectada: " + ", ".join(partes)
+
+    return ConsistenciaJsonResponse(
+        consistente=consistente,
+        total_campos_json=len([k for k, v in schema_json.items() if isinstance(v, dict)]),
+        total_perguntas_ativas=len(perguntas_ativas),
+        variaveis_sem_pergunta=variaveis_sem_pergunta,
+        perguntas_sem_variavel_json=perguntas_sem_variavel_json,
+        mensagem=mensagem
+    )
+
+
+@router.post("/categorias/{categoria_id}/sincronizar-perguntas-json", response_model=SincronizarPerguntasJsonResponse)
+async def sincronizar_perguntas_com_json(
+    categoria_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Sincroniza perguntas com o JSON da categoria.
+
+    Para cada campo no JSON que não tem pergunta ativa:
+    1. Se existe pergunta inativa com mesmo slug → reativa
+    2. Se não existe → cria nova pergunta baseada no campo do JSON
+
+    Também cria/reativa variáveis correspondentes se necessário.
+    """
+    import json
+
+    # Verifica permissão
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissão para sincronizar perguntas")
+
+    # Verifica se a categoria existe
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == categoria_id).first()
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    # Carrega JSON da categoria
+    try:
+        schema_json = json.loads(categoria.formato_json) if categoria.formato_json else {}
+    except json.JSONDecodeError:
+        return SincronizarPerguntasJsonResponse(
+            success=False,
+            erro="JSON da categoria é inválido"
+        )
+
+    if not schema_json:
+        return SincronizarPerguntasJsonResponse(
+            success=False,
+            erro="JSON da categoria está vazio"
+        )
+
+    # Busca perguntas ativas da categoria
+    perguntas_ativas = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.categoria_id == categoria_id,
+        ExtractionQuestion.ativo == True
+    ).all()
+    perguntas_por_slug = {p.nome_variavel_sugerido: p for p in perguntas_ativas if p.nome_variavel_sugerido}
+
+    # Busca perguntas INATIVAS da categoria
+    perguntas_inativas = db.query(ExtractionQuestion).filter(
+        ExtractionQuestion.categoria_id == categoria_id,
+        ExtractionQuestion.ativo == False
+    ).all()
+    perguntas_inativas_por_slug = {p.nome_variavel_sugerido: p for p in perguntas_inativas if p.nome_variavel_sugerido}
+
+    # Busca variáveis da categoria
+    variaveis = db.query(ExtractionVariable).filter(
+        ExtractionVariable.categoria_id == categoria_id
+    ).all()
+    variaveis_por_slug = {v.slug: v for v in variaveis}
+
+    # Contadores
+    perguntas_criadas = 0
+    perguntas_reativadas = 0
+    variaveis_criadas = 0
+    variaveis_reativadas = 0
+    detalhes = []
+
+    # Calcula próxima ordem
+    max_ordem = db.query(func.max(ExtractionQuestion.ordem)).filter(
+        ExtractionQuestion.categoria_id == categoria_id
+    ).scalar() or 0
+    ordem_atual = max_ordem + 1
+
+    # Processa cada campo do JSON
+    for slug, campo_info in schema_json.items():
+        if not isinstance(campo_info, dict):
+            continue
+
+        # Se já tem pergunta ativa, pula
+        if slug in perguntas_por_slug:
+            continue
+
+        tipo = campo_info.get("type", "text")
+        descricao = campo_info.get("description", f"Pergunta para {slug}")
+        opcoes = campo_info.get("options")
+
+        # Tenta reativar pergunta inativa
+        if slug in perguntas_inativas_por_slug:
+            pergunta = perguntas_inativas_por_slug[slug]
+            pergunta.ativo = True
+            pergunta.atualizado_por = current_user.id
+            pergunta.atualizado_em = datetime.utcnow()
+            perguntas_reativadas += 1
+            detalhes.append({
+                "acao": "pergunta_reativada",
+                "slug": slug,
+                "pergunta_id": pergunta.id
+            })
+            logger.info(f"Pergunta reativada: id={pergunta.id}, slug={slug}")
+        else:
+            # Cria nova pergunta
+            nova_pergunta = ExtractionQuestion(
+                categoria_id=categoria_id,
+                pergunta=descricao,
+                nome_variavel_sugerido=slug,
+                tipo_sugerido=tipo,
+                opcoes_sugeridas=opcoes if opcoes else None,
+                ativo=True,
+                ordem=ordem_atual,
+                criado_por=current_user.id,
+                atualizado_por=current_user.id
+            )
+            db.add(nova_pergunta)
+            db.flush()  # Para obter o ID
+            perguntas_criadas += 1
+            ordem_atual += 1
+            detalhes.append({
+                "acao": "pergunta_criada",
+                "slug": slug,
+                "pergunta_id": nova_pergunta.id
+            })
+            logger.info(f"Pergunta criada: id={nova_pergunta.id}, slug={slug}")
+
+        # Trata variável correspondente
+        if slug in variaveis_por_slug:
+            variavel = variaveis_por_slug[slug]
+            if not variavel.ativo:
+                variavel.ativo = True
+                variavel.atualizado_por = current_user.id
+                variavel.atualizado_em = datetime.utcnow()
+                variaveis_reativadas += 1
+                detalhes.append({
+                    "acao": "variavel_reativada",
+                    "slug": slug,
+                    "variavel_id": variavel.id
+                })
+                logger.info(f"Variável reativada: id={variavel.id}, slug={slug}")
+        else:
+            # Cria nova variável
+            # Obtém o ID da pergunta (reativada ou criada)
+            if slug in perguntas_inativas_por_slug:
+                source_question_id = perguntas_inativas_por_slug[slug].id
+            else:
+                # Busca a pergunta que acabamos de criar
+                pergunta_nova = db.query(ExtractionQuestion).filter(
+                    ExtractionQuestion.categoria_id == categoria_id,
+                    ExtractionQuestion.nome_variavel_sugerido == slug,
+                    ExtractionQuestion.ativo == True
+                ).first()
+                source_question_id = pergunta_nova.id if pergunta_nova else None
+
+            nova_variavel = ExtractionVariable(
+                slug=slug,
+                label=descricao[:200] if len(descricao) > 200 else descricao,
+                descricao=descricao,
+                tipo=tipo,
+                opcoes=opcoes if opcoes else None,
+                categoria_id=categoria_id,
+                source_question_id=source_question_id,
+                ativo=True,
+                criado_por=current_user.id,
+                atualizado_por=current_user.id
+            )
+            db.add(nova_variavel)
+            variaveis_criadas += 1
+            detalhes.append({
+                "acao": "variavel_criada",
+                "slug": slug
+            })
+            logger.info(f"Variável criada: slug={slug}")
+
+    db.commit()
+
+    # Monta mensagem
+    partes = []
+    if perguntas_criadas:
+        partes.append(f"{perguntas_criadas} pergunta(s) criada(s)")
+    if perguntas_reativadas:
+        partes.append(f"{perguntas_reativadas} pergunta(s) reativada(s)")
+    if variaveis_criadas:
+        partes.append(f"{variaveis_criadas} variável(is) criada(s)")
+    if variaveis_reativadas:
+        partes.append(f"{variaveis_reativadas} variável(is) reativada(s)")
+
+    if partes:
+        mensagem = "Sincronização concluída: " + ", ".join(partes)
+    else:
+        mensagem = "Nenhuma ação necessária - tudo já estava sincronizado"
+
+    return SincronizarPerguntasJsonResponse(
+        success=True,
+        perguntas_criadas=perguntas_criadas,
+        perguntas_reativadas=perguntas_reativadas,
+        variaveis_criadas=variaveis_criadas,
+        variaveis_reativadas=variaveis_reativadas,
+        detalhes=detalhes,
         mensagem=mensagem
     )
 
