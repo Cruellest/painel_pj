@@ -34,6 +34,7 @@ IGNORED_ROUTES = {
 # Rotas que sao endpoints de performance (evita recursao)
 PERF_ROUTES = {
     "/admin/performance",
+    "/admin/api/performance",
     "/admin/api/gemini-logs",
 }
 
@@ -93,7 +94,7 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
             # Limpa contexto de IA
             ia_ctx.clear()
 
-            if metrics and metrics.total_ms > 50:  # Ignora requests muito rapidas
+            if metrics and metrics.total_ms > 10:  # Loga requests > 10ms
                 self._persist_metrics(metrics)
 
     def _should_ignore(self, route: str) -> bool:
