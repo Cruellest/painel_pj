@@ -225,12 +225,36 @@
                         </div>
                     </div>
 
-                    <div class="mt-3 flex items-center gap-4 text-xs text-gray-500">
+                    <div class="mt-3 flex items-center gap-4 text-xs text-gray-500 flex-wrap">
                         <span><i class="fas fa-robot mr-1"></i> ${escapeHtml(g.modelo_usado || 'N/A')}</span>
                         ${g.prompt_enviado ? '<span class="text-green-600"><i class="fas fa-check mr-1"></i> Prompt salvo</span>' : '<span class="text-gray-400"><i class="fas fa-times mr-1"></i> Sem prompt</span>'}
+                        ${formatarModoAtivacao(g)}
                     </div>
                 </div>
             `).join('');
+        }
+
+        function formatarModoAtivacao(g) {
+            if (!g.modo_ativacao_agente2) return '';
+            
+            const modo = g.modo_ativacao_agente2;
+            const det = g.modulos_ativados_det || 0;
+            const llm = g.modulos_ativados_llm || 0;
+            
+            if (modo === 'fast_path') {
+                return `<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded-full" title="100% determinístico, sem LLM">
+                    <i class="fas fa-bolt mr-1"></i>Fast Path (${det} módulos)
+                </span>`;
+            } else if (modo === 'misto') {
+                return `<span class="bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full" title="Modo misto: ${det} determinístico + ${llm} LLM">
+                    <i class="fas fa-random mr-1"></i>Misto (${det} det + ${llm} LLM)
+                </span>`;
+            } else if (modo === 'llm') {
+                return `<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full" title="100% LLM">
+                    <i class="fas fa-brain mr-1"></i>LLM (${llm} módulos)
+                </span>`;
+            }
+            return '';
         }
 
         async function verDetalhes(id) {

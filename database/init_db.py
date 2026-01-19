@@ -1428,6 +1428,24 @@ def run_migrations():
             db.rollback()
             print(f"[WARN] Criação de índice gemini_api_logs request_id: {e}")
 
+    # Migração: Adicionar colunas de modo de ativação do Agente 2 em geracoes_pecas
+    if table_exists('geracoes_pecas'):
+        colunas_modo_ativacao = [
+            ("modo_ativacao_agente2", "VARCHAR(20)"),
+            ("modulos_ativados_det", "INTEGER"),
+            ("modulos_ativados_llm", "INTEGER"),
+        ]
+
+        for coluna, tipo in colunas_modo_ativacao:
+            if not column_exists('geracoes_pecas', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE geracoes_pecas ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em geracoes_pecas")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} geracoes_pecas: {e}")
+
     seed_prompt_groups(db)
 
 

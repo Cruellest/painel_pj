@@ -498,7 +498,10 @@ async def processar_processo_stream(
                     resumo_consolidado=resumo_para_geracao,
                     documentos_processados=documentos_processados,
                     modelo_usado=modelo,
-                    usuario_id=current_user.id
+                    usuario_id=current_user.id,
+                    modo_ativacao_agente2=resultado_agente2.modo_ativacao,
+                    modulos_ativados_det=resultado_agente2.modulos_ativados_det,
+                    modulos_ativados_llm=resultado_agente2.modulos_ativados_llm
                 )
                 db.add(geracao)
                 db.commit()

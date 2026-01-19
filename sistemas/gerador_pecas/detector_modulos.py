@@ -55,6 +55,11 @@ class DetectorModulosIA:
         self._cache = {}
         # Cache para detecção de tipo de peça
         self._cache_tipo_peca = {}
+        
+        # Resultado da última detecção (para auditoria/histórico)
+        self.ultimo_modo_ativacao: str = "llm"  # 'fast_path', 'misto', 'llm'
+        self.ultimo_modulos_det: int = 0  # Módulos ativados por regra determinística
+        self.ultimo_modulos_llm: int = 0  # Módulos ativados por LLM
 
     async def detectar_modulos_relevantes(
         self,
@@ -153,6 +158,11 @@ class DetectorModulosIA:
 
             # Salvar no cache
             self._salvar_cache(cache_key, ids_ativados)
+            
+            # Salvar estatísticas para auditoria
+            self.ultimo_modo_ativacao = "fast_path"
+            self.ultimo_modulos_det = len(ids_ativados)
+            self.ultimo_modulos_llm = 0
 
             print(f"[AGENTE2] 🎯 FAST PATH: {len(ids_ativados)} módulos ativados: {ids_ativados}")
             print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes (FAST PATH) ==========\n")
@@ -199,10 +209,19 @@ class DetectorModulosIA:
 
         # Salvar no cache
         self._salvar_cache(cache_key, modulos_relevantes)
+        
+        # Salvar estatísticas para auditoria
+        if ids_llm:
+            self.ultimo_modo_ativacao = "misto" if ids_det else "llm"
+        else:
+            self.ultimo_modo_ativacao = "fast_path" if ids_det else "llm"
+        self.ultimo_modulos_det = len(ids_det)
+        self.ultimo_modulos_llm = len(ids_llm)
 
         print(f"[AGENTE2] 🎯 Detectados {len(modulos_relevantes)} módulos relevantes: {modulos_relevantes}")
         print(f"[AGENTE2]    - Determinísticos: {len(ids_det)}")
         print(f"[AGENTE2]    - LLM: {len(ids_llm)}")
+        print(f"[AGENTE2]    - Modo: {self.ultimo_modo_ativacao}")
         print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes ==========\n")
         return modulos_relevantes
 

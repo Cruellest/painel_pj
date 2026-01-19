@@ -440,7 +440,10 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
             resumo_consolidado=resultado.agente1.resumo_consolidado if resultado.agente1 else None,
             modelo_usado=self.modelo,
             tempo_processamento=int(resultado.tempo_total) if resultado.tempo_total else None,
-            usuario_id=usuario_id
+            usuario_id=usuario_id,
+            modo_ativacao_agente2=resultado.agente2.modo_ativacao if resultado.agente2 else None,
+            modulos_ativados_det=resultado.agente2.modulos_ativados_det if resultado.agente2 else None,
+            modulos_ativados_llm=resultado.agente2.modulos_ativados_llm if resultado.agente2 else None
         )
         
         if self.db:

@@ -34,6 +34,9 @@ class GeracaoDetalhadaResponse(BaseModel):
     resumo_consolidado: Optional[str]
     conteudo_gerado: Optional[str] = None  # Markdown string
     historico_chat: Optional[List[Any]] = None  # Histórico de edições via chat
+    modo_ativacao_agente2: Optional[str] = None  # 'fast_path', 'misto', 'llm'
+    modulos_ativados_det: Optional[int] = None  # Ativados por regra determinística
+    modulos_ativados_llm: Optional[int] = None  # Ativados por LLM
     criado_em: datetime
 
     class Config:

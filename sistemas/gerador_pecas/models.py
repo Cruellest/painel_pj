@@ -43,6 +43,14 @@ class GeracaoPeca(Base):
     # Modelo de IA usado
     modelo_usado = Column(String(100), nullable=True)
     
+    # Modo de ativação usado pelo Agente 2 (detector de módulos)
+    # Valores: 'fast_path' (100% determinístico), 'misto' (det + LLM), 'llm' (100% LLM)
+    modo_ativacao_agente2 = Column(String(20), nullable=True)
+    
+    # Quantidade de módulos ativados por tipo
+    modulos_ativados_det = Column(Integer, nullable=True)  # Ativados por regra determinística
+    modulos_ativados_llm = Column(Integer, nullable=True)  # Ativados por LLM
+    
     # Tempo de processamento (segundos)
     tempo_processamento = Column(Integer, nullable=True)
     

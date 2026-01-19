@@ -158,6 +158,10 @@ class ResultadoAgente2:
     justificativa: str = ""
     confianca: str = "media"
     erro: Optional[str] = None
+    # Modo de ativação: 'fast_path', 'misto', 'llm'
+    modo_ativacao: str = "llm"
+    modulos_ativados_det: int = 0  # Quantidade ativados por regra determinística
+    modulos_ativados_llm: int = 0  # Quantidade ativados por LLM
 
 
 @dataclass
@@ -548,6 +552,11 @@ class OrquestradorAgentes:
                 dados_extracao=dados_extracao
             )
             resultado.modulos_ids = modulos_ids
+            
+            # Captura estatísticas do modo de ativação
+            resultado.modo_ativacao = self.agente2.ultimo_modo_ativacao
+            resultado.modulos_ativados_det = self.agente2.ultimo_modulos_det
+            resultado.modulos_ativados_llm = self.agente2.ultimo_modulos_llm
             
             # Carrega módulos BASE (sempre ativos)
             modulos_base = self.db.query(PromptModulo).filter(
