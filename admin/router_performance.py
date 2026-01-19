@@ -22,7 +22,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
 from database.connection import get_db
-from auth.dependencies import require_admin
+from auth.dependencies import require_admin, get_optional_user
 from auth.models import User
 from admin.models_performance import PerformanceLog, RouteSystemMap
 
@@ -572,7 +572,9 @@ class FrontendMetricsRequest(BaseModel):
 @router.post("/frontend-metrics")
 async def receive_frontend_metrics(
     metrics: FrontendMetricsRequest,
-    db: Session = Depends(get_db)
+    request: "Request",
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user)
 ):
     """
     Recebe métricas de performance coletadas no frontend.
@@ -589,10 +591,17 @@ async def receive_frontend_metrics(
     import logging
     logger = logging.getLogger(__name__)
 
+    # Métricas de frontend requerem usuário autenticado (admin_user_id é NOT NULL)
+    if not current_user:
+        logger.debug("[PERF-FRONTEND] Métrica ignorada: usuário não autenticado")
+        return {"success": False, "message": "User not authenticated"}
+
     try:
         # Cria log de performance especial para métricas do frontend
         log = PerformanceLog(
             request_id=f"fe-{datetime.utcnow().strftime('%H%M%S%f')[:10]}",
+            admin_user_id=current_user.id,
+            admin_username=current_user.username,
             route=metrics.route,
             method="FRONTEND",
             action=metrics.action,

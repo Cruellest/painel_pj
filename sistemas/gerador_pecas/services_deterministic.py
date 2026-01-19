@@ -951,10 +951,19 @@ class DeterministicRuleEvaluator:
         if isinstance(a, str) and isinstance(b, str):
             return a.lower().strip() == b.lower().strip()
 
+        # Normaliza 1/0 para booleanos (compatibilidade com regras antigas)
+        # Isso garante que value:1 seja tratado como value:true
+        if isinstance(b, int) and b in (0, 1):
+            b = bool(b)
+        if isinstance(a, int) and a in (0, 1) and isinstance(b, bool):
+            a = bool(a)
+
         # Normaliza booleanos
         if isinstance(b, bool):
             if isinstance(a, str):
                 return a.lower() in ("true", "sim", "yes", "1") if b else a.lower() in ("false", "não", "nao", "no", "0")
+            if isinstance(a, bool):
+                return a == b
 
         return a == b
 
