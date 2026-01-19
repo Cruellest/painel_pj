@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- v2 - URLs corrigidas para /admin/api/performance/* -->
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -552,10 +553,20 @@
     async function loadSystemSummary() {
         const hours = document.getElementById('filterHours').value;
         try {
+            console.log('[Performance] Carregando summary...', { hours, token: token ? 'presente' : 'ausente' });
             const response = await fetch(`/admin/api/performance/summary?hours=${hours}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[Performance] Erro na API:', response.status, errorText);
+                showNotification(`Erro ao carregar dados: ${response.status}`, 'error');
+                return;
+            }
+
             const data = await response.json();
+            console.log('[Performance] Summary carregado:', data);
 
             // Atualiza cards
             document.getElementById('count-llm').textContent = data.bottleneck_summary.LLM || 0;
@@ -978,10 +989,20 @@
     async function loadGeminiSummary() {
         const hours = document.getElementById('geminiFilterHours').value;
         try {
+            console.log('[Gemini] Carregando summary...', { hours, token: token ? 'presente' : 'ausente' });
             const response = await fetch(`/admin/api/gemini-logs/summary?hours=${hours}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[Gemini] Erro na API:', response.status, errorText);
+                showNotification(`Erro ao carregar dados Gemini: ${response.status}`, 'error');
+                return;
+            }
+
             const data = await response.json();
+            console.log('[Gemini] Summary carregado:', data);
             const stats = data.stats || {};
 
             // Cards Linha 1 - Principais
