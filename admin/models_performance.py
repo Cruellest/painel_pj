@@ -96,6 +96,7 @@ class PerformanceLog(Base):
     status = Column(String(20), nullable=False, default='ok')  # ok, error
 
     # Tempos (ms) - FOCO DO MVP
+    duration_ms = Column(Float, nullable=False, default=0)  # Tempo total (campo legado)
     total_ms = Column(Float, nullable=True)  # Tempo total da request
     llm_request_ms = Column(Float, nullable=True)  # Tempo chamando LLM
     json_parse_ms = Column(Float, nullable=True)  # Tempo parse/validacao JSON

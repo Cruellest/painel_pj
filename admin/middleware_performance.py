@@ -173,6 +173,7 @@ class PerformanceMiddleware(BaseHTTPMiddleware):
                     layer='middleware',
                     action=metrics.action,
                     status=metrics.status,
+                    duration_ms=metrics.total_ms or 0,  # Campo legado obrigatório
                     total_ms=metrics.total_ms,
                     llm_request_ms=metrics.llm_request_ms if metrics.llm_request_ms > 0 else None,
                     json_parse_ms=metrics.json_parse_ms if metrics.json_parse_ms > 0 else None,
