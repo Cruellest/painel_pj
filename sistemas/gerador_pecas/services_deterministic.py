@@ -398,7 +398,14 @@ REGRAS CRÍTICAS:
 3. No CASO 2, liste TODAS as variáveis que precisariam ser criadas para atender a condição
 4. A "mensagem" deve ser explicativa para o usuário entender o problema
 5. Retorne APENAS JSON válido, sem texto adicional
-6. Variáveis devem estar em snake_case"""
+6. Variáveis devem estar em snake_case
+7. IMPORTANTE: Para variáveis booleanas, use SEMPRE os valores literais true ou false (minúsculos, sem aspas)
+   - CORRETO: "value": true
+   - CORRETO: "value": false
+   - ERRADO: "value": 1
+   - ERRADO: "value": 0
+   - ERRADO: "value": "true"
+   - ERRADO: "value": "false" """
 
     def _buscar_variaveis_disponiveis(self) -> List[Dict]:
         """
