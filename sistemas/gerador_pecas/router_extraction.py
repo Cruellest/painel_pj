@@ -2329,11 +2329,17 @@ async def verificar_consistencia_json_perguntas(
 
     Detecta:
     - Campos no JSON que não têm perguntas ativas correspondentes
-    - Perguntas ativas que não estão no JSON
+    - Perguntas ativas que não estão no JSON (apenas informativo)
+
+    IMPORTANTE: O alerta de "inconsistência" só aparece quando há ação necessária
+    na sincronização (campos do JSON sem pergunta). Perguntas extras são apenas
+    um aviso informativo, pois a sincronização não as remove.
 
     Retorna informações para decidir se é necessário sincronizar.
     """
     import json
+
+    logger.info(f"[CONSISTENCIA] Verificando categoria_id={categoria_id}")
 
     # Verifica se a categoria existe
     categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == categoria_id).first()
@@ -2392,6 +2398,8 @@ async def verificar_consistencia_json_perguntas(
             ))
 
     # Detecta perguntas ativas que não estão no JSON
+    # NOTA: Isso é apenas informativo. A sincronização JSON→Perguntas não resolve isso,
+    # pois ela só cria perguntas para campos do JSON, não remove perguntas extras.
     slugs_no_json = set(schema_json.keys())
     perguntas_sem_variavel_json = []
     for p in perguntas_ativas:
@@ -2403,17 +2411,37 @@ async def verificar_consistencia_json_perguntas(
             })
 
     # Determina consistência e mensagem
-    consistente = len(variaveis_sem_pergunta) == 0 and len(perguntas_sem_variavel_json) == 0
+    # IMPORTANTE: Consistência = campos do JSON com perguntas correspondentes
+    # Perguntas extras (com slug fora do JSON) são apenas um aviso informativo,
+    # pois a sincronização não as remove (seria destrutivo).
+    # O alerta de inconsistência só aparece se há AÇÃO NECESSÁRIA na sincronização.
+    consistente = len(variaveis_sem_pergunta) == 0
 
     if consistente:
-        mensagem = "JSON e perguntas estão sincronizados"
+        if perguntas_sem_variavel_json:
+            # Há perguntas extras, mas não é "inconsistência" que precisa sincronização
+            mensagem = f"JSON sincronizado. Aviso: {len(perguntas_sem_variavel_json)} pergunta(s) com slug fora do JSON (pode ser intencional)"
+        else:
+            mensagem = "JSON e perguntas estão sincronizados"
     else:
         partes = []
         if variaveis_sem_pergunta:
             partes.append(f"{len(variaveis_sem_pergunta)} variável(is) no JSON sem pergunta")
-        if perguntas_sem_variavel_json:
-            partes.append(f"{len(perguntas_sem_variavel_json)} pergunta(s) sem variável no JSON")
         mensagem = "Inconsistência detectada: " + ", ".join(partes)
+
+    # Log do resultado para depuração
+    logger.info(
+        f"[CONSISTENCIA] categoria_id={categoria_id}, consistente={consistente}, "
+        f"variaveis_sem_pergunta={len(variaveis_sem_pergunta)}, "
+        f"perguntas_fora_json={len(perguntas_sem_variavel_json)}, "
+        f"mensagem='{mensagem}'"
+    )
+    if variaveis_sem_pergunta:
+        slugs = [v.slug for v in variaveis_sem_pergunta]
+        logger.info(f"[CONSISTENCIA] Slugs sem pergunta: {slugs}")
+    if perguntas_sem_variavel_json:
+        slugs = [p['slug'] for p in perguntas_sem_variavel_json]
+        logger.info(f"[CONSISTENCIA] Perguntas com slug fora do JSON (info): {slugs}")
 
     return ConsistenciaJsonResponse(
         consistente=consistente,
