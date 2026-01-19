@@ -145,6 +145,9 @@
                     <button onclick="showConfigTab('prestacao_contas')" id="tab-prestacao_contas" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
                         <i class="fas fa-file-invoice-dollar mr-1"></i> Prestação de Contas
                     </button>
+                    <button onclick="showConfigTab('sistemas_acessorios')" id="tab-sistemas_acessorios" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-cogs mr-1"></i> Sistemas Acessórios
+                    </button>
                 </nav>
             </div>
             
@@ -702,6 +705,101 @@
                     >
                         <i class="fas fa-save"></i>
                         Salvar Configurações Prestação de Contas
+                    </button>
+                </div>
+            </div>
+
+            <!-- Config Sistemas Acessórios -->
+            <div id="config-sistemas_acessorios" class="config-panel hidden">
+                <div class="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p class="text-sm text-amber-800">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        <strong>Sistemas Acessórios</strong> são agentes de IA auxiliares com escopo técnico bem delimitado.
+                        Eles não compartilham configuração com os agentes jurídicos principais.
+                    </p>
+                </div>
+
+                <!-- Gerador de Regras Determinísticas -->
+                <div class="border border-gray-200 rounded-lg p-4 mb-6 bg-white">
+                    <h4 class="text-md font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-code-branch text-indigo-500"></i>
+                        Gerador de Regras Determinísticas via IA
+                    </h4>
+                    <p class="text-xs text-gray-500 mb-4">
+                        Converte linguagem natural em regras booleanas determinísticas. Acessado em:
+                        <code class="bg-gray-100 px-1 rounded">/admin/prompts-modulos → Editar Módulo → Gerar Regra via IA</code>
+                    </p>
+
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <!-- Modelo -->
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-robot text-indigo-500 mr-1"></i>
+                                Modelo
+                            </label>
+                            <input
+                                type="text"
+                                id="sistemas_acessorios-gerador_regras_modelo"
+                                placeholder="gemini-3-flash-preview"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                            >
+                            <p class="text-xs text-gray-400 mt-1">Modelo para converter texto → regra JSON</p>
+                        </div>
+
+                        <!-- Thinking Level -->
+                        <div class="border border-indigo-200 rounded-lg p-3 bg-indigo-50">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-brain text-indigo-500 mr-1"></i>
+                                Nível de Raciocínio
+                            </label>
+                            <select
+                                id="sistemas_acessorios-gerador_regras_thinking_level"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                            >
+                                <option value="low">Low - Direto e objetivo (Recomendado)</option>
+                                <option value="minimal">Minimal - Quase sem thinking</option>
+                                <option value="medium">Medium - Balanceado</option>
+                                <option value="high">High - Máximo raciocínio</option>
+                            </select>
+                            <p class="text-xs text-gray-400 mt-1">LOW recomendado: tarefa mecânica e lógica</p>
+                        </div>
+
+                        <!-- Temperatura -->
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-thermometer-half text-orange-500 mr-1"></i>
+                                Temperatura
+                            </label>
+                            <input
+                                type="number"
+                                id="sistemas_acessorios-gerador_regras_temperatura"
+                                min="0" max="1" step="0.1"
+                                placeholder="0.1"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                            >
+                            <p class="text-xs text-gray-400 mt-1">0.1 recomendado: máximo determinismo</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 p-2 bg-gray-50 rounded text-xs text-gray-600">
+                        <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>
+                        <strong>Comportamento esperado:</strong> Pensamento curto e direto, sem inferência jurídica, apenas identificar variáveis e montar condições lógicas.
+                    </div>
+                </div>
+
+                <!-- Espaço para futuros sistemas acessórios -->
+                <div class="border border-dashed border-gray-300 rounded-lg p-4 text-center text-gray-400">
+                    <i class="fas fa-plus-circle text-2xl mb-2"></i>
+                    <p class="text-sm">Outros sistemas acessórios podem ser adicionados aqui futuramente</p>
+                </div>
+
+                <div class="mt-4 flex justify-end">
+                    <button
+                        onclick="salvarConfigSistema('sistemas_acessorios')"
+                        class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                    >
+                        <i class="fas fa-save"></i>
+                        Salvar Configurações Sistemas Acessórios
                     </button>
                 </div>
             </div>
@@ -1271,7 +1369,7 @@
                     const valor = input.value.trim();
 
                     // Salva se tem valor OU se é thinking_level (vazio significa "default")
-                    if (valor || chave === 'thinking_level') {
+                    if (valor || chave === 'thinking_level' || chave.includes('thinking_level')) {
                         await fetch(`${API_URL}/admin/config-ia/upsert`, {
                             method: 'POST',
                             headers: {

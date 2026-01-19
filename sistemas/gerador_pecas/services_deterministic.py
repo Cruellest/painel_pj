@@ -22,8 +22,35 @@ from .models_extraction import ExtractionVariable, PromptVariableUsage
 logger = logging.getLogger(__name__)
 
 
-# Modelo obrigatório conforme especificação
-GEMINI_MODEL = "gemini-3-flash-preview"
+# Modelo padrão (pode ser sobrescrito por config do banco)
+GEMINI_MODEL_DEFAULT = "gemini-3-flash-preview"
+
+
+def _get_config_sistemas_acessorios(db: Session, chave: str, default: Any = None) -> Any:
+    """
+    Busca configuração do sistema 'sistemas_acessorios' no banco.
+
+    Args:
+        db: Sessão do banco
+        chave: Nome da configuração (ex: 'gerador_regras_modelo')
+        default: Valor padrão se não encontrado
+
+    Returns:
+        Valor da configuração ou default
+    """
+    try:
+        from admin.models import ConfiguracaoIA
+        config = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "sistemas_acessorios",
+            ConfiguracaoIA.chave == chave
+        ).first()
+
+        if config and config.valor:
+            return config.valor
+        return default
+    except Exception as e:
+        logger.warning(f"Erro ao buscar config '{chave}': {e}")
+        return default
 
 
 class DeterministicRuleGenerator:
@@ -79,18 +106,33 @@ class DeterministicRuleGenerator:
             # 3. Chama o Gemini
             logger.info(f"Gerando regra determinística: '{condicao_texto[:100]}...'")
 
-            # Usar thinking_level="high" para dar mais capacidade de raciocínio à IA
-            # Necessário porque a IA precisa processar 170+ variáveis e encontrar as corretas
-            thinking_level = "high"
-            
-            logger.info(f"[REGRA-DETERMINISTICO] Usando thinking_level={thinking_level}, modelo={GEMINI_MODEL}")
+            # Busca configurações do banco (sistema "sistemas_acessorios")
+            # Se não houver config, usa valores padrão conservadores
+            modelo = _get_config_sistemas_acessorios(
+                self.db, "gerador_regras_modelo", GEMINI_MODEL_DEFAULT
+            )
+            thinking_level = _get_config_sistemas_acessorios(
+                self.db, "gerador_regras_thinking_level", "low"  # Padrão: LOW para ser direto
+            )
+            temperatura_str = _get_config_sistemas_acessorios(
+                self.db, "gerador_regras_temperatura", "0.1"
+            )
+            try:
+                temperatura = float(temperatura_str)
+            except (ValueError, TypeError):
+                temperatura = 0.1
+
+            logger.info(
+                f"[REGRA-DETERMINISTICO] Config: modelo={modelo}, "
+                f"thinking_level={thinking_level}, temperatura={temperatura}"
+            )
 
             response = await gemini_service.generate(
                 prompt=prompt,
                 system_prompt=self._get_system_prompt(),
-                model=GEMINI_MODEL,
-                temperature=0.1,
-                thinking_level=thinking_level,
+                model=modelo,
+                temperature=temperatura,
+                thinking_level=thinking_level if thinking_level else None,
                 context={
                     "sistema": "extracao",
                     "modulo": "regras_deterministicas",
