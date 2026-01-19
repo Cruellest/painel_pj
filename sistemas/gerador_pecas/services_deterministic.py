@@ -79,9 +79,9 @@ class DeterministicRuleGenerator:
             # 3. Chama o Gemini
             logger.info(f"Gerando regra determinística: '{condicao_texto[:100]}...'")
 
-            # FORÇAR thinking_level="low" para esta chamada específica
-            # Isso reduz drasticamente tokens e latência (~80%) para tarefas de classificação JSON
-            thinking_level = "low"
+            # Usar thinking_level="high" para dar mais capacidade de raciocínio à IA
+            # Necessário porque a IA precisa processar 170+ variáveis e encontrar as corretas
+            thinking_level = "high"
             
             logger.info(f"[REGRA-DETERMINISTICO] Usando thinking_level={thinking_level}, modelo={GEMINI_MODEL}")
 

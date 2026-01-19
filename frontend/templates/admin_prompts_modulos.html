@@ -2536,26 +2536,31 @@
             }
         }
 
-        // Abre dropdown de assuntos
+        // Abre/fecha dropdown de assuntos (toggle)
         function abrirAssuntoDropdown(event) {
             if (event) event.stopPropagation();
+
+            if (assuntoDropdownAberto) {
+                fecharAssuntoDropdown();
+                return;
+            }
+
             const dropdown = document.getElementById('filtro-assunto-dropdown');
             const chevron = document.getElementById('filtro-assunto-chevron');
             const btnLimpar = document.getElementById('limpar-assunto');
 
-            if (!assuntoDropdownAberto) {
-                dropdown.classList.remove('hidden');
-                chevron.classList.add('hidden');
-                assuntoDropdownAberto = true;
+            dropdown.classList.remove('hidden');
+            chevron.classList.add('hidden');
+            btnLimpar.classList.add('hidden'); // Esconde botão limpar enquanto dropdown está aberto
+            assuntoDropdownAberto = true;
 
-                // Limpa busca e renderiza
-                const buscaInput = document.getElementById('filtro-assunto-busca');
-                if (buscaInput) {
-                    buscaInput.value = '';
-                    buscaInput.focus();
-                }
-                renderizarAssuntosFiltro();
+            // Limpa busca e renderiza
+            const buscaInput = document.getElementById('filtro-assunto-busca');
+            if (buscaInput) {
+                buscaInput.value = '';
+                setTimeout(() => buscaInput.focus(), 10);
             }
+            renderizarAssuntosFiltro();
         }
 
         // Fecha dropdown de assuntos e aplica filtro
