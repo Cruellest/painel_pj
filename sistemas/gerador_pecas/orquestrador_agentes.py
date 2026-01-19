@@ -31,6 +31,20 @@ MODELO_AGENTE1_PADRAO = "gemini-3-flash-preview"
 MODELO_AGENTE2_PADRAO = "gemini-3-flash-preview"
 MODELO_AGENTE3_PADRAO = "gemini-3-pro-preview"
 
+# Ordem padrão das categorias jurídicas (fallback quando não há configuração no banco)
+# Ordem lógica para peças de defesa: Preliminar → Mérito → Eventualidade → Honorários
+ORDEM_CATEGORIAS_PADRAO = {
+    "Preliminar": 0,
+    "Mérito": 1,
+    "Merito": 1,  # Variante sem acento
+    "Eventualidade": 2,
+    "honorarios": 3,
+    "Honorários": 3,  # Variante com acento
+    "Honorarios": 3,  # Variante sem acento
+    "Sem Categoria": 99,
+    "Outros": 100,
+}
+
 # NOTA: Templates de Formatação (TemplateFormatacao) foram removidos do prompt da IA.
 # Agora a peça é gerada diretamente em Markdown.
 # Os templates serão usados futuramente para conversão MD -> DOCX.
@@ -503,13 +517,28 @@ class OrquestradorAgentes:
                             modulos_por_categoria[cat] = []
                         modulos_por_categoria[cat].append(modulo)
 
-                    # Ordena categorias: primeiro as configuradas (por ordem), depois as não configuradas (alfabético)
+                    # Ordena categorias usando:
+                    # 1. Configuração do banco (se existir)
+                    # 2. Ordem padrão jurídica (Preliminar > Mérito > Eventualidade > Honorários)
+                    # 3. Alfabético como último fallback
                     def get_categoria_ordem(cat_nome):
+                        # Prioridade 1: Configuração explícita do banco
                         if cat_nome in ordem_categorias:
                             return (0, ordem_categorias[cat_nome], cat_nome)
-                        return (1, 0, cat_nome)  # Não configuradas vão para o final, ordenadas alfabeticamente
+                        # Prioridade 2: Ordem padrão jurídica (fallback)
+                        if cat_nome in ORDEM_CATEGORIAS_PADRAO:
+                            return (1, ORDEM_CATEGORIAS_PADRAO[cat_nome], cat_nome)
+                        # Prioridade 3: Categorias desconhecidas vão para o final, ordenadas alfabeticamente
+                        return (2, 0, cat_nome)
 
                     categorias_ordenadas = sorted(modulos_por_categoria.keys(), key=get_categoria_ordem)
+
+                    # Log para debug da ordem das categorias
+                    print(f"   [ORDEM] Categorias ordenadas: {categorias_ordenadas}")
+                    if ordem_categorias:
+                        print(f"   [ORDEM] Usando configuração do banco: {ordem_categorias}")
+                    else:
+                        print(f"   [ORDEM] Usando ordem padrão (fallback): ORDEM_CATEGORIAS_PADRAO")
 
                     # Monta prompt agrupado por categoria com headers
                     partes_conteudo = ["## ARGUMENTOS E TESES APLICÁVEIS\n"]
