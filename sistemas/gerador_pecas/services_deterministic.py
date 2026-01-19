@@ -785,15 +785,14 @@ class DeterministicRuleEvaluator:
                 )
 
         # REGRA 2: Se valor_atual é uma lista, aplica lógica OR
-        # Se pelo menos um valor na lista satisfaz a condição, considera True
+        # Se pelo menos um valor TRUE na lista → variável = TRUE
+        # Depois compara normalmente com valor_esperado
         if isinstance(valor_atual, list):
-            # Para booleanos: se qualquer valor for True, considera True
-            if valor_esperado in (True, "true"):
-                # Verifica se ALGUM valor na lista é True
+            # Para booleanos: consolida a lista usando lógica OR
+            # [false, false, true] → true (pelo menos 1 true)
+            # [false, false, false] → false (nenhum true)
+            if valor_esperado in (True, False, "true", "false"):
                 valor_atual = any(self._normalizar_booleano(v) for v in valor_atual)
-            elif valor_esperado in (False, "false"):
-                # Verifica se TODOS os valores na lista são False (nenhum True)
-                valor_atual = not any(self._normalizar_booleano(v) for v in valor_atual)
             else:
                 # Para outros tipos: verifica se algum valor na lista satisfaz
                 for v in valor_atual:
