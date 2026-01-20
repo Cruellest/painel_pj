@@ -2297,23 +2297,25 @@ qual o valor da causa?"></textarea>
                 return;
             }
 
-            // Se a categoria já existe, primeiro salva as perguntas
-            if (categoriaId) {
-                await salvarPerguntasNoServidor(categoriaId);
-            } else {
+            if (!categoriaId) {
                 alert('Salve a categoria primeiro para poder gerar o JSON com IA');
                 return;
             }
 
+            // IMPORTANTE: Ativa feedback visual IMEDIATAMENTE ao clicar
             const btn = document.getElementById('btn-gerar-ia');
             const status = document.getElementById('status-geracao');
 
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Gerando...';
-            status.textContent = 'Aguarde, a IA está analisando as perguntas...';
-            status.className = 'text-sm text-blue-500';
+            status.textContent = 'Salvando perguntas...';
+            status.className = 'text-sm text-blue-500 animate-pulse';
 
             try {
+                // Primeiro salva as perguntas (já com feedback visual ativo)
+                await salvarPerguntasNoServidor(categoriaId);
+                status.textContent = 'Aguarde, a IA está analisando as perguntas...';
+
                 const response = await fetch(`${API_EXTRACTION}/categorias/${categoriaId}/gerar-schema`, {
                     method: 'POST',
                     headers: getHeaders()
@@ -2353,7 +2355,7 @@ qual o valor da causa?"></textarea>
                 status.className = 'text-sm text-red-500';
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-magic mr-2"></i>Gerar JSON com IA';
+                btn.innerHTML = '<i class="fas fa-robot mr-2"></i>Gerar JSON com IA';
             }
         }
 
@@ -2361,23 +2363,25 @@ qual o valor da causa?"></textarea>
         async function atualizarJSON() {
             const categoriaId = document.getElementById('categoria-id').value;
 
-            // Se a categoria já existe, primeiro salva as perguntas
-            if (categoriaId) {
-                await salvarPerguntasNoServidor(categoriaId);
-            } else {
+            if (!categoriaId) {
                 alert('Salve a categoria primeiro para poder atualizar o JSON');
                 return;
             }
 
+            // IMPORTANTE: Ativa feedback visual IMEDIATAMENTE ao clicar
             const btn = document.getElementById('btn-atualizar-json');
             const status = document.getElementById('status-geracao');
 
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Atualizando...';
-            status.textContent = 'Sincronizando JSON com as perguntas...';
-            status.className = 'text-sm text-blue-500';
+            status.textContent = 'Salvando perguntas...';
+            status.className = 'text-sm text-blue-500 animate-pulse';
 
             try {
+                // Primeiro salva as perguntas (já com feedback visual ativo)
+                await salvarPerguntasNoServidor(categoriaId);
+                status.textContent = 'Sincronizando JSON com as perguntas...';
+
                 const response = await fetch(`${API_EXTRACTION}/categorias/${categoriaId}/sincronizar-json`, {
                     method: 'POST',
                     headers: getHeaders()
