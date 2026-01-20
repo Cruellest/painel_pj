@@ -68,10 +68,11 @@ def create_tables():
 
     # Se todas as tabelas obrigatórias existem, não precisa criar
     if required_tables.issubset(existing_tables):
-        print("[OK] Tabelas criadas com sucesso!")
+        print("[OK] Todas as tabelas obrigatórias já existem!")
         return
 
     # Cria tabelas faltantes (create_all só cria as que não existem)
+    print(f"[INFO] Tabelas faltantes: {required_tables - existing_tables}")
     Base.metadata.create_all(bind=engine)
     print("[OK] Tabelas criadas com sucesso!")
 
@@ -1517,7 +1518,13 @@ def run_migrations():
             print("[OK] Migração: índices de regra_deterministica_tipo_peca criados")
         except Exception as e:
             db.rollback()
-            print(f"[WARN] Migração regra_deterministica_tipo_peca: {e}")
+            print(f"[ERRO] Migração regra_deterministica_tipo_peca FALHOU: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Verificação extra: garante que a tabela existe
+    if not table_exists('regra_deterministica_tipo_peca'):
+        print("[ERRO CRÍTICO] Tabela regra_deterministica_tipo_peca NÃO EXISTE após migração!")
 
     seed_prompt_groups(db)
 
