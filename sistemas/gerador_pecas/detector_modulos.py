@@ -129,13 +129,27 @@ class DetectorModulosIA:
         variaveis = dados_extracao.copy() if dados_extracao else {}
 
         if dados_processo:
-            resolver = ProcessVariableResolver(dados_processo)
+            # dados_processo pode ser ResultadoAnalise ou DadosProcesso
+            # Se for ResultadoAnalise, extrair o DadosProcesso interno
+            dados_proc_real = dados_processo
+            if hasattr(dados_processo, 'dados_processo') and dados_processo.dados_processo:
+                dados_proc_real = dados_processo.dados_processo
+                print(f"[AGENTE2] Extraído DadosProcesso de ResultadoAnalise")
+
+            resolver = ProcessVariableResolver(dados_proc_real)
             variaveis_processo = resolver.resolver_todas()
             # Merge: variáveis do processo têm precedência
             variaveis.update(variaveis_processo)
             print(f"[AGENTE2] Variáveis derivadas do processo: {variaveis_processo}")
 
         print(f"[AGENTE2] Total de variáveis disponíveis: {len(variaveis)}")
+        if variaveis:
+            # Log algumas variáveis importantes para debug
+            vars_importantes = ['valor_causa_inferior_60sm', 'processo_ajuizado_apos_2024_04_19',
+                               'peticao_inicial_uniao_polo_passivo', 'pareceres_analisou_cirurgia']
+            for var in vars_importantes:
+                if var in variaveis:
+                    print(f"[AGENTE2]   - {var}: {variaveis[var]}")
 
         # ========================================
         # SEPARAÇÃO: DETERMINÍSTICOS vs LLM
