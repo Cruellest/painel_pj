@@ -908,7 +908,7 @@ async def chamar_llm_async(
     prompt: str,
     system_prompt: str = "",
     modelo: str = MODELO_PADRAO,
-    max_tokens: int = 4096,
+    max_tokens: int = 12000,  # Aumentado para suportar schemas JSON com muitos campos
     temperature: float = 0.3
 ) -> str:
     """Chama modelo Gemini diretamente (async)"""
@@ -933,7 +933,7 @@ async def chamar_llm_com_imagens_async(
     imagens_base64: List[str],
     system_prompt: str = "",
     modelo: str = MODELO_PADRAO,
-    max_tokens: int = 4096,
+    max_tokens: int = 12000,  # Aumentado para suportar schemas JSON com muitos campos
     temperature: float = 0.3
 ) -> str:
     """Chama modelo Gemini com imagens (async) - para PDFs digitalizados"""
