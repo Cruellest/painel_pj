@@ -28,7 +28,7 @@ from utils.audit import (
 )
 
 # SECURITY: Política de senhas
-from utils.password_policy import get_password_requirements
+from utils.password_policy import get_password_requirements, check_password_strength
 
 # SECURITY: Token blacklist para revogação
 from utils.token_blacklist import revoke_token
@@ -125,20 +125,59 @@ async def get_me(current_user: User = Depends(get_current_active_user)):
     return current_user
 
 
+from pydantic import BaseModel
+
+
+class ChangePasswordRequestSimple(BaseModel):
+    """
+    Request de troca de senha SEM validação automática de força.
+
+    A validação é feita manualmente no endpoint para retornar mensagens mais amigáveis.
+    """
+    current_password: str
+    new_password: str
+
+
 @router.post("/change-password")
 @limiter.limit(LIMITS["login"])  # SECURITY: 5 tentativas/minuto por IP
 async def change_password(
     request: Request,  # Necessário para rate limiting
-    password_request: ChangePasswordRequest,
+    password_request: ChangePasswordRequestSimple,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """
     Altera a senha do usuário autenticado.
-    
+
     - **current_password**: Senha atual
-    - **new_password**: Nova senha (mínimo 4 caracteres)
+    - **new_password**: Nova senha (mínimo 8 caracteres, com complexidade)
+
+    Retorna mensagens de erro específicas para facilitar correção pelo usuário.
     """
+    # Verifica se campos estão preenchidos
+    if not password_request.current_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Senha atual é obrigatória"
+        )
+
+    if not password_request.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nova senha é obrigatória"
+        )
+
+    # SECURITY: Valida força da nova senha ANTES de verificar senha atual
+    # Isso evita que o usuário descubra se a senha atual está correta
+    # apenas enviando senhas fracas repetidamente
+    is_valid, errors = check_password_strength(password_request.new_password)
+    if not is_valid:
+        # Retorna o PRIMEIRO erro para uma mensagem clara
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=errors[0] if errors else "A nova senha não atende aos requisitos de segurança"
+        )
+
     # Verifica senha atual
     if not verify_password(password_request.current_password, current_user.hashed_password):
         raise HTTPException(
