@@ -393,13 +393,12 @@ async def listar_modulos(
             query = query.filter(PromptModulo.modo_ativacao == 'deterministic')
 
     # Filtro por subcategorias (assuntos) - lógica OR (qualquer um dos assuntos selecionados)
+    # NOTA: Usa subquery para evitar DISTINCT em colunas JSON (PostgreSQL não suporta)
     if subcategoria_ids:
-        query = query.join(
-            prompt_modulo_subcategorias,
-            PromptModulo.id == prompt_modulo_subcategorias.c.modulo_id
-        ).filter(
+        subquery_ids = db.query(prompt_modulo_subcategorias.c.modulo_id).filter(
             prompt_modulo_subcategorias.c.subcategoria_id.in_(subcategoria_ids)
-        ).distinct()
+        ).distinct().subquery()
+        query = query.filter(PromptModulo.id.in_(subquery_ids))
 
     if busca:
         busca_like = f"%{busca}%"
