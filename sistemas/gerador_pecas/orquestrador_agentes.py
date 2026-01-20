@@ -49,16 +49,19 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
         Dicionário {slug: valor} com variáveis consolidadas
     """
     dados_consolidados = {}
-    
+
     if not resultado_agente1.dados_brutos:
+        print("[EXTRAÇÃO] AVISO: dados_brutos é None - não há documentos para extrair")
         return dados_consolidados
-    
+
     documentos = resultado_agente1.dados_brutos.documentos_com_resumo()
-    
+    print(f"[EXTRAÇÃO] Total de documentos com resumo: {len(documentos)}")
+
     for doc in documentos:
         if not doc.resumo:
+            print(f"[EXTRAÇÃO] Doc '{doc.categoria_nome}': resumo vazio, pulando")
             continue
-        
+
         # Tenta parsear o resumo como JSON
         try:
             # Remove possíveis marcadores de código markdown
@@ -70,12 +73,14 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
             if resumo_limpo.endswith('```'):
                 resumo_limpo = resumo_limpo[:-3]
             resumo_limpo = resumo_limpo.strip()
-            
+
             # Se não parece JSON, pula
             if not resumo_limpo.startswith('{'):
+                print(f"[EXTRAÇÃO] Doc '{doc.categoria_nome}': não é JSON (inicia com: '{resumo_limpo[:50]}...')")
                 continue
-                
+
             dados_doc = json.loads(resumo_limpo)
+            print(f"[EXTRAÇÃO] Doc '{doc.categoria_nome}': JSON parseado com {len(dados_doc)} campos")
             
             if not isinstance(dados_doc, dict):
                 continue
@@ -111,10 +116,11 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
                         else:
                             dados_consolidados[slug] = [valor_existente, valor]
                             
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
             # Resumo não é JSON válido, ignora
+            print(f"[EXTRAÇÃO] Doc '{doc.categoria_nome}': erro ao parsear JSON - {type(e).__name__}: {str(e)[:100]}")
             continue
-    
+
     if dados_consolidados:
         print(f"[EXTRAÇÃO] Variáveis extraídas dos resumos JSON: {len(dados_consolidados)}")
         # Log de algumas variáveis para debug
@@ -122,7 +128,9 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
             print(f"   - {slug}: {valor}")
         if len(dados_consolidados) > 5:
             print(f"   ... e mais {len(dados_consolidados) - 5} variáveis")
-    
+    else:
+        print("[EXTRAÇÃO] AVISO: Nenhuma variável extraída dos resumos JSON!")
+
     return dados_consolidados
 
 
