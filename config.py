@@ -14,11 +14,26 @@ load_dotenv()
 # ==================================================
 # CONFIGURAÇÕES DO BANCO DE DADOS
 # ==================================================
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./portal.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "ERRO FATAL: DATABASE_URL não definida! "
+        "Configure a variável de ambiente DATABASE_URL com a URL do PostgreSQL. "
+        "Exemplo: postgresql://user:password@localhost:5432/portal_pge"
+    )
 
 # Railway usa postgres:// mas SQLAlchemy precisa de postgresql://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Valida que é PostgreSQL
+if not DATABASE_URL.startswith("postgresql://"):
+    raise RuntimeError(
+        f"ERRO FATAL: DATABASE_URL deve ser PostgreSQL! "
+        f"URL atual começa com: {DATABASE_URL[:20]}... "
+        f"Use o formato: postgresql://user:password@host:port/database"
+    )
 
 # ==================================================
 # CONFIGURAÇÕES DE AUTENTICAÇÃO JWT

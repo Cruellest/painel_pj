@@ -2,15 +2,7 @@
 
 Este documento descreve como configurar o ambiente de desenvolvimento local usando PostgreSQL no Railway.
 
-## Por que PostgreSQL (e nao SQLite)?
-
-O ambiente local usava SQLite como fallback, causando:
-- Divergencias de comportamento entre dev e prod
-- Bugs que so apareciam em producao
-- Queries SQL incompativeis
-- Comportamento diferente de tipos JSON, timestamps, etc.
-
-Agora usamos **PostgreSQL em ambos os ambientes** (dev e prod).
+**IMPORTANTE:** PostgreSQL e obrigatorio. O sistema nao suporta mais SQLite.
 
 ---
 

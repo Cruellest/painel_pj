@@ -3,8 +3,7 @@
 ## Visao geral
 
 - ORM: SQLAlchemy 2.0 (`database/connection.py`).
-- Dev: SQLite (WAL habilitado).
-- Producao: PostgreSQL.
+- Dev e Producao: PostgreSQL (obrigatorio).
 - Migrations manuais: `database/init_db.py` (executadas no startup).
 - Script util: `run_migration.py`.
 
@@ -157,14 +156,6 @@
 - Migrations e seeds ficam em `database/init_db.py`.
 - O startup do FastAPI executa `init_database()` (cria tabelas, migra e semeia).
 - Script manual: `python run_migration.py`.
-
-## Reset do banco local (SQLite)
-
-```bash
-# CUIDADO: apaga dados
-rm portal.db
-# Reinicie a app para recriar tabelas
-```
 
 ## Pontos nao inferidos com seguranca
 
