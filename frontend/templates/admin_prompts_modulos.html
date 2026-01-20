@@ -135,7 +135,8 @@
         .variable-combobox-clear:hover {
             color: #ef4444;
         }
-        .variable-combobox-no-results {
+        .variable-combobox-no-results,
+        .variable-combobox-empty {
             padding: 0.75rem;
             color: #9ca3af;
             font-size: 0.8rem;
@@ -206,6 +207,9 @@
                 </button>
                 <button onclick="abrirModalOrdemCategorias()" class="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 transition-colors">
                     Ordem
+                </button>
+                <button onclick="verificarIntegridadeTodos()" id="btn-verificar-integridade" class="px-3 py-2 text-xs text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300 transition-colors" title="Verificar se há variáveis inválidas nas regras">
+                    <i class="fas fa-shield-alt mr-1"></i>Integridade
                 </button>
             </nav>
         </div>
@@ -756,6 +760,37 @@
                                     <div class="text-center py-3 text-gray-400 text-xs">
                                         <i class="fas fa-inbox mb-1"></i>
                                         <p>Nenhuma regra específica configurada</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- ========================================== -->
+                            <!-- ALERTA DE INTEGRIDADE DE VARIÁVEIS -->
+                            <!-- ========================================== -->
+                            <div id="alerta-integridade-variaveis" class="hidden mt-4 p-3 bg-red-50 border border-red-300 rounded-lg">
+                                <div class="flex items-start gap-2">
+                                    <i class="fas fa-exclamation-triangle text-red-500 text-lg mt-0.5"></i>
+                                    <div class="flex-1">
+                                        <h4 class="font-semibold text-red-800 text-sm mb-1">
+                                            Variáveis Inválidas Detectadas
+                                        </h4>
+                                        <p class="text-xs text-red-700 mb-2">
+                                            Esta regra usa variáveis que <strong>não existem</strong> em nenhum JSON de extração configurado.
+                                            A regra nunca será avaliada corretamente.
+                                        </p>
+                                        <div id="lista-variaveis-invalidas" class="space-y-1">
+                                            <!-- Variáveis inválidas serão listadas aqui -->
+                                        </div>
+                                        <div class="mt-3 flex flex-wrap gap-2">
+                                            <a href="/admin/categorias-json" target="_blank"
+                                                class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200">
+                                                <i class="fas fa-plus-circle"></i> Criar Variável
+                                            </a>
+                                            <button type="button" onclick="revalidarIntegridade()"
+                                                class="inline-flex items-center gap-1 px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200">
+                                                <i class="fas fa-sync-alt"></i> Revalidar
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -3546,6 +3581,263 @@
             }
         }
 
+        // ==========================================
+        // VALIDAÇÃO DE INTEGRIDADE DE VARIÁVEIS
+        // ==========================================
+
+        /**
+         * Processa e exibe o resultado da validação de integridade.
+         * Mostra alerta visual quando há variáveis inválidas.
+         */
+        function processarValidacaoIntegridade(validacao) {
+            const alertaContainer = document.getElementById('alerta-integridade-variaveis');
+            const listaContainer = document.getElementById('lista-variaveis-invalidas');
+
+            if (!alertaContainer || !listaContainer) return;
+
+            // Esconde o alerta por padrão
+            alertaContainer.classList.add('hidden');
+            listaContainer.innerHTML = '';
+
+            // Se não há validação ou está válido, não mostra alerta
+            if (!validacao || validacao.valido) {
+                return;
+            }
+
+            // Há variáveis inválidas - mostra alerta
+            const variaveis = validacao.variaveis_invalidas || [];
+            if (variaveis.length === 0) return;
+
+            // Agrupa por regra para melhor visualização
+            const porRegra = {};
+            variaveis.forEach(v => {
+                const regra = v.regra || 'desconhecida';
+                if (!porRegra[regra]) {
+                    porRegra[regra] = [];
+                }
+                porRegra[regra].push(v);
+            });
+
+            // Renderiza lista de variáveis inválidas
+            let html = '';
+            for (const [regra, vars] of Object.entries(porRegra)) {
+                const nomeRegra = formatarNomeRegra(regra);
+                html += `<div class="p-2 bg-white border border-red-200 rounded">`;
+                html += `<div class="text-xs font-medium text-red-700 mb-1">`;
+                html += `<i class="fas fa-code-branch mr-1"></i>${nomeRegra}`;
+                html += `</div>`;
+                html += `<div class="flex flex-wrap gap-1">`;
+                vars.forEach(v => {
+                    html += `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-800 rounded text-xs font-mono">`;
+                    html += `<i class="fas fa-times-circle text-red-500"></i>`;
+                    html += `${v.variavel}`;
+                    if (v.sugestao_tipo) {
+                        html += `<span class="text-red-400">(${v.sugestao_tipo})</span>`;
+                    }
+                    html += `</span>`;
+                });
+                html += `</div></div>`;
+            }
+
+            listaContainer.innerHTML = html;
+            alertaContainer.classList.remove('hidden');
+        }
+
+        /**
+         * Formata o nome da regra para exibição amigável.
+         */
+        function formatarNomeRegra(regra) {
+            const mapa = {
+                'global_primaria': 'Regra Global (Primária)',
+                'global_secundaria': 'Regra Global (Secundária/Fallback)'
+            };
+
+            if (mapa[regra]) return mapa[regra];
+
+            // Regras por tipo de peça: tipo_peca_contestacao -> Regra: Contestação
+            if (regra.startsWith('tipo_peca_')) {
+                const tipo = regra.replace('tipo_peca_', '');
+                return `Regra: ${tipo.charAt(0).toUpperCase() + tipo.slice(1)}`;
+            }
+
+            return regra;
+        }
+
+        /**
+         * Revalida a integridade do módulo atual chamando a API.
+         */
+        async function revalidarIntegridade() {
+            const moduloId = document.getElementById('modulo-id').value;
+            if (!moduloId) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/${moduloId}/validar-integridade`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao validar');
+
+                const validacao = await response.json();
+                processarValidacaoIntegridade({
+                    valido: validacao.valido,
+                    variaveis_invalidas: validacao.variaveis_invalidas
+                });
+
+                if (validacao.valido) {
+                    // Mostra feedback positivo temporário
+                    const alertaContainer = document.getElementById('alerta-integridade-variaveis');
+                    alertaContainer.classList.remove('hidden');
+                    alertaContainer.innerHTML = `
+                        <div class="flex items-center gap-2 text-green-700">
+                            <i class="fas fa-check-circle text-green-500"></i>
+                            <span class="text-sm font-medium">Todas as variáveis são válidas!</span>
+                        </div>
+                    `;
+                    alertaContainer.className = 'mt-4 p-3 bg-green-50 border border-green-300 rounded-lg';
+
+                    // Esconde após 3 segundos
+                    setTimeout(() => {
+                        alertaContainer.classList.add('hidden');
+                        // Restaura classes originais
+                        alertaContainer.className = 'hidden mt-4 p-3 bg-red-50 border border-red-300 rounded-lg';
+                    }, 3000);
+                }
+            } catch (error) {
+                console.error('Erro ao revalidar integridade:', error);
+            }
+        }
+
+        /**
+         * Verifica integridade de TODOS os módulos determinísticos.
+         * Exibe um modal com resumo dos problemas encontrados.
+         */
+        async function verificarIntegridadeTodos() {
+            const btn = document.getElementById('btn-verificar-integridade');
+            const originalContent = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Verificando...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`${API_BASE}/validar-integridade/todos`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao validar');
+
+                const resultado = await response.json();
+                exibirModalIntegridade(resultado);
+            } catch (error) {
+                console.error('Erro ao verificar integridade:', error);
+                alert('Erro ao verificar integridade: ' + error.message);
+            } finally {
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+            }
+        }
+
+        /**
+         * Exibe modal com resultado da verificação de integridade.
+         */
+        function exibirModalIntegridade(resultado) {
+            // Remove modal anterior se existir
+            const modalAnterior = document.getElementById('modal-integridade');
+            if (modalAnterior) modalAnterior.remove();
+
+            const isValido = resultado.valido;
+            const totalVerificados = resultado.total_modulos_verificados || 0;
+            const totalInvalidos = resultado.total_modulos_invalidos || 0;
+            const totalProblemas = resultado.total_problemas || 0;
+
+            let conteudoProblemas = '';
+            if (!isValido && resultado.modulos_invalidos) {
+                resultado.modulos_invalidos.forEach(modulo => {
+                    const varsUnicas = [...new Set(modulo.variaveis_invalidas.map(v => v.variavel))];
+                    conteudoProblemas += `
+                        <div class="p-3 bg-red-50 border border-red-200 rounded-lg mb-2">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium text-red-800">${modulo.modulo_titulo || modulo.modulo_nome}</span>
+                                <button onclick="editarModulo(${modulo.modulo_id}); document.getElementById('modal-integridade').remove();"
+                                    class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200">
+                                    <i class="fas fa-edit mr-1"></i>Editar
+                                </button>
+                            </div>
+                            <div class="flex flex-wrap gap-1">
+                                ${varsUnicas.map(v => `<code class="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs">${v}</code>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            const modal = document.createElement('div');
+            modal.id = 'modal-integridade';
+            modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50';
+            modal.innerHTML = `
+                <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col m-4">
+                    <div class="px-6 py-4 border-b flex items-center justify-between ${isValido ? 'bg-green-50' : 'bg-red-50'}">
+                        <div class="flex items-center gap-3">
+                            <i class="fas ${isValido ? 'fa-check-circle text-green-500' : 'fa-exclamation-triangle text-red-500'} text-2xl"></i>
+                            <div>
+                                <h2 class="font-semibold ${isValido ? 'text-green-800' : 'text-red-800'}">
+                                    ${isValido ? 'Integridade OK' : 'Problemas Encontrados'}
+                                </h2>
+                                <p class="text-sm ${isValido ? 'text-green-600' : 'text-red-600'}">
+                                    ${totalVerificados} módulos verificados
+                                </p>
+                            </div>
+                        </div>
+                        <button onclick="document.getElementById('modal-integridade').remove()"
+                            class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-6">
+                        ${isValido ? `
+                            <div class="text-center py-8">
+                                <i class="fas fa-shield-alt text-green-500 text-5xl mb-4"></i>
+                                <p class="text-lg text-green-700 font-medium">Todas as variáveis são válidas!</p>
+                                <p class="text-sm text-gray-500 mt-2">
+                                    Nenhum módulo com regras determinísticas possui variáveis inválidas.
+                                </p>
+                            </div>
+                        ` : `
+                            <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                <p class="text-sm text-amber-800">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    <strong>${totalInvalidos}</strong> módulo(s) com <strong>${totalProblemas}</strong> variável(is) inválida(s).
+                                    Estas regras não serão avaliadas corretamente.
+                                </p>
+                            </div>
+                            <div class="space-y-2">
+                                ${conteudoProblemas}
+                            </div>
+                        `}
+                    </div>
+
+                    <div class="px-6 py-4 border-t bg-gray-50 flex justify-end gap-2">
+                        ${!isValido ? `
+                            <a href="/admin/categorias-json" target="_blank"
+                                class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm">
+                                <i class="fas fa-plus-circle mr-1"></i>Criar Variáveis
+                            </a>
+                        ` : ''}
+                        <button onclick="document.getElementById('modal-integridade').remove()"
+                            class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm">
+                            Fechar
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // Fecha ao clicar fora
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+        }
+
         // Reseta o editor de regras
         function resetarEditorRegras() {
             modoAtivacaoAtual = 'llm';
@@ -4563,6 +4855,9 @@
 
                 renderizarTags();
 
+                // Processa validação de integridade se disponível
+                processarValidacaoIntegridade(modulo.validacao_integridade);
+
                 document.getElementById('modal-editor').classList.remove('hidden');
             } catch (error) {
                 alert('Erro ao carregar módulo: ' + error.message);
@@ -4653,10 +4948,24 @@
                     const error = await response.json();
                     throw new Error(error.detail || 'Erro ao salvar');
                 }
-                
+
+                const resultado = await response.json();
+
+                // Verifica se há problemas de integridade de variáveis
+                if (resultado.validacao_integridade && !resultado.validacao_integridade.valido) {
+                    const vars = resultado.validacao_integridade.variaveis_invalidas || [];
+                    const varsUnicas = [...new Set(vars.map(v => v.variavel))];
+                    const mensagem = `Módulo ${isNovo ? 'criado' : 'atualizado'}, mas ATENÇÃO:\n\n` +
+                        `⚠️ Variáveis inválidas detectadas:\n` +
+                        varsUnicas.map(v => `  • ${v}`).join('\n') +
+                        `\n\nEstas variáveis não existem no sistema. A regra não será avaliada corretamente.`;
+                    alert(mensagem);
+                } else {
+                    alert(isNovo ? 'Módulo criado com sucesso!' : 'Módulo atualizado com sucesso!');
+                }
+
                 fecharEditor();
                 carregarModulos();
-                alert(isNovo ? 'Módulo criado com sucesso!' : 'Módulo atualizado com sucesso!');
             } catch (error) {
                 alert('Erro: ' + error.message);
             }
@@ -6123,18 +6432,22 @@
         fecharTodosComboboxesTipoPeca();
         const dropdown = document.getElementById(`combobox-dropdown-tp-${id}`);
         if (dropdown) {
-            dropdown.classList.add('show');
+            dropdown.classList.add('open');
             renderizarItensComboboxTipoPeca(id, '');
         }
     }
 
     function fecharTodosComboboxesTipoPeca() {
         document.querySelectorAll('[id^="combobox-dropdown-tp-"]').forEach(el => {
-            el.classList.remove('show');
+            el.classList.remove('open');
         });
     }
 
+    // Índice de highlight para navegação por teclado no combobox de tipo de peça
+    let comboboxTipoPecaHighlightIndex = -1;
+
     function filtrarComboboxTipoPeca(id, termo) {
+        comboboxTipoPecaHighlightIndex = -1; // Reset ao filtrar
         renderizarItensComboboxTipoPeca(id, termo);
     }
 
@@ -6142,23 +6455,51 @@
         const container = document.getElementById(`combobox-items-tp-${id}`);
         if (!container) return;
 
-        const termoLower = termo.toLowerCase();
-        const filtradas = variaveisDisponiveis.filter(v =>
-            v.slug.toLowerCase().includes(termoLower) ||
-            (v.label && v.label.toLowerCase().includes(termoLower))
-        ).slice(0, 20);
+        const termoLower = termo.toLowerCase().trim();
 
-        if (filtradas.length === 0) {
-            container.innerHTML = '<div class="variable-combobox-empty">Nenhuma variável encontrada</div>';
+        // Filtra variáveis por slug ou label
+        let filtradas = variaveisDisponiveis;
+        if (termoLower) {
+            filtradas = variaveisDisponiveis.filter(v => {
+                const slugMatch = v.slug.toLowerCase().includes(termoLower);
+                const labelMatch = v.label && v.label.toLowerCase().includes(termoLower);
+                return slugMatch || labelMatch;
+            });
+        }
+
+        // Limita a 50 para performance
+        const limite = 50;
+        const mostradas = filtradas.slice(0, limite);
+
+        if (mostradas.length === 0) {
+            container.innerHTML = `
+                <div class="variable-combobox-no-results">
+                    <i class="fas fa-search mr-1"></i>
+                    Nenhuma variável encontrada para "${termo}"
+                </div>`;
             return;
         }
 
-        container.innerHTML = filtradas.map(v => `
-            <div class="variable-combobox-item" onclick="selecionarVariavelTipoPeca(${id}, '${v.slug}')">
-                <span class="variable-combobox-item-slug">${v.slug}</span>
-                <span class="variable-combobox-item-tipo">${getTipoLabel(v.tipo)}</span>
+        container.innerHTML = mostradas.map((v, idx) => `
+            <div class="variable-combobox-item ${idx === comboboxTipoPecaHighlightIndex ? 'highlighted' : ''}"
+                data-slug="${v.slug}"
+                onclick="selecionarVariavelTipoPeca(${id}, '${v.slug}')"
+                onmouseenter="comboboxTipoPecaHighlightIndex = ${idx}">
+                <div>
+                    <span class="slug">${destacarTermo(v.slug, termoLower)}</span>
+                    <span class="tipo">${getTipoLabel(v.tipo)}</span>
+                </div>
+                ${v.label ? `<div class="label">${destacarTermo(v.label, termoLower)}</div>` : ''}
             </div>
         `).join('');
+
+        if (filtradas.length > limite) {
+            container.innerHTML += `
+                <div class="variable-combobox-hint">
+                    <i class="fas fa-ellipsis-h mr-1"></i>
+                    +${filtradas.length - limite} variáveis (refine sua busca)
+                </div>`;
+        }
     }
 
     function selecionarVariavelTipoPeca(id, slug) {
@@ -6180,10 +6521,44 @@
     }
 
     function navegarComboboxTipoPeca(event, id) {
-        // Implementação simplificada de navegação por teclado
-        if (event.key === 'Escape') {
-            fecharTodosComboboxesTipoPeca();
+        const container = document.getElementById(`combobox-items-tp-${id}`);
+        if (!container) return;
+
+        const items = container.querySelectorAll('.variable-combobox-item');
+
+        switch (event.key) {
+            case 'ArrowDown':
+                event.preventDefault();
+                comboboxTipoPecaHighlightIndex = Math.min(comboboxTipoPecaHighlightIndex + 1, items.length - 1);
+                atualizarHighlightTipoPeca(items);
+                break;
+            case 'ArrowUp':
+                event.preventDefault();
+                comboboxTipoPecaHighlightIndex = Math.max(comboboxTipoPecaHighlightIndex - 1, 0);
+                atualizarHighlightTipoPeca(items);
+                break;
+            case 'Enter':
+                event.preventDefault();
+                if (comboboxTipoPecaHighlightIndex >= 0 && items[comboboxTipoPecaHighlightIndex]) {
+                    const slug = items[comboboxTipoPecaHighlightIndex].dataset.slug;
+                    selecionarVariavelTipoPeca(id, slug);
+                }
+                break;
+            case 'Escape':
+                fecharTodosComboboxesTipoPeca();
+                break;
         }
+    }
+
+    function atualizarHighlightTipoPeca(items) {
+        items.forEach((item, idx) => {
+            if (idx === comboboxTipoPecaHighlightIndex) {
+                item.classList.add('highlighted');
+                item.scrollIntoView({ block: 'nearest' });
+            } else {
+                item.classList.remove('highlighted');
+            }
+        });
     }
 
     // Fecha comboboxes ao clicar fora

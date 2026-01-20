@@ -962,6 +962,23 @@ async def obter_modulo(
     response["subcategoria_ids"] = [s.id for s in modulo.subcategorias]
     response["regra_deterministica"] = normalizar_booleanos_regra(modulo.regra_deterministica)
     response["regra_deterministica_secundaria"] = normalizar_booleanos_regra(modulo.regra_deterministica_secundaria)
+
+    # Validação de integridade: verifica variáveis inválidas nas regras
+    if modulo.modo_ativacao == 'deterministic':
+        try:
+            from sistemas.gerador_pecas.services_deterministic import RuleIntegrityValidator
+            validator = RuleIntegrityValidator(db)
+            validacao = validator.validar_modulo(modulo.id)
+            response["validacao_integridade"] = {
+                "valido": validacao["valido"],
+                "variaveis_invalidas": validacao["variaveis_invalidas"],
+                "resumo": validacao["resumo"]
+            }
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Erro ao validar integridade: {e}")
+            response["validacao_integridade"] = None
+
     return response
 
 
@@ -1188,6 +1205,23 @@ async def atualizar_modulo(
     response = modulo.__dict__.copy()
     response["subcategoria_ids"] = [s.id for s in modulo.subcategorias]
     response["subcategorias_nomes"] = [s.nome for s in modulo.subcategorias]
+
+    # Validação de integridade: verifica variáveis inválidas nas regras
+    if modulo.modo_ativacao == 'deterministic':
+        try:
+            from sistemas.gerador_pecas.services_deterministic import RuleIntegrityValidator
+            validator = RuleIntegrityValidator(db)
+            validacao = validator.validar_modulo(modulo.id)
+            response["validacao_integridade"] = {
+                "valido": validacao["valido"],
+                "variaveis_invalidas": validacao["variaveis_invalidas"],
+                "resumo": validacao["resumo"]
+            }
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Erro ao validar integridade: {e}")
+            response["validacao_integridade"] = None
+
     return response
 
 
@@ -2150,8 +2184,27 @@ async def listar_regras_tipo_peca(
         "tipos_peca_disponiveis": [
             {"nome": tp.nome, "titulo": tp.titulo}
             for tp in tipos_peca
-        ]
+        ],
+        # Validação de integridade: verifica variáveis inválidas nas regras
+        "validacao_integridade": _validar_integridade_modulo(db, modulo_id)
     }
+
+
+def _validar_integridade_modulo(db: Session, modulo_id: int) -> Optional[Dict]:
+    """Helper para validar integridade de um módulo."""
+    try:
+        from sistemas.gerador_pecas.services_deterministic import RuleIntegrityValidator
+        validator = RuleIntegrityValidator(db)
+        validacao = validator.validar_modulo(modulo_id)
+        return {
+            "valido": validacao["valido"],
+            "variaveis_invalidas": validacao["variaveis_invalidas"],
+            "resumo": validacao["resumo"]
+        }
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Erro ao validar integridade: {e}")
+        return None
 
 
 @router.post("/{modulo_id}/regras-tipo-peca")
@@ -2200,6 +2253,17 @@ async def criar_regra_tipo_peca(
     )
 
     db.add(nova_regra)
+
+    # AUTO-CORREÇÃO: Se criou regra por tipo de peça, força modo_ativacao para 'deterministic'
+    if modulo.modo_ativacao != 'deterministic':
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"[AUTO-CORREÇÃO] Módulo {modulo_id}: modo_ativacao alterado para 'deterministic' "
+            f"porque regra por tipo de peça '{regra.tipo_peca}' foi criada"
+        )
+        modulo.modo_ativacao = 'deterministic'
+
     db.commit()
     db.refresh(nova_regra)
 
@@ -2208,6 +2272,7 @@ async def criar_regra_tipo_peca(
         "id": nova_regra.id,
         "modulo_id": modulo_id,
         "tipo_peca": regra.tipo_peca,
+        "modo_ativacao_atualizado": modulo.modo_ativacao == 'deterministic',
         "mensagem": f"Regra criada para tipo de peça '{regra.tipo_peca}'"
     }
 
@@ -2257,6 +2322,17 @@ async def atualizar_regra_tipo_peca(
             )
 
         regra.tipo_peca = dados.tipo_peca
+
+    # AUTO-CORREÇÃO: Se atualizou regra por tipo de peça, força modo_ativacao para 'deterministic'
+    modulo = db.query(PromptModulo).filter(PromptModulo.id == regra.modulo_id).first()
+    if modulo and modulo.modo_ativacao != 'deterministic':
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(
+            f"[AUTO-CORREÇÃO] Módulo {regra.modulo_id}: modo_ativacao alterado para 'deterministic' "
+            f"porque regra por tipo de peça '{regra.tipo_peca}' foi atualizada"
+        )
+        modulo.modo_ativacao = 'deterministic'
 
     db.commit()
 
@@ -2641,4 +2717,83 @@ async def reordenar_prompts_completo(
         "categorias_atualizadas": categorias_atualizadas,
         "prompts_atualizados": prompts_atualizados
     }
+
+
+# ==========================================
+# Endpoints: Validação de Integridade de Variáveis
+# ==========================================
+
+@router.get("/{modulo_id}/validar-integridade")
+async def validar_integridade_modulo(
+    modulo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Valida integridade entre regras determinísticas e variáveis disponíveis.
+
+    Verifica se todas as variáveis usadas nas regras do módulo:
+    - Existem em algum JSON de extração (ExtractionVariable)
+    - OU são variáveis de sistema (ProcessVariableDefinition)
+
+    Retorna:
+    - valido: bool - se todas as variáveis existem
+    - variaveis_invalidas: lista de variáveis que não existem
+    - resumo: estatísticas
+    """
+    from sistemas.gerador_pecas.services_deterministic import RuleIntegrityValidator
+
+    validator = RuleIntegrityValidator(db)
+    resultado = validator.validar_modulo(modulo_id)
+
+    return resultado
+
+
+@router.get("/validar-integridade/todos")
+async def validar_integridade_todos_modulos(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Valida integridade de todos os módulos com regras determinísticas.
+
+    Verifica todos os módulos ativos com modo_ativacao='deterministic'.
+
+    Retorna:
+    - valido: bool - se todos os módulos estão ok
+    - total_modulos_verificados: int
+    - total_modulos_invalidos: int
+    - modulos_invalidos: lista de módulos com problemas
+    """
+    from sistemas.gerador_pecas.services_deterministic import RuleIntegrityValidator
+
+    validator = RuleIntegrityValidator(db)
+    resultado = validator.validar_todos_modulos()
+
+    return resultado
+
+
+@router.get("/variaveis-disponiveis")
+async def listar_variaveis_disponiveis(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todas as variáveis disponíveis para uso em regras determinísticas.
+
+    Organiza por fonte:
+    - extracao: variáveis extraídas de PDFs (ExtractionVariable)
+    - sistema: variáveis de processo derivadas do XML (ProcessVariableDefinition)
+
+    Útil para:
+    - Debug de regras
+    - Interface de criação de regras
+    - Validação visual
+    """
+    from sistemas.gerador_pecas.services_deterministic import RuleIntegrityValidator
+
+    validator = RuleIntegrityValidator(db)
+    resultado = validator.obter_variaveis_disponiveis()
+
+    return resultado
 

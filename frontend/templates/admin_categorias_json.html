@@ -36,6 +36,103 @@
         .drag-handle { cursor: grab; opacity: 0.5; transition: opacity 0.2s; }
         .drag-handle:hover { opacity: 1; }
         .drag-handle:active { cursor: grabbing; }
+
+        /* Combobox pesquisável para variáveis/dependências */
+        .variable-combobox {
+            position: relative;
+            width: 100%;
+        }
+        .variable-combobox-input {
+            width: 100%;
+            padding: 0.5rem 2rem 0.5rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            font-size: 0.875rem;
+            background: white;
+        }
+        .variable-combobox-input:focus {
+            outline: none;
+            border-color: #0ea5e9;
+            box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.2);
+        }
+        .variable-combobox-input.has-value {
+            background-color: #f0f9ff;
+        }
+        .variable-combobox-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 280px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 50;
+            display: none;
+        }
+        .variable-combobox-dropdown.open {
+            display: block;
+        }
+        .variable-combobox-item {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .variable-combobox-item:hover, .variable-combobox-item.highlighted {
+            background: #eff6ff;
+        }
+        .variable-combobox-item .slug {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: #1f2937;
+        }
+        .variable-combobox-item .tipo {
+            font-size: 0.65rem;
+            color: #6b7280;
+            margin-left: 0.5rem;
+        }
+        .variable-combobox-item .label {
+            font-size: 0.7rem;
+            color: #9ca3af;
+            margin-top: 2px;
+        }
+        .variable-combobox-clear {
+            position: absolute;
+            right: 0.5rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        .variable-combobox-clear:hover {
+            color: #ef4444;
+        }
+        .variable-combobox-no-results {
+            padding: 0.75rem;
+            color: #9ca3af;
+            font-size: 0.8rem;
+            text-align: center;
+        }
+        .variable-combobox-hint {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.7rem;
+            color: #6b7280;
+            background: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .variable-combobox-group {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: #4b5563;
+            background: #f3f4f6;
+            border-bottom: 1px solid #e5e7eb;
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -545,15 +642,30 @@
                             A pergunta só será feita se a condição for satisfeita.
                         </p>
 
-                        <!-- Seleção de variável -->
+                        <!-- Seleção de variável (combobox pesquisável) -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Variável de dependência</label>
-                            <select id="pergunta-depends-on"
-                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 bg-white"
-                                onchange="atualizarOperadoresDependencia()">
-                                <option value="">Selecione uma variável ou pergunta anterior...</option>
-                            </select>
-                            <p class="text-xs text-gray-400 mt-1">Pode ser uma variável existente ou o slug sugerido de uma pergunta anterior.</p>
+                            <div class="variable-combobox" id="combobox-dependencia">
+                                <input type="text"
+                                    class="variable-combobox-input"
+                                    id="combobox-dependencia-input"
+                                    placeholder="Digite para buscar variável ou pergunta..."
+                                    autocomplete="off"
+                                    onfocus="abrirComboboxDependencia()"
+                                    oninput="filtrarComboboxDependencia(this.value)"
+                                    onkeydown="navegarComboboxDependencia(event)">
+                                <input type="hidden" id="pergunta-depends-on" value="">
+                                <span class="variable-combobox-clear hidden" id="combobox-dependencia-clear" onclick="limparComboboxDependencia()">
+                                    <i class="fas fa-times text-xs"></i>
+                                </span>
+                                <div class="variable-combobox-dropdown" id="combobox-dependencia-dropdown">
+                                    <div class="variable-combobox-hint">
+                                        <i class="fas fa-search mr-1"></i> Digite para filtrar variáveis e perguntas
+                                    </div>
+                                    <div id="combobox-dependencia-items"></div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1">Busque pelo slug da variável ou texto da pergunta.</p>
                         </div>
 
                         <!-- Operador -->
@@ -2773,6 +2885,16 @@ qual o valor da causa?"></textarea>
                 // Dependência
                 document.getElementById('pergunta-tem-dependencia').checked = false;
                 document.getElementById('pergunta-depends-on').value = '';
+                // Limpa também o combobox visível
+                const comboboxInput = document.getElementById('combobox-dependencia-input');
+                const comboboxClear = document.getElementById('combobox-dependencia-clear');
+                if (comboboxInput) {
+                    comboboxInput.value = '';
+                    comboboxInput.classList.remove('has-value');
+                }
+                if (comboboxClear) {
+                    comboboxClear.classList.add('hidden');
+                }
                 document.getElementById('pergunta-dependency-operator').value = 'equals';
                 document.getElementById('pergunta-dependency-value').value = '';
                 document.getElementById('pergunta-ativa').checked = true;
@@ -3098,90 +3220,284 @@ qual o valor da causa?"></textarea>
             }
         }
 
-        // Popula o select de variáveis de dependência
+        // ==========================================
+        // Combobox Pesquisável para Dependência
+        // ==========================================
+
+        let comboboxDependenciaHighlightIndex = -1;
+        let comboboxDependenciaItens = []; // Cache dos itens para navegação
+
+        // Prepara os dados do combobox (perguntas anteriores + variáveis do sistema)
         function popularSelectDependencia() {
-            const select = document.getElementById('pergunta-depends-on');
-            const indexAtual = parseInt(document.getElementById('pergunta-index').value);
-
-            // Mantém o valor atual se existir
-            const valorAtual = select.value;
-
-            select.innerHTML = '<option value="">Selecione uma variável ou pergunta anterior...</option>';
-
-            // Adiciona perguntas anteriores da mesma categoria (usando nome_variavel_sugerido como slug)
-            const perguntasAnteriores = perguntasSelecionadas.filter((p, i) =>
-                i !== indexAtual && p.nome_variavel_sugerido
-            );
-
-            if (perguntasAnteriores.length > 0) {
-                const groupPerguntas = document.createElement('optgroup');
-                groupPerguntas.label = 'Perguntas desta categoria';
-
-                perguntasAnteriores.forEach(p => {
-                    const option = document.createElement('option');
-                    option.value = p.nome_variavel_sugerido;
-                    option.textContent = `${p.nome_variavel_sugerido} - "${p.pergunta.substring(0, 40)}..."`;
-                    groupPerguntas.appendChild(option);
-                });
-
-                select.appendChild(groupPerguntas);
-            }
-
-            // Adiciona variáveis do sistema (se carregadas)
-            if (variaveisDisponiveis && variaveisDisponiveis.length > 0) {
-                const groupVars = document.createElement('optgroup');
-                groupVars.label = 'Variáveis do sistema';
-
-                variaveisDisponiveis.forEach(v => {
-                    const option = document.createElement('option');
-                    option.value = v.slug;
-                    option.textContent = `${v.slug} (${v.tipo})`;
-                    groupVars.appendChild(option);
-                });
-
-                select.appendChild(groupVars);
-            }
-
-            // Restaura valor anterior se existir
+            // Apenas atualiza o preview - os dados são carregados sob demanda no filtro
+            const valorAtual = document.getElementById('pergunta-depends-on').value;
             if (valorAtual) {
                 definirValorDependenciaComFallback(valorAtual);
+            }
+            atualizarPreviewDependencia();
+        }
+
+        // Abre o dropdown do combobox
+        function abrirComboboxDependencia() {
+            fecharComboboxDependencia();
+            const dropdown = document.getElementById('combobox-dependencia-dropdown');
+            if (dropdown) {
+                dropdown.classList.add('open');
+                comboboxDependenciaHighlightIndex = -1;
+                filtrarComboboxDependencia('');
+            }
+        }
+
+        // Fecha o dropdown
+        function fecharComboboxDependencia() {
+            const dropdown = document.getElementById('combobox-dependencia-dropdown');
+            if (dropdown) {
+                dropdown.classList.remove('open');
+            }
+        }
+
+        // Filtra e renderiza os itens do combobox
+        function filtrarComboboxDependencia(termo) {
+            const container = document.getElementById('combobox-dependencia-items');
+            if (!container) return;
+
+            const indexAtual = parseInt(document.getElementById('pergunta-index').value) || -1;
+            const termoLower = termo.toLowerCase().trim();
+
+            // Coleta perguntas anteriores
+            const perguntasAnteriores = perguntasSelecionadas.filter((p, i) =>
+                i !== indexAtual && p.nome_variavel_sugerido
+            ).map(p => ({
+                slug: p.nome_variavel_sugerido,
+                label: p.pergunta,
+                tipo: 'pergunta',
+                grupo: 'Perguntas desta categoria'
+            }));
+
+            // Coleta variáveis do sistema
+            const variaveisSistema = (variaveisDisponiveis || []).map(v => ({
+                slug: v.slug,
+                label: v.label || '',
+                tipo: v.tipo || 'text',
+                grupo: 'Variáveis do sistema'
+            }));
+
+            // Junta todos os itens
+            let todosItens = [...perguntasAnteriores, ...variaveisSistema];
+
+            // Filtra por termo
+            if (termoLower) {
+                todosItens = todosItens.filter(item => {
+                    const slugMatch = item.slug.toLowerCase().includes(termoLower);
+                    const labelMatch = item.label && item.label.toLowerCase().includes(termoLower);
+                    return slugMatch || labelMatch;
+                });
+            }
+
+            // Limita a 50 para performance
+            const limite = 50;
+            const mostrados = todosItens.slice(0, limite);
+            comboboxDependenciaItens = mostrados;
+
+            if (mostrados.length === 0) {
+                container.innerHTML = `
+                    <div class="variable-combobox-no-results">
+                        <i class="fas fa-search mr-1"></i>
+                        Nenhuma variável ou pergunta encontrada para "${termo}"
+                    </div>`;
+                return;
+            }
+
+            // Agrupa por tipo
+            let html = '';
+            let grupoAtual = '';
+
+            mostrados.forEach((item, idx) => {
+                if (item.grupo !== grupoAtual) {
+                    grupoAtual = item.grupo;
+                    html += `<div class="variable-combobox-group">${grupoAtual}</div>`;
+                }
+
+                const tipoLabel = item.tipo === 'pergunta' ? 'Pergunta' :
+                    (item.tipo === 'boolean' ? 'Sim/Não' :
+                    (item.tipo === 'list' ? 'Lista' :
+                    (item.tipo === 'number' ? 'Número' : 'Texto')));
+
+                html += `
+                    <div class="variable-combobox-item ${idx === comboboxDependenciaHighlightIndex ? 'highlighted' : ''}"
+                        data-slug="${item.slug}"
+                        data-index="${idx}"
+                        onclick="selecionarDependencia('${item.slug}')"
+                        onmouseenter="comboboxDependenciaHighlightIndex = ${idx}">
+                        <div>
+                            <span class="slug">${destacarTermoDependencia(item.slug, termoLower)}</span>
+                            <span class="tipo">${tipoLabel}</span>
+                        </div>
+                        ${item.label ? `<div class="label">${destacarTermoDependencia(item.label.substring(0, 60), termoLower)}${item.label.length > 60 ? '...' : ''}</div>` : ''}
+                    </div>
+                `;
+            });
+
+            if (todosItens.length > limite) {
+                html += `
+                    <div class="variable-combobox-hint">
+                        <i class="fas fa-ellipsis-h mr-1"></i>
+                        +${todosItens.length - limite} itens (refine sua busca)
+                    </div>`;
+            }
+
+            container.innerHTML = html;
+        }
+
+        // Destaca o termo buscado
+        function destacarTermoDependencia(texto, termo) {
+            if (!termo || !texto) return texto;
+            const regex = new RegExp(`(${termo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return texto.replace(regex, '<mark style="background:#fef08a;padding:0 2px;border-radius:2px;">$1</mark>');
+        }
+
+        // Seleciona uma opção
+        function selecionarDependencia(slug) {
+            const input = document.getElementById('combobox-dependencia-input');
+            const hidden = document.getElementById('pergunta-depends-on');
+            const clearBtn = document.getElementById('combobox-dependencia-clear');
+
+            // Busca info do item selecionado
+            const item = comboboxDependenciaItens.find(i => i.slug === slug);
+            const displayText = item ? `${slug} (${item.tipo === 'pergunta' ? 'Pergunta' : item.tipo})` : slug;
+
+            if (input) {
+                input.value = displayText;
+                input.classList.add('has-value');
+            }
+            if (hidden) {
+                hidden.value = slug;
+            }
+            if (clearBtn) {
+                clearBtn.classList.remove('hidden');
+            }
+
+            fecharComboboxDependencia();
+            atualizarOperadoresDependencia();
+        }
+
+        // Limpa a seleção
+        function limparComboboxDependencia() {
+            const input = document.getElementById('combobox-dependencia-input');
+            const hidden = document.getElementById('pergunta-depends-on');
+            const clearBtn = document.getElementById('combobox-dependencia-clear');
+
+            if (input) {
+                input.value = '';
+                input.classList.remove('has-value');
+            }
+            if (hidden) {
+                hidden.value = '';
+            }
+            if (clearBtn) {
+                clearBtn.classList.add('hidden');
             }
 
             atualizarPreviewDependencia();
         }
 
-        // Define o valor do select de dependência com fallback para match parcial
+        // Navegação por teclado
+        function navegarComboboxDependencia(event) {
+            const container = document.getElementById('combobox-dependencia-items');
+            if (!container) return;
+
+            const items = container.querySelectorAll('.variable-combobox-item');
+
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    comboboxDependenciaHighlightIndex = Math.min(comboboxDependenciaHighlightIndex + 1, items.length - 1);
+                    atualizarHighlightDependencia(items);
+                    break;
+                case 'ArrowUp':
+                    event.preventDefault();
+                    comboboxDependenciaHighlightIndex = Math.max(comboboxDependenciaHighlightIndex - 1, 0);
+                    atualizarHighlightDependencia(items);
+                    break;
+                case 'Enter':
+                    event.preventDefault();
+                    if (comboboxDependenciaHighlightIndex >= 0 && items[comboboxDependenciaHighlightIndex]) {
+                        const slug = items[comboboxDependenciaHighlightIndex].dataset.slug;
+                        selecionarDependencia(slug);
+                    }
+                    break;
+                case 'Escape':
+                    fecharComboboxDependencia();
+                    break;
+            }
+        }
+
+        function atualizarHighlightDependencia(items) {
+            items.forEach((item, idx) => {
+                if (idx === comboboxDependenciaHighlightIndex) {
+                    item.classList.add('highlighted');
+                    item.scrollIntoView({ block: 'nearest' });
+                } else {
+                    item.classList.remove('highlighted');
+                }
+            });
+        }
+
+        // Define o valor do combobox com fallback para match parcial
         function definirValorDependenciaComFallback(valor) {
             if (!valor) return;
 
-            const select = document.getElementById('pergunta-depends-on');
-            select.value = valor;
+            const input = document.getElementById('combobox-dependencia-input');
+            const hidden = document.getElementById('pergunta-depends-on');
+            const clearBtn = document.getElementById('combobox-dependencia-clear');
 
-            // Se encontrou match direto, ok
-            if (select.value === valor) return;
+            // Define o valor hidden
+            if (hidden) {
+                hidden.value = valor;
+            }
 
-            // Se não encontrou match direto, tenta fallback sem namespace
-            const opcoes = Array.from(select.options);
-            const matchParcial = opcoes.find(opt => {
-                if (!opt.value) return false;
-                // Verifica se o valor salvo é sufixo do slug (ex: "incorporado_sus" match "medicamento_incorporado_sus")
-                return opt.value.endsWith('_' + valor) || opt.value === valor;
-            });
+            // Busca info do item para exibição
+            const indexAtual = parseInt(document.getElementById('pergunta-index').value) || -1;
+            const perguntaMatch = perguntasSelecionadas.find((p, i) =>
+                i !== indexAtual && p.nome_variavel_sugerido === valor
+            );
+            const variavelMatch = (variaveisDisponiveis || []).find(v => v.slug === valor);
 
-            if (matchParcial) {
-                select.value = matchParcial.value;
-                console.log(`Dependência: fallback de "${valor}" para "${matchParcial.value}"`);
+            let displayText = valor;
+            if (perguntaMatch) {
+                displayText = `${valor} (Pergunta)`;
+            } else if (variavelMatch) {
+                displayText = `${valor} (${variavelMatch.tipo || 'text'})`;
             } else {
-                // Se ainda não encontrou, adiciona a opção temporariamente para não perder o valor
-                const optionTemp = document.createElement('option');
-                optionTemp.value = valor;
-                optionTemp.textContent = `${valor} (não encontrada)`;
-                optionTemp.style.color = '#f97316'; // laranja para indicar problema
-                select.insertBefore(optionTemp, select.firstChild.nextSibling);
-                select.value = valor;
-                console.warn(`Dependência: variável "${valor}" não encontrada no sistema`);
+                // Tenta fallback por sufixo
+                const matchParcial = (variaveisDisponiveis || []).find(v =>
+                    v.slug.endsWith('_' + valor) || v.slug === valor
+                );
+                if (matchParcial) {
+                    displayText = `${matchParcial.slug} (${matchParcial.tipo || 'text'})`;
+                    if (hidden) hidden.value = matchParcial.slug;
+                    console.log(`Dependência: fallback de "${valor}" para "${matchParcial.slug}"`);
+                } else {
+                    displayText = `${valor} (não encontrada)`;
+                    console.warn(`Dependência: variável "${valor}" não encontrada no sistema`);
+                }
+            }
+
+            if (input) {
+                input.value = displayText;
+                input.classList.add('has-value');
+            }
+            if (clearBtn) {
+                clearBtn.classList.remove('hidden');
             }
         }
+
+        // Fecha combobox ao clicar fora
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#combobox-dependencia')) {
+                fecharComboboxDependencia();
+            }
+        });
 
         // Atualiza operadores com base na variável selecionada
         function atualizarOperadoresDependencia() {
