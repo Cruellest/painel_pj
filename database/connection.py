@@ -38,7 +38,6 @@ if IS_LOCALHOST and not IS_PRODUCTION:
         pool_recycle=3600,
         pool_pre_ping=False,  # PERFORMANCE: Economiza 1 query por conexão
         connect_args={
-            "options": "-c timezone=America/Campo_Grande",
             "connect_timeout": 5,
         },
     )
@@ -58,9 +57,6 @@ else:
         pool_timeout=POOL_TIMEOUT,
         pool_recycle=POOL_RECYCLE,
         pool_pre_ping=True,  # RELIABILITY: Verifica conexão antes de usar
-        connect_args={
-            "options": "-c timezone=America/Campo_Grande",
-        },
     )
     logger.info(
         f"Database pool configurado: size={POOL_SIZE}, overflow={MAX_OVERFLOW}, "
