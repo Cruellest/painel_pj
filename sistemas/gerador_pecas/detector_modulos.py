@@ -145,11 +145,24 @@ class DetectorModulosIA:
         print(f"[AGENTE2] Total de variáveis disponíveis: {len(variaveis)}")
         if variaveis:
             # Log algumas variáveis importantes para debug
-            vars_importantes = ['valor_causa_inferior_60sm', 'processo_ajuizado_apos_2024_04_19',
-                               'peticao_inicial_uniao_polo_passivo', 'pareceres_analisou_cirurgia']
+            vars_importantes = [
+                'valor_causa_inferior_60sm', 'processo_ajuizado_apos_2024_04_19',
+                'peticao_inicial_uniao_polo_passivo',
+                # Variáveis de pareceres/cirurgia (importantes para mer_sem_urgencia)
+                'pareceres_analisou_cirurgia', 'pareceres_natureza_cirurgia',
+                'pareceres_qual_cirurgia', 'pareceres_cirurgia_ofertada_sus',
+                'pareceres_laudo_medico_sus', 'pareceres_analisou_exame'
+            ]
             for var in vars_importantes:
                 if var in variaveis:
                     print(f"[AGENTE2]   - {var}: {variaveis[var]}")
+
+            # Log TODAS as variáveis com prefixo 'pareceres_' para debug
+            vars_pareceres = {k: v for k, v in variaveis.items() if k.startswith('pareceres_')}
+            if vars_pareceres:
+                print(f"[AGENTE2] Variáveis de pareceres encontradas: {len(vars_pareceres)}")
+                for k, v in vars_pareceres.items():
+                    print(f"[AGENTE2]   >> {k}: {v}")
 
         # ========================================
         # SEPARAÇÃO: DETERMINÍSTICOS vs LLM
@@ -195,6 +208,14 @@ class DetectorModulosIA:
 
         # Avalia módulos determinísticos
         for modulo in modulos_det:
+            # Log da regra sendo avaliada para debug
+            regra = modulo.regra_deterministica
+            if regra and isinstance(regra, dict):
+                var_regra = regra.get('variable', regra.get('conditions', [{}])[0].get('variable') if regra.get('conditions') else None)
+                valor_esperado = regra.get('value')
+                valor_atual = variaveis.get(var_regra) if var_regra else None
+                print(f"[AGENTE2] [DET] Avaliando '{modulo.nome}': var={var_regra}, esperado={valor_esperado}, atual={valor_atual}")
+
             resultado = avaliar_ativacao_prompt(
                 prompt_id=modulo.id,
                 modo_ativacao="deterministic",
@@ -207,13 +228,15 @@ class DetectorModulosIA:
 
             if resultado["ativar"] is True:
                 ids_det.append(modulo.id)
-                print(f"[AGENTE2] [DET] ✓ '{modulo.titulo}' ATIVADO (regra: {resultado.get('regra_usada', 'N/A')})")
+                print(f"[AGENTE2] [DET] >>> '{modulo.titulo}' ATIVADO (regra: {resultado.get('regra_usada', 'N/A')})")
             elif resultado["ativar"] is None:
-                # Indeterminado → manda para LLM
+                # Indeterminado -> manda para LLM
                 modulos_para_llm.append(modulo)
-                print(f"[AGENTE2] [DET] ? '{modulo.titulo}' indeterminado → LLM")
+                detalhes = resultado.get('detalhes', 'variaveis indisponiveis')
+                print(f"[AGENTE2] [DET] ??? '{modulo.titulo}' indeterminado -> LLM ({detalhes})")
             else:
-                print(f"[AGENTE2] [DET] ✗ '{modulo.titulo}' não ativado")
+                detalhes = resultado.get('detalhes', '')
+                print(f"[AGENTE2] [DET] XXX '{modulo.titulo}' NAO ativado - {detalhes}")
 
         # Chama LLM apenas para módulos que precisam
         ids_llm = []
@@ -264,6 +287,14 @@ class DetectorModulosIA:
         ids_ativados = []
 
         for modulo in modulos:
+            # Log da regra sendo avaliada para debug
+            regra = modulo.regra_deterministica
+            if regra and isinstance(regra, dict):
+                var_regra = regra.get('variable', regra.get('conditions', [{}])[0].get('variable') if regra.get('conditions') else None)
+                valor_esperado = regra.get('value')
+                valor_atual = variaveis.get(var_regra) if var_regra else None
+                print(f"[AGENTE2] [FAST] Avaliando '{modulo.nome}': var={var_regra}, esperado={valor_esperado}, atual={valor_atual}")
+
             resultado = avaliar_ativacao_prompt(
                 prompt_id=modulo.id,
                 modo_ativacao="deterministic",
@@ -276,13 +307,14 @@ class DetectorModulosIA:
 
             if resultado["ativar"] is True:
                 ids_ativados.append(modulo.id)
-                print(f"[AGENTE2] [FAST] ✓ '{modulo.titulo}' ATIVADO (regra: {resultado.get('regra_usada', 'N/A')})")
+                print(f"[AGENTE2] [FAST] >>> '{modulo.titulo}' ATIVADO (regra: {resultado.get('regra_usada', 'N/A')})")
             elif resultado["ativar"] is None:
                 # Variáveis não disponíveis - não ativa (sem fallback para LLM no fast path)
-                detalhes = resultado.get('detalhes', 'variáveis indisponíveis')
-                print(f"[AGENTE2] [FAST] ○ '{modulo.titulo}' não avaliável ({detalhes})")
+                detalhes = resultado.get('detalhes', 'variaveis indisponiveis')
+                print(f"[AGENTE2] [FAST] --- '{modulo.titulo}' nao avaliavel ({detalhes})")
             else:
-                print(f"[AGENTE2] [FAST] ✗ '{modulo.titulo}' não ativado")
+                detalhes = resultado.get('detalhes', '')
+                print(f"[AGENTE2] [FAST] XXX '{modulo.titulo}' NAO ativado - {detalhes}")
 
         return ids_ativados
 

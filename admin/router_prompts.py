@@ -1028,6 +1028,9 @@ async def criar_modulo(
     # Normaliza booleanos nas regras determinísticas antes de salvar (1/0 -> true/false)
     if modulo_payload.get("regra_deterministica"):
         modulo_payload["regra_deterministica"] = normalizar_booleanos_regra(modulo_payload["regra_deterministica"])
+        # AUTO-CORREÇÃO: Se definiu regra determinística, força modo_ativacao para 'deterministic'
+        if modulo_payload.get("modo_ativacao") != 'deterministic':
+            modulo_payload["modo_ativacao"] = 'deterministic'
     if modulo_payload.get("regra_deterministica_secundaria"):
         modulo_payload["regra_deterministica_secundaria"] = normalizar_booleanos_regra(modulo_payload["regra_deterministica_secundaria"])
 
@@ -1112,9 +1115,17 @@ async def atualizar_modulo(
     # Normaliza booleanos nas regras determinísticas antes de salvar (1/0 -> true/false)
     if "regra_deterministica" in update_data and update_data["regra_deterministica"]:
         update_data["regra_deterministica"] = normalizar_booleanos_regra(update_data["regra_deterministica"])
+        # AUTO-CORREÇÃO: Se definiu regra determinística, força modo_ativacao para 'deterministic'
+        if update_data.get("modo_ativacao") != 'deterministic':
+            update_data["modo_ativacao"] = 'deterministic'
+            import logging
+            logging.getLogger(__name__).info(
+                f"[AUTO-CORREÇÃO] Prompt {modulo_id}: modo_ativacao alterado para 'deterministic' "
+                "porque regra_deterministica foi definida"
+            )
     if "regra_deterministica_secundaria" in update_data and update_data["regra_deterministica_secundaria"]:
         update_data["regra_deterministica_secundaria"] = normalizar_booleanos_regra(update_data["regra_deterministica_secundaria"])
-    
+
     if modulo.tipo == "peca":
         # Prompts de peça não devem ter categoria/subcategoria
         update_data["categoria"] = None
