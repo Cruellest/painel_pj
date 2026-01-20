@@ -170,6 +170,9 @@ class ResultadoAgente2:
     modo_ativacao: str = "llm"
     modulos_ativados_det: int = 0  # Quantidade ativados por regra determinística
     modulos_ativados_llm: int = 0  # Quantidade ativados por LLM
+    # IDs separados por método de ativação
+    ids_det: List[int] = field(default_factory=list)  # IDs ativados deterministicamente
+    ids_llm: List[int] = field(default_factory=list)  # IDs ativados por LLM
 
 
 @dataclass
@@ -565,7 +568,9 @@ class OrquestradorAgentes:
             resultado.modo_ativacao = self.agente2.ultimo_modo_ativacao
             resultado.modulos_ativados_det = self.agente2.ultimo_modulos_det
             resultado.modulos_ativados_llm = self.agente2.ultimo_modulos_llm
-            
+            resultado.ids_det = self.agente2.ultimo_ids_det.copy()
+            resultado.ids_llm = self.agente2.ultimo_ids_llm.copy()
+
             # Carrega módulos BASE (sempre ativos)
             modulos_base = self.db.query(PromptModulo).filter(
                 PromptModulo.tipo == "base",
@@ -679,13 +684,22 @@ class OrquestradorAgentes:
                             if modulo.subcategoria:
                                 subcategoria_info = f" ({modulo.subcategoria})"
 
-                            # Inclui a condição de ativação para que o Agente 3 possa fazer juízo crítico
-                            condicao = modulo.condicao_ativacao or ""
-                            if condicao:
-                                partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
+                            # Verifica se foi ativado deterministicamente ou por LLM
+                            is_deterministico = modulo.id in resultado.ids_det
+
+                            if is_deterministico:
+                                # Módulos determinísticos: NÃO inclui condição (já foi validado)
+                                # Marca como [VALIDADO] para a IA saber que DEVE usar
+                                partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info} [VALIDADO]\n\n{modulo.conteudo}\n")
+                                print(f"   [+] Modulo ativado: [{categoria}] {modulo.titulo} [DET-VALIDADO]")
                             else:
-                                partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n{modulo.conteudo}\n")
-                            print(f"   [+] Modulo ativado: [{categoria}] {modulo.titulo}")
+                                # Módulos LLM: inclui condição para avaliação crítica
+                                condicao = modulo.condicao_ativacao or ""
+                                if condicao:
+                                    partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
+                                else:
+                                    partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n{modulo.conteudo}\n")
+                                print(f"   [+] Modulo ativado: [{categoria}] {modulo.titulo} [LLM]")
 
                     resultado.prompt_conteudo = "\n".join(partes_conteudo)
 
@@ -788,12 +802,15 @@ Os dados abaixo foram extraídos automaticamente do sistema judicial e são conf
 
 Com base nos documentos acima e nas instruções do sistema, gere a peça jurídica completa.
 
-**IMPORTANTE sobre os Argumentos e Teses Aplicáveis:**
-Cada argumento/tese acima possui uma "Condição de ativação" que indica em qual situação fática ele deve ser utilizado.
-Antes de incorporar cada argumento na peça, avalie criticamente se a condição de ativação realmente se aplica aos fatos do caso concreto.
-Se a condição NÃO corresponder aos fatos, NÃO inclua esse argumento na peça.
+**REGRAS OBRIGATÓRIAS sobre os Argumentos e Teses:**
 
-Respeite a ordem apresentada na secao "ARGUMENTOS E TESES APLICAVEIS" (categorias e argumentos), sem reordenar.
+1. **Argumentos marcados com [VALIDADO]**: DEVEM ser incluídos na peça SEM QUESTIONAMENTO. Estes argumentos já foram validados automaticamente com base nas variáveis extraídas dos documentos. NÃO os omita.
+
+2. **Argumentos com "Condição de ativação"**: Avalie criticamente se a condição se aplica aos fatos. Se NÃO corresponder, NÃO inclua.
+
+3. **Seções vazias**: Se uma categoria (ex: PRELIMINARES) não tiver NENHUM argumento listado acima, NÃO crie essa seção na peça. Só inclua seções que tenham argumentos ativados.
+
+4. **Ordem**: Respeite a ordem das categorias e argumentos como apresentada em "ARGUMENTOS E TESES APLICÁVEIS".
 
 Retorne a peça formatada em **Markdown**, seguindo a estrutura indicada no prompt de peça acima.
 Use formatação adequada: ## para títulos de seção, **negrito** para ênfase, > para citações.

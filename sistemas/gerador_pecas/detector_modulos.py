@@ -60,6 +60,9 @@ class DetectorModulosIA:
         self.ultimo_modo_ativacao: str = "llm"  # 'fast_path', 'misto', 'llm'
         self.ultimo_modulos_det: int = 0  # Módulos ativados por regra determinística
         self.ultimo_modulos_llm: int = 0  # Módulos ativados por LLM
+        # IDs separados por método de ativação (para diferenciação no prompt)
+        self.ultimo_ids_det: List[int] = []  # IDs ativados deterministicamente
+        self.ultimo_ids_llm: List[int] = []  # IDs ativados por LLM
 
     async def detectar_modulos_relevantes(
         self,
@@ -163,6 +166,8 @@ class DetectorModulosIA:
             self.ultimo_modo_ativacao = "fast_path"
             self.ultimo_modulos_det = len(ids_ativados)
             self.ultimo_modulos_llm = 0
+            self.ultimo_ids_det = ids_ativados.copy()
+            self.ultimo_ids_llm = []
 
             print(f"[AGENTE2] 🎯 FAST PATH: {len(ids_ativados)} módulos ativados: {ids_ativados}")
             print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes (FAST PATH) ==========\n")
@@ -217,6 +222,8 @@ class DetectorModulosIA:
             self.ultimo_modo_ativacao = "fast_path" if ids_det else "llm"
         self.ultimo_modulos_det = len(ids_det)
         self.ultimo_modulos_llm = len(ids_llm)
+        self.ultimo_ids_det = ids_det.copy()
+        self.ultimo_ids_llm = ids_llm.copy()
 
         print(f"[AGENTE2] 🎯 Detectados {len(modulos_relevantes)} módulos relevantes: {modulos_relevantes}")
         print(f"[AGENTE2]    - Determinísticos: {len(ids_det)}")
