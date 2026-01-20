@@ -9,9 +9,9 @@ Captura TODAS as chamadas de IA de TODOS os usuários/sistemas para:
 - Identificação de gargalos por sistema/módulo
 """
 
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, Index
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 class GeminiApiLog(Base):
@@ -24,7 +24,7 @@ class GeminiApiLog(Base):
     __tablename__ = "gemini_api_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=get_utc_now, index=True)
 
     # Identificação do contexto (sem FK para evitar dependência circular)
     user_id = Column(Integer, nullable=True, index=True)

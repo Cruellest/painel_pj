@@ -3,11 +3,11 @@
 Modelos de grupos e subgrupos para prompts modulares.
 """
 
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, UniqueConstraint, Table
 from sqlalchemy.orm import relationship
 
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 user_prompt_groups = Table(
@@ -26,8 +26,8 @@ class PromptGroup(Base):
     slug = Column(String(50), nullable=False, unique=True, index=True)
     active = Column(Boolean, default=True, index=True)
     order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     subgroups = relationship("PromptSubgroup", back_populates="group", order_by="PromptSubgroup.order")
     users = relationship("User", secondary=user_prompt_groups, back_populates="allowed_groups")
@@ -45,8 +45,8 @@ class PromptSubgroup(Base):
     slug = Column(String(50), nullable=False)
     active = Column(Boolean, default=True, index=True)
     order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     group = relationship("PromptGroup", back_populates="subgroups")
 
@@ -69,8 +69,8 @@ class PromptSubcategoria(Base):
     descricao = Column(String(255), nullable=True)
     active = Column(Boolean, default=True, index=True)
     order = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     group = relationship("PromptGroup")
 
@@ -94,8 +94,8 @@ class CategoriaOrdem(Base):
     nome = Column(String(100), nullable=False)  # Nome da categoria (ex: "Preliminar", "Mérito")
     ordem = Column(Integer, default=0)  # Ordem de exibição (menor = primeiro)
     ativo = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     group = relationship("PromptGroup")
 

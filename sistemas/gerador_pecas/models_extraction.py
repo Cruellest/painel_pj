@@ -9,7 +9,6 @@ Este módulo implementa:
 - Rastreamento de uso de variáveis em prompts
 """
 
-from datetime import datetime
 from typing import Optional, List
 from sqlalchemy import (
     Column, Integer, String, Text, Boolean, DateTime,
@@ -17,6 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from database.connection import Base
+from utils.timezone import get_utc_now
 import enum
 
 
@@ -100,9 +100,9 @@ class ExtractionQuestion(Base):
 
     # Auditoria
     criado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
     atualizado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
-    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     # Relacionamentos
     categoria = relationship("CategoriaResumoJSON", backref="perguntas_extracao")
@@ -177,7 +177,7 @@ class ExtractionModel(Base):
 
     # Auditoria
     criado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
 
     # Relacionamentos
     categoria = relationship("CategoriaResumoJSON", backref="modelos_extracao")
@@ -259,8 +259,8 @@ class ExtractionVariable(Base):
     ativo = Column(Boolean, default=True, index=True)
 
     # Auditoria
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
+    atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     # Relacionamentos
     categoria = relationship("CategoriaResumoJSON", backref="variaveis")
@@ -317,7 +317,7 @@ class PromptVariableUsage(Base):
     )
 
     # Auditoria
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
 
     # Relacionamentos
     prompt = relationship("PromptModulo", backref="variable_usages")
@@ -373,7 +373,7 @@ class PromptActivationLog(Base):
     numero_processo = Column(String(30), nullable=True, index=True)
 
     # Timestamp
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=get_utc_now, index=True)
 
     # Relacionamentos
     prompt = relationship("PromptModulo", backref="activation_logs")

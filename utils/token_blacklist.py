@@ -15,7 +15,7 @@ A blacklist usa duas camadas:
 """
 
 import threading
-from datetime import datetime, timedelta
+from utils.timezone import get_utc_now, timedelta
 from typing import Optional, Set
 import logging
 from jose import jwt
@@ -39,7 +39,7 @@ class TokenBlacklist:
         self._lock = threading.Lock()
 
         # Limpeza automática de tokens expirados
-        self._last_cleanup = datetime.utcnow()
+        self._last_cleanup = get_utc_now()
         self._cleanup_interval = timedelta(minutes=30)
 
     def _extract_jti_and_exp(self, token: str) -> Optional[tuple]:
@@ -70,7 +70,7 @@ class TokenBlacklist:
                 exp_time = datetime.fromtimestamp(exp)
             else:
                 # Se não tem exp, considera 24h
-                exp_time = datetime.utcnow() + timedelta(hours=24)
+                exp_time = get_utc_now() + timedelta(hours=24)
 
             return (jti, exp_time)
 
@@ -95,7 +95,7 @@ class TokenBlacklist:
         jti, exp_time = result
 
         # Não adiciona tokens já expirados
-        if exp_time < datetime.utcnow():
+        if exp_time < get_utc_now():
             logger.debug(f"Token já expirado, não adicionado à blacklist")
             return True
 
@@ -134,7 +134,7 @@ class TokenBlacklist:
 
         Chamado dentro do lock, então não precisa de lock próprio.
         """
-        now = datetime.utcnow()
+        now = get_utc_now()
         if now - self._last_cleanup < self._cleanup_interval:
             return
 

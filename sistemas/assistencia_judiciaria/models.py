@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import relationship
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 class ConsultaProcesso(Base):
@@ -20,8 +21,8 @@ class ConsultaProcesso(Base):
     relatorio = Column(Text, nullable=True)
     modelo_usado = Column(String(100), nullable=True)
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    consultado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    consultado_em = Column(DateTime, default=get_utc_now)
+    atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
     
     # Relacionamento com feedback
     feedback = relationship("FeedbackAnalise", back_populates="consulta", uselist=False)
@@ -47,7 +48,7 @@ class FeedbackAnalise(Base):
     # Campos específicos do relatório que estavam errados (opcional)
     campos_incorretos = Column(JSON, nullable=True)
     
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
     
     # Relacionamentos
     consulta = relationship("ConsultaProcesso", back_populates="feedback")

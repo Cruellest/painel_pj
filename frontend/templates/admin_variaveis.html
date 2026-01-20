@@ -8,6 +8,7 @@
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script src="/static/js/timezone.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -1219,7 +1220,7 @@
                 document.getElementById('detalhe-tipo').innerHTML = `<span class="px-2 py-1 text-xs rounded-full ${getTipoBadgeClass(v.tipo)}">${getTipoLabel(v.tipo)}</span>`;
                 document.getElementById('detalhe-descricao').textContent = v.descricao || 'Sem descricao';
                 document.getElementById('detalhe-categoria').textContent = v.categoria_nome || '-';
-                document.getElementById('detalhe-criado-em').textContent = new Date(v.criado_em).toLocaleDateString('pt-BR');
+                document.getElementById('detalhe-criado-em').textContent = formatDate(v.criado_em);
 
                 // Opcoes
                 const opcoesContainer = document.getElementById('detalhe-opcoes-container');

@@ -3,10 +3,10 @@
 Modelos do sistema de Geração de Peças Jurídicas
 """
 
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import relationship, deferred
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 class GeracaoPeca(Base):
@@ -60,8 +60,8 @@ class GeracaoPeca(Base):
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     # Timestamps
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
+    atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
     
     # Relacionamento com feedback
     feedback = relationship("FeedbackPeca", back_populates="geracao", uselist=False)
@@ -97,7 +97,7 @@ class VersaoPeca(Base):
     diff_anterior = Column(JSON, nullable=True)
 
     # Timestamps
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
 
     # Relacionamentos
     geracao = relationship("GeracaoPeca", back_populates="versoes")
@@ -126,7 +126,7 @@ class FeedbackPeca(Base):
     # Campos específicos que tiveram problemas (opcional)
     campos_incorretos = Column(JSON, nullable=True)
     
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
     
     # Relacionamentos
     geracao = relationship("GeracaoPeca", back_populates="feedback")

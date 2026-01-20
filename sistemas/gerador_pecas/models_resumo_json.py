@@ -10,6 +10,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 class CategoriaResumoJSON(Base):
@@ -105,9 +106,9 @@ class CategoriaResumoJSON(Base):
 
     # Auditoria
     criado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
     atualizado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
-    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     @property
     def namespace(self) -> str:
@@ -150,7 +151,7 @@ class CategoriaResumoJSONHistorico(Base):
     
     # Auditoria
     alterado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
-    alterado_em = Column(DateTime, default=datetime.utcnow)
+    alterado_em = Column(DateTime, default=get_utc_now)
     motivo = Column(Text, nullable=True)
     
     def __repr__(self):

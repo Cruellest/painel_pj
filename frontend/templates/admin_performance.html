@@ -9,6 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/static/js/timezone.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -645,7 +646,7 @@
             <div class="p-2 bg-red-50 rounded text-sm">
                 <div class="flex justify-between">
                     <span class="font-medium text-red-700">${err.action || err.route}</span>
-                    <span class="text-xs text-gray-500">${err.created_at ? new Date(err.created_at).toLocaleTimeString('pt-BR') : ''}</span>
+                    <span class="text-xs text-gray-500">${err.created_at ? formatTime(err.created_at) : ''}</span>
                 </div>
                 <div class="text-xs text-red-600">
                     <span class="font-medium">${err.error_type || 'erro'}</span>: ${err.error_message || '-'}
@@ -690,7 +691,7 @@
         }
 
         tbody.innerHTML = logs.map(log => {
-            const time = log.created_at ? new Date(log.created_at).toLocaleTimeString('pt-BR') : '-';
+            const time = log.created_at ? formatTime(log.created_at) : '-';
             const bottleneckClass = getBottleneckClass(log.bottleneck);
             const statusClass = log.status === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800';
             const systemClass = log.system_name === 'unknown' ? 'bg-gray-100 text-gray-500' : 'bg-indigo-100 text-indigo-800';
@@ -1123,7 +1124,7 @@
             <div class="p-2 bg-red-50 rounded text-sm">
                 <div class="flex justify-between">
                     <span class="font-medium text-red-700">${err.sistema || 'unknown'}</span>
-                    <span class="text-xs text-gray-500">${err.created_at ? new Date(err.created_at).toLocaleTimeString('pt-BR') : ''}</span>
+                    <span class="text-xs text-gray-500">${err.created_at ? formatTime(err.created_at) : ''}</span>
                 </div>
                 <div class="text-xs text-red-600 truncate" title="${err.error || ''}">${err.error || 'Erro desconhecido'}</div>
             </div>
@@ -1162,7 +1163,7 @@
         }
 
         tbody.innerHTML = logs.map(log => {
-            const time = log.created_at ? new Date(log.created_at).toLocaleTimeString('pt-BR') : '-';
+            const time = log.created_at ? formatTime(log.created_at) : '-';
             const statusClass = log.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
             const cacheClass = log.cached ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-600';
             // Formata a rota para exibição (trunca se muito longa)

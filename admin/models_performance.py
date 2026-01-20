@@ -9,10 +9,10 @@ Objetivo: identificar rapidamente se o gargalo e LLM, DB ou Parse.
 """
 
 import re
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, Index, ForeignKey
 from sqlalchemy.orm import relationship
 from database.connection import Base
+from utils.timezone import get_utc_now, to_local
 
 
 class RouteSystemMap(Base):
@@ -29,8 +29,8 @@ class RouteSystemMap(Base):
     system_name = Column(String(100), nullable=False)
     match_type = Column(String(20), nullable=False, default='prefix')  # exact, prefix, regex
     priority = Column(Integer, nullable=False, default=0)  # maior = mais prioritario
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     def matches(self, route: str) -> bool:
         """Verifica se a rota casa com este mapeamento."""
@@ -52,8 +52,8 @@ class RouteSystemMap(Base):
             "system_name": self.system_name,
             "match_type": self.match_type,
             "priority": self.priority,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_at": to_local(self.created_at).isoformat() if self.created_at else None,
+            "updated_at": to_local(self.updated_at).isoformat() if self.updated_at else None,
         }
 
     def __repr__(self):
@@ -70,7 +70,7 @@ class AdminSettings(Base):
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(100), unique=True, nullable=False, index=True)
     value = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
 
@@ -83,7 +83,7 @@ class PerformanceLog(Base):
     __tablename__ = "performance_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=get_utc_now, index=True)
 
     # Identificacao
     request_id = Column(String(36), nullable=True, index=True)  # UUID da request
@@ -126,7 +126,7 @@ class PerformanceLog(Base):
         """Converte para dicionario com bottleneck calculado."""
         data = {
             "id": self.id,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_at": to_local(self.created_at).isoformat() if self.created_at else None,
             "request_id": self.request_id,
             "admin_user_id": self.admin_user_id,
             "admin_username": self.admin_username,

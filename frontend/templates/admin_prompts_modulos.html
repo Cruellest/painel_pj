@@ -10,6 +10,7 @@
     <!-- SortableJS para drag & drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
+    <script src="/static/js/timezone.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -4818,7 +4819,7 @@
                 document.getElementById('modal-subtitulo').textContent = modulo.titulo;
                 document.getElementById('motivo-container').classList.remove('hidden');
                 document.getElementById('btn-historico').classList.remove('hidden');
-                document.getElementById('versao-info').textContent = `Versão ${modulo.versao} - Atualizado em ${new Date(modulo.atualizado_em).toLocaleString('pt-BR')}`;
+                document.getElementById('versao-info').textContent = `Versão ${modulo.versao} - Atualizado em ${formatDateTime(modulo.atualizado_em)}`;
                 
                 // Mostra/esconde campo de condição baseado no tipo
                 toggleCondicaoAtivacao();
@@ -5059,7 +5060,7 @@
                     <div class="border border-gray-200 rounded-lg p-4">
                         <div class="flex items-center justify-between mb-2">
                             <span class="font-semibold text-gray-800">Versão ${h.versao}</span>
-                            <span class="text-sm text-gray-500">${new Date(h.alterado_em).toLocaleString('pt-BR')}</span>
+                            <span class="text-sm text-gray-500">${formatDateTime(h.alterado_em)}</span>
                         </div>
                         <p class="text-sm text-gray-600 mb-2">${h.motivo || 'Sem descrição'}</p>
                         <div class="text-xs text-gray-400">${h.diff_resumo || ''}</div>

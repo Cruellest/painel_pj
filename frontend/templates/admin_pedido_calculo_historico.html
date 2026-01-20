@@ -12,6 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <!-- SECURITY: Utilitários de segurança -->
     <script src="/static/js/security.js"></script>
+    <script src="/static/js/timezone.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -226,8 +227,8 @@
                             </div>
                         </div>
                         <div class="text-right">
-                            <p class="text-sm text-gray-500">${escapeHtml(new Date(g.criado_em).toLocaleDateString('pt-BR'))}</p>
-                            <p class="text-xs text-gray-400">${escapeHtml(new Date(g.criado_em).toLocaleTimeString('pt-BR'))}</p>
+                            <p class="text-sm text-gray-500">${escapeHtml(formatDate(g.criado_em))}</p>
+                            <p class="text-xs text-gray-400">${escapeHtml(formatTime(g.criado_em))}</p>
                             ${g.tempo_processamento ? `<p class="text-xs text-green-600 mt-1">⏱️ ${escapeHtml(String(g.tempo_processamento))}s</p>` : ''}
                         </div>
                     </div>
@@ -275,7 +276,7 @@
                 // Info rodapé - SECURITY: escapeHtml
                 document.getElementById('info-geracao').innerHTML = `
                     <strong>${escapeHtml(geracao.numero_cnj_formatado || geracao.numero_cnj)}</strong> |
-                    ${escapeHtml(new Date(geracao.criado_em).toLocaleString('pt-BR'))} |
+                    ${escapeHtml(formatDateTime(geracao.criado_em))} |
                     ${parseInt((geracao.logs_ia || []).length) || 0} chamadas IA
                 `;
                 

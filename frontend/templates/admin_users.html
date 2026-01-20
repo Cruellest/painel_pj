@@ -7,6 +7,7 @@
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script src="/static/js/timezone.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -355,7 +356,7 @@
                     ? '<span class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">Ativo</span>'
                     : '<span class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-full">Inativo</span>';
                 
-                const createdAt = new Date(user.created_at).toLocaleDateString('pt-BR');
+                const createdAt = formatDate(user.created_at);
 
                 return `
                     <tr class="hover:bg-gray-50 transition-colors">

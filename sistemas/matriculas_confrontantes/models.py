@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 class ArquivoUpload(Base):
@@ -18,7 +19,7 @@ class ArquivoUpload(Base):
     file_id = Column(String(255), unique=True, index=True, nullable=False)
     file_name = Column(String(255), nullable=False)
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
 
     def __repr__(self):
         return f"<ArquivoUpload(file_id='{self.file_id}', usuario_id={self.usuario_id})>"
@@ -32,7 +33,7 @@ class GrupoAnalise(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(255), nullable=True)  # Nome opcional do grupo
     descricao = Column(Text, nullable=True)
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     # Status do grupo: 'pendente', 'processando', 'concluido', 'erro'
@@ -61,7 +62,7 @@ class Analise(Base):
     matricula_principal = Column(String(50), nullable=True)
     resultado_json = Column(JSON, nullable=True)
     confianca = Column(Float, default=0.0)
-    analisado_em = Column(DateTime, default=datetime.utcnow)
+    analisado_em = Column(DateTime, default=get_utc_now)
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     # Referência ao grupo de análise (opcional - análise pode ser individual)
@@ -103,7 +104,7 @@ class FeedbackMatricula(Base):
     # Campos específicos que estavam errados (opcional)
     campos_incorretos = Column(JSON, nullable=True)
     
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
     
     # Relacionamentos
     analise = relationship("Analise", back_populates="feedback")
@@ -126,8 +127,8 @@ class Registro(Base):
     confianca = Column(Float, default=0.0)
     expanded = Column(Boolean, default=False)
     children = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     def __repr__(self):
@@ -143,7 +144,7 @@ class LogSistema(Base):
     time = Column(String(20), nullable=False)
     status = Column(String(20), nullable=False)  # 'info', 'success', 'warning', 'error'
     message = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
     sistema = Column(String(50), default="matriculas")
 
     def __repr__(self):

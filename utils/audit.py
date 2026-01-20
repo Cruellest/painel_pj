@@ -20,7 +20,7 @@ Eventos registrados:
 
 import logging
 import json
-from datetime import datetime
+from utils.timezone import get_utc_now
 from typing import Optional, Dict, Any
 from enum import Enum
 from fastapi import Request
@@ -178,7 +178,7 @@ def log_audit_event(
     # Constrói registro de auditoria
     audit_record = {
         "event": event.value,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": get_utc_now().isoformat() + "Z",
         "success": success,
         "user_id": user_id,
         "username": username,

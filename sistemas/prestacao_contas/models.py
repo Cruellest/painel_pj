@@ -5,9 +5,9 @@ Modelos SQLAlchemy para o sistema de Prestação de Contas
 
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, JSON, Float
 from sqlalchemy.orm import relationship
-from datetime import datetime
 
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 class GeracaoAnalise(Base):
@@ -96,8 +96,8 @@ class GeracaoAnalise(Base):
     # Expiração do estado salvo (24h após criação)
     estado_expira_em = Column(DateTime, nullable=True)  # Se None ou expirado, recomeça do zero
 
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
+    atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     # Relacionamentos
     logs_ia = relationship("LogChamadaIAPrestacao", back_populates="geracao", cascade="all, delete-orphan")
@@ -129,7 +129,7 @@ class LogChamadaIAPrestacao(Base):
     sucesso = Column(Boolean, default=True)
     erro = Column(Text, nullable=True)
 
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
 
     # Relacionamento
     geracao = relationship("GeracaoAnalise", back_populates="logs_ia")
@@ -152,7 +152,7 @@ class FeedbackPrestacao(Base):
     valores_corretos = Column(Boolean, nullable=True)
     medicamento_correto = Column(Boolean, nullable=True)
 
-    criado_em = Column(DateTime, default=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
 
     # Relacionamento
     geracao = relationship("GeracaoAnalise", back_populates="feedbacks")

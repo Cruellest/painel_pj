@@ -3,11 +3,11 @@
 Modelo de usuário para autenticação
 """
 
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from database.connection import Base
 from admin.models_prompt_groups import user_prompt_groups
+from utils.timezone import get_utc_now
 
 
 class User(Base):
@@ -38,8 +38,8 @@ class User(Base):
     
     must_change_password = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=get_utc_now)
+    updated_at = Column(DateTime(timezone=True), default=get_utc_now, onupdate=get_utc_now)
 
     def pode_acessar_sistema(self, sistema: str) -> bool:
         """Verifica se o usuário pode acessar um sistema específico"""

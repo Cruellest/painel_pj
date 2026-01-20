@@ -12,6 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
     <!-- SECURITY: Utilitários de segurança -->
     <script src="/static/js/security.js"></script>
+    <script src="/static/js/timezone.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -300,8 +301,8 @@
                                 <span class="inline-block px-3 py-1 rounded-full text-xs font-medium ${escapeHtml(parecerBadge.badge)}">
                                     ${escapeHtml(parecerBadge.label)}
                                 </span>
-                                <p class="text-sm text-gray-500 mt-1">${escapeHtml(new Date(g.criado_em).toLocaleDateString('pt-BR'))}</p>
-                                <p class="text-xs text-gray-400">${escapeHtml(new Date(g.criado_em).toLocaleTimeString('pt-BR'))}</p>
+                                <p class="text-sm text-gray-500 mt-1">${escapeHtml(formatDate(g.criado_em))}</p>
+                                <p class="text-xs text-gray-400">${escapeHtml(formatTime(g.criado_em))}</p>
                             </div>
                         </div>
 
@@ -435,7 +436,7 @@
                 // Info rodapé
                 document.getElementById('info-geracao').innerHTML = `
                     <strong>${geracao.numero_cnj}</strong> |
-                    ${new Date(geracao.criado_em).toLocaleString('pt-BR')} |
+                    ${formatDateTime(geracao.criado_em)} |
                     ${(geracao.logs_ia || []).length} chamadas IA
                 `;
 
@@ -580,7 +581,7 @@
                 // Info rodapé - SECURITY: escapeHtml
                 document.getElementById('info-geracao').innerHTML = `
                     <strong>${escapeHtml(geracaoAtual.numero_cnj)}</strong> |
-                    ${escapeHtml(new Date(geracaoAtual.criado_em).toLocaleString('pt-BR'))} |
+                    ${escapeHtml(formatDateTime(geracaoAtual.criado_em))} |
                     ${parseInt((geracaoAtual.logs_ia || []).length) || 0} chamadas IA
                 `;
 

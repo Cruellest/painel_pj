@@ -12,6 +12,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 # Tabela de associação entre TipoPeca e CategoriaDocumento (muitos-para-muitos)
@@ -55,8 +56,8 @@ class CategoriaDocumento(Base):
     is_primeiro_documento = Column(Boolean, default=False)
     
     # Auditoria
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
+    atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
     
     # Relacionamentos
     tipos_peca = relationship(
@@ -106,8 +107,8 @@ class TipoPeca(Base):
     configuracoes = Column(JSON, nullable=True)
     
     # Auditoria
-    criado_em = Column(DateTime, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_em = Column(DateTime, default=get_utc_now)
+    atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
     
     # Relacionamentos
     categorias_documento = relationship(

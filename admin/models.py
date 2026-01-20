@@ -3,9 +3,9 @@
 Modelos de administração - Configurações de Prompts de IA
 """
 
-from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 class PromptConfig(Base):
@@ -26,8 +26,8 @@ class PromptConfig(Base):
     
     # Metadados
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
     updated_by = Column(String(50), nullable=True)  # Username de quem atualizou
     
     def __repr__(self):
@@ -49,8 +49,8 @@ class ConfiguracaoIA(Base):
     descricao = Column(String(500), nullable=True)
     
     # Metadados
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_utc_now)
+    updated_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
     
     def __repr__(self):
         return f"<ConfiguracaoIA(sistema='{self.sistema}', chave='{self.chave}')>"

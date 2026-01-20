@@ -10,6 +10,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from database.connection import Base
+from utils.timezone import get_utc_now
 
 
 class TesteDocumento(Base):
@@ -46,7 +47,7 @@ class TesteDocumento(Base):
     revisado = Column(Boolean, default=False, index=True)
 
     # Timestamps
-    data_criacao = Column(DateTime, default=datetime.utcnow)
+    data_criacao = Column(DateTime, default=get_utc_now)
     data_download = Column(DateTime, nullable=True)
     data_classificacao = Column(DateTime, nullable=True)
     data_revisao = Column(DateTime, nullable=True)
@@ -93,7 +94,7 @@ class TesteObservacao(Base):
 
     texto = Column(Text, nullable=True)
 
-    data_atualizacao = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    data_atualizacao = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
     __table_args__ = (
         UniqueConstraint('usuario_id', 'categoria_id', name='uq_teste_obs_usuario_categoria'),
