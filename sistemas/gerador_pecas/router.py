@@ -22,6 +22,7 @@ from database.connection import get_db
 from services.text_normalizer import text_normalizer
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
 from sistemas.gerador_pecas.services import GeradorPecasService
+from sistemas.gerador_pecas.orquestrador_agentes import consolidar_dados_extracao
 from sistemas.gerador_pecas.versoes import (
     criar_versao_inicial,
     criar_nova_versao,
@@ -438,9 +439,19 @@ async def processar_processo_stream(
                         # Continua com o resumo completo
                 
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Analisando e ativando prompts...'})}\n\n"
-                
-                resultado_agente2 = await orq._executar_agente2(resumo_para_geracao, tipo_peca)
-                
+
+                # Extrai dados das variáveis dos resumos JSON para avaliação determinística
+                dados_extracao = consolidar_dados_extracao(resultado_agente1)
+                print(f"[ROUTER] dados_extracao consolidados: {len(dados_extracao)} variáveis")
+
+                # Passa dados de extração para permitir fast path determinístico
+                resultado_agente2 = await orq._executar_agente2(
+                    resumo_para_geracao,
+                    tipo_peca,
+                    dados_processo=resultado_agente1.dados_brutos,
+                    dados_extracao=dados_extracao
+                )
+
                 if resultado_agente2.erro:
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
@@ -699,14 +710,21 @@ async def processar_pdfs_stream(
                         yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Não foi possível detectar automaticamente. Usando: contestação'})}\n\n"
                 
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Analisando e ativando prompts...'})}\n\n"
-                
-                resultado_agente2 = await orq._executar_agente2(resumo_consolidado, tipo_peca_final)
-                
+
+                # Fluxo PDF direto: não temos dados de extração estruturados do Agente 1
+                # Portanto, regras determinísticas não funcionarão - usará LLM
+                resultado_agente2 = await orq._executar_agente2(
+                    resumo_consolidado,
+                    tipo_peca_final,
+                    dados_processo=None,
+                    dados_extracao=None  # Sem dados estruturados no fluxo PDF
+                )
+
                 if resultado_agente2.erro:
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
                     return
-                
+
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'concluido', 'mensagem': f'{len(resultado_agente2.modulos_ids)} módulos ativados'})}\n\n"
 
                 # Agente 3: Gerador
