@@ -559,10 +559,24 @@ async def processar_processo_stream(
                 )
                 yield f"data: {json.dumps(resultado)}\n\n"
                 
+        except asyncio.TimeoutError:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'A solicitação demorou mais que o esperado. Tente com um pedido menor ou divida em partes.'})}\n\n"
         except Exception as e:
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': str(e)})}\n\n"
+            # Mensagem mais amigável para erros comuns
+            erro_str = str(e)
+            if 'timeout' in erro_str.lower() or 'timed out' in erro_str.lower():
+                mensagem_erro = 'A geração demorou mais que o esperado. Tente novamente ou use um pedido mais simples.'
+            elif 'token' in erro_str.lower() and ('limit' in erro_str.lower() or 'exceeded' in erro_str.lower()):
+                mensagem_erro = 'O conteúdo é muito extenso. Tente dividir em partes menores ou reduzir as observações.'
+            elif 'connection' in erro_str.lower() or 'network' in erro_str.lower():
+                mensagem_erro = 'Erro de conexão com o servidor. Verifique sua internet e tente novamente.'
+            else:
+                mensagem_erro = f'Erro ao processar: {erro_str}'
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': mensagem_erro})}\n\n"
     
     return StreamingResponse(
         event_generator(),
@@ -623,10 +637,17 @@ async def processar_pdfs_stream(
 ):
     """
     Processa arquivos PDF anexados e gera a peça jurídica.
-    
+
     Esta rota permite gerar peças a partir de PDFs enviados diretamente,
     sem necessidade de informar um número de processo do TJ-MS.
-    
+
+    Fluxo com classificação de documentos:
+    1. Classifica cada PDF em uma categoria (via IA)
+    2. Extrai JSON estruturado de cada documento conforme sua categoria
+    3. Seleciona documentos primários/secundários para o tipo de peça
+    4. Monta resumo consolidado com dados estruturados
+    5. Executa Agente 2 (detector de módulos) e Agente 3 (gerador)
+
     Returns:
         Stream SSE com progresso da geração
     """
@@ -643,81 +664,289 @@ async def processar_pdfs_stream(
         try:
             # Evento inicial
             yield f"data: {json.dumps({'tipo': 'inicio', 'mensagem': 'Processando arquivos PDF...'})}\n\n"
-            
-            # Extrai texto dos PDFs
-            yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': f'Extraindo texto de {len(arquivos)} arquivo(s)...'})}\n\n"
-            
-            documentos_texto = []
+
+            # ==================================================================
+            # ESTÁGIO 1: LEITURA E CLASSIFICAÇÃO DE DOCUMENTOS
+            # ==================================================================
+            yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': f'Lendo {len(arquivos)} arquivo(s)...'})}\n\n"
+
+            # Lê bytes de todos os PDFs
+            documentos_bytes = []
             for i, arquivo in enumerate(arquivos):
                 if not arquivo.filename.lower().endswith('.pdf'):
                     yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Ignorando arquivo não-PDF: {arquivo.filename}'})}\n\n"
                     continue
-                    
+
                 conteudo = await arquivo.read()
-                texto = _extrair_texto_pdf(conteudo)
-                
-                if texto.strip():
-                    documentos_texto.append({
-                        "nome": arquivo.filename,
-                        "texto": texto,
-                        "ordem": i + 1
-                    })
-                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Extraído: {arquivo.filename} ({len(texto)} caracteres)'})}\n\n"
-                else:
-                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Sem texto extraível: {arquivo.filename}'})}\n\n"
-            
-            if not documentos_texto:
-                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Nenhum texto foi extraído dos PDFs. Verifique se os arquivos contêm texto legível.'})}\n\n"
+                documentos_bytes.append({
+                    "nome": arquivo.filename,
+                    "id": f"pdf_{i+1}",
+                    "bytes": conteudo,
+                    "ordem": i + 1
+                })
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Lido: {arquivo.filename} ({len(conteudo)} bytes)'})}\n\n"
+
+            if not documentos_bytes:
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Nenhum arquivo PDF válido encontrado.'})}\n\n"
                 return
-            
-            # Monta o resumo consolidado a partir dos textos extraídos
-            resumo_consolidado = _montar_resumo_pdfs(documentos_texto)
-            
-            yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'concluido', 'mensagem': f'{len(documentos_texto)} documento(s) processado(s)'})}\n\n"
-            
-            # Busca configurações
+
+            # Classifica cada documento
+            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Classificando documentos por categoria...'})}\n\n"
+
+            from sistemas.gerador_pecas.document_classifier import DocumentClassifier
+            from sistemas.gerador_pecas.document_selector import DocumentSelector
+
+            classificador = DocumentClassifier(db)
+            classificacoes = await classificador.classificar_lote(documentos_bytes)
+
+            # Exibe resultado da classificação
+            for clf in classificacoes:
+                status = "fallback" if clf.fallback_aplicado else f"conf: {clf.confianca:.0%}"
+                source_label = {"text": "TEXTO", "ocr_text": "OCR", "full_image": "IMAGEM"}.get(clf.source.value, clf.source.value)
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'• {clf.arquivo_nome}: {clf.categoria_nome} ({status}) [{source_label}]'})}\n\n"
+
+            # ==================================================================
+            # ESTÁGIO 2: SELEÇÃO DE DOCUMENTOS (após saber tipo de peça)
+            # ==================================================================
+            tipo_peca_final = tipo_peca
+
+            # Se não tem tipo de peça, detecta automaticamente
+            if not tipo_peca_final:
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Detectando tipo de peça automaticamente...'})}\n\n"
+
+                # Busca configurações do modelo de geração
+                config_modelo = db.query(ConfiguracaoIA).filter(
+                    ConfiguracaoIA.sistema == "gerador_pecas",
+                    ConfiguracaoIA.chave == "modelo_geracao"
+                ).first()
+                modelo = config_modelo.valor if config_modelo else "google/gemini-2.5-pro-preview-05-06"
+
+                # Inicializa serviço para usar o detector do agente 2
+                service = GeradorPecasService(
+                    modelo=modelo,
+                    db=db,
+                    group_id=group_id,
+                    subcategoria_ids=subcategoria_ids
+                )
+
+                if service.orquestrador:
+                    # Monta resumo simples para detecção de tipo
+                    texto_resumo = "\n\n".join([
+                        f"Documento: {clf.arquivo_nome}\nCategoria: {clf.categoria_nome}\nJustificativa: {clf.justificativa}"
+                        for clf in classificacoes
+                    ])
+                    deteccao = await service.orquestrador.agente2.detectar_tipo_peca(texto_resumo)
+                    tipo_peca_final = deteccao.get("tipo_peca") or "contestacao"
+                    confianca_tipo = deteccao.get("confianca", "media")
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Tipo detectado: {tipo_peca_final} (confiança: {confianca_tipo})'})}\n\n"
+                else:
+                    tipo_peca_final = "contestacao"
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Usando tipo padrão: contestação'})}\n\n"
+
+            # Seleciona documentos primários e secundários
+            seletor = DocumentSelector(db)
+            selecao = seletor.selecionar_documentos(classificacoes, tipo_peca_final)
+
+            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Seleção: {len(selecao.documentos_primarios)} primário(s), {len(selecao.documentos_secundarios)} secundário(s)'})}\n\n"
+
+            # ==================================================================
+            # ESTÁGIO 3: EXTRAÇÃO DE JSON POR CATEGORIA
+            # ==================================================================
+            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Extraindo dados estruturados dos documentos...'})}\n\n"
+
+            from sistemas.gerador_pecas.extrator_resumo_json import (
+                FormatoResumo, gerar_prompt_extracao_json, gerar_prompt_extracao_json_imagem,
+                parsear_resposta_json, normalizar_json_com_schema, json_para_markdown
+            )
+            from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON
+            from sistemas.gerador_pecas.gemini_client import chamar_gemini_async, chamar_gemini_com_imagens_async
+
+            # Mapeia classificações por arquivo_id para acesso rápido
+            clf_por_id = {clf.arquivo_id: clf for clf in classificacoes}
+            doc_bytes_por_id = {d["id"]: d for d in documentos_bytes}
+
+            # Processa documentos primários e secundários
+            documentos_processados = []
+            dados_extracao_consolidados = {}
+            resumos_markdown = []
+
+            todos_docs_selecionados = selecao.get_todos_selecionados()
+
+            for sel_doc in todos_docs_selecionados:
+                clf = sel_doc.classificacao
+                doc_data = doc_bytes_por_id.get(clf.arquivo_id)
+
+                if not doc_data:
+                    continue
+
+                # Busca categoria e formato JSON
+                categoria = db.query(CategoriaResumoJSON).filter(
+                    CategoriaResumoJSON.id == clf.categoria_id,
+                    CategoriaResumoJSON.ativo == True
+                ).first()
+
+                if not categoria or not categoria.formato_json:
+                    # Sem formato JSON configurado - usa texto bruto
+                    texto = _extrair_texto_pdf(doc_data["bytes"])
+                    resumos_markdown.append(f"### {clf.arquivo_nome} ({clf.categoria_nome})\n\n{texto[:5000]}...")
+                    documentos_processados.append({
+                        "nome": clf.arquivo_nome,
+                        "ordem": doc_data["ordem"],
+                        "categoria": clf.categoria_nome,
+                        "categoria_id": clf.categoria_id,
+                        "confianca": clf.confianca,
+                        "source": clf.source.value,
+                        "role": sel_doc.role.value
+                    })
+                    continue
+
+                # Monta formato para extração
+                formato = FormatoResumo(
+                    categoria_id=categoria.id,
+                    categoria_nome=categoria.nome,
+                    formato_json=categoria.formato_json,
+                    instrucoes_extracao=categoria.instrucoes_extracao,
+                    is_residual=categoria.is_residual
+                )
+
+                # Extrai conteúdo do PDF para extração JSON
+                from sistemas.gerador_pecas.document_classifier import extrair_conteudo_pdf
+                conteudo_pdf = extrair_conteudo_pdf(doc_data["bytes"])
+
+                # Prepara chamada de extração baseado no tipo de conteúdo
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Extraindo JSON de: {clf.arquivo_nome}...'})}\n\n"
+
+                try:
+                    if conteudo_pdf.tem_texto and conteudo_pdf.texto_qualidade == "good":
+                        # Extração via texto
+                        prompt = gerar_prompt_extracao_json(formato, f"Documento: {clf.arquivo_nome}", db)
+                        prompt_final = prompt.replace("{texto_documento}", conteudo_pdf.texto[:30000])
+
+                        resposta = await chamar_gemini_async(
+                            prompt=prompt_final,
+                            modelo="gemini-2.5-flash-lite",
+                            temperature=0.1,
+                            max_tokens=8000
+                        )
+                    else:
+                        # Extração via imagens
+                        prompt = gerar_prompt_extracao_json_imagem(formato, db)
+
+                        # Converte imagens para base64
+                        import base64
+                        imagens_b64 = [base64.b64encode(img).decode() for img in conteudo_pdf.imagens[:5]]
+
+                        resposta = await chamar_gemini_com_imagens_async(
+                            prompt=prompt,
+                            imagens_base64=imagens_b64,
+                            modelo="gemini-2.5-flash-lite",
+                            temperature=0.1,
+                            max_tokens=8000
+                        )
+
+                    # Parseia resposta JSON
+                    json_extraido, erro_parse = parsear_resposta_json(resposta)
+
+                    if erro_parse:
+                        print(f"[PDF] Erro ao parsear JSON de {clf.arquivo_nome}: {erro_parse}")
+                        texto = _extrair_texto_pdf(doc_data["bytes"])
+                        resumos_markdown.append(f"### {clf.arquivo_nome} ({clf.categoria_nome})\n\n{texto[:5000]}...")
+                    else:
+                        # Normaliza JSON com schema
+                        json_normalizado = normalizar_json_com_schema(json_extraido, categoria.formato_json)
+
+                        # Converte para markdown para resumo
+                        md = json_para_markdown(json_normalizado)
+                        resumos_markdown.append(f"### {clf.arquivo_nome} ({clf.categoria_nome})\n\n{md}")
+
+                        # Consolida dados de extração
+                        # NOTA: Se a chave já começa com o namespace (ex: peticao_inicial_),
+                        # não duplica o prefixo para evitar peticao_inicial_peticao_inicial_xxx
+                        namespace = categoria.namespace or categoria.nome.lower()
+                        namespace_prefix = f"{namespace}_" if namespace else ""
+                        
+                        for chave, valor in json_normalizado.items():
+                            # Verifica se a chave já começa com o namespace para evitar duplicação
+                            if namespace_prefix and chave.startswith(namespace_prefix):
+                                slug = chave  # Já tem o prefixo, usa como está
+                            elif namespace:
+                                slug = f"{namespace}_{chave}"
+                            else:
+                                slug = chave
+
+                            if slug not in dados_extracao_consolidados:
+                                dados_extracao_consolidados[slug] = valor
+                            else:
+                                # Lógica de consolidação
+                                existente = dados_extracao_consolidados[slug]
+                                if isinstance(existente, bool) and isinstance(valor, bool):
+                                    dados_extracao_consolidados[slug] = existente or valor
+                                elif isinstance(existente, list) and isinstance(valor, list):
+                                    dados_extracao_consolidados[slug] = list(set(existente + valor))
+
+                except Exception as e:
+                    print(f"[PDF] Erro na extração de {clf.arquivo_nome}: {e}")
+                    texto = _extrair_texto_pdf(doc_data["bytes"])
+                    resumos_markdown.append(f"### {clf.arquivo_nome} ({clf.categoria_nome})\n\n{texto[:5000]}...")
+
+                documentos_processados.append({
+                    "nome": clf.arquivo_nome,
+                    "ordem": doc_data["ordem"],
+                    "categoria": clf.categoria_nome,
+                    "categoria_id": clf.categoria_id,
+                    "confianca": clf.confianca,
+                    "source": clf.source.value,
+                    "role": sel_doc.role.value,
+                    "justificativa": clf.justificativa
+                })
+
+            yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'concluido', 'mensagem': f'{len(documentos_processados)} documento(s) processado(s) com extração JSON'})}\n\n"
+
+            # ==================================================================
+            # ESTÁGIO 4: MONTAR RESUMO CONSOLIDADO
+            # ==================================================================
+            resumo_consolidado = _montar_resumo_pdfs_classificados(
+                documentos_processados,
+                resumos_markdown,
+                selecao
+            )
+
+            # ==================================================================
+            # ESTÁGIO 5: AGENTE 2 E 3 (mesmo fluxo anterior)
+            # ==================================================================
             config_modelo = db.query(ConfiguracaoIA).filter(
                 ConfiguracaoIA.sistema == "gerador_pecas",
                 ConfiguracaoIA.chave == "modelo_geracao"
             ).first()
             modelo = config_modelo.valor if config_modelo else "google/gemini-2.5-pro-preview-05-06"
-            
-            # Inicializa o serviço
+
             service = GeradorPecasService(
                 modelo=modelo,
                 db=db,
                 group_id=group_id,
                 subcategoria_ids=subcategoria_ids
             )
-            
-            # Se tem orquestrador, usa os agentes 2 e 3
+
             if service.orquestrador:
                 orq = service.orquestrador
-                tipo_peca_final = tipo_peca
-                
-                # Agente 2: Detector de Módulos (e tipo de peça se necessário)
-                if not tipo_peca_final:
-                    yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Detectando tipo de peça automaticamente...'})}\n\n"
-                    
-                    deteccao_tipo = await orq.agente2.detectar_tipo_peca(resumo_consolidado)
-                    tipo_peca_final = deteccao_tipo.get("tipo_peca")
-                    
-                    if tipo_peca_final:
-                        confianca = deteccao_tipo.get("confianca", "media")
-                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Tipo detectado: {tipo_peca_final} (confiança: {confianca})'})}\n\n"
-                    else:
-                        tipo_peca_final = "contestacao"
-                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Não foi possível detectar automaticamente. Usando: contestação'})}\n\n"
-                
+
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Analisando e ativando prompts...'})}\n\n"
 
-                # Fluxo PDF direto: não temos dados de extração estruturados do Agente 1
-                # Portanto, regras determinísticas não funcionarão - usará LLM
+                # Log detalhado das variáveis extraídas para debug
+                if dados_extracao_consolidados:
+                    print(f"[PDF-ROUTER] Variáveis extraídas para avaliação determinística:")
+                    for slug, valor in dados_extracao_consolidados.items():
+                        print(f"[PDF-ROUTER]   - {slug}: {valor}")
+                    print(f"[PDF-ROUTER] Tipo de peça para avaliação: {tipo_peca_final}")
+                else:
+                    print(f"[PDF-ROUTER] AVISO: Nenhuma variável extraída dos PDFs!")
+
+                # AGORA temos dados de extração estruturados!
                 resultado_agente2 = await orq._executar_agente2(
                     resumo_consolidado,
                     tipo_peca_final,
                     dados_processo=None,
-                    dados_extracao=None  # Sem dados estruturados no fluxo PDF
+                    dados_extracao=dados_extracao_consolidados if dados_extracao_consolidados else None
                 )
 
                 if resultado_agente2.erro:
@@ -725,12 +954,15 @@ async def processar_pdfs_stream(
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
                     return
 
-                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'concluido', 'mensagem': f'{len(resultado_agente2.modulos_ids)} módulos ativados'})}\n\n"
+                # Info sobre modo de ativação
+                modo_info = resultado_agente2.modo_ativacao or "llm"
+                det_count = resultado_agente2.modulos_ativados_det or 0
+                llm_count = resultado_agente2.modulos_ativados_llm or 0
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'concluido', 'mensagem': f'{len(resultado_agente2.modulos_ids)} módulos ({det_count} det, {llm_count} LLM)'})}\n\n"
 
                 # Agente 3: Gerador
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peça jurídica com IA...'})}\n\n"
 
-                # Log se há observação do usuário
                 if observacao_usuario:
                     yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Observações do usuário serão consideradas na geração'})}\n\n"
 
@@ -747,18 +979,12 @@ async def processar_pdfs_stream(
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
                     return
-                
+
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'concluido', 'mensagem': 'Peça gerada com sucesso!'})}\n\n"
-                
-                # Prepara lista de documentos processados
-                documentos_processados = [
-                    {"nome": doc["nome"], "ordem": doc["ordem"]}
-                    for doc in documentos_texto
-                ]
-                
+
                 # Salva no banco
                 geracao = GeracaoPeca(
-                    numero_cnj="PDF_UPLOAD",  # Identificador para uploads de PDF
+                    numero_cnj="PDF_UPLOAD",
                     numero_cnj_formatado="PDFs Anexados",
                     tipo_peca=tipo_peca_final,
                     conteudo_gerado=resultado_agente3.conteudo_markdown,
@@ -768,24 +994,44 @@ async def processar_pdfs_stream(
                     modelo_usado=modelo,
                     usuario_id=current_user.id
                 )
+
+                # Campos de modo de ativação
+                try:
+                    geracao.modo_ativacao_agente2 = resultado_agente2.modo_ativacao
+                    geracao.modulos_ativados_det = resultado_agente2.modulos_ativados_det
+                    geracao.modulos_ativados_llm = resultado_agente2.modulos_ativados_llm
+                except AttributeError:
+                    pass
+
                 db.add(geracao)
                 db.commit()
                 db.refresh(geracao)
 
-                # Cria versão inicial no histórico de versões
                 criar_versao_inicial(db, geracao.id, resultado_agente3.conteudo_markdown)
 
-                # Resultado final
                 yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao.id, 'tipo_peca': tipo_peca_final, 'minuta_markdown': resultado_agente3.conteudo_markdown})}\n\n"
             else:
-                # Fallback sem orquestrador
                 yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Orquestrador de agentes não disponível'})}\n\n"
-                
+
+        except asyncio.TimeoutError:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'A solicitação demorou mais que o esperado. Tente com menos arquivos ou documentos menores.'})}\n\n"
         except Exception as e:
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': str(e)})}\n\n"
-    
+            # Mensagem mais amigável para erros comuns
+            erro_str = str(e)
+            if 'timeout' in erro_str.lower() or 'timed out' in erro_str.lower():
+                mensagem_erro = 'A geração demorou mais que o esperado. Tente novamente ou use menos arquivos.'
+            elif 'token' in erro_str.lower() and ('limit' in erro_str.lower() or 'exceeded' in erro_str.lower()):
+                mensagem_erro = 'O conteúdo dos PDFs é muito extenso. Tente com menos arquivos ou documentos menores.'
+            elif 'connection' in erro_str.lower() or 'network' in erro_str.lower():
+                mensagem_erro = 'Erro de conexão com o servidor. Verifique sua internet e tente novamente.'
+            else:
+                mensagem_erro = f'Erro ao processar: {erro_str}'
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': mensagem_erro})}\n\n"
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
@@ -795,6 +1041,53 @@ async def processar_pdfs_stream(
             "X-Accel-Buffering": "no"
         }
     )
+
+
+def _montar_resumo_pdfs_classificados(
+    documentos: List[Dict],
+    resumos_markdown: List[str],
+    selecao
+) -> str:
+    """
+    Monta resumo consolidado a partir de documentos classificados e JSONs extraídos.
+    """
+    partes = []
+
+    partes.append("# RESUMO CONSOLIDADO DOS DOCUMENTOS")
+    partes.append(f"**Origem**: Arquivos PDF anexados (com classificação por categoria)")
+    partes.append(f"**Data da Análise**: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    partes.append(f"**Total de Documentos**: {len(documentos)}")
+    partes.append(f"**Tipo de Peça**: {selecao.tipo_peca}")
+    partes.append(f"**Seleção**: {selecao.razao_geral}")
+    partes.append("\n---\n")
+
+    # Documentos primários
+    if selecao.documentos_primarios:
+        partes.append("## DOCUMENTOS PRIMÁRIOS (fonte principal)\n")
+        for sel_doc in selecao.documentos_primarios:
+            clf = sel_doc.classificacao
+            partes.append(f"- **{clf.arquivo_nome}** → {clf.categoria_nome} (conf: {clf.confianca:.0%})")
+        partes.append("")
+
+    # Documentos secundários
+    if selecao.documentos_secundarios:
+        partes.append("## DOCUMENTOS SECUNDÁRIOS (fontes auxiliares)\n")
+        for sel_doc in selecao.documentos_secundarios:
+            clf = sel_doc.classificacao
+            partes.append(f"- **{clf.arquivo_nome}** → {clf.categoria_nome} (conf: {clf.confianca:.0%})")
+        partes.append("")
+
+    partes.append("---\n")
+    partes.append("## CONTEÚDO EXTRAÍDO\n")
+
+    # Adiciona resumos markdown
+    for resumo in resumos_markdown:
+        partes.append(resumo)
+        partes.append("\n---\n")
+
+    partes.append("*Este resumo foi gerado a partir de arquivos PDF classificados automaticamente.*")
+
+    return "\n".join(partes)
 
 
 def _montar_resumo_pdfs(documentos: List[Dict]) -> str:
@@ -839,6 +1132,12 @@ async def editar_minuta(
     Retorna a minuta atualizada em markdown.
     """
     try:
+        # Logging de tamanho para diagnóstico
+        minuta_len = len(req.minuta_atual) if req.minuta_atual else 0
+        mensagem_len = len(req.mensagem) if req.mensagem else 0
+        historico_len = len(req.historico) if req.historico else 0
+        print(f"[EDITAR-MINUTA] 📝 Tamanho da minuta: {minuta_len:,} chars, mensagem: {mensagem_len:,} chars, histórico: {historico_len} msgs")
+        
         # Busca configurações de IA
         config_modelo = db.query(ConfiguracaoIA).filter(
             ConfiguracaoIA.sistema == "gerador_pecas",
@@ -861,10 +1160,29 @@ async def editar_minuta(
         
         return resultado
         
+    except asyncio.TimeoutError:
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "erro",
+            "mensagem": "A edição demorou mais que o esperado. Tente um pedido de alteração mais simples."
+        }
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        erro_str = str(e)
+        # Mensagem mais amigável para erros comuns
+        if 'timeout' in erro_str.lower() or 'timed out' in erro_str.lower():
+            mensagem_erro = 'A edição demorou mais que o esperado. Tente um pedido mais simples.'
+        elif 'token' in erro_str.lower() and ('limit' in erro_str.lower() or 'exceeded' in erro_str.lower()):
+            mensagem_erro = 'A minuta ou o pedido são muito extensos. Tente uma alteração menor.'
+        else:
+            mensagem_erro = f'Erro ao processar edição: {erro_str}'
+        
+        return {
+            "status": "erro",
+            "mensagem": mensagem_erro
+        }
 
 
 @router.post("/exportar-docx")

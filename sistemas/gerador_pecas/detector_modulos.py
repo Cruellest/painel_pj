@@ -17,9 +17,9 @@ from typing import List, Dict, Optional, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
-from admin.models_prompts import PromptModulo
+from admin.models_prompts import PromptModulo, RegraDeterministicaTipoPeca
 from sistemas.gerador_pecas.gemini_client import chamar_gemini_async, normalizar_modelo
-from sistemas.gerador_pecas.services_deterministic import avaliar_ativacao_prompt
+from sistemas.gerador_pecas.services_deterministic import avaliar_ativacao_prompt, _existe_regra_especifica_ativa
 from sistemas.gerador_pecas.services_process_variables import ProcessVariableResolver
 
 if TYPE_CHECKING:
@@ -167,16 +167,34 @@ class DetectorModulosIA:
         # ========================================
         # SEPARAÇÃO: DETERMINÍSTICOS vs LLM
         # ========================================
+        # Um módulo é considerado determinístico se:
+        # 1. Tem modo_ativacao = "deterministic" E
+        # 2. Tem regra global (regra_deterministica) OU
+        #    Tem regra específica para o tipo_peca atual (na tabela regra_deterministica_tipo_peca)
         modulos_det = []
         modulos_llm = []
 
         for modulo in modulos:
-            if modulo.modo_ativacao == "deterministic" and modulo.regra_deterministica:
-                modulos_det.append(modulo)
+            if modulo.modo_ativacao == "deterministic":
+                # Verifica se tem regra global OU regra específica para o tipo_peca
+                tem_regra_global = modulo.regra_deterministica is not None
+                tem_regra_especifica = False
+                
+                if tipo_peca:
+                    # Verifica se existe regra específica ATIVA para este tipo de peça
+                    tem_regra_especifica = _existe_regra_especifica_ativa(self.db, modulo.id, tipo_peca)
+                    if tem_regra_especifica:
+                        print(f"[AGENTE2] Módulo '{modulo.nome}' tem regra específica para '{tipo_peca}'")
+                
+                if tem_regra_global or tem_regra_especifica:
+                    modulos_det.append(modulo)
+                else:
+                    # Modo determinístico mas sem nenhuma regra configurada -> LLM
+                    modulos_llm.append(modulo)
             else:
                 modulos_llm.append(modulo)
 
-        print(f"[AGENTE2] Módulos determinísticos: {len(modulos_det)}")
+        print(f"[AGENTE2] Módulos determinísticos: {len(modulos_det)} (inclui regras específicas por tipo de peça)")
         print(f"[AGENTE2] Módulos LLM: {len(modulos_llm)}")
 
         # ========================================
@@ -184,7 +202,7 @@ class DetectorModulosIA:
         # ========================================
         if modulos_det and not modulos_llm:
             print(f"[AGENTE2] ⚡ FAST PATH: 100% determinístico, pulando LLM")
-            ids_ativados = self._avaliar_todos_deterministicos(modulos_det, variaveis)
+            ids_ativados = self._avaliar_todos_deterministicos(modulos_det, variaveis, tipo_peca)
 
             # Salvar no cache
             self._salvar_cache(cache_key, ids_ativados)
@@ -223,7 +241,8 @@ class DetectorModulosIA:
                 dados_extracao=variaveis,
                 db=self.db,
                 regra_secundaria=getattr(modulo, 'regra_deterministica_secundaria', None),
-                fallback_habilitado=getattr(modulo, 'fallback_habilitado', False)
+                fallback_habilitado=getattr(modulo, 'fallback_habilitado', False),
+                tipo_peca=tipo_peca  # Passa tipo_peca para avaliar regras específicas
             )
 
             if resultado["ativar"] is True:
@@ -272,7 +291,8 @@ class DetectorModulosIA:
     def _avaliar_todos_deterministicos(
         self,
         modulos: List[PromptModulo],
-        variaveis: Dict[str, Any]
+        variaveis: Dict[str, Any],
+        tipo_peca: Optional[str] = None
     ) -> List[int]:
         """
         Fast path: avalia todos os módulos determinísticos sem chamar LLM.
@@ -280,6 +300,7 @@ class DetectorModulosIA:
         Args:
             modulos: Lista de módulos com regra determinística
             variaveis: Dicionário com variáveis disponíveis
+            tipo_peca: Tipo de peça para avaliar regras específicas (opcional)
 
         Returns:
             Lista de IDs dos módulos ativados
@@ -302,7 +323,8 @@ class DetectorModulosIA:
                 dados_extracao=variaveis,
                 db=self.db,
                 regra_secundaria=getattr(modulo, 'regra_deterministica_secundaria', None),
-                fallback_habilitado=getattr(modulo, 'fallback_habilitado', False)
+                fallback_habilitado=getattr(modulo, 'fallback_habilitado', False),
+                tipo_peca=tipo_peca  # Passa tipo_peca para avaliar regras específicas
             )
 
             if resultado["ativar"] is True:

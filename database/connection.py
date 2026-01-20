@@ -46,32 +46,49 @@ if DATABASE_URL.startswith("sqlite"):
         cursor.close()
 
 else:
-    # PostgreSQL - Configuração otimizada para produção
-    # PERFORMANCE: Pool sizing baseado no ambiente
-    POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20" if IS_PRODUCTION else "10"))
-    MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "15" if IS_PRODUCTION else "5"))
-    # PERFORMANCE: Reduzido de 60 para 10s - melhor falhar rápido que esperar muito
-    POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "10"))
-    POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 min
+    # PostgreSQL - Configuração otimizada
+    # PERFORMANCE: Detecta se é localhost para otimizações mais agressivas
+    IS_LOCALHOST = "localhost" in DATABASE_URL or "127.0.0.1" in DATABASE_URL
 
-    engine = create_engine(
-        DATABASE_URL,
-        echo=False,
-        pool_size=POOL_SIZE,
-        max_overflow=MAX_OVERFLOW,
-        pool_timeout=POOL_TIMEOUT,
-        pool_recycle=POOL_RECYCLE,
-        pool_pre_ping=True,  # RELIABILITY: Verifica conexão antes de usar
-        # PERFORMANCE: Configurações adicionais PostgreSQL
-        connect_args={
-            "options": "-c timezone=America/Campo_Grande",
-        },
-    )
+    if IS_LOCALHOST and not IS_PRODUCTION:
+        # LOCALHOST DEV: Pool minimalista e rápido
+        engine = create_engine(
+            DATABASE_URL,
+            echo=False,
+            pool_size=5,
+            max_overflow=10,
+            pool_timeout=5,
+            pool_recycle=3600,
+            pool_pre_ping=False,  # PERFORMANCE: Economiza 1 query por conexão
+            connect_args={
+                "options": "-c timezone=America/Campo_Grande",
+                "connect_timeout": 5,
+            },
+        )
+        logger.info("Database pool configurado para LOCALHOST (otimizado)")
+    else:
+        # PRODUÇÃO/REMOTO: Configuração robusta
+        POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20" if IS_PRODUCTION else "10"))
+        MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "15" if IS_PRODUCTION else "5"))
+        POOL_TIMEOUT = int(os.getenv("DB_POOL_TIMEOUT", "10"))
+        POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))  # 30 min
 
-    logger.info(
-        f"Database pool configurado: size={POOL_SIZE}, overflow={MAX_OVERFLOW}, "
-        f"timeout={POOL_TIMEOUT}s, recycle={POOL_RECYCLE}s"
-    )
+        engine = create_engine(
+            DATABASE_URL,
+            echo=False,
+            pool_size=POOL_SIZE,
+            max_overflow=MAX_OVERFLOW,
+            pool_timeout=POOL_TIMEOUT,
+            pool_recycle=POOL_RECYCLE,
+            pool_pre_ping=True,  # RELIABILITY: Verifica conexão antes de usar
+            connect_args={
+                "options": "-c timezone=America/Campo_Grande",
+            },
+        )
+        logger.info(
+            f"Database pool configurado: size={POOL_SIZE}, overflow={MAX_OVERFLOW}, "
+            f"timeout={POOL_TIMEOUT}s, recycle={POOL_RECYCLE}s"
+        )
 
 
 # ==================================================

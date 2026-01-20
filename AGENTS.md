@@ -1,6 +1,6 @@
 # AGENTS.md - Guia para Agentes de IA
 
-> Ultima atualizacao: 19 Janeiro 2026
+> Ultima atualizacao: 20 Janeiro 2026
 
 ---
 
@@ -235,6 +235,65 @@ O sistema normaliza automaticamente valores booleanos salvos como `1/0` ou `"1"/
 - Frontend: `normalizarValorBooleano()` em `admin_prompts_modulos.html` - aplicada ao carregar regras
 - Avaliador: `DeterministicRuleEvaluator._comparar_igual()` trata 1/0 como booleanos (compatibilidade)
 - Teste: `tests/test_boolean_normalization.py`
+
+**Regras Específicas por Tipo de Peça (Bug Fix - 20/01/2026):**
+Corrigidos dois bugs que impediam a ativação de regras específicas por tipo de peça:
+
+1. **Duplicação de Namespace nas Variáveis** (`router.py`):
+   - Problema: Ao anexar PDFs classificados em categoria "peticao_inicial", as chaves já prefixadas
+     (`peticao_inicial_pedido_consulta`) recebiam o namespace novamente, resultando em
+     `peticao_inicial_peticao_inicial_pedido_consulta`.
+   - Correção: Verificação se a chave já começa com o namespace antes de prefixar.
+   
+2. **Classificação incorreta de módulos determinísticos** (`detector_modulos.py`):
+   - Problema: Módulos em modo determinístico SEM regra global, mas COM regra específica por tipo de peça,
+     eram classificados como "LLM" e nunca avaliados pela lógica determinística.
+   - Correção: Incluir na lista de módulos determinísticos aqueles que têm regra específica ativa
+     para o tipo de peça atual (via `_existe_regra_especifica_ativa()`).
+
+- Teste: `tests/test_regra_especifica_consulta.py`, `tests/test_namespace_e_regras.py`
+
+**Tratamento de Erros em Requisições Grandes (Bug Fix - 20/01/2026):**
+
+Corrigido bug que causava erro genérico "failed to fetch" quando usuários enviavam solicitações grandes.
+
+**Sintomas:**
+- Frontend exibia "failed to fetch" sem explicação
+- Geração falhava silenciosamente com prompts grandes
+- Sem logs adequados para diagnóstico
+
+**Correções aplicadas:**
+1. **Backend (`router.py`):**
+   - Tratamento específico de `asyncio.TimeoutError`
+   - Mensagens de erro amigáveis para timeout, token limit, e conexão
+   - Logging de tamanho do prompt (caracteres e tokens estimados)
+
+2. **Frontend (`app.js`):**
+   - Tratamento de `TypeError: Failed to fetch` com mensagem explicativa
+   - Tratamento de `AbortError` e erros de rede
+   - Mensagens orientando usuário a dividir em partes menores
+
+3. **Gemini Service (`gemini_service.py`):**
+   - `TIMEOUT_READ` aumentado de 120s para 180s
+   - `TIMEOUT_TOTAL` aumentado para 240s
+   - Comentário documentando razão do aumento
+
+4. **Orquestrador (`orquestrador_agentes.py`):**
+   - Logging detalhado de tamanho do prompt (~tokens estimados)
+   - Avisos para prompts grandes (>30k tokens) ou muito grandes (>50k tokens)
+   - Contexto de tamanho adicionado em erros de timeout
+
+5. **UX (`index.html`):**
+   - Toast de erro maior e mais visível
+   - Dica automática sugerindo reduzir tamanho
+   - Suporte a mensagens multi-linha
+
+**Arquivos modificados:**
+- `sistemas/gerador_pecas/router.py`
+- `sistemas/gerador_pecas/templates/app.js`
+- `sistemas/gerador_pecas/templates/index.html`
+- `sistemas/gerador_pecas/orquestrador_agentes.py`
+- `services/gemini_service.py`
 
 **Builder Visual (frontend):**
 - Botão "Adicionar Condição" - adiciona condição simples

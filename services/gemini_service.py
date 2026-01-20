@@ -177,9 +177,10 @@ class GeminiResponse:
 # ============================================
 
 # Timeouts granulares (em segundos)
-TIMEOUT_CONNECT = 10.0      # Tempo máximo para estabelecer conexão
-TIMEOUT_READ = 120.0        # Tempo máximo para ler resposta
-TIMEOUT_TOTAL = 180.0       # Tempo máximo total (menor que 300s original)
+# NOTA: Aumentados para suportar prompts grandes em processos complexos
+TIMEOUT_CONNECT = 15.0      # Tempo máximo para estabelecer conexão
+TIMEOUT_READ = 180.0        # Tempo máximo para ler resposta (aumentado de 120s para 180s)
+TIMEOUT_TOTAL = 240.0       # Tempo máximo total (aumentado para suportar prompts grandes)
 
 # Retry com backoff exponencial
 MAX_RETRIES = 3

@@ -819,13 +819,26 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
             # Salva o prompt para auditoria
             resultado.prompt_enviado = prompt_completo
             
-            print(f" Prompt montado: {len(prompt_completo)} caracteres (SEM template JSON)")
+            # Logging detalhado para diagnóstico de timeout/erros
+            prompt_len = len(prompt_completo)
+            prompt_tokens_est = prompt_len // 4  # Estimativa ~4 chars/token
+            print(f"[AGENTE3] 📝 Prompt montado:")
+            print(f"[AGENTE3]    - Tamanho: {prompt_len:,} caracteres (~{prompt_tokens_est:,} tokens estimados)")
+            print(f"[AGENTE3]    - Modelo: {self.modelo_geracao}")
+            print(f"[AGENTE3]    - Temperatura: {self.temperatura_agente3}")
+            print(f"[AGENTE3]    - Max tokens resposta: 16000")
+            
+            # Aviso se o prompt for muito grande
+            if prompt_tokens_est > 50000:
+                print(f"[AGENTE3] ⚠️ AVISO: Prompt muito grande ({prompt_tokens_est:,} tokens). Risco de timeout!")
+            elif prompt_tokens_est > 30000:
+                print(f"[AGENTE3] ⚠️ AVISO: Prompt grande ({prompt_tokens_est:,} tokens). Pode demorar mais.")
 
-            # Chama a API do Gemini diretamente
+            # Chama a API do Gemini diretamente com limite alto de tokens
             content = await chamar_gemini_async(
                 prompt=prompt_completo,
                 modelo=self.modelo_geracao,
-                max_tokens=16000,
+                max_tokens=50000,  # Limite alto para peças jurídicas extensas
                 temperature=self.temperatura_agente3
             )
             
@@ -840,15 +853,19 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
             
             resultado.conteudo_markdown = content_limpo.strip()
 
-            print("[OK] Peca gerada com sucesso em Markdown!")
-            print(f"📄 Tamanho da peça: {len(resultado.conteudo_markdown)} caracteres")
+            print(f"[AGENTE3] ✅ Peça gerada com sucesso!")
+            print(f"[AGENTE3]    - Tamanho da resposta: {len(resultado.conteudo_markdown):,} caracteres")
             
             return resultado
                 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            resultado.erro = f"Erro no Agente 3: {str(e)}"
+            erro_str = str(e)
+            # Adiciona contexto de tamanho ao erro
+            if 'timeout' in erro_str.lower() or 'timed out' in erro_str.lower():
+                print(f"[AGENTE3] ❌ TIMEOUT! Prompt tinha ~{len(prompt_completo)//4:,} tokens estimados")
+            resultado.erro = f"Erro no Agente 3: {erro_str}"
             return resultado
 
 

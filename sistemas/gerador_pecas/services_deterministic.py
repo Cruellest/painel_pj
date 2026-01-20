@@ -1166,130 +1166,36 @@ def avaliar_ativacao_prompt(
     dados_extracao: Dict[str, Any],
     db: Session,
     regra_secundaria: Optional[Dict] = None,
-    fallback_habilitado: bool = False
+    fallback_habilitado: bool = False,
+    tipo_peca: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Função de conveniência para avaliar se um prompt deve ser ativado.
+    Avalia se um prompt deve ser ativado com suporte a regras por tipo de peça.
 
-    Suporta regra primária e secundária (fallback controlado):
-    1. Se regra primária existe:
-       - Verifica se as variáveis da primária EXISTEM nos dados
-       - Se existem: avalia primária (prevalece mesmo se false/null)
-       - Se NÃO existem: avalia secundária (se habilitada)
-    2. Secundária NUNCA sobrepõe primária
+    LÓGICA DE ATIVAÇÃO (v3 - regra global como FALLBACK):
+
+    REGRA PRINCIPAL:
+    - Se existe ALGUMA regra específica ATIVA para o tipo de peça:
+      → Avalia APENAS as regras específicas (ignora regra global primária)
+    - Se NÃO existe regra específica ativa para o tipo de peça:
+      → Usa a regra global primária como FALLBACK
+
+    Isso significa que regras específicas SOBREPÕEM a regra global primária.
 
     Args:
         prompt_id: ID do prompt
         modo_ativacao: 'llm' ou 'deterministic'
-        regra_deterministica: AST JSON da regra PRIMÁRIA (se modo deterministic)
+        regra_deterministica: AST JSON da regra PRIMÁRIA GLOBAL (se modo deterministic)
         dados_extracao: Dados extraídos do processo
         db: Sessão do banco
-        regra_secundaria: AST JSON da regra SECUNDÁRIA/fallback (opcional)
+        regra_secundaria: AST JSON da regra SECUNDÁRIA GLOBAL/fallback (opcional)
         fallback_habilitado: Se deve avaliar regra secundária quando primária não existe
+        tipo_peca: Tipo de peça para buscar regras específicas (opcional, ex: 'contestacao')
 
     Returns:
-        Dict com ativar, modo, detalhes, regra_usada
+        Dict com ativar, modo, detalhes, regra_usada, regras_avaliadas
     """
-    if modo_ativacao == "deterministic" and regra_deterministica:
-        avaliador = DeterministicRuleEvaluator()
-
-        # 1. Verifica se variáveis da regra primária EXISTEM nos dados
-        variaveis_primaria_existem, vars_primaria = verificar_variaveis_existem(
-            regra_deterministica, dados_extracao
-        )
-
-        logger.info(
-            f"[DETERMINISTIC] Prompt {prompt_id}: "
-            f"variáveis primária existem={variaveis_primaria_existem}, "
-            f"vars={vars_primaria}"
-        )
-
-        # 2. Se variáveis da primária EXISTEM -> avalia primária (encerra decisão)
-        if variaveis_primaria_existem:
-            resultado = avaliador.avaliar(regra_deterministica, dados_extracao)
-
-            logger.info(
-                f"[DETERMINISTIC] Prompt {prompt_id}: "
-                f"regra PRIMÁRIA avaliada = {resultado}"
-            )
-
-            _registrar_log_ativacao(
-                db=db,
-                prompt_id=prompt_id,
-                modo="deterministic_primary",
-                resultado=resultado,
-                variaveis_usadas=vars_primaria
-            )
-
-            return {
-                "ativar": resultado,
-                "modo": "deterministic",
-                "regra_usada": "primaria",
-                "detalhes": f"Avaliado por regra primária (variáveis existem: {vars_primaria})"
-            }
-
-        # 3. Se variáveis da primária NÃO EXISTEM -> tenta secundária (se habilitada)
-        if fallback_habilitado and regra_secundaria:
-            variaveis_secundaria_existem, vars_secundaria = verificar_variaveis_existem(
-                regra_secundaria, dados_extracao
-            )
-
-            logger.info(
-                f"[DETERMINISTIC] Prompt {prompt_id}: "
-                f"FALLBACK para secundária, vars existem={variaveis_secundaria_existem}, "
-                f"vars={vars_secundaria}"
-            )
-
-            if variaveis_secundaria_existem:
-                resultado = avaliador.avaliar(regra_secundaria, dados_extracao)
-
-                logger.info(
-                    f"[DETERMINISTIC] Prompt {prompt_id}: "
-                    f"regra SECUNDÁRIA avaliada = {resultado}"
-                )
-
-                _registrar_log_ativacao(
-                    db=db,
-                    prompt_id=prompt_id,
-                    modo="deterministic_secondary",
-                    resultado=resultado,
-                    variaveis_usadas=vars_secundaria
-                )
-
-                return {
-                    "ativar": resultado,
-                    "modo": "deterministic",
-                    "regra_usada": "secundaria",
-                    "detalhes": f"Avaliado por regra secundária/fallback (primária inexistente: {vars_primaria})"
-                }
-            else:
-                # Nem primária nem secundária têm variáveis disponíveis
-                logger.warning(
-                    f"[DETERMINISTIC] Prompt {prompt_id}: "
-                    f"NEM primária NEM secundária têm variáveis disponíveis"
-                )
-
-                return {
-                    "ativar": None,  # Indeterminado - não é possível avaliar
-                    "modo": "deterministic",
-                    "regra_usada": "nenhuma",
-                    "detalhes": f"Nenhuma regra aplicável - variáveis inexistentes (primária: {vars_primaria}, secundária: {vars_secundaria})"
-                }
-
-        # 4. Variáveis da primária não existem e não há secundária/fallback
-        logger.info(
-            f"[DETERMINISTIC] Prompt {prompt_id}: "
-            f"regra primária INAPLICÁVEL (vars não existem), sem fallback"
-        )
-
-        return {
-            "ativar": None,  # Indeterminado - não é possível avaliar
-            "modo": "deterministic",
-            "regra_usada": "nenhuma",
-            "detalhes": f"Regra primária inaplicável (variáveis inexistentes: {vars_primaria}), fallback desabilitado"
-        }
-
-    else:
+    if modo_ativacao != "deterministic":
         # Modo LLM - retorna None para indicar que precisa chamar LLM
         return {
             "ativar": None,
@@ -1297,6 +1203,294 @@ def avaliar_ativacao_prompt(
             "regra_usada": None,
             "detalhes": "Requer avaliação por LLM"
         }
+
+    avaliador = DeterministicRuleEvaluator()
+    regras_avaliadas = []
+
+    # ========================================
+    # 1. VERIFICA SE EXISTEM REGRAS ESPECÍFICAS ATIVAS
+    # ========================================
+    tem_regra_especifica_ativa = False
+    if tipo_peca:
+        tem_regra_especifica_ativa = _existe_regra_especifica_ativa(db, prompt_id, tipo_peca)
+        logger.info(
+            f"[DETERMINISTIC] Prompt {prompt_id}: "
+            f"tipo_peca={tipo_peca}, tem_regra_especifica_ativa={tem_regra_especifica_ativa}"
+        )
+
+    # ========================================
+    # 2. SE TEM REGRA ESPECÍFICA → AVALIA APENAS ESPECÍFICA
+    # ========================================
+    if tem_regra_especifica_ativa:
+        regra_especifica = _carregar_regra_tipo_peca(db, prompt_id, tipo_peca)
+
+        if regra_especifica and regra_especifica.regra_deterministica:
+            # Log detalhado da regra específica
+            logger.info(
+                f"[DETERMINISTIC] Prompt {prompt_id}: "
+                f"Regra específica carregada: {regra_especifica.regra_deterministica}"
+            )
+            
+            variaveis_especifica_existem, vars_especifica = verificar_variaveis_existem(
+                regra_especifica.regra_deterministica, dados_extracao
+            )
+
+            # Log dos valores atuais das variáveis
+            valores_vars = {v: dados_extracao.get(v, "<<NÃO ENCONTRADA>>") for v in vars_especifica}
+            logger.info(
+                f"[DETERMINISTIC] Prompt {prompt_id}: "
+                f"ESPECÍFICA {tipo_peca} - vars existem={variaveis_especifica_existem}, "
+                f"vars={vars_especifica}, valores={valores_vars}"
+            )
+
+            if variaveis_especifica_existem:
+                resultado_tipo_peca = avaliador.avaliar(
+                    regra_especifica.regra_deterministica, dados_extracao
+                )
+                regras_avaliadas.append({
+                    "tipo": f"especifica_{tipo_peca}",
+                    "resultado": resultado_tipo_peca,
+                    "variaveis": vars_especifica
+                })
+
+                logger.info(
+                    f"[DETERMINISTIC] Prompt {prompt_id}: ESPECÍFICA {tipo_peca} = {resultado_tipo_peca}"
+                )
+
+                if resultado_tipo_peca is True:
+                    _registrar_log_ativacao(
+                        db=db,
+                        prompt_id=prompt_id,
+                        modo=f"deterministic_tipo_{tipo_peca}",
+                        resultado=True,
+                        variaveis_usadas=vars_especifica
+                    )
+                    return {
+                        "ativar": True,
+                        "modo": "deterministic",
+                        "regra_usada": f"especifica_{tipo_peca}",
+                        "detalhes": f"Ativado por regra ESPECÍFICA de {tipo_peca} (vars: {vars_especifica})",
+                        "regras_avaliadas": regras_avaliadas
+                    }
+
+                # Regra específica retornou False - NÃO ativa (não usa global como fallback)
+                if resultado_tipo_peca is False:
+                    _registrar_log_ativacao(
+                        db=db,
+                        prompt_id=prompt_id,
+                        modo=f"deterministic_tipo_{tipo_peca}_false",
+                        resultado=False,
+                        variaveis_usadas=vars_especifica
+                    )
+                    return {
+                        "ativar": False,
+                        "modo": "deterministic",
+                        "regra_usada": f"especifica_{tipo_peca}",
+                        "detalhes": f"Regra específica de {tipo_peca} retornou False (global ignorada)",
+                        "regras_avaliadas": regras_avaliadas
+                    }
+
+            # Variáveis não existem - resultado indeterminado
+            return {
+                "ativar": None,
+                "modo": "deterministic",
+                "regra_usada": f"especifica_{tipo_peca}",
+                "detalhes": f"Variáveis da regra específica de {tipo_peca} não encontradas",
+                "regras_avaliadas": regras_avaliadas
+            }
+
+    # ========================================
+    # 3. SEM REGRA ESPECÍFICA → USA GLOBAL COMO FALLBACK
+    # ========================================
+    resultado_global = None
+
+    if regra_deterministica:
+        variaveis_primaria_existem, vars_primaria = verificar_variaveis_existem(
+            regra_deterministica, dados_extracao
+        )
+
+        logger.info(
+            f"[DETERMINISTIC] Prompt {prompt_id}: "
+            f"GLOBAL primária (fallback) - vars existem={variaveis_primaria_existem}, vars={vars_primaria}"
+        )
+
+        if variaveis_primaria_existem:
+            resultado_global = avaliador.avaliar(regra_deterministica, dados_extracao)
+            regras_avaliadas.append({
+                "tipo": "global_primaria",
+                "resultado": resultado_global,
+                "variaveis": vars_primaria
+            })
+
+            logger.info(
+                f"[DETERMINISTIC] Prompt {prompt_id}: GLOBAL primária = {resultado_global}"
+            )
+
+            if resultado_global is True:
+                _registrar_log_ativacao(
+                    db=db,
+                    prompt_id=prompt_id,
+                    modo="deterministic_global_primary",
+                    resultado=True,
+                    variaveis_usadas=vars_primaria
+                )
+                return {
+                    "ativar": True,
+                    "modo": "deterministic",
+                    "regra_usada": "global_primaria",
+                    "detalhes": f"Ativado por regra GLOBAL primária (fallback, sem regra específica para {tipo_peca or 'N/A'})",
+                    "regras_avaliadas": regras_avaliadas
+                }
+
+            if resultado_global is False:
+                _registrar_log_ativacao(
+                    db=db,
+                    prompt_id=prompt_id,
+                    modo="deterministic_global_primary_false",
+                    resultado=False,
+                    variaveis_usadas=vars_primaria
+                )
+                return {
+                    "ativar": False,
+                    "modo": "deterministic",
+                    "regra_usada": "global_primaria",
+                    "detalhes": f"Regra GLOBAL primária retornou False (fallback)",
+                    "regras_avaliadas": regras_avaliadas
+                }
+
+        elif fallback_habilitado and regra_secundaria:
+            # Tenta regra global secundária
+            variaveis_secundaria_existem, vars_secundaria = verificar_variaveis_existem(
+                regra_secundaria, dados_extracao
+            )
+
+            if variaveis_secundaria_existem:
+                resultado_global = avaliador.avaliar(regra_secundaria, dados_extracao)
+                regras_avaliadas.append({
+                    "tipo": "global_secundaria",
+                    "resultado": resultado_global,
+                    "variaveis": vars_secundaria
+                })
+
+                logger.info(
+                    f"[DETERMINISTIC] Prompt {prompt_id}: GLOBAL secundária = {resultado_global}"
+                )
+
+                if resultado_global is True:
+                    _registrar_log_ativacao(
+                        db=db,
+                        prompt_id=prompt_id,
+                        modo="deterministic_global_secondary",
+                        resultado=True,
+                        variaveis_usadas=vars_secundaria
+                    )
+                    return {
+                        "ativar": True,
+                        "modo": "deterministic",
+                        "regra_usada": "global_secundaria",
+                        "detalhes": f"Ativado por regra GLOBAL secundária (vars: {vars_secundaria})",
+                        "regras_avaliadas": regras_avaliadas
+                    }
+
+                if resultado_global is False:
+                    _registrar_log_ativacao(
+                        db=db,
+                        prompt_id=prompt_id,
+                        modo="deterministic_global_secondary_false",
+                        resultado=False,
+                        variaveis_usadas=vars_secundaria
+                    )
+                    return {
+                        "ativar": False,
+                        "modo": "deterministic",
+                        "regra_usada": "global_secundaria",
+                        "detalhes": f"Regra GLOBAL secundária retornou False",
+                        "regras_avaliadas": regras_avaliadas
+                    }
+
+    # Nenhuma regra aplicável ou avaliável
+    return {
+        "ativar": None,
+        "modo": "deterministic",
+        "regra_usada": "nenhuma",
+        "detalhes": f"Nenhuma regra aplicável (tipo_peca={tipo_peca})",
+        "regras_avaliadas": regras_avaliadas
+    }
+
+
+def _carregar_regra_tipo_peca(
+    db: Session,
+    modulo_id: int,
+    tipo_peca: str
+) -> Optional['RegraDeterministicaTipoPeca']:
+    """
+    Carrega a regra determinística específica para um tipo de peça.
+
+    Args:
+        db: Sessão do banco
+        modulo_id: ID do módulo
+        tipo_peca: Tipo de peça (ex: 'contestacao', 'apelacao')
+
+    Returns:
+        RegraDeterministicaTipoPeca ou None se não existir
+    """
+    from admin.models_prompts import RegraDeterministicaTipoPeca
+
+    return db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.modulo_id == modulo_id,
+        RegraDeterministicaTipoPeca.tipo_peca == tipo_peca,
+        RegraDeterministicaTipoPeca.ativo == True
+    ).first()
+
+
+def _existe_regra_especifica_ativa(
+    db: Session,
+    modulo_id: int,
+    tipo_peca: str
+) -> bool:
+    """
+    Verifica se existe ALGUMA regra específica ATIVA para o tipo de peça.
+
+    Usado para determinar se a regra global principal deve ser usada como fallback.
+
+    Args:
+        db: Sessão do banco
+        modulo_id: ID do módulo
+        tipo_peca: Tipo de peça (ex: 'contestacao', 'apelacao')
+
+    Returns:
+        True se existe pelo menos uma regra específica ativa, False caso contrário
+    """
+    from admin.models_prompts import RegraDeterministicaTipoPeca
+
+    count = db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.modulo_id == modulo_id,
+        RegraDeterministicaTipoPeca.tipo_peca == tipo_peca,
+        RegraDeterministicaTipoPeca.ativo == True
+    ).count()
+
+    return count > 0
+
+
+def carregar_regras_tipo_peca_modulo(
+    db: Session,
+    modulo_id: int
+) -> List['RegraDeterministicaTipoPeca']:
+    """
+    Carrega todas as regras específicas por tipo de peça de um módulo.
+
+    Args:
+        db: Sessão do banco
+        modulo_id: ID do módulo
+
+    Returns:
+        Lista de RegraDeterministicaTipoPeca
+    """
+    from admin.models_prompts import RegraDeterministicaTipoPeca
+
+    return db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.modulo_id == modulo_id
+    ).order_by(RegraDeterministicaTipoPeca.tipo_peca).all()
 
 
 def _extrair_variaveis_regra(no: Dict) -> Set[str]:

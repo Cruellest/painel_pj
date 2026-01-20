@@ -764,7 +764,21 @@ class GeradorPecasApp {
             }
 
         } catch (error) {
-            this.mostrarErro(error.message);
+            console.error('Erro na requisição:', error);
+            // Trata erros de rede de forma mais amigável
+            let mensagemErro = error.message;
+            
+            if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+                mensagemErro = 'Não foi possível conectar ao servidor. Possíveis causas:\n• Conexão de internet instável\n• A solicitação é muito grande e demorou demais\n• O servidor está temporariamente indisponível\n\nTente novamente ou divida seu pedido em partes menores.';
+            } else if (error.name === 'AbortError') {
+                mensagemErro = 'A solicitação foi cancelada.';
+            } else if (error.message.includes('network') || error.message.includes('Network')) {
+                mensagemErro = 'Erro de conexão de rede. Verifique sua internet e tente novamente.';
+            } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+                mensagemErro = 'A solicitação demorou mais que o esperado. Tente novamente ou use um pedido mais simples.';
+            }
+            
+            this.mostrarErro(mensagemErro);
             this.esconderLoading();
         }
     }
@@ -1836,17 +1850,36 @@ class GeradorPecasApp {
     }
 
     mostrarErro(mensagem) {
-        document.getElementById('erro-mensagem').textContent = mensagem;
-        document.getElementById('toast-erro').classList.remove('hidden');
+        const erroEl = document.getElementById('erro-mensagem');
+        const toastEl = document.getElementById('toast-erro');
         
-        // Auto-hide após 10 segundos
+        // Preserva quebras de linha se houver
+        erroEl.textContent = mensagem;
+        toastEl.classList.remove('hidden');
+        
+        // Remove animação de pulse após 2 segundos
         setTimeout(() => {
-            document.getElementById('toast-erro').classList.add('hidden');
-        }, 10000);
+            toastEl.classList.remove('animate-pulse');
+        }, 2000);
+        
+        // Auto-hide após 15 segundos (aumentado para mensagens mais longas)
+        if (this._erroTimeout) {
+            clearTimeout(this._erroTimeout);
+        }
+        this._erroTimeout = setTimeout(() => {
+            toastEl.classList.add('hidden');
+            toastEl.classList.add('animate-pulse'); // Restaura para próximo uso
+        }, 15000);
     }
 
     esconderErro() {
-        document.getElementById('toast-erro').classList.add('hidden');
+        const toastEl = document.getElementById('toast-erro');
+        toastEl.classList.add('hidden');
+        toastEl.classList.add('animate-pulse'); // Restaura para próximo uso
+        if (this._erroTimeout) {
+            clearTimeout(this._erroTimeout);
+            this._erroTimeout = null;
+        }
     }
 
     abrirModal(id) {

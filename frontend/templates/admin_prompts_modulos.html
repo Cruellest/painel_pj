@@ -580,15 +580,18 @@
 
                             <div class="text-xs text-gray-400 text-center mb-2">— ou configure manualmente —</div>
 
-                            <!-- REGRA PRIMÁRIA -->
+                            <!-- REGRA PRIMÁRIA (GLOBAL) -->
                             <div class="mb-4 p-3 border border-indigo-200 rounded-lg bg-indigo-50/30">
                                 <label class="block text-xs font-medium text-indigo-700 mb-2">
-                                    <i class="fas fa-1 text-indigo-500 mr-1"></i>Regra Primária (Principal)
-                                    <span class="font-normal text-gray-500 ml-1">- Baseada no documento fonte (ex: petição inicial)</span>
+                                    <i class="fas fa-1 text-indigo-500 mr-1"></i>Regra Primária (Global)
+                                    <span class="ml-1 text-gray-400 cursor-help" title="Regra aplicada a todos os tipos de peça. Será ignorada automaticamente para os tipos que possuírem regras específicas configuradas.">
+                                        <i class="fas fa-question-circle"></i>
+                                    </span>
+                                    <span class="font-normal text-gray-500 ml-1">- Baseada no documento fonte</span>
                                 </label>
 
                                 <!-- Visualizador Humanizado Primária -->
-                                <div id="regra-humanizada" class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs">
+                                <div id="regra-humanizada" class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs" style="overflow-wrap: anywhere; word-break: break-word;">
                                     <span class="text-gray-400 italic">Nenhuma regra configurada</span>
                                 </div>
 
@@ -613,7 +616,7 @@
                                             <i class="fas fa-plus mr-1"></i>Condição
                                         </button>
                                         <button type="button" onclick="adicionarGrupo()"
-                                            class="px-2.5 py-1 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 text-xs"
+                                            class="px-2.5 py-1 bg-slate-100 text-slate-600 rounded hover:bg-slate-200 text-xs"
                                             title="Adicionar grupo de condições">
                                             <i class="fas fa-object-group mr-1"></i>Grupo
                                         </button>
@@ -622,10 +625,13 @@
                             </div>
 
                             <!-- REGRA SECUNDÁRIA (FALLBACK) -->
-                            <div class="mb-3 p-3 border border-amber-200 rounded-lg bg-amber-50/30">
+                            <div class="mb-3 p-3 border border-amber-100 rounded-lg bg-amber-50/20">
                                 <div class="flex items-center justify-between mb-2">
-                                    <label class="block text-xs font-medium text-amber-700">
-                                        <i class="fas fa-2 text-amber-500 mr-1"></i>Regra Secundária (Fallback)
+                                    <label class="block text-xs font-medium text-amber-600">
+                                        <i class="fas fa-2 text-amber-400 mr-1"></i>Regra Secundária (Fallback)
+                                        <span class="ml-1 text-gray-400 cursor-help" title="Regra de backup avaliada APENAS quando a variável da regra primária não existe no documento. Útil para casos onde a IA não conseguiu extrair a informação principal.">
+                                            <i class="fas fa-question-circle"></i>
+                                        </span>
                                     </label>
                                     <label class="flex items-center gap-1.5 text-xs">
                                         <input type="checkbox" id="fallback-habilitado"
@@ -636,31 +642,31 @@
                                 </div>
 
                                 <!-- Aviso explicativo -->
-                                <div class="mb-2 p-2 bg-amber-100/50 border border-amber-200 rounded text-xs text-amber-800">
+                                <div class="mb-2 p-2 bg-amber-50/50 border border-amber-100 rounded text-xs text-amber-700">
                                     <i class="fas fa-info-circle mr-1"></i>
                                     <strong>Importante:</strong> A regra secundária só é avaliada se a variável da primária
                                     <strong>NÃO EXISTIR</strong> (documento não identificado). Se a primária existir,
-                                    seu valor prevalece mesmo que seja <code class="bg-amber-200 px-1 rounded">false</code> ou <code class="bg-amber-200 px-1 rounded">null</code>.
+                                    seu valor prevalece mesmo que seja <code class="bg-amber-100 px-1 rounded">false</code> ou <code class="bg-amber-100 px-1 rounded">null</code>.
                                 </div>
 
                                 <!-- Conteúdo da regra secundária (colapsável) -->
                                 <div id="fallback-content" class="hidden">
                                     <!-- Gerar Regra Secundária via IA -->
-                                    <div class="mb-2 p-2 bg-amber-100/50 border border-amber-200 rounded">
+                                    <div class="mb-2 p-2 bg-amber-50/40 border border-amber-100 rounded">
                                         <div class="flex gap-2">
                                             <textarea id="regra-secundaria-linguagem-natural" rows="2"
-                                                class="flex-1 px-2 py-1.5 border border-amber-300 rounded text-xs resize-none"
+                                                class="flex-1 px-2 py-1.5 border border-amber-200 rounded text-xs resize-none"
                                                 placeholder="Ex: 'A contestação menciona competência do juizado'"></textarea>
                                             <button type="button" onclick="gerarRegraSecundariaIA()"
                                                 id="btn-gerar-regra-secundaria-ia"
-                                                class="px-3 py-1.5 bg-amber-600 text-white rounded hover:bg-amber-700 flex items-center gap-1 text-xs whitespace-nowrap">
+                                                class="px-3 py-1.5 bg-amber-500 text-white rounded hover:bg-amber-600 flex items-center gap-1 text-xs whitespace-nowrap">
                                                 <i class="fas fa-wand-magic-sparkles"></i>Gerar
                                             </button>
                                         </div>
 
                                         <!-- Preview da regra secundária gerada -->
                                         <div id="preview-regra-secundaria-gerada" class="hidden mt-2">
-                                            <div class="bg-white p-2 rounded border border-amber-200">
+                                            <div class="bg-white p-2 rounded border border-amber-100">
                                                 <div class="flex items-center justify-between mb-1">
                                                     <span class="text-xs font-medium text-gray-700">Regra Secundária:</span>
                                                     <span id="preview-secundaria-status" class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">OK</span>
@@ -681,7 +687,7 @@
                                     </div>
 
                                     <!-- Visualizador Humanizado Secundária -->
-                                    <div id="regra-secundaria-humanizada" class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs">
+                                    <div id="regra-secundaria-humanizada" class="mb-2 p-2 bg-white border border-gray-200 rounded text-xs" style="overflow-wrap: anywhere; word-break: break-word;">
                                         <span class="text-gray-400 italic">Nenhuma regra secundária configurada</span>
                                     </div>
 
@@ -702,11 +708,11 @@
 
                                         <div class="flex gap-2">
                                             <button type="button" onclick="adicionarCondicaoSecundaria()"
-                                                class="px-2.5 py-1 bg-amber-100 text-amber-700 rounded hover:bg-amber-200 text-xs">
+                                                class="px-2.5 py-1 bg-amber-50 text-amber-600 rounded hover:bg-amber-100 text-xs border border-amber-200">
                                                 <i class="fas fa-plus mr-1"></i>Condição
                                             </button>
                                             <button type="button" onclick="adicionarGrupoSecundaria()"
-                                                class="px-2.5 py-1 bg-orange-100 text-orange-700 rounded hover:bg-orange-200 text-xs"
+                                                class="px-2.5 py-1 bg-amber-50 text-amber-600 rounded hover:bg-amber-100 text-xs border border-amber-200"
                                                 title="Adicionar grupo de condições">
                                                 <i class="fas fa-object-group mr-1"></i>Grupo
                                             </button>
@@ -719,6 +725,40 @@
                             <input type="hidden" id="modulo-regra-json">
                             <input type="hidden" id="modulo-regra-secundaria-json">
                             <input type="hidden" id="modulo-regra-secundaria-texto-original">
+
+                            <!-- ========================================== -->
+                            <!-- REGRAS POR TIPO DE PEÇA -->
+                            <!-- ========================================== -->
+                            <div class="mt-4 p-3 border border-slate-200 rounded-lg bg-slate-50/30">
+                                <div class="flex items-center justify-between mb-3">
+                                    <label class="block text-xs font-medium text-slate-600">
+                                        <i class="fas fa-layer-group text-slate-400 mr-1"></i>Regras por Tipo de Peça
+                                        <span class="ml-1 text-gray-400 cursor-help" title="Regras que se aplicam apenas a tipos específicos de peça (Contestação, Apelação, etc). Permitem comportamentos diferenciados por tipo, complementando ou substituindo a regra global.">
+                                            <i class="fas fa-question-circle"></i>
+                                        </span>
+                                        <span class="font-normal text-gray-500 ml-1">- Específicas para cada tipo</span>
+                                    </label>
+                                    <button type="button" onclick="abrirAdicionarRegraTipoPeca()"
+                                        class="px-2 py-1 bg-slate-500 text-white rounded text-xs hover:bg-slate-600">
+                                        <i class="fas fa-plus mr-1"></i>Adicionar
+                                    </button>
+                                </div>
+
+                                <!-- Explicação -->
+                                <div class="mb-3 p-2 bg-slate-50/50 border border-slate-100 rounded text-xs text-slate-600">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Regras específicas por tipo de peça são avaliadas <strong>apenas</strong> quando o tipo de peça corresponde.
+                                    Um módulo é ativado se <strong>qualquer regra global OU específica</strong> for satisfeita.
+                                </div>
+
+                                <!-- Lista de regras por tipo de peça -->
+                                <div id="lista-regras-tipo-peca" class="space-y-2">
+                                    <div class="text-center py-3 text-gray-400 text-xs">
+                                        <i class="fas fa-inbox mb-1"></i>
+                                        <p>Nenhuma regra específica configurada</p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -2199,26 +2239,17 @@
                 const modulosCat = categorias[cat];
                 const corCategoria = coresCategoria[idx % coresCategoria.length];
                 const catId = `cat-${cat.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                
-                // Ordena por campo ordem
+
+                // Ordena por campo ordem (lista única, sem agrupar por subcategoria)
                 modulosCat.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
-                
-                // Agrupa por subcategoria dentro da categoria
-                const subcategorias = {};
-                modulosCat.forEach(m => {
-                    const subcat = m.subcategoria || 'Geral';
-                    if (!subcategorias[subcat]) {
-                        subcategorias[subcat] = [];
-                    }
-                    subcategorias[subcat].push(m);
-                });
-                
-                const subcategoriasOrdenadas = Object.keys(subcategorias).sort((a, b) => {
+
+                // Coleta subcategorias únicas para exibir no header (apenas informativo)
+                const subcategoriasUnicas = [...new Set(modulosCat.map(m => m.subcategoria || 'Geral'))].sort((a, b) => {
                     if (a === 'Geral') return -1;
                     if (b === 'Geral') return 1;
                     return a.localeCompare(b, 'pt-BR');
                 });
-                
+
                 html += `
                     <div class="categoria-grupo categoria-draggable" data-categoria="${cat}">
                         <div class="px-4 py-3 bg-${corCategoria}-50 border-b border-${corCategoria}-100 cursor-pointer hover:bg-${corCategoria}-100 transition-colors flex items-center justify-between">
@@ -2231,35 +2262,21 @@
                                 <span class="px-2 py-0.5 text-xs bg-${corCategoria}-200 text-${corCategoria}-800 rounded-full">${modulosCat.length} módulos</span>
                             </div>
                             <div class="flex items-center gap-2 text-xs text-${corCategoria}-600">
-                                ${subcategoriasOrdenadas.map(s => `<span class="px-1.5 py-0.5 bg-white/50 rounded">${s}</span>`).join('')}
+                                ${subcategoriasUnicas.map(s => `<span class="px-1.5 py-0.5 bg-white/50 rounded">${s}</span>`).join('')}
                             </div>
                         </div>
                         <div class="categoria-conteudo" id="${catId}">
+                            <div class="prompts-sortable divide-y divide-gray-100" id="${catId}-prompts" data-categoria="${cat}">
                 `;
-                
-                // Renderiza por subcategoria
-                subcategoriasOrdenadas.forEach(subcat => {
-                    const modulosSubcat = subcategorias[subcat];
-                    const subcatId = `${catId}-${subcat.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                    
-                    if (subcategoriasOrdenadas.length > 1 || subcat !== 'Geral') {
-                        html += `
-                            <div class="px-4 py-2 bg-gray-50 border-b border-gray-100">
-                                <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                    <i class="fas fa-folder-open mr-1"></i>${subcat}
-                                </span>
-                            </div>
-                        `;
-                    }
-                    
-                    html += `<div class="prompts-sortable divide-y divide-gray-100" id="${subcatId}" data-categoria="${cat}" data-subcategoria="${subcat}">`;
-                    modulosSubcat.forEach(m => {
-                        html += renderizarItemModulo(m, false); // Não mostra categoria no badge
-                    });
-                    html += `</div>`;
+
+                // Renderiza todos os prompts em ordem (sem agrupar por subcategoria)
+                // Cada prompt mostra seu próprio chip de subcategoria
+                modulosCat.forEach(m => {
+                    html += renderizarItemModulo(m, false, true); // mostrarCategoria=false, mostrarSubcategoria=true
                 });
-                
+
                 html += `
+                            </div>
                         </div>
                     </div>
                 `;
@@ -2269,13 +2286,18 @@
             return html;
         }
         
-        function renderizarItemModulo(m, mostrarCategoria = true) {
+        function renderizarItemModulo(m, mostrarCategoria = true, mostrarSubcategoria = false) {
             const statusBadge = m.ativo
                 ? '<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">Ativo</span>'
                 : '<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-500 rounded-full">Inativo</span>';
 
             const categoriaBadge = mostrarCategoria && m.categoria
                 ? `<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">${m.categoria}</span>`
+                : '';
+
+            // Badge de subcategoria (campo do módulo - acompanha o prompt ao arrastar)
+            const subcategoriaBadge = mostrarSubcategoria && m.subcategoria
+                ? `<span class="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full"><i class="fas fa-tag mr-1"></i>${m.subcategoria}</span>`
                 : '';
 
             // Badge de modo de ativação (apenas para prompts de conteúdo)
@@ -2285,19 +2307,20 @@
                     : '<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full" title="Ativação por LLM"><i class="fas fa-brain mr-1"></i>LLM</span>')
                 : '';
 
-            // Subcategorias associadas (tags minimalistas em roxo)
+            // Subcategorias associadas (relação muitos-para-muitos - tags minimalistas em roxo)
             const subcatsBadges = (m.subcategorias_nomes && m.subcategorias_nomes.length > 0)
                 ? m.subcategorias_nomes.map(n => `<span class="px-1.5 py-0.5 text-[10px] bg-purple-50 text-purple-600 rounded">${n}</span>`).join('')
                 : '';
 
             return `
-                <div class="prompt-item px-4 py-3 hover:bg-gray-50 flex items-center justify-between" data-id="${m.id}" data-categoria="${m.categoria || ''}">
+                <div class="prompt-item px-4 py-3 hover:bg-gray-50 flex items-center justify-between" data-id="${m.id}" data-categoria="${m.categoria || ''}" data-subcategoria="${m.subcategoria || ''}">
                     <div class="drag-handle text-gray-300 hover:text-gray-500 mr-3 cursor-grab" title="Arraste para reordenar">
                         <i class="fas fa-grip-vertical"></i>
                     </div>
                     <div class="flex-1">
-                        <div class="flex items-center gap-2 mb-1">
+                        <div class="flex items-center gap-2 mb-1 flex-wrap">
                             <span class="font-medium text-gray-800">${m.titulo}</span>
+                            ${subcategoriaBadge}
                             ${statusBadge}
                             ${modoAtivacaoBadge}
                             ${categoriaBadge}
@@ -2436,22 +2459,22 @@
                 btnSalvar.disabled = true;
                 btnSalvar.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Salvando...';
             }
-            
+
             try {
                 const grupoId = obterGrupoIdParaSalvar();
                 if (!grupoId) {
                     return;
                 }
-                
+
                 // Coleta ordem das categorias e prompts
                 const categoriasContainer = document.getElementById('categorias-container');
                 const categorias = [];
-                
+
                 let ordemCategoria = 0;
                 categoriasContainer.querySelectorAll('.categoria-draggable').forEach(catEl => {
                     const nomeCategoria = catEl.dataset.categoria;
                     const prompts = [];
-                    
+
                     let ordemPrompt = 0;
                     catEl.querySelectorAll('.prompt-item').forEach(promptEl => {
                         prompts.push({
@@ -2459,14 +2482,14 @@
                             ordem: ordemPrompt++
                         });
                     });
-                    
+
                     categorias.push({
                         nome: nomeCategoria,
                         ordem: ordemCategoria++,
                         prompts: prompts
                     });
                 });
-                
+
                 const response = await fetch(`${API_BASE}/prompts/reordenar-completo`, {
                     method: 'POST',
                     headers: {
@@ -2478,23 +2501,23 @@
                         categorias: categorias
                     })
                 });
-                
+
                 if (!response.ok) {
                     throw new Error('Erro ao salvar ordem');
                 }
-                
+
                 const result = await response.json();
-                
+
                 ordemModificada = false;
                 if (btnSalvar) {
                     btnSalvar.style.display = 'none';
                     btnSalvar.classList.remove('animate-pulse');
                 }
-                
+
                 if (!silencioso) {
                     mostrarNotificacao(`Ordem salva! ${result.categorias_atualizadas} categorias e ${result.prompts_atualizados} prompts atualizados.`, 'success');
                 }
-                
+
             } catch (error) {
                 console.error('Erro ao salvar ordem:', error);
                 mostrarNotificacao('Erro ao salvar ordem. Tente novamente.', 'error');
@@ -3192,16 +3215,17 @@
 
         // Renderiza um grupo
         function renderizarGrupo(grupo, nivel, operadores) {
-            const bgColor = nivel === 0 ? 'bg-purple-50' : 'bg-indigo-50';
-            const borderColor = nivel === 0 ? 'border-purple-300' : 'border-indigo-300';
+            // Cores mais discretas (cinza/slate ao invés de roxo)
+            const bgColor = nivel === 0 ? 'bg-slate-50' : 'bg-gray-50';
+            const borderColor = nivel === 0 ? 'border-slate-300' : 'border-gray-300';
             
             return `
             <div class="p-3 ${bgColor} rounded-lg border-2 ${borderColor} border-dashed" data-id="${grupo.id}" data-type="group">
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center gap-2">
-                        <i class="fas fa-object-group text-purple-500"></i>
-                        <span class="text-sm font-medium text-purple-700">Grupo</span>
-                        <select class="px-2 py-1 text-xs border border-purple-300 rounded bg-white"
+                        <i class="fas fa-object-group text-slate-500"></i>
+                        <span class="text-sm font-medium text-slate-700">Grupo</span>
+                        <select class="px-2 py-1 text-xs border border-slate-300 rounded bg-white"
                             onchange="atualizarOperadorGrupo(${grupo.id}, this.value)">
                             <option value="and" ${grupo.operador === 'and' ? 'selected' : ''}>AND</option>
                             <option value="or" ${grupo.operador === 'or' ? 'selected' : ''}>OR</option>
@@ -3212,19 +3236,19 @@
                         <i class="fas fa-trash text-xs"></i>
                     </button>
                 </div>
-                <div class="space-y-2 ml-4 border-l-2 border-purple-200 pl-3">
-                    ${grupo.conditions.length === 0 
+                <div class="space-y-2 ml-4 border-l-2 border-slate-200 pl-3">
+                    ${grupo.conditions.length === 0
                         ? '<p class="text-xs text-gray-400 italic py-2">Grupo vazio - adicione condições</p>'
                         : renderizarItens(grupo.conditions, nivel + 1)
                     }
                 </div>
                 <div class="mt-2 ml-4 flex gap-2">
                     <button type="button" onclick="adicionarCondicao(${grupo.id})"
-                        class="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs hover:bg-purple-200">
+                        class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs hover:bg-indigo-200">
                         <i class="fas fa-plus mr-1"></i> Condição
                     </button>
                     <button type="button" onclick="adicionarGrupo(${grupo.id})"
-                        class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs hover:bg-indigo-200">
+                        class="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs hover:bg-slate-200">
                         <i class="fas fa-object-group mr-1"></i> Subgrupo
                     </button>
                 </div>
@@ -3449,10 +3473,10 @@
                 if (item.type === 'group') {
                     const grupoOperadorTexto = item.operador === 'and' ? 'E' : 'OU';
                     const subHtml = gerarVisualizacaoHumanizada(item.conditions || [], item.operador);
-                    html = `<span class="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 rounded border border-purple-300">
-                        <span class="text-purple-600 text-xs font-bold">(</span>
+                    html = `<span class="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 rounded border border-slate-300">
+                        <span class="text-slate-600 text-xs font-bold">(</span>
                         ${subHtml}
-                        <span class="text-purple-600 text-xs font-bold">)</span>
+                        <span class="text-slate-600 text-xs font-bold">)</span>
                     </span>`;
                 } else {
                     const varInfo = obterInfoVariavel(item.variavel);
@@ -5519,5 +5543,948 @@
         #glossario-conteudo li { margin-bottom: 0.25rem; }
         #glossario-conteudo hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5rem 0; }
     </style>
+
+    <!-- Modal de Regra por Tipo de Peça -->
+    <div id="modal-regra-tipo-peca" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col m-4">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-slate-50 to-gray-50">
+                <div>
+                    <h2 id="modal-regra-tipo-peca-titulo" class="text-lg font-semibold text-gray-800">Nova Regra por Tipo de Peça</h2>
+                    <p class="text-sm text-gray-500">Regra específica para um tipo de peça</p>
+                </div>
+                <button onclick="fecharModalRegraTipoPeca()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6">
+                <form id="form-regra-tipo-peca" class="space-y-4">
+                    <input type="hidden" id="regra-tipo-peca-id">
+
+                    <!-- Seleção do tipo de peça -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Peça</label>
+                        <select id="regra-tipo-peca-select" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="">Selecione o tipo de peça</option>
+                        </select>
+                    </div>
+
+                    <!-- Gerar regra via IA -->
+                    <div class="p-3 bg-gradient-to-r from-slate-50 to-gray-50 border border-slate-200 rounded-lg">
+                        <label class="block text-xs font-medium text-slate-600 mb-1.5">
+                            <i class="fas fa-magic mr-1"></i>Gerar Regra via IA
+                        </label>
+                        <div class="flex gap-2">
+                            <textarea id="regra-tipo-peca-linguagem-natural" rows="2"
+                                class="flex-1 px-2 py-1.5 border border-slate-300 rounded text-xs resize-none"
+                                placeholder="Ex: 'O valor da causa é superior a 60 salários mínimos'"></textarea>
+                            <button type="button" onclick="gerarRegraTipoPecaIA()"
+                                id="btn-gerar-regra-tipo-peca-ia"
+                                class="px-3 py-1.5 bg-slate-600 text-white rounded hover:bg-slate-700 flex items-center gap-1 text-xs whitespace-nowrap">
+                                <i class="fas fa-wand-magic-sparkles"></i>Gerar
+                            </button>
+                        </div>
+
+                        <!-- Preview da regra gerada (igual às globais) -->
+                        <div id="preview-regra-tipo-peca" class="hidden mt-2">
+                            <div class="bg-white p-2 rounded border border-slate-200">
+                                <div class="flex items-center justify-between mb-1">
+                                    <span class="text-xs font-medium text-gray-700">Regra:</span>
+                                    <span id="preview-status-tipo-peca" class="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">Válida</span>
+                                </div>
+                                <div id="preview-regra-tipo-peca-conteudo" class="text-xs text-gray-600 mb-2"></div>
+                                <div class="flex gap-2">
+                                    <button type="button" onclick="aplicarRegraTipoPecaGerada()"
+                                        class="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">
+                                        <i class="fas fa-check mr-1"></i>Aplicar
+                                    </button>
+                                    <button type="button" onclick="descartarRegraTipoPecaGerada()"
+                                        class="px-2 py-1 bg-gray-200 text-gray-700 rounded text-xs hover:bg-gray-300">
+                                        <i class="fas fa-times mr-1"></i>Descartar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Erro de geração -->
+                        <div id="erro-regra-tipo-peca" class="hidden mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                            <div class="text-xs text-red-700" id="erro-regra-tipo-peca-msg"></div>
+                        </div>
+                    </div>
+
+                    <div class="text-xs text-gray-400 text-center">— ou configure manualmente —</div>
+
+                    <!-- Visualizador Humanizado (igual às regras globais) -->
+                    <div id="regra-tipo-peca-humanizada" class="p-2 bg-white border border-gray-200 rounded text-xs" style="overflow-wrap: anywhere; word-break: break-word;">
+                        <span class="text-gray-400 italic">Nenhuma regra configurada</span>
+                    </div>
+
+                    <!-- Editor de Condições (igual às regras globais) -->
+                    <div id="editor-regras-tipo-peca" class="space-y-2">
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-gray-600">Operador:</label>
+                            <select id="regra-tipo-peca-operador" class="px-2 py-1 border border-gray-300 rounded text-xs"
+                                onchange="atualizarVisualizadorRegraTipoPeca()">
+                                <option value="and">E (AND)</option>
+                                <option value="or">OU (OR)</option>
+                            </select>
+                        </div>
+
+                        <div id="lista-condicoes-tipo-peca" class="space-y-1.5">
+                            <!-- Condições serão adicionadas aqui -->
+                        </div>
+
+                        <div class="flex gap-2">
+                            <button type="button" onclick="adicionarCondicaoTipoPeca()"
+                                class="px-2.5 py-1 bg-slate-100 text-slate-600 rounded hover:bg-slate-200 text-xs border border-slate-200">
+                                <i class="fas fa-plus mr-1"></i>Condição
+                            </button>
+                            <button type="button" onclick="adicionarGrupoTipoPeca()"
+                                class="px-2.5 py-1 bg-slate-100 text-slate-600 rounded hover:bg-slate-200 text-xs border border-slate-200"
+                                title="Adicionar grupo de condições">
+                                <i class="fas fa-object-group mr-1"></i>Grupo
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Status ativo -->
+                    <div class="flex items-center gap-2 pt-2 border-t border-gray-200">
+                        <input type="checkbox" id="regra-tipo-peca-ativo" checked class="rounded text-slate-600">
+                        <label class="text-sm text-gray-700">Regra ativa</label>
+                    </div>
+                </form>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+                <button type="button" onclick="fecharModalRegraTipoPeca()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">
+                    Cancelar
+                </button>
+                <button type="button" onclick="salvarRegraTipoPeca()" class="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
+                    <i class="fas fa-save mr-1"></i>Salvar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ==========================================
+    // REGRAS POR TIPO DE PEÇA
+    // ==========================================
+
+    let regrasTipoPecaCache = [];
+    let tiposPecaDisponiveis = [];
+    let regraTipoPecaGerada = null;
+
+    // Builder de condições para regras por tipo de peça (igual às regras globais)
+    let condicoesRegraTipoPeca = [];
+    let contadorIdCondicaoTipoPeca = 0;
+
+    async function carregarRegrasTipoPeca(moduloId) {
+        if (!moduloId) {
+            renderizarListaRegrasTipoPeca([]);
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_BASE}/${moduloId}/regras-tipo-peca`);
+            const data = await response.json();
+
+            regrasTipoPecaCache = data.regras_tipo_peca || [];
+            tiposPecaDisponiveis = data.tipos_peca_disponiveis || [];
+
+            renderizarListaRegrasTipoPeca(regrasTipoPecaCache);
+        } catch (error) {
+            console.error('Erro ao carregar regras por tipo de peça:', error);
+            regrasTipoPecaCache = [];
+        }
+    }
+
+    function renderizarListaRegrasTipoPeca(regras) {
+        const container = document.getElementById('lista-regras-tipo-peca');
+
+        if (!regras || regras.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-3 text-gray-400 text-xs">
+                    <i class="fas fa-inbox mb-1"></i>
+                    <p>Nenhuma regra específica configurada</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = regras.map(regra => {
+            const tipoPecaLabel = tiposPecaDisponiveis.find(t => t.nome === regra.tipo_peca)?.titulo || regra.tipo_peca;
+            // Usa o mesmo renderer humanizado das regras globais
+            const regraHumanizada = renderizarRegraHumanizadaIA(regra.regra_deterministica);
+
+            return `
+                <div class="p-3 bg-white border ${regra.ativo ? 'border-slate-200' : 'border-gray-200'} rounded-lg">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="px-2 py-0.5 text-xs font-medium rounded ${regra.ativo ? 'bg-slate-100 text-slate-600' : 'bg-gray-100 text-gray-500'}">
+                                    ${escapeHtml(tipoPecaLabel)}
+                                </span>
+                                ${!regra.ativo ? '<span class="text-xs text-gray-400 italic">(inativa)</span>' : ''}
+                            </div>
+                            <!-- Renderização humanizada da regra (mesmo formato das globais) -->
+                            <div class="text-sm bg-gray-50 p-2 rounded border border-gray-100" style="overflow-wrap: anywhere; word-break: break-word;">
+                                ${regraHumanizada}
+                            </div>
+                            ${regra.regra_texto_original ? `
+                                <div class="text-xs text-gray-500 mt-2 italic">
+                                    <i class="fas fa-comment-alt mr-1 text-gray-400"></i>
+                                    "${escapeHtml(regra.regra_texto_original)}"
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <button onclick="editarRegraTipoPeca(${regra.id})" class="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Editar">
+                                <i class="fas fa-edit text-sm"></i>
+                            </button>
+                            <button onclick="toggleRegraTipoPeca(${regra.id})" class="p-1.5 text-gray-400 hover:text-slate-600 hover:bg-slate-50 rounded" title="${regra.ativo ? 'Desativar' : 'Ativar'}">
+                                <i class="fas fa-${regra.ativo ? 'toggle-on text-slate-500' : 'toggle-off'} text-sm"></i>
+                            </button>
+                            <button onclick="excluirRegraTipoPeca(${regra.id})" class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded" title="Excluir">
+                                <i class="fas fa-trash text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function resumirRegra(regra) {
+        if (!regra) return 'Regra vazia';
+
+        if (regra.type === 'condition') {
+            return `${regra.variable} ${regra.operator} ${JSON.stringify(regra.value)}`;
+        }
+
+        if (regra.type === 'and' || regra.type === 'or') {
+            const condicoes = regra.conditions || [];
+            const resumos = condicoes.map(c => resumirRegra(c));
+            return resumos.join(` ${regra.type.toUpperCase()} `);
+        }
+
+        return JSON.stringify(regra).substring(0, 50) + '...';
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    async function abrirAdicionarRegraTipoPeca() {
+        document.getElementById('modal-regra-tipo-peca-titulo').textContent = 'Nova Regra por Tipo de Peça';
+        document.getElementById('regra-tipo-peca-id').value = '';
+        document.getElementById('regra-tipo-peca-linguagem-natural').value = '';
+        document.getElementById('regra-tipo-peca-ativo').checked = true;
+        document.getElementById('preview-regra-tipo-peca').classList.add('hidden');
+        document.getElementById('erro-regra-tipo-peca').classList.add('hidden');
+        regraTipoPecaGerada = null;
+
+        // Reseta o builder de condições
+        condicoesRegraTipoPeca = [];
+        contadorIdCondicaoTipoPeca = 0;
+        document.getElementById('regra-tipo-peca-operador').value = 'and';
+        renderizarCondicoesTipoPeca();
+
+        // Garante que os tipos de peça estejam carregados
+        if (!tiposPecaDisponiveis || tiposPecaDisponiveis.length === 0) {
+            await carregarTiposPecaDisponiveis();
+        }
+
+        // Popula select de tipos de peça
+        const select = document.getElementById('regra-tipo-peca-select');
+        const tiposJaUsados = regrasTipoPecaCache.map(r => r.tipo_peca);
+
+        select.innerHTML = '<option value="">Selecione o tipo de peça...</option>' +
+            tiposPecaDisponiveis
+                .filter(t => !tiposJaUsados.includes(t.nome))
+                .map(t => `<option value="${t.nome}">${t.titulo}</option>`)
+                .join('');
+
+        document.getElementById('modal-regra-tipo-peca').classList.remove('hidden');
+    }
+
+    // Função para carregar tipos de peça do endpoint dedicado
+    async function carregarTiposPecaDisponiveis() {
+        try {
+            const response = await fetch(`${API_BASE}/tipos-peca`);
+            if (response.ok) {
+                const data = await response.json();
+                tiposPecaDisponiveis = data.map(tp => ({
+                    nome: tp.nome,
+                    titulo: tp.titulo
+                }));
+            }
+        } catch (error) {
+            console.error('Erro ao carregar tipos de peça:', error);
+        }
+    }
+
+    async function editarRegraTipoPeca(regraId) {
+        const regra = regrasTipoPecaCache.find(r => r.id === regraId);
+        if (!regra) return;
+
+        document.getElementById('modal-regra-tipo-peca-titulo').textContent = 'Editar Regra por Tipo de Peça';
+        document.getElementById('regra-tipo-peca-id').value = regra.id;
+        document.getElementById('regra-tipo-peca-linguagem-natural').value = regra.regra_texto_original || '';
+        document.getElementById('regra-tipo-peca-ativo').checked = regra.ativo;
+        document.getElementById('preview-regra-tipo-peca').classList.add('hidden');
+        document.getElementById('erro-regra-tipo-peca').classList.add('hidden');
+        regraTipoPecaGerada = null;
+
+        // Carrega a regra no builder
+        contadorIdCondicaoTipoPeca = 0;
+        carregarRegraNoBuilderTipoPeca(regra.regra_deterministica);
+
+        // Garante que os tipos de peça estejam carregados
+        if (!tiposPecaDisponiveis || tiposPecaDisponiveis.length === 0) {
+            await carregarTiposPecaDisponiveis();
+        }
+
+        // Popula select incluindo o tipo atual
+        const select = document.getElementById('regra-tipo-peca-select');
+        const tiposJaUsados = regrasTipoPecaCache.filter(r => r.id !== regraId).map(r => r.tipo_peca);
+
+        select.innerHTML = '<option value="">Selecione o tipo de peça</option>' +
+            tiposPecaDisponiveis
+                .filter(t => !tiposJaUsados.includes(t.nome) || t.nome === regra.tipo_peca)
+                .map(t => `<option value="${t.nome}" ${t.nome === regra.tipo_peca ? 'selected' : ''}>${t.titulo}</option>`)
+                .join('');
+
+        document.getElementById('modal-regra-tipo-peca').classList.remove('hidden');
+    }
+
+    function fecharModalRegraTipoPeca() {
+        document.getElementById('modal-regra-tipo-peca').classList.add('hidden');
+    }
+
+    // ==========================================
+    // BUILDER DE CONDIÇÕES PARA REGRAS POR TIPO DE PEÇA
+    // ==========================================
+
+    function gerarIdUnicoTipoPeca() {
+        return ++contadorIdCondicaoTipoPeca;
+    }
+
+    function adicionarCondicaoTipoPeca(grupoId = null) {
+        const novaCondicao = {
+            type: 'condition',
+            id: gerarIdUnicoTipoPeca(),
+            variavel: '',
+            operador: 'equals',
+            valor: ''
+        };
+
+        if (grupoId !== null) {
+            const grupo = encontrarItemPorIdTipoPeca(condicoesRegraTipoPeca, grupoId);
+            if (grupo && grupo.type === 'group') {
+                grupo.conditions.push(novaCondicao);
+            }
+        } else {
+            condicoesRegraTipoPeca.push(novaCondicao);
+        }
+        renderizarCondicoesTipoPeca();
+    }
+
+    function adicionarGrupoTipoPeca(grupoId = null) {
+        const novoGrupo = {
+            type: 'group',
+            id: gerarIdUnicoTipoPeca(),
+            operador: 'or',
+            conditions: []
+        };
+
+        if (grupoId !== null) {
+            const grupoPai = encontrarItemPorIdTipoPeca(condicoesRegraTipoPeca, grupoId);
+            if (grupoPai && grupoPai.type === 'group') {
+                grupoPai.conditions.push(novoGrupo);
+            }
+        } else {
+            condicoesRegraTipoPeca.push(novoGrupo);
+        }
+        renderizarCondicoesTipoPeca();
+    }
+
+    function encontrarItemPorIdTipoPeca(items, id) {
+        for (const item of items) {
+            if (item.id === id) return item;
+            if (item.type === 'group' && item.conditions) {
+                const found = encontrarItemPorIdTipoPeca(item.conditions, id);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    function removerCondicaoTipoPeca(id, parentArray = null) {
+        const array = parentArray || condicoesRegraTipoPeca;
+        const idx = array.findIndex(c => c.id === id);
+        if (idx !== -1) {
+            array.splice(idx, 1);
+            renderizarCondicoesTipoPeca();
+            atualizarVisualizadorRegraTipoPeca();
+            return true;
+        }
+        for (const item of array) {
+            if (item.type === 'group' && item.conditions) {
+                if (removerCondicaoTipoPeca(id, item.conditions)) return true;
+            }
+        }
+        return false;
+    }
+
+    function atualizarCondicaoTipoPeca(id, campo, valor) {
+        const condicao = encontrarItemPorIdTipoPeca(condicoesRegraTipoPeca, id);
+        if (condicao) {
+            condicao[campo] = valor;
+            atualizarVisualizadorRegraTipoPeca();
+        }
+    }
+
+    function atualizarOperadorGrupoTipoPeca(id, novoOperador) {
+        const grupo = encontrarItemPorIdTipoPeca(condicoesRegraTipoPeca, id);
+        if (grupo && grupo.type === 'group') {
+            grupo.operador = novoOperador;
+            atualizarVisualizadorRegraTipoPeca();
+        }
+    }
+
+    function renderizarCondicoesTipoPeca() {
+        const container = document.getElementById('lista-condicoes-tipo-peca');
+        if (!container) return;
+
+        if (condicoesRegraTipoPeca.length === 0) {
+            container.innerHTML = `
+                <div class="text-gray-400 text-xs italic p-3 bg-gray-50 rounded-lg">
+                    Nenhuma condição adicionada. Clique em "Condição" ou "Grupo" para começar.
+                </div>`;
+            atualizarVisualizadorRegraTipoPeca();
+            return;
+        }
+
+        container.innerHTML = renderizarItensTipoPeca(condicoesRegraTipoPeca, 0);
+        atualizarVisualizadorRegraTipoPeca();
+    }
+
+    function renderizarItensTipoPeca(items, nivel) {
+        const operadores = [
+            { value: 'equals', label: 'é igual a' },
+            { value: 'not_equals', label: 'é diferente de' },
+            { value: 'contains', label: 'contém' },
+            { value: 'not_contains', label: 'não contém' },
+            { value: 'exists', label: 'existe (tem valor)' },
+            { value: 'not_exists', label: 'não existe (vazio)' },
+            { value: 'greater_than', label: 'é maior que' },
+            { value: 'less_than', label: 'é menor que' },
+            { value: 'in_list', label: 'está na lista' },
+            { value: 'not_in_list', label: 'não está na lista' }
+        ];
+
+        return items.map(item => {
+            if (item.type === 'group') {
+                return renderizarGrupoTipoPeca(item, nivel, operadores);
+            } else {
+                return renderizarCondicaoItemTipoPeca(item, nivel, operadores);
+            }
+        }).join('');
+    }
+
+    function renderizarGrupoTipoPeca(grupo, nivel, operadores) {
+        // Cores mais discretas para grupos (cinza/slate ao invés de roxo)
+        const bgColor = nivel === 0 ? 'bg-slate-50' : 'bg-gray-50';
+        const borderColor = nivel === 0 ? 'border-slate-300' : 'border-gray-300';
+
+        return `
+        <div class="p-3 ${bgColor} rounded-lg border-2 ${borderColor} border-dashed" data-id="${grupo.id}" data-type="group">
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-object-group text-slate-500"></i>
+                    <span class="text-sm font-medium text-slate-700">Grupo</span>
+                    <select class="px-2 py-1 text-xs border border-slate-300 rounded bg-white"
+                        onchange="atualizarOperadorGrupoTipoPeca(${grupo.id}, this.value)">
+                        <option value="and" ${grupo.operador === 'and' ? 'selected' : ''}>AND</option>
+                        <option value="or" ${grupo.operador === 'or' ? 'selected' : ''}>OR</option>
+                    </select>
+                </div>
+                <button type="button" onclick="removerCondicaoTipoPeca(${grupo.id})"
+                    class="p-1 text-red-400 hover:text-red-600 hover:bg-red-100 rounded">
+                    <i class="fas fa-trash text-xs"></i>
+                </button>
+            </div>
+            <div class="space-y-2 ml-4 border-l-2 border-slate-200 pl-3">
+                ${grupo.conditions.length === 0
+                    ? '<p class="text-xs text-gray-400 italic py-2">Grupo vazio - adicione condições</p>'
+                    : renderizarItensTipoPeca(grupo.conditions, nivel + 1)
+                }
+            </div>
+            <div class="mt-2 ml-4 flex gap-2">
+                <button type="button" onclick="adicionarCondicaoTipoPeca(${grupo.id})"
+                    class="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs hover:bg-slate-200 border border-slate-200">
+                    <i class="fas fa-plus mr-1"></i> Condição
+                </button>
+                <button type="button" onclick="adicionarGrupoTipoPeca(${grupo.id})"
+                    class="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs hover:bg-slate-200 border border-slate-200">
+                    <i class="fas fa-object-group mr-1"></i> Subgrupo
+                </button>
+            </div>
+        </div>
+        `;
+    }
+
+    function renderizarCondicaoItemTipoPeca(c, nivel, operadores) {
+        const varInfo = obterInfoVariavel(c.variavel);
+        const esconderValor = ['exists', 'not_exists'].includes(c.operador);
+        const displayValue = c.variavel ? `${c.variavel} (${getTipoLabel(varInfo?.tipo)})` : '';
+
+        return `
+        <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200" data-id="${c.id}" data-type="condition">
+            <div class="variable-combobox" id="combobox-tp-${c.id}">
+                <input type="text"
+                    class="variable-combobox-input ${c.variavel ? 'has-value' : ''}"
+                    id="combobox-input-tp-${c.id}"
+                    placeholder="Digite para buscar variável..."
+                    value="${displayValue}"
+                    data-selected-slug="${c.variavel || ''}"
+                    onfocus="abrirComboboxTipoPeca(${c.id})"
+                    oninput="filtrarComboboxTipoPeca(${c.id}, this.value)"
+                    onkeydown="navegarComboboxTipoPeca(event, ${c.id})"
+                    autocomplete="off">
+                ${c.variavel ? `<span class="variable-combobox-clear" onclick="limparComboboxTipoPeca(${c.id})"><i class="fas fa-times text-xs"></i></span>` : ''}
+                <div class="variable-combobox-dropdown" id="combobox-dropdown-tp-${c.id}">
+                    <div class="variable-combobox-hint flex justify-between items-center">
+                        <span><i class="fas fa-search mr-1"></i> Digite para filtrar (${variaveisDisponiveis.length} variáveis)</span>
+                    </div>
+                    <div id="combobox-items-tp-${c.id}"></div>
+                </div>
+            </div>
+            <select class="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                onchange="atualizarCondicaoTipoPeca(${c.id}, 'operador', this.value); toggleValorCondicaoTipoPeca(${c.id}, this.value)">
+                ${operadores.map(op => `
+                    <option value="${op.value}" ${c.operador === op.value ? 'selected' : ''}>
+                        ${op.label}
+                    </option>
+                `).join('')}
+            </select>
+            <div id="valor-container-tp-${c.id}" class="${esconderValor ? 'hidden' : ''}">
+                ${renderizarCampoValorTipoPeca(c, varInfo)}
+            </div>
+            <button type="button" onclick="removerCondicaoTipoPeca(${c.id})"
+                class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                <i class="fas fa-trash text-sm"></i>
+            </button>
+        </div>
+        `;
+    }
+
+    function renderizarCampoValorTipoPeca(condicao, varInfo) {
+        const tipo = varInfo?.tipo || 'text';
+        let valor = condicao.valor;
+        if (valor === undefined || valor === null) valor = '';
+        valor = normalizarValorBooleano(valor);
+        const id = condicao.id;
+
+        switch (tipo) {
+            case 'boolean':
+                return `
+                    <select class="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        onchange="atualizarCondicaoTipoPeca(${id}, 'valor', this.value === 'true')">
+                        <option value="true" ${valor === true ? 'selected' : ''}>Sim (true)</option>
+                        <option value="false" ${valor === false ? 'selected' : ''}>Não (false)</option>
+                    </select>
+                `;
+            default:
+                return `
+                    <input type="text" value="${escapeHtml(String(valor))}"
+                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm w-32"
+                        placeholder="Valor"
+                        onchange="atualizarCondicaoTipoPeca(${id}, 'valor', this.value)">
+                `;
+        }
+    }
+
+    function toggleValorCondicaoTipoPeca(id, operador) {
+        const container = document.getElementById(`valor-container-tp-${id}`);
+        if (container) {
+            if (['exists', 'not_exists'].includes(operador)) {
+                container.classList.add('hidden');
+            } else {
+                container.classList.remove('hidden');
+            }
+        }
+    }
+
+    // Combobox de variáveis para regras por tipo de peça
+    function abrirComboboxTipoPeca(id) {
+        fecharTodosComboboxesTipoPeca();
+        const dropdown = document.getElementById(`combobox-dropdown-tp-${id}`);
+        if (dropdown) {
+            dropdown.classList.add('show');
+            renderizarItensComboboxTipoPeca(id, '');
+        }
+    }
+
+    function fecharTodosComboboxesTipoPeca() {
+        document.querySelectorAll('[id^="combobox-dropdown-tp-"]').forEach(el => {
+            el.classList.remove('show');
+        });
+    }
+
+    function filtrarComboboxTipoPeca(id, termo) {
+        renderizarItensComboboxTipoPeca(id, termo);
+    }
+
+    function renderizarItensComboboxTipoPeca(id, termo) {
+        const container = document.getElementById(`combobox-items-tp-${id}`);
+        if (!container) return;
+
+        const termoLower = termo.toLowerCase();
+        const filtradas = variaveisDisponiveis.filter(v =>
+            v.slug.toLowerCase().includes(termoLower) ||
+            (v.label && v.label.toLowerCase().includes(termoLower))
+        ).slice(0, 20);
+
+        if (filtradas.length === 0) {
+            container.innerHTML = '<div class="variable-combobox-empty">Nenhuma variável encontrada</div>';
+            return;
+        }
+
+        container.innerHTML = filtradas.map(v => `
+            <div class="variable-combobox-item" onclick="selecionarVariavelTipoPeca(${id}, '${v.slug}')">
+                <span class="variable-combobox-item-slug">${v.slug}</span>
+                <span class="variable-combobox-item-tipo">${getTipoLabel(v.tipo)}</span>
+            </div>
+        `).join('');
+    }
+
+    function selecionarVariavelTipoPeca(id, slug) {
+        const input = document.getElementById(`combobox-input-tp-${id}`);
+        const varInfo = obterInfoVariavel(slug);
+        if (input) {
+            input.value = `${slug} (${getTipoLabel(varInfo?.tipo)})`;
+            input.dataset.selectedSlug = slug;
+            input.classList.add('has-value');
+        }
+        atualizarCondicaoTipoPeca(id, 'variavel', slug);
+        fecharTodosComboboxesTipoPeca();
+        renderizarCondicoesTipoPeca();
+    }
+
+    function limparComboboxTipoPeca(id) {
+        atualizarCondicaoTipoPeca(id, 'variavel', '');
+        renderizarCondicoesTipoPeca();
+    }
+
+    function navegarComboboxTipoPeca(event, id) {
+        // Implementação simplificada de navegação por teclado
+        if (event.key === 'Escape') {
+            fecharTodosComboboxesTipoPeca();
+        }
+    }
+
+    // Fecha comboboxes ao clicar fora
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.variable-combobox')) {
+            fecharTodosComboboxesTipoPeca();
+        }
+    });
+
+    function atualizarVisualizadorRegraTipoPeca() {
+        const container = document.getElementById('regra-tipo-peca-humanizada');
+        if (!container) return;
+
+        const regra = construirRegraJSONTipoPeca();
+
+        if (!regra) {
+            container.innerHTML = '<span class="text-gray-400 italic">Nenhuma regra configurada</span>';
+            return;
+        }
+
+        container.innerHTML = renderizarRegraHumanizadaIA(regra);
+    }
+
+    function construirRegraJSONTipoPeca() {
+        if (condicoesRegraTipoPeca.length === 0) return null;
+
+        const operadorRaiz = document.getElementById('regra-tipo-peca-operador')?.value || 'and';
+
+        function converterItem(item) {
+            if (item.type === 'group') {
+                const conditions = item.conditions.map(converterItem).filter(c => c !== null);
+                if (conditions.length === 0) return null;
+                if (conditions.length === 1) return conditions[0];
+                return {
+                    type: item.operador || 'or',
+                    conditions: conditions
+                };
+            } else {
+                if (!item.variavel) return null;
+                return {
+                    type: 'condition',
+                    variable: item.variavel,
+                    operator: item.operador || 'equals',
+                    value: item.valor
+                };
+            }
+        }
+
+        const conditions = condicoesRegraTipoPeca.map(converterItem).filter(c => c !== null);
+
+        if (conditions.length === 0) return null;
+        if (conditions.length === 1) return conditions[0];
+
+        return {
+            type: operadorRaiz,
+            conditions: conditions
+        };
+    }
+
+    function carregarRegraNoBuilderTipoPeca(regra) {
+        condicoesRegraTipoPeca = [];
+
+        if (!regra) {
+            renderizarCondicoesTipoPeca();
+            return;
+        }
+
+        // Detecta operador raiz
+        if (regra.type === 'and' || regra.type === 'or') {
+            document.getElementById('regra-tipo-peca-operador').value = regra.type;
+            if (regra.conditions) {
+                condicoesRegraTipoPeca = regra.conditions.map(c => converterASTParaBuilder(c));
+            }
+        } else if (regra.type === 'condition') {
+            // Condição única
+            condicoesRegraTipoPeca = [converterASTParaBuilder(regra)];
+        }
+
+        renderizarCondicoesTipoPeca();
+    }
+
+    function converterASTParaBuilder(ast) {
+        if (ast.type === 'condition') {
+            return {
+                type: 'condition',
+                id: gerarIdUnicoTipoPeca(),
+                variavel: ast.variable || '',
+                operador: ast.operator || 'equals',
+                valor: ast.value
+            };
+        } else if (ast.type === 'and' || ast.type === 'or') {
+            return {
+                type: 'group',
+                id: gerarIdUnicoTipoPeca(),
+                operador: ast.type,
+                conditions: (ast.conditions || []).map(c => converterASTParaBuilder(c))
+            };
+        }
+        return null;
+    }
+
+    // ==========================================
+    // GERAR REGRA VIA IA (ENDPOINT CORRETO)
+    // ==========================================
+
+    async function gerarRegraTipoPecaIA() {
+        const texto = document.getElementById('regra-tipo-peca-linguagem-natural').value.trim();
+        if (!texto) {
+            alert('Por favor, descreva a condição em linguagem natural.');
+            return;
+        }
+
+        const btn = document.getElementById('btn-gerar-regra-tipo-peca-ia');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Gerando...';
+        btn.disabled = true;
+
+        // Esconde estados anteriores
+        document.getElementById('preview-regra-tipo-peca').classList.add('hidden');
+        document.getElementById('erro-regra-tipo-peca').classList.add('hidden');
+
+        try {
+            // Usa o mesmo endpoint das regras globais
+            const response = await fetch('/admin/api/extraction/regras-deterministicas/gerar', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                },
+                body: JSON.stringify({
+                    condicao_texto: texto,
+                    contexto: 'Regra específica por tipo de peça'
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success && data.regra) {
+                regraTipoPecaGerada = data.regra;
+                // Renderiza preview humanizado (igual às globais)
+                document.getElementById('preview-regra-tipo-peca-conteudo').innerHTML = renderizarRegraHumanizadaIA(data.regra);
+                document.getElementById('preview-status-tipo-peca').textContent = 'Válida';
+                document.getElementById('preview-status-tipo-peca').className = 'text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700';
+                document.getElementById('preview-regra-tipo-peca').classList.remove('hidden');
+            } else {
+                // Mostra erro
+                document.getElementById('erro-regra-tipo-peca-msg').textContent =
+                    data.erro || data.detail || data.mensagem || 'Erro ao gerar regra';
+                document.getElementById('erro-regra-tipo-peca').classList.remove('hidden');
+            }
+        } catch (error) {
+            console.error('Erro ao gerar regra:', error);
+            document.getElementById('erro-regra-tipo-peca-msg').textContent = 'Erro de conexão: ' + error.message;
+            document.getElementById('erro-regra-tipo-peca').classList.remove('hidden');
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    function aplicarRegraTipoPecaGerada() {
+        if (regraTipoPecaGerada) {
+            // Carrega a regra gerada no builder
+            carregarRegraNoBuilderTipoPeca(regraTipoPecaGerada);
+            document.getElementById('preview-regra-tipo-peca').classList.add('hidden');
+        }
+    }
+
+    function descartarRegraTipoPecaGerada() {
+        regraTipoPecaGerada = null;
+        document.getElementById('preview-regra-tipo-peca').classList.add('hidden');
+    }
+
+    async function salvarRegraTipoPeca() {
+        const moduloId = document.getElementById('modulo-id').value;
+        const regraId = document.getElementById('regra-tipo-peca-id').value;
+        const tipoPeca = document.getElementById('regra-tipo-peca-select').value;
+        const textoOriginal = document.getElementById('regra-tipo-peca-linguagem-natural').value.trim();
+        const ativo = document.getElementById('regra-tipo-peca-ativo').checked;
+
+        if (!tipoPeca) {
+            alert('Por favor, selecione o tipo de peça.');
+            return;
+        }
+
+        // Constrói a regra JSON a partir do builder
+        const regraJson = construirRegraJSONTipoPeca();
+
+        if (!regraJson) {
+            alert('Por favor, adicione pelo menos uma condição à regra.');
+            return;
+        }
+
+        const dados = {
+            tipo_peca: tipoPeca,
+            regra_deterministica: regraJson,
+            regra_texto_original: textoOriginal || null,
+            ativo: ativo
+        };
+
+        try {
+            let response;
+            if (regraId) {
+                // Atualizar
+                response = await fetch(`${API_BASE}/regras-tipo-peca/${regraId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dados)
+                });
+            } else {
+                // Criar
+                response = await fetch(`${API_BASE}/${moduloId}/regras-tipo-peca`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dados)
+                });
+            }
+
+            const result = await response.json();
+
+            if (result.success) {
+                fecharModalRegraTipoPeca();
+                await carregarRegrasTipoPeca(moduloId);
+                mostrarNotificacao(result.mensagem || 'Regra salva com sucesso', 'success');
+            } else {
+                alert('Erro ao salvar: ' + (result.detail || result.mensagem || 'Erro desconhecido'));
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            alert('Erro ao salvar regra: ' + error.message);
+        }
+    }
+
+    async function toggleRegraTipoPeca(regraId) {
+        try {
+            const response = await fetch(`${API_BASE}/regras-tipo-peca/${regraId}/toggle`, {
+                method: 'PATCH'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                const moduloId = document.getElementById('modulo-id').value;
+                await carregarRegrasTipoPeca(moduloId);
+            } else {
+                alert('Erro: ' + (result.detail || 'Erro desconhecido'));
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            alert('Erro ao alternar status: ' + error.message);
+        }
+    }
+
+    async function excluirRegraTipoPeca(regraId) {
+        if (!confirm('Tem certeza que deseja excluir esta regra?')) return;
+
+        try {
+            const response = await fetch(`${API_BASE}/regras-tipo-peca/${regraId}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                const moduloId = document.getElementById('modulo-id').value;
+                await carregarRegrasTipoPeca(moduloId);
+                mostrarNotificacao(result.mensagem || 'Regra excluída', 'success');
+            } else {
+                alert('Erro: ' + (result.detail || 'Erro desconhecido'));
+            }
+        } catch (error) {
+            console.error('Erro:', error);
+            alert('Erro ao excluir regra: ' + error.message);
+        }
+    }
+
+    // Integrar com a abertura do editor de módulo
+    const _abrirEditorOriginal = typeof abrirEditor === 'function' ? abrirEditor : null;
+
+    // Hook para carregar regras por tipo de peça ao abrir editor
+    document.addEventListener('DOMContentLoaded', function() {
+        // Observar abertura do modal de edição
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                    const modal = document.getElementById('modal-editor');
+                    if (modal && !modal.classList.contains('hidden')) {
+                        const moduloId = document.getElementById('modulo-id').value;
+                        if (moduloId) {
+                            carregarRegrasTipoPeca(moduloId);
+                        }
+                    }
+                }
+            });
+        });
+
+        const modalEditor = document.getElementById('modal-editor');
+        if (modalEditor) {
+            observer.observe(modalEditor, { attributes: true });
+        }
+    });
+    </script>
 </body>
 </html>

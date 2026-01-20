@@ -667,12 +667,16 @@ Retorne SOMENTE a minuta editada em markdown."""
             
             prompt_completo = "\n".join(prompt_parts)
             
-            # Chama a IA
+            # Logging para diagnóstico
+            prompt_len = len(prompt_completo)
+            print(f"[EDITAR] 📝 Prompt de edição: {prompt_len:,} chars (~{prompt_len//4:,} tokens est.)")
+            
+            # Chama a IA com limite alto de tokens para suportar minutas grandes
             minuta_editada = await chamar_gemini_async(
                 prompt=prompt_completo,
                 system_prompt=system_prompt,
                 modelo=self.modelo,
-                max_tokens=8000,
+                max_tokens=50000,  # Limite alto para minutas jurídicas extensas
                 temperature=0.3
             )
             

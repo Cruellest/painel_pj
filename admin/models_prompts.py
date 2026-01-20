@@ -23,22 +23,73 @@ class ModuloTipoPeca(Base):
     Associação entre módulos de conteúdo e tipos de peça.
     Define quais módulos de conteúdo estão disponíveis para cada tipo de peça.
     """
-    
+
     __tablename__ = "prompt_modulo_tipo_peca"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     modulo_id = Column(Integer, ForeignKey("prompt_modulos.id"), nullable=False, index=True)
     tipo_peca = Column(String(50), nullable=False, index=True)  # Ex: 'contestacao', 'recurso_apelacao'
     ativo = Column(Boolean, default=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
-    
+
     # Constraint de unicidade
     __table_args__ = (
         UniqueConstraint('modulo_id', 'tipo_peca', name='uq_modulo_tipo_peca'),
     )
-    
+
     def __repr__(self):
         return f"<ModuloTipoPeca(modulo_id={self.modulo_id}, tipo_peca='{self.tipo_peca}', ativo={self.ativo})>"
+
+
+class RegraDeterministicaTipoPeca(Base):
+    """
+    Regra determinística ESPECÍFICA por tipo de peça.
+
+    Permite definir regras de ativação que só se aplicam quando o tipo de peça
+    corresponde ao especificado. Complementa as regras GLOBAIS do PromptModulo.
+
+    Lógica de ativação:
+    - Um módulo é ativado se:
+      - Qualquer regra GLOBAL for TRUE (do PromptModulo)
+        OU
+      - Qualquer regra ESPECÍFICA do tipo de peça atual for TRUE (desta tabela)
+
+    Exemplo:
+    - Módulo "argumento_prescrição" pode ter:
+      - Regra GLOBAL: sempre que valor_causa > 100000
+      - Regra para CONTESTAÇÃO: quando prazo_contestacao < 30 dias
+      - Regra para APELAÇÃO: quando sentenca_desfavoravel = true
+    """
+
+    __tablename__ = "regra_deterministica_tipo_peca"
+
+    id = Column(Integer, primary_key=True, index=True)
+    modulo_id = Column(Integer, ForeignKey("prompt_modulos.id", ondelete="CASCADE"), nullable=False, index=True)
+    tipo_peca = Column(String(50), nullable=False, index=True)  # Ex: 'contestacao', 'apelacao', 'contrarrazoes'
+
+    # Regra determinística (AST JSON)
+    regra_deterministica = Column(JSON, nullable=False)  # AST JSON da regra
+    regra_texto_original = Column(Text, nullable=True)  # Texto original em linguagem natural
+
+    # Status
+    ativo = Column(Boolean, default=True)
+
+    # Auditoria
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    criado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
+    atualizado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Relacionamento
+    modulo = relationship("PromptModulo", backref="regras_tipo_peca")
+
+    # Constraint de unicidade: um módulo só pode ter UMA regra por tipo de peça
+    __table_args__ = (
+        UniqueConstraint('modulo_id', 'tipo_peca', name='uq_regra_modulo_tipo_peca'),
+    )
+
+    def __repr__(self):
+        return f"<RegraDeterministicaTipoPeca(modulo_id={self.modulo_id}, tipo_peca='{self.tipo_peca}', ativo={self.ativo})>"
 
 
 class PromptModulo(Base):

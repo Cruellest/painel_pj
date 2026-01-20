@@ -593,15 +593,19 @@
 
     <!-- Resultado de Erro (Toast) -->
     <div id="toast-erro"
-        class="hidden fixed bottom-4 right-4 bg-red-500 text-white px-6 py-4 rounded-xl shadow-2xl z-50 max-w-md">
+        class="hidden fixed bottom-4 right-4 bg-red-600 text-white px-6 py-4 rounded-xl shadow-2xl z-50 max-w-lg animate-pulse">
         <div class="flex items-start gap-3">
-            <i class="fas fa-exclamation-circle text-xl mt-0.5"></i>
-            <div>
-                <p class="font-semibold">Erro ao processar</p>
-                <p id="erro-mensagem" class="text-sm opacity-90 mt-1"></p>
+            <i class="fas fa-exclamation-triangle text-2xl mt-0.5 text-yellow-300"></i>
+            <div class="flex-1">
+                <p class="font-bold text-lg">Erro ao processar</p>
+                <p id="erro-mensagem" class="text-sm opacity-95 mt-1 whitespace-pre-line"></p>
+                <p class="text-xs opacity-70 mt-2">
+                    <i class="fas fa-lightbulb mr-1"></i>
+                    Dica: Se o problema persistir, tente reduzir o tamanho das observações ou anexar menos documentos.
+                </p>
             </div>
-            <button onclick="document.getElementById('toast-erro').classList.add('hidden')" class="ml-4 opacity-70 hover:opacity-100">
-                <i class="fas fa-times"></i>
+            <button onclick="document.getElementById('toast-erro').classList.add('hidden')" class="ml-2 opacity-70 hover:opacity-100 p-1">
+                <i class="fas fa-times text-lg"></i>
             </button>
         </div>
     </div>

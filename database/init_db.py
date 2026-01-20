@@ -26,7 +26,7 @@ from sistemas.gerador_pecas.models_teste_categorias import TesteDocumento, Teste
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from admin.models import PromptConfig, ConfiguracaoIA
-from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
+from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca, RegraDeterministicaTipoPeca
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
 from admin.models_performance import AdminSettings, PerformanceLog, RouteSystemMap
 from admin.models_gemini_logs import GeminiApiLog
@@ -60,13 +60,18 @@ def create_tables():
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
 
-    # Verifica se as tabelas principais existem
-    required_tables = {'users', 'geracoes_prestacao_contas', 'gemini_api_logs', 'performance_logs'}
+    # Verifica se as tabelas principais existem (incluindo tabelas mais recentes)
+    required_tables = {
+        'users', 'geracoes_prestacao_contas', 'gemini_api_logs', 'performance_logs',
+        'regra_deterministica_tipo_peca'  # Adicionado para regras por tipo de peça
+    }
+
+    # Se todas as tabelas obrigatórias existem, não precisa criar
     if required_tables.issubset(existing_tables):
         print("[OK] Tabelas criadas com sucesso!")
         return
 
-    # Cria tabelas faltantes
+    # Cria tabelas faltantes (create_all só cria as que não existem)
     Base.metadata.create_all(bind=engine)
     print("[OK] Tabelas criadas com sucesso!")
 
@@ -1101,6 +1106,23 @@ def run_migrations():
         except Exception as e:
             db.rollback()
             print(f"[WARN] Migração prompt_activation_logs: {e}")
+    
+    # Migração: Aumentar tamanho da coluna modo_ativacao em prompt_activation_logs
+    # Necessário para suportar valores como "deterministic_tipo_contestacao"
+    if table_exists('prompt_activation_logs'):
+        try:
+            if is_sqlite:
+                # SQLite não suporta ALTER COLUMN, mas já foi criado com 30 chars
+                pass
+            else:
+                db.execute(text("ALTER TABLE prompt_activation_logs ALTER COLUMN modo_ativacao TYPE VARCHAR(50)"))
+                db.commit()
+                print("[OK] Migração: coluna modo_ativacao expandida para VARCHAR(50)")
+        except Exception as e:
+            db.rollback()
+            # Ignora erro se a coluna já tiver o tamanho correto
+            if "nothing to alter" not in str(e).lower() and "already" not in str(e).lower():
+                print(f"[WARN] Migração modo_ativacao prompt_activation_logs: {e}")
 
     # Migração: Adicionar colunas de regra determinística em prompt_modulos
     if table_exists('prompt_modulos'):
@@ -1445,6 +1467,57 @@ def run_migrations():
                 except Exception as e:
                     db.rollback()
                     print(f"[WARN] Migração {coluna} geracoes_pecas: {e}")
+
+    # ============================================================
+    # MIGRAÇÃO: Tabela regra_deterministica_tipo_peca
+    # Permite regras determinísticas ESPECÍFICAS por tipo de peça
+    # (complementa as regras GLOBAIS do PromptModulo)
+    # ============================================================
+    if not table_exists('regra_deterministica_tipo_peca'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE regra_deterministica_tipo_peca (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        modulo_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
+                        tipo_peca VARCHAR(50) NOT NULL,
+                        regra_deterministica JSON NOT NULL,
+                        regra_texto_original TEXT,
+                        ativo BOOLEAN DEFAULT 1,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        criado_por INTEGER REFERENCES users(id),
+                        atualizado_por INTEGER REFERENCES users(id),
+                        UNIQUE(modulo_id, tipo_peca)
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS regra_deterministica_tipo_peca (
+                        id SERIAL PRIMARY KEY,
+                        modulo_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
+                        tipo_peca VARCHAR(50) NOT NULL,
+                        regra_deterministica JSON NOT NULL,
+                        regra_texto_original TEXT,
+                        ativo BOOLEAN DEFAULT TRUE,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        criado_por INTEGER REFERENCES users(id),
+                        atualizado_por INTEGER REFERENCES users(id),
+                        CONSTRAINT uq_regra_modulo_tipo_peca UNIQUE(modulo_id, tipo_peca)
+                    )
+                """))
+            db.commit()
+            print("[OK] Migração: tabela regra_deterministica_tipo_peca criada")
+
+            # Criar índices para performance
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_regra_tipo_peca_modulo ON regra_deterministica_tipo_peca(modulo_id)"))
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_regra_tipo_peca_tipo ON regra_deterministica_tipo_peca(tipo_peca)"))
+            db.commit()
+            print("[OK] Migração: índices de regra_deterministica_tipo_peca criados")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração regra_deterministica_tipo_peca: {e}")
 
     seed_prompt_groups(db)
 

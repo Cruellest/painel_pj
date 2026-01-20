@@ -13,7 +13,7 @@ import difflib
 from database.connection import get_db
 from auth.models import User
 from auth.dependencies import get_current_active_user, require_admin
-from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
+from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca, RegraDeterministicaTipoPeca
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
 
 router = APIRouter(prefix="/prompts-modulos", tags=["Prompts Modulares"])
@@ -2069,6 +2069,272 @@ async def desativar_todos_modulos(
 
 
 # ==========================================
+# Endpoints: Regras Determinísticas por Tipo de Peça
+# ==========================================
+
+class RegraTipoPecaCreate(BaseModel):
+    """Schema para criar/atualizar regra determinística específica por tipo de peça."""
+    tipo_peca: str
+    regra_deterministica: dict
+    regra_texto_original: Optional[str] = None
+    ativo: bool = True
+
+
+class RegraTipoPecaResponse(BaseModel):
+    """Schema de resposta para regra por tipo de peça."""
+    id: int
+    modulo_id: int
+    tipo_peca: str
+    regra_deterministica: dict
+    regra_texto_original: Optional[str]
+    ativo: bool
+    criado_em: datetime
+    atualizado_em: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{modulo_id}/regras-tipo-peca")
+async def listar_regras_tipo_peca(
+    modulo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todas as regras determinísticas específicas por tipo de peça de um módulo.
+
+    Retorna:
+    - Lista de regras com informações de cada tipo de peça configurado
+    - Tipos de peça disponíveis para configuração
+    """
+    # Verifica se módulo existe
+    modulo = db.query(PromptModulo).filter(PromptModulo.id == modulo_id).first()
+    if not modulo:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    # Busca regras existentes
+    regras = db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.modulo_id == modulo_id
+    ).order_by(RegraDeterministicaTipoPeca.tipo_peca).all()
+
+    # Busca tipos de peça disponíveis (módulos do tipo "peca")
+    tipos_peca = db.query(PromptModulo).filter(
+        PromptModulo.tipo == "peca",
+        PromptModulo.ativo == True
+    ).order_by(PromptModulo.ordem).all()
+
+    return {
+        "modulo_id": modulo_id,
+        "modulo_nome": modulo.nome,
+        "modulo_titulo": modulo.titulo,
+        "regra_global": {
+            "primaria": modulo.regra_deterministica,
+            "primaria_texto": modulo.regra_texto_original,
+            "secundaria": modulo.regra_deterministica_secundaria,
+            "secundaria_texto": modulo.regra_secundaria_texto_original,
+            "fallback_habilitado": modulo.fallback_habilitado
+        },
+        "regras_tipo_peca": [
+            {
+                "id": r.id,
+                "tipo_peca": r.tipo_peca,
+                "regra_deterministica": r.regra_deterministica,
+                "regra_texto_original": r.regra_texto_original,
+                "ativo": r.ativo,
+                "criado_em": r.criado_em.isoformat() if r.criado_em else None,
+                "atualizado_em": r.atualizado_em.isoformat() if r.atualizado_em else None
+            }
+            for r in regras
+        ],
+        "tipos_peca_disponiveis": [
+            {"nome": tp.nome, "titulo": tp.titulo}
+            for tp in tipos_peca
+        ]
+    }
+
+
+@router.post("/{modulo_id}/regras-tipo-peca")
+async def criar_regra_tipo_peca(
+    modulo_id: int,
+    regra: RegraTipoPecaCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Cria uma regra determinística específica para um tipo de peça.
+
+    Cada módulo pode ter apenas UMA regra por tipo de peça.
+    Se já existir, use PUT para atualizar.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+
+    # Verifica se módulo existe
+    modulo = db.query(PromptModulo).filter(PromptModulo.id == modulo_id).first()
+    if not modulo:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    # Verifica se já existe regra para este tipo de peça
+    existente = db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.modulo_id == modulo_id,
+        RegraDeterministicaTipoPeca.tipo_peca == regra.tipo_peca
+    ).first()
+
+    if existente:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Já existe uma regra para o tipo de peça '{regra.tipo_peca}'. Use PUT para atualizar."
+        )
+
+    # Normaliza booleanos na regra
+    regra_normalizada = normalizar_booleanos_regra(regra.regra_deterministica)
+
+    # Cria nova regra
+    nova_regra = RegraDeterministicaTipoPeca(
+        modulo_id=modulo_id,
+        tipo_peca=regra.tipo_peca,
+        regra_deterministica=regra_normalizada,
+        regra_texto_original=regra.regra_texto_original,
+        ativo=regra.ativo,
+        criado_por=current_user.id
+    )
+
+    db.add(nova_regra)
+    db.commit()
+    db.refresh(nova_regra)
+
+    return {
+        "success": True,
+        "id": nova_regra.id,
+        "modulo_id": modulo_id,
+        "tipo_peca": regra.tipo_peca,
+        "mensagem": f"Regra criada para tipo de peça '{regra.tipo_peca}'"
+    }
+
+
+@router.put("/regras-tipo-peca/{regra_id}")
+async def atualizar_regra_tipo_peca(
+    regra_id: int,
+    dados: RegraTipoPecaCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Atualiza uma regra determinística específica por tipo de peça.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+
+    # Busca regra existente
+    regra = db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.id == regra_id
+    ).first()
+
+    if not regra:
+        raise HTTPException(status_code=404, detail="Regra não encontrada")
+
+    # Normaliza booleanos na regra
+    regra_normalizada = normalizar_booleanos_regra(dados.regra_deterministica)
+
+    # Atualiza campos
+    regra.regra_deterministica = regra_normalizada
+    regra.regra_texto_original = dados.regra_texto_original
+    regra.ativo = dados.ativo
+    regra.atualizado_por = current_user.id
+    regra.atualizado_em = datetime.utcnow()
+
+    # Se mudou o tipo de peça, verifica se já existe outro
+    if dados.tipo_peca != regra.tipo_peca:
+        existente = db.query(RegraDeterministicaTipoPeca).filter(
+            RegraDeterministicaTipoPeca.modulo_id == regra.modulo_id,
+            RegraDeterministicaTipoPeca.tipo_peca == dados.tipo_peca,
+            RegraDeterministicaTipoPeca.id != regra_id
+        ).first()
+
+        if existente:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Já existe uma regra para o tipo de peça '{dados.tipo_peca}'"
+            )
+
+        regra.tipo_peca = dados.tipo_peca
+
+    db.commit()
+
+    return {
+        "success": True,
+        "id": regra_id,
+        "tipo_peca": regra.tipo_peca,
+        "mensagem": "Regra atualizada com sucesso"
+    }
+
+
+@router.delete("/regras-tipo-peca/{regra_id}")
+async def deletar_regra_tipo_peca(
+    regra_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Remove uma regra determinística específica por tipo de peça.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+
+    # Busca regra existente
+    regra = db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.id == regra_id
+    ).first()
+
+    if not regra:
+        raise HTTPException(status_code=404, detail="Regra não encontrada")
+
+    tipo_peca = regra.tipo_peca
+    modulo_id = regra.modulo_id
+
+    db.delete(regra)
+    db.commit()
+
+    return {
+        "success": True,
+        "modulo_id": modulo_id,
+        "tipo_peca": tipo_peca,
+        "mensagem": f"Regra para tipo de peça '{tipo_peca}' removida com sucesso"
+    }
+
+
+@router.patch("/regras-tipo-peca/{regra_id}/toggle")
+async def toggle_regra_tipo_peca(
+    regra_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Alterna o status ativo/inativo de uma regra por tipo de peça.
+    """
+    verificar_permissao_prompts(current_user, "editar")
+
+    # Busca regra existente
+    regra = db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.id == regra_id
+    ).first()
+
+    if not regra:
+        raise HTTPException(status_code=404, detail="Regra não encontrada")
+
+    regra.ativo = not regra.ativo
+    regra.atualizado_por = current_user.id
+    regra.atualizado_em = datetime.utcnow()
+
+    db.commit()
+
+    return {
+        "success": True,
+        "id": regra_id,
+        "ativo": regra.ativo,
+        "mensagem": f"Regra {'ativada' if regra.ativo else 'desativada'}"
+    }
+
+
+# ==========================================
 # Endpoints: Ordem das Categorias
 # ==========================================
 
@@ -2325,6 +2591,9 @@ async def reordenar_prompts_completo(
     """
     Reordena categorias e prompts dentro de cada categoria.
     Atualiza tanto a ordem das categorias quanto dos prompts individuais.
+
+    IMPORTANTE: A subcategoria do prompt NÃO é alterada - ela é um atributo
+    fixo do prompt que só pode ser alterado editando o prompt diretamente.
     """
     verificar_permissao_prompts(current_user, "editar")
     from admin.models_prompt_groups import CategoriaOrdem

@@ -350,7 +350,7 @@ class PromptActivationLog(Base):
     )
 
     # Modo de ativação usado
-    modo_ativacao = Column(String(20), nullable=False)  # llm | deterministic
+    modo_ativacao = Column(String(50), nullable=False)  # llm | deterministic | deterministic_tipo_XXX
 
     # Resultado da avaliação
     resultado = Column(Boolean, nullable=False)  # True = ativado, False = não ativado
