@@ -2371,6 +2371,9 @@
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button onclick="toggleModuloAtivo(${m.id})" class="p-1.5 ${m.ativo ? 'text-green-500 hover:text-green-700' : 'text-gray-400 hover:text-gray-600'} hover:bg-gray-100 rounded" title="${m.ativo ? 'Desativar módulo' : 'Ativar módulo'}">
+                            <i class="fas fa-${m.ativo ? 'toggle-on' : 'toggle-off'} text-lg"></i>
+                        </button>
                         <button onclick="editarModulo(${m.id})" class="px-3 py-1.5 text-sm text-primary-600 hover:bg-primary-50 rounded-lg">
                             <i class="fas fa-edit mr-1"></i> Editar
                         </button>
@@ -4792,7 +4795,7 @@
                 });
 
                 if (!response.ok) throw new Error('Módulo não encontrado');
-                
+
                 const modulo = await response.json();
                 moduloAtualId = modulo.id;
                 tagsAtuais = modulo.tags || [];
@@ -4970,6 +4973,36 @@
 
                 fecharEditor();
                 carregarModulos();
+            } catch (error) {
+                alert('Erro: ' + error.message);
+            }
+        }
+
+        async function toggleModuloAtivo(id) {
+            try {
+                const response = await fetch(`${API_BASE}/${id}/toggle`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+                    }
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Erro ao alternar status');
+                }
+
+                const result = await response.json();
+
+                // Atualiza o cache local
+                const modulo = modulosCache.find(m => m.id === id);
+                if (modulo) {
+                    modulo.ativo = result.ativo;
+                }
+
+                // Re-renderiza a lista
+                renderizarModulos(modulosCache);
+
             } catch (error) {
                 alert('Erro: ' + error.message);
             }

@@ -1182,7 +1182,7 @@ async def atualizar_modulo(
     
     # Atualiza módulo
     update_data = modulo_data.model_dump(exclude_unset=True, exclude={"motivo", "subcategoria_ids"})
-    
+
     # Normaliza booleanos nas regras determinísticas antes de salvar (1/0 -> true/false)
     if "regra_deterministica" in update_data and update_data["regra_deterministica"]:
         update_data["regra_deterministica"] = normalizar_booleanos_regra(update_data["regra_deterministica"])
@@ -1321,6 +1321,33 @@ async def desativar_modulo(
     db.commit()
     
     return {"message": f"Módulo '{modulo.titulo}' desativado com sucesso"}
+
+
+@router.patch("/{modulo_id}/toggle")
+async def toggle_modulo_ativo(
+    modulo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """Alterna o status ativo/inativo de um módulo."""
+    verificar_permissao_prompts(current_user, "editar")
+
+    modulo = db.query(PromptModulo).filter(PromptModulo.id == modulo_id).first()
+
+    if not modulo:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    modulo.ativo = not modulo.ativo
+    modulo.atualizado_por = current_user.id
+    db.commit()
+
+    return {
+        "success": True,
+        "id": modulo_id,
+        "ativo": modulo.ativo,
+        "titulo": modulo.titulo,
+        "mensagem": f"Módulo '{modulo.titulo}' {'ativado' if modulo.ativo else 'desativado'}"
+    }
 
 
 @router.delete("/{modulo_id}/permanente")
