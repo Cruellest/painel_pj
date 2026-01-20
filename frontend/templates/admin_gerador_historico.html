@@ -144,6 +144,24 @@
         let geracoesCache = [];
         let geracaoAtual = null;
 
+        // Fuso horário de Mato Grosso do Sul (UTC-04:00)
+        const TIMEZONE = 'America/Campo_Grande';
+
+        function formatarData(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleDateString('pt-BR', { timeZone: TIMEZONE });
+        }
+
+        function formatarHora(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleTimeString('pt-BR', { timeZone: TIMEZONE });
+        }
+
+        function formatarDataHora(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleString('pt-BR', { timeZone: TIMEZONE });
+        }
+
         // SECURITY: Configura marked para sanitizar output via DOMPurify
         marked.setOptions({
             breaks: true,
@@ -219,8 +237,8 @@
                             </div>
                         </div>
                         <div class="text-right">
-                            <p class="text-sm text-gray-500">${escapeHtml(new Date(g.criado_em).toLocaleDateString('pt-BR'))}</p>
-                            <p class="text-xs text-gray-400">${escapeHtml(new Date(g.criado_em).toLocaleTimeString('pt-BR'))}</p>
+                            <p class="text-sm text-gray-500">${escapeHtml(formatarData(g.criado_em))}</p>
+                            <p class="text-xs text-gray-400">${escapeHtml(formatarHora(g.criado_em))}</p>
                             ${g.tempo_processamento ? `<p class="text-xs text-green-600 mt-1">⏱️ ${escapeHtml(String(g.tempo_processamento))}s</p>` : ''}
                         </div>
                     </div>
@@ -300,7 +318,7 @@
                 document.getElementById('info-geracao').innerHTML = `
                     <strong>${escapeHtml(geracao.numero_cnj_formatado || geracao.numero_cnj)}</strong> |
                     ${escapeHtml(formatarTipoPeca(geracao.tipo_peca))} |
-                    ${escapeHtml(new Date(geracao.criado_em).toLocaleString('pt-BR'))}
+                    ${escapeHtml(formatarDataHora(geracao.criado_em))}
                     ${isMarkdown ? ' | <span class="text-green-600">Markdown</span>' : ' | <span class="text-amber-600">JSON</span>'}
                     ${geracao.historico_chat && geracao.historico_chat.length > 0 ? ` | <span class="text-purple-600"><i class="fas fa-comments"></i> ${parseInt(geracao.historico_chat.length) || 0} edições</span>` : ''}
                 `;
@@ -519,7 +537,7 @@
                 }[versao.tipo_alteracao] || 'bg-gray-100 text-gray-700';
 
                 const dataFormatada = versao.criado_em
-                    ? new Date(versao.criado_em).toLocaleString('pt-BR')
+                    ? formatarDataHora(versao.criado_em)
                     : 'Data não disponível';
 
                 html += `

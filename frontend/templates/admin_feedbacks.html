@@ -420,6 +420,24 @@
         let chartAvaliacoes = null;
         let chartTimeline = null;
 
+        // Fuso horário de Mato Grosso do Sul (UTC-04:00)
+        const TIMEZONE = 'America/Campo_Grande';
+
+        function formatarData(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleDateString('pt-BR', { timeZone: TIMEZONE });
+        }
+
+        function formatarHora(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleTimeString('pt-BR', { timeZone: TIMEZONE, hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatarDataHora(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleString('pt-BR', { timeZone: TIMEZONE });
+        }
+
         function getAuthToken() {
             return localStorage.getItem('access_token');
         }
@@ -623,7 +641,7 @@
                     'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>'
                 };
                 tabelaPendentes.innerHTML = (data.pendentes_feedback || []).map(p => {
-                    const dataFormatada = p.data ? new Date(p.data).toLocaleDateString('pt-BR') : '-';
+                    const dataFormatada = p.data ? formatarData(p.data) : '-';
                     return `
                         <tr class="hover:bg-orange-50">
                             <td class="px-4 py-3 text-xs">${sistemaLabels[p.sistema] || p.sistema}</td>
@@ -696,7 +714,8 @@
                         'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>',
                         'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>'
                     };
-                    const dataFormatada = fb.criado_em ? new Date(fb.criado_em).toLocaleDateString('pt-BR') : '-';
+                    const dataFormatada = fb.criado_em ? formatarData(fb.criado_em) : '-';
+                    const horaFormatada = fb.criado_em ? formatarHora(fb.criado_em) : '';
                     const modeloFormatado = fb.modelo ? `<span class="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-mono">${fb.modelo}</span>` : '<span class="text-gray-400">N/A</span>';
                     
                     return `
@@ -720,7 +739,10 @@
                                     </div>
                                 ` : '-'}
                             </td>
-                            <td class="px-4 py-3 text-gray-500">${dataFormatada}</td>
+                            <td class="px-4 py-3 text-gray-500">
+                                <div>${dataFormatada}</div>
+                                ${horaFormatada ? `<div class="text-xs text-gray-400">${horaFormatada}</div>` : ''}
+                            </td>
                             <td class="px-4 py-3 text-center">
                                 <button onclick="verRelatorio(${fb.consulta_id}, '${fb.sistema}')" class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors" title="Ver relatório">
                                     <i class="fas fa-eye"></i>
@@ -834,7 +856,7 @@
                 document.getElementById('modal-usuario').textContent = data.usuario || '-';
 
                 const dataConsulta = data.consultado_em || data.analisado_em || data.criado_em;
-                document.getElementById('modal-data').textContent = dataConsulta ? new Date(dataConsulta).toLocaleDateString('pt-BR') : '-';
+                document.getElementById('modal-data').textContent = dataConsulta ? formatarDataHora(dataConsulta) : '-';
                 document.getElementById('modal-modelo').textContent = data.modelo || 'N/A';
 
                 // Avaliação do feedback
@@ -1025,7 +1047,7 @@
                 const tipoLabel = tipoLabels[versao.tipo_alteracao] || versao.tipo_alteracao;
                 const tipoClass = tipoClasses[versao.tipo_alteracao] || 'bg-gray-100 text-gray-700';
                 const dataFormatada = versao.criado_em
-                    ? new Date(versao.criado_em).toLocaleString('pt-BR')
+                    ? formatarDataHora(versao.criado_em)
                     : 'Data não disponível';
 
                 html += `
