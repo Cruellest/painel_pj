@@ -909,7 +909,8 @@ async def chamar_llm_async(
     system_prompt: str = "",
     modelo: str = MODELO_PADRAO,
     max_tokens: int = 12000,  # Aumentado para suportar schemas JSON com muitos campos
-    temperature: float = 0.3
+    temperature: float = 0.3,
+    thinking_level: str = "low"  # Baixo para extração JSON (reduz latência ~80%)
 ) -> str:
     """Chama modelo Gemini diretamente (async)"""
     response = await gemini_service.generate_with_session(
@@ -918,7 +919,8 @@ async def chamar_llm_async(
         system_prompt=system_prompt,
         model=modelo,
         max_tokens=max_tokens,
-        temperature=temperature
+        temperature=temperature,
+        thinking_level=thinking_level
     )
     
     if not response.success:
@@ -934,7 +936,8 @@ async def chamar_llm_com_imagens_async(
     system_prompt: str = "",
     modelo: str = MODELO_PADRAO,
     max_tokens: int = 12000,  # Aumentado para suportar schemas JSON com muitos campos
-    temperature: float = 0.3
+    temperature: float = 0.3,
+    thinking_level: str = "low"  # Baixo para extração JSON (reduz latência ~80%)
 ) -> str:
     """Chama modelo Gemini com imagens (async) - para PDFs digitalizados"""
     response = await gemini_service.generate_with_images_session(
@@ -944,7 +947,8 @@ async def chamar_llm_com_imagens_async(
         system_prompt=system_prompt,
         model=modelo,
         max_tokens=max_tokens,
-        temperature=temperature
+        temperature=temperature,
+        thinking_level=thinking_level
     )
     
     if not response.success:

@@ -755,26 +755,30 @@ class GeminiService:
         system_prompt: str = "",
         model: str = None,
         max_tokens: int = None,
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        thinking_level: str = None
     ) -> GeminiResponse:
         """
         Gera texto analisando imagens usando sessão aiohttp.
+
+        Args:
+            thinking_level: "minimal", "low", "medium", "high" ou None (default)
         """
         if not self._api_key:
             return GeminiResponse(
-                success=False, 
+                success=False,
                 error="GEMINI_KEY não configurada"
             )
-        
+
         # Modelo padrão para visão
         if model:
             model = self.normalize_model(model)
         else:
             model = self.DEFAULT_MODELS["visao"]
-        
+
         # Monta URL
         url = f"{self.BASE_URL}/{model}:generateContent?key={self._api_key}"
-        
+
         # Monta payload com imagens
         payload = self._build_payload_with_images(
             prompt=prompt,
@@ -782,6 +786,7 @@ class GeminiService:
             system_prompt=system_prompt,
             max_tokens=max_tokens,
             temperature=temperature,
+            thinking_level=thinking_level,
             model=model
         )
 
