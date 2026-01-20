@@ -1071,7 +1071,7 @@ def run_migrations():
                     CREATE TABLE prompt_activation_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
-                        modo_ativacao VARCHAR(20) NOT NULL,
+                        modo_ativacao VARCHAR(30) NOT NULL,
                         resultado BOOLEAN NOT NULL,
                         variaveis_usadas JSON,
                         contexto JSON,
@@ -1086,7 +1086,7 @@ def run_migrations():
                     CREATE TABLE IF NOT EXISTS prompt_activation_logs (
                         id SERIAL PRIMARY KEY,
                         prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
-                        modo_ativacao VARCHAR(20) NOT NULL,
+                        modo_ativacao VARCHAR(30) NOT NULL,
                         resultado BOOLEAN NOT NULL,
                         variaveis_usadas JSON,
                         contexto JSON,
@@ -1105,7 +1105,7 @@ def run_migrations():
     # Migração: Adicionar colunas de regra determinística em prompt_modulos
     if table_exists('prompt_modulos'):
         colunas_deterministic = [
-            ('modo_ativacao', "VARCHAR(20) DEFAULT 'llm'"),
+            ('modo_ativacao', "VARCHAR(30) DEFAULT 'llm'"),
             ('regra_deterministica', 'JSON'),
             ('regra_texto_original', 'TEXT'),
         ]
@@ -1123,7 +1123,7 @@ def run_migrations():
     # Migração: Adicionar colunas de regra determinística em prompt_modulos_historico
     if table_exists('prompt_modulos_historico'):
         colunas_deterministic_hist = [
-            ('modo_ativacao', 'VARCHAR(20)'),
+            ('modo_ativacao', 'VARCHAR(30)'),
             ('regra_deterministica', 'JSON'),
             ('regra_texto_original', 'TEXT'),
         ]
@@ -1431,7 +1431,7 @@ def run_migrations():
     # Migração: Adicionar colunas de modo de ativação do Agente 2 em geracoes_pecas
     if table_exists('geracoes_pecas'):
         colunas_modo_ativacao = [
-            ("modo_ativacao_agente2", "VARCHAR(20)"),
+            ("modo_ativacao_agente2", "VARCHAR(30)"),
             ("modulos_ativados_det", "INTEGER"),
             ("modulos_ativados_llm", "INTEGER"),
         ]
