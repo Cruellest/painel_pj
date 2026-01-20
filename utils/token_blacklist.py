@@ -15,10 +15,12 @@ A blacklist usa duas camadas:
 """
 
 import threading
-from utils.timezone import get_utc_now, timedelta
+from datetime import datetime, timedelta
 from typing import Optional, Set
 import logging
 from jose import jwt
+
+from utils.timezone import get_utc_now
 
 from config import SECRET_KEY, ALGORITHM
 
