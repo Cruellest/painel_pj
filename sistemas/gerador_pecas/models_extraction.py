@@ -349,8 +349,12 @@ class PromptActivationLog(Base):
         index=True
     )
 
-    # Modo de ativação usado
-    modo_ativacao = Column(String(50), nullable=False)  # llm | deterministic | deterministic_tipo_XXX
+    # Modo de ativação usado (valores padronizados curtos)
+    # Valores: 'llm', 'deterministic', 'deterministic_global', 'deterministic_tipo_peca', 'mixed'
+    modo_ativacao = Column(Text, nullable=False)
+
+    # Detalhes do modo (tipo de peça, regra específica, etc.) - campo separado para flexibilidade
+    modo_ativacao_detalhe = Column(Text, nullable=True)
 
     # Resultado da avaliação
     resultado = Column(Boolean, nullable=False)  # True = ativado, False = não ativado

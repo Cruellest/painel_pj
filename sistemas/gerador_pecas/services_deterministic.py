@@ -1261,9 +1261,10 @@ def avaliar_ativacao_prompt(
                     _registrar_log_ativacao(
                         db=db,
                         prompt_id=prompt_id,
-                        modo=f"deterministic_tipo_{tipo_peca}",
+                        modo="deterministic_tipo_peca",
                         resultado=True,
-                        variaveis_usadas=vars_especifica
+                        variaveis_usadas=vars_especifica,
+                        detalhe=tipo_peca
                     )
                     return {
                         "ativar": True,
@@ -1278,9 +1279,10 @@ def avaliar_ativacao_prompt(
                     _registrar_log_ativacao(
                         db=db,
                         prompt_id=prompt_id,
-                        modo=f"deterministic_tipo_{tipo_peca}_false",
+                        modo="deterministic_tipo_peca",
                         resultado=False,
-                        variaveis_usadas=vars_especifica
+                        variaveis_usadas=vars_especifica,
+                        detalhe=f"{tipo_peca}_false"
                     )
                     return {
                         "ativar": False,
@@ -1330,9 +1332,10 @@ def avaliar_ativacao_prompt(
                 _registrar_log_ativacao(
                     db=db,
                     prompt_id=prompt_id,
-                    modo="deterministic_global_primary",
+                    modo="deterministic_global",
                     resultado=True,
-                    variaveis_usadas=vars_primaria
+                    variaveis_usadas=vars_primaria,
+                    detalhe="primary"
                 )
                 return {
                     "ativar": True,
@@ -1346,9 +1349,10 @@ def avaliar_ativacao_prompt(
                 _registrar_log_ativacao(
                     db=db,
                     prompt_id=prompt_id,
-                    modo="deterministic_global_primary_false",
+                    modo="deterministic_global",
                     resultado=False,
-                    variaveis_usadas=vars_primaria
+                    variaveis_usadas=vars_primaria,
+                    detalhe="primary_false"
                 )
                 return {
                     "ativar": False,
@@ -1380,9 +1384,10 @@ def avaliar_ativacao_prompt(
                     _registrar_log_ativacao(
                         db=db,
                         prompt_id=prompt_id,
-                        modo="deterministic_global_secondary",
+                        modo="deterministic_global",
                         resultado=True,
-                        variaveis_usadas=vars_secundaria
+                        variaveis_usadas=vars_secundaria,
+                        detalhe="secondary"
                     )
                     return {
                         "ativar": True,
@@ -1396,9 +1401,10 @@ def avaliar_ativacao_prompt(
                     _registrar_log_ativacao(
                         db=db,
                         prompt_id=prompt_id,
-                        modo="deterministic_global_secondary_false",
+                        modo="deterministic_global",
                         resultado=False,
-                        variaveis_usadas=vars_secundaria
+                        variaveis_usadas=vars_secundaria,
+                        detalhe="secondary_false"
                     )
                     return {
                         "ativar": False,
@@ -1514,19 +1520,41 @@ def _registrar_log_ativacao(
     prompt_id: int,
     modo: str,
     resultado: bool,
-    variaveis_usadas: List[str]
+    variaveis_usadas: List[str],
+    detalhe: Optional[str] = None
 ):
-    """Registra log de ativação de prompt."""
-    from .models_extraction import PromptActivationLog
+    """
+    Registra log de ativação de prompt.
 
-    log = PromptActivationLog(
-        prompt_id=prompt_id,
-        modo_ativacao=modo,
-        resultado=resultado,
-        variaveis_usadas=variaveis_usadas
-    )
-    db.add(log)
-    db.commit()
+    IMPORTANTE: O logging é resiliente - falhas não abortam o fluxo principal.
+
+    Args:
+        db: Sessão do banco
+        prompt_id: ID do prompt
+        modo: Modo padronizado (llm, deterministic, deterministic_global, deterministic_tipo_peca, mixed)
+        resultado: True se ativado, False se não ativado
+        variaveis_usadas: Lista de slugs das variáveis usadas na avaliação
+        detalhe: Detalhe adicional (ex: tipo de peça, regra específica)
+    """
+    try:
+        from .models_extraction import PromptActivationLog
+
+        log = PromptActivationLog(
+            prompt_id=prompt_id,
+            modo_ativacao=modo,
+            modo_ativacao_detalhe=detalhe,
+            resultado=resultado,
+            variaveis_usadas=variaveis_usadas
+        )
+        db.add(log)
+        db.commit()
+    except Exception as e:
+        # Logging não deve abortar o fluxo principal
+        logger.warning(f"[LOG-ATIVACAO] Falha ao registrar log de ativação: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 # =============================================================================

@@ -1077,7 +1077,8 @@ def run_migrations():
                     CREATE TABLE prompt_activation_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
-                        modo_ativacao VARCHAR(30) NOT NULL,
+                        modo_ativacao TEXT NOT NULL,
+                        modo_ativacao_detalhe TEXT,
                         resultado BOOLEAN NOT NULL,
                         variaveis_usadas JSON,
                         contexto JSON,
@@ -1092,7 +1093,8 @@ def run_migrations():
                     CREATE TABLE IF NOT EXISTS prompt_activation_logs (
                         id SERIAL PRIMARY KEY,
                         prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
-                        modo_ativacao VARCHAR(30) NOT NULL,
+                        modo_ativacao TEXT NOT NULL,
+                        modo_ativacao_detalhe TEXT,
                         resultado BOOLEAN NOT NULL,
                         variaveis_usadas JSON,
                         contexto JSON,
@@ -1108,22 +1110,32 @@ def run_migrations():
             db.rollback()
             print(f"[WARN] Migração prompt_activation_logs: {e}")
     
-    # Migração: Aumentar tamanho da coluna modo_ativacao em prompt_activation_logs
-    # Necessário para suportar valores como "deterministic_tipo_contestacao"
+    # Migração: Converter coluna modo_ativacao para TEXT em prompt_activation_logs
+    # Necessário para suportar valores longos (antes era VARCHAR(30))
     if table_exists('prompt_activation_logs'):
         try:
             if is_sqlite:
-                # SQLite não suporta ALTER COLUMN, mas já foi criado com 30 chars
+                # SQLite não suporta ALTER COLUMN, mas TEXT funciona sem limite
                 pass
             else:
-                db.execute(text("ALTER TABLE prompt_activation_logs ALTER COLUMN modo_ativacao TYPE VARCHAR(50)"))
+                db.execute(text("ALTER TABLE prompt_activation_logs ALTER COLUMN modo_ativacao TYPE TEXT"))
                 db.commit()
-                print("[OK] Migração: coluna modo_ativacao expandida para VARCHAR(50)")
+                print("[OK] Migração: coluna modo_ativacao convertida para TEXT")
         except Exception as e:
             db.rollback()
-            # Ignora erro se a coluna já tiver o tamanho correto
+            # Ignora erro se a coluna já for TEXT
             if "nothing to alter" not in str(e).lower() and "already" not in str(e).lower():
                 print(f"[WARN] Migração modo_ativacao prompt_activation_logs: {e}")
+
+    # Migração: Adicionar coluna modo_ativacao_detalhe em prompt_activation_logs
+    if table_exists('prompt_activation_logs') and not column_exists('prompt_activation_logs', 'modo_ativacao_detalhe'):
+        try:
+            db.execute(text("ALTER TABLE prompt_activation_logs ADD COLUMN modo_ativacao_detalhe TEXT"))
+            db.commit()
+            print("[OK] Migração: coluna modo_ativacao_detalhe adicionada em prompt_activation_logs")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração modo_ativacao_detalhe prompt_activation_logs: {e}")
 
     # Migração: Adicionar colunas de regra determinística em prompt_modulos
     if table_exists('prompt_modulos'):
