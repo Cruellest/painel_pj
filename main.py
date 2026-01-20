@@ -97,6 +97,26 @@ async def lifespan(app: FastAPI):
     print("[+] Iniciando Portal PGE-MS...")
     init_database()
 
+    # ==========================================================================
+    # REGRA DE OURO: Corrige modos de ativação inconsistentes no startup
+    # Garante que dados legados ou corrompidos sejam corrigidos automaticamente
+    # ==========================================================================
+    try:
+        from database.connection import SessionLocal
+        from sistemas.gerador_pecas.services_deterministic import corrigir_modos_ativacao_inconsistentes
+
+        db = SessionLocal()
+        try:
+            resultado = corrigir_modos_ativacao_inconsistentes(db, commit=True)
+            if resultado["corrigidos"] > 0:
+                print(f"[REGRA-DE-OURO] Corrigidos {resultado['corrigidos']} módulos com modo de ativação inconsistente")
+            else:
+                print("[REGRA-DE-OURO] Todos os módulos estão com modo de ativação correto")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[WARN] Erro ao verificar modos de ativação: {e}")
+
     # Configura instrumentação automática de performance
     from admin.perf_instrumentation import setup_instrumentation
     setup_instrumentation(app)

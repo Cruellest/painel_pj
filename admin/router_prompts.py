@@ -414,9 +414,25 @@ async def listar_modulos(
 
     modulos = query.order_by(PromptModulo.tipo, PromptModulo.categoria, PromptModulo.ordem).all()
 
+    # ==========================================================================
+    # REGRA DE OURO: Calcula effective_activation_mode para cada módulo
+    # O frontend DEVE usar este campo, não deduzir baseado em regras
+    # ==========================================================================
+    from sistemas.gerador_pecas.services_deterministic import resolve_activation_mode_from_db
+
     # Adiciona subcategoria_ids e subcategorias_nomes a cada modulo (agora sem queries extras)
     result = []
     for modulo in modulos:
+        # Calcula o modo efetivo REAL
+        effective_mode = resolve_activation_mode_from_db(
+            db=db,
+            modulo_id=modulo.id,
+            modo_ativacao_salvo=modulo.modo_ativacao,
+            regra_primaria=modulo.regra_deterministica,
+            regra_secundaria=modulo.regra_deterministica_secundaria,
+            fallback_habilitado=modulo.fallback_habilitado or False
+        )
+
         modulo_dict = {
             "id": modulo.id,
             "tipo": modulo.tipo,
@@ -432,6 +448,11 @@ async def listar_modulos(
             "conteudo": modulo.conteudo,
             # Campos de modo determinístico (primária) - normaliza booleanos 1/0 para true/false
             "modo_ativacao": modulo.modo_ativacao or 'llm',
+            # ==========================================================================
+            # CAMPO OBRIGATÓRIO: effective_activation_mode
+            # Este é o ÚNICO campo que o frontend deve usar para mostrar o badge
+            # ==========================================================================
+            "effective_activation_mode": effective_mode,
             "regra_deterministica": normalizar_booleanos_regra(modulo.regra_deterministica),
             "regra_texto_original": modulo.regra_texto_original,
             # Campos de regra secundária (fallback) - normaliza booleanos 1/0 para true/false
@@ -963,8 +984,23 @@ async def obter_modulo(
     response["regra_deterministica"] = normalizar_booleanos_regra(modulo.regra_deterministica)
     response["regra_deterministica_secundaria"] = normalizar_booleanos_regra(modulo.regra_deterministica_secundaria)
 
+    # ==========================================================================
+    # REGRA DE OURO: Calcula effective_activation_mode
+    # O frontend DEVE usar este campo para mostrar o badge, não deduzir
+    # ==========================================================================
+    from sistemas.gerador_pecas.services_deterministic import resolve_activation_mode_from_db
+    response["effective_activation_mode"] = resolve_activation_mode_from_db(
+        db=db,
+        modulo_id=modulo.id,
+        modo_ativacao_salvo=modulo.modo_ativacao,
+        regra_primaria=modulo.regra_deterministica,
+        regra_secundaria=modulo.regra_deterministica_secundaria,
+        fallback_habilitado=modulo.fallback_habilitado or False
+    )
+
     # Validação de integridade: verifica variáveis inválidas nas regras
-    if modulo.modo_ativacao == 'deterministic':
+    # Usa effective_activation_mode para determinar se deve validar
+    if response["effective_activation_mode"] == 'deterministic':
         try:
             from sistemas.gerador_pecas.services_deterministic import RuleIntegrityValidator
             validator = RuleIntegrityValidator(db)
@@ -1045,11 +1081,27 @@ async def criar_modulo(
     # Normaliza booleanos nas regras determinísticas antes de salvar (1/0 -> true/false)
     if modulo_payload.get("regra_deterministica"):
         modulo_payload["regra_deterministica"] = normalizar_booleanos_regra(modulo_payload["regra_deterministica"])
-        # AUTO-CORREÇÃO: Se definiu regra determinística, força modo_ativacao para 'deterministic'
-        if modulo_payload.get("modo_ativacao") != 'deterministic':
-            modulo_payload["modo_ativacao"] = 'deterministic'
     if modulo_payload.get("regra_deterministica_secundaria"):
         modulo_payload["regra_deterministica_secundaria"] = normalizar_booleanos_regra(modulo_payload["regra_deterministica_secundaria"])
+
+    # ==========================================================================
+    # REGRA DE OURO: Resolve o modo de ativação CORRETO baseado nas regras
+    # NUNCA confia no valor enviado pelo frontend - sempre deriva das regras
+    # ==========================================================================
+    from sistemas.gerador_pecas.services_deterministic import resolve_activation_mode
+    modo_correto = resolve_activation_mode(
+        modo_ativacao_salvo=modulo_payload.get("modo_ativacao", "llm"),
+        regra_primaria=modulo_payload.get("regra_deterministica"),
+        regra_secundaria=modulo_payload.get("regra_deterministica_secundaria"),
+        fallback_habilitado=modulo_payload.get("fallback_habilitado", False)
+    )
+    if modulo_payload.get("modo_ativacao") != modo_correto:
+        import logging
+        logging.getLogger(__name__).info(
+            f"[REGRA-DE-OURO] Novo módulo: modo_ativacao forçado de "
+            f"'{modulo_payload.get('modo_ativacao')}' para '{modo_correto}'"
+        )
+    modulo_payload["modo_ativacao"] = modo_correto
 
     # Prompts de peça não devem ter categoria (categoria é usada como identificador único)
     if modulo_data.tipo == "peca":
@@ -1077,9 +1129,11 @@ async def criar_modulo(
     db.commit()
     db.refresh(modulo)
 
-    # Retorna com subcategoria_ids
+    # Retorna com subcategoria_ids e effective_activation_mode
     response = modulo.__dict__.copy()
     response["subcategoria_ids"] = [s.id for s in modulo.subcategorias]
+    # REGRA DE OURO: modo efetivo é sempre o modo já corrigido após salvar
+    response["effective_activation_mode"] = modulo.modo_ativacao
     return response
 
 
@@ -1132,16 +1186,37 @@ async def atualizar_modulo(
     # Normaliza booleanos nas regras determinísticas antes de salvar (1/0 -> true/false)
     if "regra_deterministica" in update_data and update_data["regra_deterministica"]:
         update_data["regra_deterministica"] = normalizar_booleanos_regra(update_data["regra_deterministica"])
-        # AUTO-CORREÇÃO: Se definiu regra determinística, força modo_ativacao para 'deterministic'
-        if update_data.get("modo_ativacao") != 'deterministic':
-            update_data["modo_ativacao"] = 'deterministic'
-            import logging
-            logging.getLogger(__name__).info(
-                f"[AUTO-CORREÇÃO] Prompt {modulo_id}: modo_ativacao alterado para 'deterministic' "
-                "porque regra_deterministica foi definida"
-            )
     if "regra_deterministica_secundaria" in update_data and update_data["regra_deterministica_secundaria"]:
         update_data["regra_deterministica_secundaria"] = normalizar_booleanos_regra(update_data["regra_deterministica_secundaria"])
+
+    # ==========================================================================
+    # REGRA DE OURO: Resolve o modo de ativação CORRETO baseado nas regras
+    # Considera as regras ATUAIS do módulo combinadas com as novas do update
+    # ==========================================================================
+    from sistemas.gerador_pecas.services_deterministic import resolve_activation_mode_from_db
+
+    # Combina regras atuais com as novas (se houver)
+    regra_primaria_final = update_data.get("regra_deterministica", modulo.regra_deterministica)
+    regra_secundaria_final = update_data.get("regra_deterministica_secundaria", modulo.regra_deterministica_secundaria)
+    fallback_final = update_data.get("fallback_habilitado", modulo.fallback_habilitado or False)
+
+    modo_correto = resolve_activation_mode_from_db(
+        db=db,
+        modulo_id=modulo_id,
+        modo_ativacao_salvo=update_data.get("modo_ativacao", modulo.modo_ativacao),
+        regra_primaria=regra_primaria_final,
+        regra_secundaria=regra_secundaria_final,
+        fallback_habilitado=fallback_final
+    )
+
+    modo_atual = update_data.get("modo_ativacao", modulo.modo_ativacao)
+    if modo_atual != modo_correto:
+        import logging
+        logging.getLogger(__name__).info(
+            f"[REGRA-DE-OURO] Prompt {modulo_id}: modo_ativacao forçado de "
+            f"'{modo_atual}' para '{modo_correto}'"
+        )
+    update_data["modo_ativacao"] = modo_correto
 
     if modulo.tipo == "peca":
         # Prompts de peça não devem ter categoria/subcategoria
@@ -1201,10 +1276,12 @@ async def atualizar_modulo(
             import logging
             logging.getLogger(__name__).warning(f"Erro ao limpar uso de variáveis: {e}")
 
-    # Retorna com subcategoria_ids
+    # Retorna com subcategoria_ids e effective_activation_mode
     response = modulo.__dict__.copy()
     response["subcategoria_ids"] = [s.id for s in modulo.subcategorias]
     response["subcategorias_nomes"] = [s.nome for s in modulo.subcategorias]
+    # REGRA DE OURO: modo efetivo é sempre o modo já corrigido após salvar
+    response["effective_activation_mode"] = modulo.modo_ativacao
 
     # Validação de integridade: verifica variáveis inválidas nas regras
     if modulo.modo_ativacao == 'deterministic':
@@ -2796,4 +2873,128 @@ async def listar_variaveis_disponiveis(
     resultado = validator.obter_variaveis_disponiveis()
 
     return resultado
+
+
+# ==============================================================================
+# ENDPOINTS PARA REGRA DE OURO: Verificação e correção de modo de ativação
+# ==============================================================================
+
+@router.get("/regra-de-ouro/verificar")
+async def verificar_modos_ativacao(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica todos os módulos para identificar modos de ativação inconsistentes.
+
+    REGRA DE OURO: Se existe regra determinística, modo_ativacao DEVE ser 'deterministic'.
+
+    Retorna:
+    - Lista de módulos com inconsistências
+    - Não faz alterações no banco (apenas verificação)
+    """
+    from sistemas.gerador_pecas.services_deterministic import corrigir_modos_ativacao_inconsistentes
+
+    # Executa sem commit para apenas verificar
+    resultado = corrigir_modos_ativacao_inconsistentes(db, commit=False)
+    db.rollback()  # Garante que não houve alteração
+
+    return {
+        "verificados": resultado["verificados"],
+        "inconsistentes": resultado["corrigidos"],
+        "detalhes": resultado["detalhes"],
+        "mensagem": (
+            f"Encontrados {resultado['corrigidos']} módulos com modo de ativação inconsistente. "
+            "Use POST /regra-de-ouro/corrigir para aplicar correções."
+            if resultado["corrigidos"] > 0
+            else "Todos os módulos estão com modo de ativação correto."
+        )
+    }
+
+
+@router.post("/regra-de-ouro/corrigir")
+async def corrigir_modos_ativacao(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Corrige TODOS os módulos com modo de ativação inconsistente.
+
+    REGRA DE OURO: Se existe regra determinística, modo_ativacao DEVE ser 'deterministic'.
+
+    Esta operação:
+    - Verifica todos os módulos
+    - Corrige automaticamente os inconsistentes
+    - Faz commit das alterações
+
+    IMPORTANTE: Esta correção é segura e pode ser executada múltiplas vezes.
+    """
+    from sistemas.gerador_pecas.services_deterministic import corrigir_modos_ativacao_inconsistentes
+
+    resultado = corrigir_modos_ativacao_inconsistentes(db, commit=True)
+
+    return {
+        "verificados": resultado["verificados"],
+        "corrigidos": resultado["corrigidos"],
+        "detalhes": resultado["detalhes"],
+        "mensagem": (
+            f"Corrigidos {resultado['corrigidos']} módulos com sucesso."
+            if resultado["corrigidos"] > 0
+            else "Nenhuma correção necessária - todos os módulos já estavam corretos."
+        )
+    }
+
+
+@router.get("/regra-de-ouro/status/{modulo_id}")
+async def verificar_modo_modulo(
+    modulo_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica o modo de ativação correto para um módulo específico.
+
+    Retorna:
+    - Modo salvo no banco
+    - Modo correto segundo a REGRA DE OURO
+    - Se há inconsistência
+    """
+    from sistemas.gerador_pecas.services_deterministic import (
+        resolve_activation_mode_from_db,
+        tem_regras_deterministicas
+    )
+
+    modulo = db.query(PromptModulo).filter(PromptModulo.id == modulo_id).first()
+    if not modulo:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    modo_correto = resolve_activation_mode_from_db(
+        db=db,
+        modulo_id=modulo_id,
+        modo_ativacao_salvo=modulo.modo_ativacao,
+        regra_primaria=modulo.regra_deterministica,
+        regra_secundaria=modulo.regra_deterministica_secundaria,
+        fallback_habilitado=modulo.fallback_habilitado or False
+    )
+
+    # Verifica regras por tipo de peça
+    regras_tipo_peca = db.query(RegraDeterministicaTipoPeca).filter(
+        RegraDeterministicaTipoPeca.modulo_id == modulo_id,
+        RegraDeterministicaTipoPeca.ativo == True
+    ).all()
+
+    return {
+        "modulo_id": modulo_id,
+        "nome": modulo.nome,
+        "titulo": modulo.titulo,
+        "modo_salvo": modulo.modo_ativacao,
+        "modo_correto": modo_correto,
+        "inconsistente": modulo.modo_ativacao != modo_correto,
+        "tem_regra_primaria": bool(modulo.regra_deterministica),
+        "tem_regra_secundaria": bool(modulo.regra_deterministica_secundaria and modulo.fallback_habilitado),
+        "regras_tipo_peca": [
+            {"tipo_peca": r.tipo_peca, "ativo": r.ativo}
+            for r in regras_tipo_peca
+        ]
+    }
 

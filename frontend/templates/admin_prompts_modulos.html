@@ -2336,8 +2336,11 @@
                 : '';
 
             // Badge de modo de ativação (apenas para prompts de conteúdo)
+            // REGRA DE OURO: Usa effective_activation_mode do backend (estado REAL do banco)
+            // NUNCA deduzir o modo no frontend - sempre usar o valor efetivo retornado pelo backend
+            const modoEfetivo = m.effective_activation_mode || m.modo_ativacao;
             const modoAtivacaoBadge = m.tipo === 'conteudo'
-                ? (m.modo_ativacao === 'deterministic'
+                ? (modoEfetivo === 'deterministic'
                     ? '<span class="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full" title="Ativação por regra determinística"><i class="fas fa-cog mr-1"></i>Regra</span>'
                     : '<span class="px-2 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full" title="Ativação por LLM"><i class="fas fa-brain mr-1"></i>LLM</span>')
                 : '';

@@ -342,6 +342,7 @@ class VariableUsageResponse(BaseModel):
     prompt_nome: str
     prompt_titulo: str
     modo_ativacao: Optional[str] = None
+    effective_activation_mode: Optional[str] = None  # REGRA DE OURO: modo efetivo real
     criado_em: datetime
 
     class Config:
@@ -3667,14 +3668,25 @@ async def obter_variavel(
     ).all()
 
     prompt_usages = []
+    # REGRA DE OURO: Calcula modo efetivo para cada prompt
+    from sistemas.gerador_pecas.services_deterministic import resolve_activation_mode_from_db
     for usage in usages:
         prompt = db.query(PromptModulo).filter(PromptModulo.id == usage.prompt_id).first()
         if prompt:
+            effective_mode = resolve_activation_mode_from_db(
+                db=db,
+                modulo_id=prompt.id,
+                modo_ativacao_salvo=prompt.modo_ativacao,
+                regra_primaria=prompt.regra_deterministica,
+                regra_secundaria=prompt.regra_deterministica_secundaria,
+                fallback_habilitado=prompt.fallback_habilitado or False
+            )
             prompt_usages.append(VariableUsageResponse(
                 prompt_id=prompt.id,
                 prompt_nome=prompt.nome,
                 prompt_titulo=prompt.titulo,
                 modo_ativacao=prompt.modo_ativacao,
+                effective_activation_mode=effective_mode,
                 criado_em=usage.criado_em
             ))
 

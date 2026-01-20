@@ -1234,17 +1234,20 @@
                 // Prompts
                 const promptsDiv = document.getElementById('detalhe-prompts');
                 if (v.prompt_usages && v.prompt_usages.length > 0) {
-                    promptsDiv.innerHTML = v.prompt_usages.map(p => `
+                    // REGRA DE OURO: Usa effective_activation_mode do backend (estado REAL)
+                promptsDiv.innerHTML = v.prompt_usages.map(p => {
+                        const modoEfetivo = p.effective_activation_mode || p.modo_ativacao;
+                        return `
                         <a href="/admin/prompts-modulos?id=${p.prompt_id}" class="block p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                             <div class="flex items-center justify-between">
                                 <span class="font-medium text-gray-800">${p.prompt_titulo}</span>
-                                <span class="text-xs px-2 py-1 rounded-full ${p.modo_ativacao === 'deterministic' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">
-                                    ${p.modo_ativacao === 'deterministic' ? 'Deterministico' : 'LLM'}
+                                <span class="text-xs px-2 py-1 rounded-full ${modoEfetivo === 'deterministic' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}">
+                                    ${modoEfetivo === 'deterministic' ? 'Deterministico' : 'LLM'}
                                 </span>
                             </div>
                             <p class="text-sm text-gray-500">${p.prompt_nome}</p>
                         </a>
-                    `).join('');
+                    `}).join('');
                 } else {
                     promptsDiv.innerHTML = '<p class="text-gray-400 text-sm">Nenhum prompt usa esta variavel.</p>';
                 }
