@@ -1413,6 +1413,9 @@ def verificar_variaveis_existem(regra: Dict, dados: Dict[str, Any]) -> Tuple[boo
     - Variável inexistente (chave não presente no dict) -> retorna False
     - Variável existente com valor False/None -> retorna True
 
+    NOTA: Para regras OR, use pode_avaliar_regra() que é mais inteligente
+    e permite avaliação quando pelo menos UMA variável existe.
+
     Args:
         regra: AST JSON da regra
         dados: Dicionário com dados extraídos
@@ -1423,6 +1426,87 @@ def verificar_variaveis_existem(regra: Dict, dados: Dict[str, Any]) -> Tuple[boo
     variaveis = _extrair_variaveis_regra(regra)
     todas_existem = all(var in dados for var in variaveis)
     return todas_existem, list(variaveis)
+
+
+def pode_avaliar_regra(regra: Dict, dados: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
+    """
+    Verifica INTELIGENTEMENTE se uma regra pode ser avaliada considerando
+    a estrutura OR/AND da regra.
+
+    LÓGICA:
+    - OR: Pode avaliar se PELO MENOS UMA condição/ramo pode ser avaliado
+    - AND: Pode avaliar se TODAS as condições/ramos podem ser avaliados
+    - NOT: Pode avaliar se a condição interna pode ser avaliada
+    - condition: Pode avaliar se a variável existe nos dados
+
+    IMPORTANTE: Para regras OR, variáveis ausentes são tratadas como False
+    pelo DeterministicRuleEvaluator, então basta que UMA variável exista
+    e satisfaça a condição para ativar.
+
+    Args:
+        regra: AST JSON da regra
+        dados: Dicionário com dados extraídos
+
+    Returns:
+        Tupla (pode_avaliar, variaveis_existentes, variaveis_faltantes)
+    """
+    if not regra:
+        return False, [], []
+
+    todas_variaveis = _extrair_variaveis_regra(regra)
+    existentes = [v for v in todas_variaveis if v in dados]
+    faltantes = [v for v in todas_variaveis if v not in dados]
+
+    # Verifica recursivamente se a regra pode ser avaliada
+    pode = _pode_avaliar_no(regra, dados)
+
+    return pode, existentes, faltantes
+
+
+def _pode_avaliar_no(no: Dict, dados: Dict[str, Any]) -> bool:
+    """
+    Verifica recursivamente se um nó da regra pode ser avaliado.
+
+    Para nós OR: basta que UM filho possa ser avaliado
+    Para nós AND: TODOS os filhos devem poder ser avaliados
+    Para condições: a variável deve existir nos dados
+    """
+    if not no:
+        return False
+
+    tipo = no.get("type")
+
+    if tipo == "condition":
+        variavel = no.get("variable")
+        # Condição pode ser avaliada se a variável existe
+        return variavel in dados
+
+    elif tipo == "or":
+        conditions = no.get("conditions", [])
+        if not conditions:
+            return False
+        # OR: pelo menos um filho deve poder ser avaliado
+        return any(_pode_avaliar_no(c, dados) for c in conditions)
+
+    elif tipo == "and":
+        conditions = no.get("conditions", [])
+        if not conditions:
+            return False
+        # AND: todos os filhos devem poder ser avaliados
+        return all(_pode_avaliar_no(c, dados) for c in conditions)
+
+    elif tipo == "not":
+        # NOT pode ter "condition" ou "conditions"
+        condition = no.get("condition")
+        conditions = no.get("conditions", [])
+        if condition:
+            return _pode_avaliar_no(condition, dados)
+        elif conditions:
+            # Se é lista, trata como AND implícito
+            return all(_pode_avaliar_no(c, dados) for c in conditions)
+        return False
+
+    return False
 
 
 def avaliar_ativacao_prompt(
@@ -1520,20 +1604,23 @@ def avaliar_ativacao_prompt(
                 f"[DETERMINISTIC] Prompt {prompt_id}: "
                 f"Regra específica carregada: {regra_especifica.regra_deterministica}"
             )
-            
-            variaveis_especifica_existem, vars_especifica = verificar_variaveis_existem(
+
+            # Usa pode_avaliar_regra para verificação inteligente (considera OR/AND)
+            pode_avaliar, vars_existentes, vars_faltantes = pode_avaliar_regra(
                 regra_especifica.regra_deterministica, dados_extracao
             )
+            vars_especifica = vars_existentes + vars_faltantes  # todas as variáveis
 
             # Log dos valores atuais das variáveis
             valores_vars = {v: dados_extracao.get(v, "<<NÃO ENCONTRADA>>") for v in vars_especifica}
             logger.info(
                 f"[DETERMINISTIC] Prompt {prompt_id}: "
-                f"ESPECÍFICA {tipo_peca} - vars existem={variaveis_especifica_existem}, "
-                f"vars={vars_especifica}, valores={valores_vars}"
+                f"ESPECÍFICA {tipo_peca} - pode_avaliar={pode_avaliar}, "
+                f"vars_existentes={vars_existentes}, vars_faltantes={vars_faltantes}, "
+                f"valores={valores_vars}"
             )
 
-            if variaveis_especifica_existem:
+            if pode_avaliar:
                 resultado_tipo_peca = avaliador.avaliar(
                     regra_especifica.regra_deterministica, dados_extracao
                 )
@@ -1597,16 +1684,19 @@ def avaliar_ativacao_prompt(
     resultado_global = None
 
     if regra_deterministica:
-        variaveis_primaria_existem, vars_primaria = verificar_variaveis_existem(
+        # Usa pode_avaliar_regra para verificação inteligente (considera OR/AND)
+        pode_avaliar_primaria, vars_existentes_primaria, vars_faltantes_primaria = pode_avaliar_regra(
             regra_deterministica, dados_extracao
         )
+        vars_primaria = vars_existentes_primaria + vars_faltantes_primaria  # todas as variáveis
 
         logger.info(
             f"[DETERMINISTIC] Prompt {prompt_id}: "
-            f"GLOBAL primária (fallback) - vars existem={variaveis_primaria_existem}, vars={vars_primaria}"
+            f"GLOBAL primária (fallback) - pode_avaliar={pode_avaliar_primaria}, "
+            f"vars_existentes={vars_existentes_primaria}, vars_faltantes={vars_faltantes_primaria}"
         )
 
-        if variaveis_primaria_existem:
+        if pode_avaliar_primaria:
             resultado_global = avaliador.avaliar(regra_deterministica, dados_extracao)
             regras_avaliadas.append({
                 "tipo": "global_primaria",
@@ -1654,11 +1744,19 @@ def avaliar_ativacao_prompt(
 
         elif fallback_habilitado and regra_secundaria:
             # Tenta regra global secundária
-            variaveis_secundaria_existem, vars_secundaria = verificar_variaveis_existem(
+            # Usa pode_avaliar_regra para verificação inteligente (considera OR/AND)
+            pode_avaliar_secundaria, vars_existentes_sec, vars_faltantes_sec = pode_avaliar_regra(
                 regra_secundaria, dados_extracao
             )
+            vars_secundaria = vars_existentes_sec + vars_faltantes_sec
 
-            if variaveis_secundaria_existem:
+            logger.info(
+                f"[DETERMINISTIC] Prompt {prompt_id}: "
+                f"GLOBAL secundária - pode_avaliar={pode_avaliar_secundaria}, "
+                f"vars_existentes={vars_existentes_sec}, vars_faltantes={vars_faltantes_sec}"
+            )
+
+            if pode_avaliar_secundaria:
                 resultado_global = avaliador.avaliar(regra_secundaria, dados_extracao)
                 regras_avaliadas.append({
                     "tipo": "global_secundaria",
