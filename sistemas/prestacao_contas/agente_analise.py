@@ -18,6 +18,7 @@ from typing import Optional, List, Dict, Any, Literal, Union
 from sqlalchemy.orm import Session
 
 from sistemas.prestacao_contas.ia_logger import IALogger, LogEntry
+from services.ia_params_resolver import get_ia_params, IAParams
 
 logger = logging.getLogger(__name__)
 
@@ -339,17 +340,31 @@ class AgenteAnalise:
 
     def __init__(
         self,
-        modelo: str = "gemini-3-flash-preview",
-        temperatura: float = 0.3,
+        modelo: str = None,
+        temperatura: float = None,
         ia_logger: Optional[IALogger] = None,
         db: Session = None,
         usar_busca_google: bool = True  # Habilita busca na internet para verificar medicamentos
     ):
-        self.modelo = modelo
-        self.temperatura = temperatura
-        self.ia_logger = ia_logger
         self.db = db
+        self.ia_logger = ia_logger
         self.usar_busca_google = usar_busca_google
+
+        # Usa resolver de parâmetros por agente
+        if db:
+            self._params = get_ia_params(db, "prestacao_contas", "analise")
+        else:
+            # Fallback para valores padrão se não houver db
+            self._params = IAParams(
+                modelo="gemini-3-flash-preview",
+                temperatura=0.3,
+                max_tokens=None,
+                sistema="prestacao_contas",
+                agente="analise"
+            )
+
+        self.modelo = modelo or self._params.modelo
+        self.temperatura = temperatura if temperatura is not None else self._params.temperatura
         self.system_prompt = _buscar_prompt_admin(db, "system_prompt_analise") or SYSTEM_PROMPT
         self.prompt_analise = _buscar_prompt_admin(db, "prompt_analise") or PROMPT_ANALISE
 

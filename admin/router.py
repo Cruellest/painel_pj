@@ -313,8 +313,85 @@ async def upsert_config_ia(
         db.add(config)
     
     db.commit()
-    
+
     return {"success": True, "sistema": data.sistema, "chave": data.chave}
+
+
+# ============================================
+# Configuração de IA por Agente
+# ============================================
+
+@router.get("/config-ia/per-agent/{sistema}")
+async def get_config_ia_per_agent(
+    sistema: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna configurações de IA por agente para um sistema.
+
+    Mostra a hierarquia de resolução de parâmetros com indicação de herança:
+    - fonte: "agent" = configurado especificamente para o agente
+    - fonte: "system" = herdado do sistema
+    - fonte: "global" = herdado da configuração global
+    - fonte: "default" = usando valor padrão
+    """
+    from services.ia_params_resolver import (
+        get_config_per_agent as resolver_get_config_per_agent,
+        listar_agentes,
+        AGENTES_POR_SISTEMA
+    )
+
+    if sistema not in AGENTES_POR_SISTEMA:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Sistema '{sistema}' não encontrado. Sistemas disponíveis: {list(AGENTES_POR_SISTEMA.keys())}"
+        )
+
+    # Obtém configurações de todos os agentes do sistema
+    configs = resolver_get_config_per_agent(db, sistema)
+    agentes_info = listar_agentes(sistema)
+
+    # Formata resposta
+    resultado = {
+        "sistema": sistema,
+        "agentes": {}
+    }
+
+    for agente_slug, params in configs.items():
+        resultado["agentes"][agente_slug] = {
+            "descricao": agentes_info.get(agente_slug, ""),
+            "modelo": params.modelo,
+            "modelo_fonte": params.modelo_source,
+            "temperatura": params.temperatura,
+            "temperatura_fonte": params.temperatura_source,
+            "max_tokens": params.max_tokens,
+            "max_tokens_fonte": params.max_tokens_source,
+            "thinking_level": params.thinking_level,
+            "thinking_level_fonte": params.thinking_level_source,
+        }
+
+    return resultado
+
+
+@router.get("/config-ia/sistemas")
+async def listar_sistemas_ia(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Lista todos os sistemas disponíveis e seus agentes."""
+    from services.ia_params_resolver import AGENTES_POR_SISTEMA
+
+    resultado = {}
+    for sistema, agentes in AGENTES_POR_SISTEMA.items():
+        resultado[sistema] = {
+            "agentes": [
+                {"slug": slug, "descricao": desc}
+                for slug, desc in agentes.items()
+            ]
+        }
+
+    return resultado
 
 
 # ============================================

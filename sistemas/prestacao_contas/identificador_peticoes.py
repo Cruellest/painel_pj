@@ -16,6 +16,8 @@ from enum import Enum
 from typing import Optional, List
 from sqlalchemy.orm import Session
 
+from services.ia_params_resolver import get_ia_params, IAParams
+
 logger = logging.getLogger(__name__)
 
 
@@ -158,21 +160,35 @@ class IdentificadorPeticoes:
 
     def __init__(
         self,
-        modelo_llm: str = "gemini-2.0-flash-lite",
-        temperatura_llm: float = 0.1,
+        modelo_llm: str = None,
+        temperatura_llm: float = None,
         db: Session = None,
         usar_llm: bool = True,  # Mantido para compatibilidade, mas sempre usa LLM
     ):
         """
         Args:
-            modelo_llm: Modelo de IA a usar (configurável via admin)
-            temperatura_llm: Temperatura da IA (configurável via admin)
+            modelo_llm: Modelo de IA (override manual, opcional - usa resolver)
+            temperatura_llm: Temperatura da IA (override manual, opcional - usa resolver)
             db: Sessão do banco para buscar prompt do admin
             usar_llm: Ignorado (mantido para compatibilidade)
         """
-        self.modelo_llm = modelo_llm
-        self.temperatura_llm = temperatura_llm
         self.db = db
+
+        # Usa resolver de parâmetros por agente
+        if db:
+            self._params = get_ia_params(db, "prestacao_contas", "identificacao")
+        else:
+            # Fallback para valores padrão se não houver db
+            self._params = IAParams(
+                modelo="gemini-2.0-flash-lite",
+                temperatura=0.1,
+                max_tokens=None,
+                sistema="prestacao_contas",
+                agente="identificacao"
+            )
+
+        self.modelo_llm = modelo_llm or self._params.modelo
+        self.temperatura_llm = temperatura_llm if temperatura_llm is not None else self._params.temperatura
 
         # Busca prompt do admin ou usa padrão
         self.prompt_template = _buscar_prompt_admin(db) or PROMPT_IDENTIFICACAO_PADRAO

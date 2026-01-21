@@ -33,6 +33,11 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
+# Import condicional para evitar ciclo (IAParams é usado como type hint)
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from services.ia_params_resolver import IAParams
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,8 +67,20 @@ class GeminiMetrics:
     retry_count: int = 0
     error: str = ""
 
+    # Auditoria de parâmetros por agente (novo)
+    sistema: str = ""               # Sistema que fez a chamada
+    agente: str = ""                # Agente específico
+    temperatura: float = 0.0        # Temperatura usada
+    max_tokens: Optional[int] = None  # Max tokens usado
+    thinking_level: Optional[str] = None  # Thinking level usado
+
+    # Fontes dos parâmetros (para auditoria)
+    modelo_source: str = ""         # "agent", "system", "global", "default"
+    temperatura_source: str = ""
+    max_tokens_source: str = ""
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        result = {
             "timestamp": self.timestamp.isoformat(),
             "model": self.model,
             "prompt_chars": self.prompt_chars,
@@ -79,9 +96,29 @@ class GeminiMetrics:
             "retry_count": self.retry_count,
             "error": self.error
         }
+        # Adiciona campos de auditoria se preenchidos
+        if self.sistema:
+            result["sistema"] = self.sistema
+        if self.agente:
+            result["agente"] = self.agente
+        if self.modelo_source:
+            result["sources"] = {
+                "modelo": self.modelo_source,
+                "temperatura": self.temperatura_source,
+                "max_tokens": self.max_tokens_source,
+            }
+        return result
 
     def log(self):
         """Log estruturado das métricas"""
+        # Monta sufixo de auditoria se disponível
+        audit_suffix = ""
+        if self.sistema and self.agente:
+            sources_short = ""
+            if self.modelo_source:
+                sources_short = f" sources={{modelo:{self.modelo_source[:3]}, temp:{self.temperatura_source[:3]}, tokens:{self.max_tokens_source[:3]}}}"
+            audit_suffix = f" sistema={self.sistema} agente={self.agente}{sources_short}"
+
         if self.success:
             logger.info(
                 f"[Gemini] model={self.model} "
@@ -90,14 +127,14 @@ class GeminiMetrics:
                 f"prepare={self.time_prepare_ms:.0f}ms "
                 f"ttft={self.time_ttft_ms:.0f}ms "
                 f"total={self.time_total_ms:.0f}ms "
-                f"cached={self.cached}"
+                f"cached={self.cached}{audit_suffix}"
             )
         else:
             logger.warning(
                 f"[Gemini] ERRO model={self.model} "
                 f"total={self.time_total_ms:.0f}ms "
                 f"retries={self.retry_count} "
-                f"error={self.error[:100]}"
+                f"error={self.error[:100]}{audit_suffix}"
             )
 
 
@@ -530,7 +567,82 @@ class GeminiService:
         metrics.log()
         asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
         return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
-    
+
+    async def generate_with_params(
+        self,
+        prompt: str,
+        ia_params: "IAParams",
+        system_prompt: str = "",
+        use_cache: bool = True
+    ) -> GeminiResponse:
+        """
+        Gera texto usando parâmetros resolvidos do IAParams.
+
+        Esta é a forma preferida de chamar o Gemini quando se utiliza
+        o sistema de resolução de parâmetros por agente.
+
+        Args:
+            prompt: Prompt do usuário
+            ia_params: Parâmetros resolvidos (de get_ia_params())
+            system_prompt: Instruções do sistema (opcional)
+            use_cache: Se True, usa cache para respostas idênticas (padrão: True)
+
+        Returns:
+            GeminiResponse com o resultado e métricas de latência incluindo
+            informações de auditoria (sistema, agente, fontes dos parâmetros)
+
+        Exemplo:
+            from services.ia_params_resolver import get_ia_params
+
+            params = get_ia_params(db, "gerador_pecas", "geracao")
+            response = await gemini_service.generate_with_params(
+                prompt=prompt,
+                ia_params=params,
+                system_prompt=system_prompt
+            )
+        """
+        # Monta contexto de auditoria
+        context = {
+            "sistema": ia_params.sistema,
+            "modulo": ia_params.agente,
+        }
+
+        # Chama generate() com os parâmetros resolvidos
+        response = await self.generate(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            model=ia_params.modelo,
+            max_tokens=ia_params.max_tokens,
+            temperature=ia_params.temperatura,
+            thinking_level=ia_params.thinking_level,
+            use_cache=use_cache,
+            context=context
+        )
+
+        # Enriquece métricas com informações de auditoria
+        if response.metrics:
+            response.metrics.sistema = ia_params.sistema
+            response.metrics.agente = ia_params.agente
+            response.metrics.temperatura = ia_params.temperatura
+            response.metrics.max_tokens = ia_params.max_tokens
+            response.metrics.thinking_level = ia_params.thinking_level
+            response.metrics.modelo_source = ia_params.modelo_source
+            response.metrics.temperatura_source = ia_params.temperatura_source
+            response.metrics.max_tokens_source = ia_params.max_tokens_source
+
+            # Log estruturado com auditoria (já chamado em generate(), mas refaz com auditoria)
+            logger.info(
+                f"[IA] sistema={ia_params.sistema} agente={ia_params.agente} "
+                f"modelo={ia_params.modelo} temp={ia_params.temperatura} "
+                f"max_tokens={ia_params.max_tokens or 'auto'} "
+                f"sources={{modelo:{ia_params.modelo_source}, temp:{ia_params.temperatura_source}, "
+                f"tokens:{ia_params.max_tokens_source}}} "
+                f"latency={response.metrics.time_total_ms:.0f}ms "
+                f"tokens={response.metrics.response_tokens}"
+            )
+
+        return response
+
     async def generate_with_session(
         self,
         session: aiohttp.ClientSession,

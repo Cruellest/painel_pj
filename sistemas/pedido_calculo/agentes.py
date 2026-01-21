@@ -18,6 +18,7 @@ from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple
 
 from services.gemini_service import gemini_service, get_thinking_level
+from services.ia_params_resolver import get_ia_params, IAParams
 from database.connection import SessionLocal
 from admin.models import PromptConfig, ConfiguracaoIA
 
@@ -473,7 +474,13 @@ REGRA IMPORTANTE: Certidoes de REMESSA devem retornar is_intimacao_cumprimento: 
 Apenas certidoes de CIENCIA/RECEBIMENTO devem retornar is_intimacao_cumprimento: true."""
 
     def __init__(self, modelo: str = None, logger=None):
-        self.modelo = modelo or _get_config("modelo_extracao", MODELO_PADRAO)
+        # Usa resolver de parâmetros por agente
+        db = SessionLocal()
+        try:
+            self._params = get_ia_params(db, "pedido_calculo", "extracao")
+        finally:
+            db.close()
+        self.modelo = modelo or self._params.modelo
         self.logger = logger  # Logger opcional para debug
 
     def _parse_data(self, data_str: Optional[str]) -> Optional[date]:
@@ -788,7 +795,13 @@ Responda APENAS com JSON:
 }}"""
 
     def __init__(self, modelo: str = None, logger=None):
-        self.modelo = modelo or _get_config("modelo_extracao", MODELO_PADRAO)
+        # Usa resolver de parâmetros por agente
+        db = SessionLocal()
+        try:
+            self._params = get_ia_params(db, "pedido_calculo", "extracao")
+        finally:
+            db.close()
+        self.modelo = modelo or self._params.modelo
         self.logger = logger
 
     async def analisar_documento(
@@ -992,7 +1005,13 @@ Se nao encontrar, retorne:
 {{"numero_processo_origem": null, "confianca": "baixa"}}"""
 
     def __init__(self, modelo: str = None):
-        self.modelo = modelo or _get_config("modelo_extracao", MODELO_PADRAO)
+        # Usa resolver de parâmetros por agente
+        db = SessionLocal()
+        try:
+            self._params = get_ia_params(db, "pedido_calculo", "extracao")
+        finally:
+            db.close()
+        self.modelo = modelo or self._params.modelo
 
     async def extrair_numero_origem(self, texto_peticao: str) -> Optional[str]:
         """
@@ -1126,16 +1145,16 @@ Retorne um JSON com a seguinte estrutura:
 Retorne APENAS o JSON, sem explicações adicionais. Use null para campos não encontrados."""
 
     def __init__(self, modelo: str = None, logger=None):
-        # Busca modelo do banco ou usa padrão
-        self.modelo = modelo or _get_config("modelo_extracao", MODELO_PADRAO)
-        self.logger = logger  # Logger para debug
-
-        # Busca temperatura do banco
-        temp_str = _get_config("temperatura_extracao", "0.1")
+        # Usa resolver de parâmetros por agente
+        db = SessionLocal()
         try:
-            self.temperatura = float(temp_str)
-        except:
-            self.temperatura = 0.1
+            self._params = get_ia_params(db, "pedido_calculo", "extracao")
+        finally:
+            db.close()
+
+        self.modelo = modelo or self._params.modelo
+        self.temperatura = self._params.temperatura
+        self.logger = logger  # Logger para debug
     
     def _get_prompt(self) -> str:
         """Busca prompt do banco ou usa padrão"""
@@ -1534,16 +1553,16 @@ NOTA: O termo inicial do prazo NÃO é a data de recebimento da intimação, mas
 Use APENAS as informações fornecidas. Use "[A VERIFICAR]" para dados faltantes."""
 
     def __init__(self, modelo: str = None, logger=None):
-        # Busca modelo do banco ou usa padrão
-        self.modelo = modelo or _get_config("modelo_geracao", MODELO_PADRAO)
-        self.logger = logger  # Logger para debug
-
-        # Busca temperatura do banco
-        temp_str = _get_config("temperatura_geracao", "0.3")
+        # Usa resolver de parâmetros por agente
+        db = SessionLocal()
         try:
-            self.temperatura = float(temp_str)
-        except:
-            self.temperatura = 0.3
+            self._params = get_ia_params(db, "pedido_calculo", "geracao")
+        finally:
+            db.close()
+
+        self.modelo = modelo or self._params.modelo
+        self.temperatura = self._params.temperatura
+        self.logger = logger  # Logger para debug
 
     def _get_prompt(self) -> str:
         """Busca prompt do banco ou usa padrão"""

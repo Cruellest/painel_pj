@@ -18,6 +18,7 @@ from config import (
 from database.connection import SessionLocal
 from admin.models import PromptConfig, ConfiguracaoIA
 from sqlalchemy.orm import Session
+from services.ia_params_resolver import get_ia_params
 
 logger = logging.getLogger("sistemas.assistencia_judiciaria.core.logic")
 
@@ -423,20 +424,15 @@ def full_flow(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[
     
     db = SessionLocal()
     try:
-        # Check for model override in DB
+        # Usa resolver de parâmetros por agente
         try:
-            config_model = db.query(ConfiguracaoIA).filter_by(sistema="assistencia_judiciaria", chave="modelo_relatorio").first()
-            if config_model:
-                model = config_model.valor
-            
-            # Busca temperatura e max_tokens
-            config_temp = db.query(ConfiguracaoIA).filter_by(sistema="assistencia_judiciaria", chave="temperatura_relatorio").first()
-            temperature = float(config_temp.valor) if config_temp else 0.2
-            
-            config_tokens = db.query(ConfiguracaoIA).filter_by(sistema="assistencia_judiciaria", chave="max_tokens_relatorio").first()
-            max_tokens = int(config_tokens.valor) if config_tokens else 20000
+            params = get_ia_params(db, "assistencia_judiciaria", "relatorio")
+            model = params.modelo
+            temperature = params.temperatura
+            max_tokens = params.max_tokens or 20000
+            logger.info(f"[IA] Params resolvidos: modelo={model} (fonte: {params.modelo_source}), temp={temperature}, max_tokens={max_tokens}")
         except Exception as e:
-            logger.error(f"Erro ao buscar config no banco: {e}")
+            logger.error(f"Erro ao buscar config via resolver: {e}")
             temperature = 0.2
             max_tokens = 20000
 

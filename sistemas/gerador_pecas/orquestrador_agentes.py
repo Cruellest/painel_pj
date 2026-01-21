@@ -24,6 +24,7 @@ from sistemas.gerador_pecas.gemini_client import chamar_gemini_async, normalizar
 # NOTA: TemplateFormatacao não é mais importado aqui - templates serão usados apenas para MD->DOCX
 from admin.models import ConfiguracaoIA
 from admin.models_prompts import PromptModulo
+from services.ia_params_resolver import get_ia_params, IAParams
 
 
 # Modelos padrão (usados se não houver configuração no banco)
@@ -373,25 +374,31 @@ class OrquestradorAgentes:
         self.tipo_peca_inicial = tipo_peca
         self.group_id = group_id
         self.subcategoria_ids = subcategoria_ids or []
-        
-        # Carrega configurações do banco (tabela configuracoes_ia) ou usa padrões
-        def get_config(chave: str, padrao: str) -> str:
-            config = db.query(ConfiguracaoIA).filter(
-                ConfiguracaoIA.sistema == "gerador_pecas",
-                ConfiguracaoIA.chave == chave
-            ).first()
-            return config.valor if config else padrao
-        
-        self.modelo_agente1 = get_config("modelo_agente1", MODELO_AGENTE1_PADRAO)
-        self.modelo_agente2 = get_config("modelo_deteccao", MODELO_AGENTE2_PADRAO)
-        self.modelo_agente3 = modelo_geracao or get_config("modelo_geracao", MODELO_AGENTE3_PADRAO)
 
-        # Temperatura do Agente 3 (configurável via admin)
-        temp_str = get_config("temperatura_geracao", "0.3")
-        try:
-            self.temperatura_agente3 = float(temp_str)
-        except ValueError:
-            self.temperatura_agente3 = 0.3
+        # ============================================
+        # Resolução de parâmetros de IA por agente
+        # Hierarquia: agente > sistema > global > default
+        # ============================================
+
+        # Agente 1 (Coletor): coleta e resume documentos do TJ-MS
+        self.params_agente1 = get_ia_params(db, "gerador_pecas", "coletor")
+        self.modelo_agente1 = self.params_agente1.modelo
+
+        # Agente 2 (Detector): detecta módulos de conteúdo relevantes
+        self.params_agente2 = get_ia_params(db, "gerador_pecas", "deteccao")
+        self.modelo_agente2 = self.params_agente2.modelo
+
+        # Agente 3 (Gerador): gera a peça jurídica final
+        # Override manual via parâmetro tem prioridade máxima
+        self.params_agente3 = get_ia_params(db, "gerador_pecas", "geracao")
+        if modelo_geracao:
+            self.modelo_agente3 = modelo_geracao
+            self.params_agente3.modelo = modelo_geracao
+            self.params_agente3.modelo_source = "override"
+        else:
+            self.modelo_agente3 = self.params_agente3.modelo
+
+        self.temperatura_agente3 = self.params_agente3.temperatura
 
         # Mantém compatibilidade
         self.modelo_geracao = self.modelo_agente3
@@ -952,24 +959,26 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
             # Logging detalhado para diagnóstico de timeout/erros
             prompt_len = len(prompt_completo)
             prompt_tokens_est = prompt_len // 4  # Estimativa ~4 chars/token
-            print(f"[AGENTE3] 📝 Prompt montado:")
+            max_tokens_efetivo = self.params_agente3.max_tokens or 50000  # Default alto para peças
+
+            print(f"[AGENTE3] Prompt montado:")
             print(f"[AGENTE3]    - Tamanho: {prompt_len:,} caracteres (~{prompt_tokens_est:,} tokens estimados)")
-            print(f"[AGENTE3]    - Modelo: {self.modelo_geracao}")
-            print(f"[AGENTE3]    - Temperatura: {self.temperatura_agente3}")
-            print(f"[AGENTE3]    - Max tokens resposta: 16000")
-            
+            print(f"[AGENTE3]    - Modelo: {self.params_agente3.modelo} (fonte: {self.params_agente3.modelo_source})")
+            print(f"[AGENTE3]    - Temperatura: {self.params_agente3.temperatura} (fonte: {self.params_agente3.temperatura_source})")
+            print(f"[AGENTE3]    - Max tokens: {max_tokens_efetivo} (fonte: {self.params_agente3.max_tokens_source})")
+
             # Aviso se o prompt for muito grande
             if prompt_tokens_est > 50000:
-                print(f"[AGENTE3] ⚠️ AVISO: Prompt muito grande ({prompt_tokens_est:,} tokens). Risco de timeout!")
+                print(f"[AGENTE3] AVISO: Prompt muito grande ({prompt_tokens_est:,} tokens). Risco de timeout!")
             elif prompt_tokens_est > 30000:
-                print(f"[AGENTE3] ⚠️ AVISO: Prompt grande ({prompt_tokens_est:,} tokens). Pode demorar mais.")
+                print(f"[AGENTE3] AVISO: Prompt grande ({prompt_tokens_est:,} tokens). Pode demorar mais.")
 
-            # Chama a API do Gemini diretamente com limite alto de tokens
+            # Chama a API do Gemini com parâmetros resolvidos
             content = await chamar_gemini_async(
                 prompt=prompt_completo,
-                modelo=self.modelo_geracao,
-                max_tokens=50000,  # Limite alto para peças jurídicas extensas
-                temperature=self.temperatura_agente3
+                modelo=self.params_agente3.modelo,
+                max_tokens=max_tokens_efetivo,
+                temperature=self.params_agente3.temperatura
             )
             
             # Remove possíveis blocos de código markdown que a IA pode ter adicionado

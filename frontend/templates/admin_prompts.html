@@ -1559,6 +1559,424 @@
             }
         }
 
+        // ============================================
+        // Configuração por Agente (Edição Completa)
+        // ============================================
+
+        // Lista de modelos disponíveis para seleção
+        const MODELOS_DISPONIVEIS = [
+            { value: '', label: '-- Herdar do sistema --' },
+            { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
+            { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+            { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+            { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+        ];
+
+        // Opções de thinking level
+        const THINKING_LEVELS = [
+            { value: '', label: '-- Herdar --' },
+            { value: 'minimal', label: 'Minimal' },
+            { value: 'low', label: 'Low' },
+            { value: 'medium', label: 'Medium' },
+            { value: 'high', label: 'High' },
+        ];
+
+        // Cores por fonte de configuração
+        const SOURCE_COLORS = {
+            'agent': 'bg-blue-100 text-blue-700 border-blue-300',
+            'system': 'bg-green-100 text-green-700 border-green-300',
+            'global': 'bg-purple-100 text-purple-700 border-purple-300',
+            'default': 'bg-gray-100 text-gray-600 border-gray-300',
+            'override': 'bg-orange-100 text-orange-700 border-orange-300'
+        };
+
+        // Helper: renderiza options do select de modelo
+        function renderModeloOptions(currentValue, source) {
+            let html = '<option value="">-- Herdar do sistema --</option>';
+            const models = [
+                { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
+                { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+                { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+                { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
+            ];
+
+            // Se for override de agente, seleciona o valor atual
+            const selectedValue = source === 'agent' ? currentValue : '';
+
+            models.forEach(m => {
+                const selected = m.value === selectedValue ? 'selected' : '';
+                html += `<option value="${m.value}" ${selected}>${m.label}</option>`;
+            });
+
+            // Se o modelo atual não está na lista e é override do agente, adiciona como opção
+            if (selectedValue && !models.find(m => m.value === selectedValue)) {
+                html += `<option value="${selectedValue}" selected>${selectedValue}</option>`;
+            }
+
+            return html;
+        }
+
+        // Helper: renderiza options do select de thinking level
+        function renderThinkingOptions(currentValue, source) {
+            let html = '<option value="">-- Herdar --</option>';
+            const levels = [
+                { value: 'minimal', label: 'Minimal' },
+                { value: 'low', label: 'Low' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'high', label: 'High' },
+            ];
+
+            const selectedValue = source === 'agent' ? currentValue : '';
+
+            levels.forEach(l => {
+                const selected = l.value === selectedValue ? 'selected' : '';
+                html += `<option value="${l.value}" ${selected}>${l.label}</option>`;
+            });
+
+            return html;
+        }
+
+        // Carrega e exibe configurações EDITÁVEIS por agente para um sistema
+        async function loadConfigPerAgent(sistema) {
+            const token = localStorage.getItem('access_token');
+
+            try {
+                const response = await fetch(`${API_URL}/admin/config-ia/per-agent/${sistema}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error('Erro ao carregar configurações por agente');
+
+                const data = await response.json();
+
+                // Monta HTML da seção editável
+                let html = `
+                    <div class="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="font-semibold text-gray-800 flex items-center gap-2">
+                                <i class="fas fa-sliders-h text-blue-600"></i>
+                                Configuração por Agente
+                            </h4>
+                            <button
+                                onclick="salvarConfigAgentes('${sistema}')"
+                                class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                            >
+                                <i class="fas fa-save"></i>
+                                Salvar Configurações dos Agentes
+                            </button>
+                        </div>
+
+                        <p class="text-xs text-gray-600 mb-4">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Hierarquia de precedência:
+                            <span class="px-1.5 py-0.5 ${SOURCE_COLORS['agent']} rounded text-xs font-medium">agente</span> &gt;
+                            <span class="px-1.5 py-0.5 ${SOURCE_COLORS['system']} rounded text-xs font-medium">sistema</span> &gt;
+                            <span class="px-1.5 py-0.5 ${SOURCE_COLORS['global']} rounded text-xs font-medium">global</span> &gt;
+                            <span class="px-1.5 py-0.5 ${SOURCE_COLORS['default']} rounded text-xs font-medium">default</span>
+                            <br><span class="text-gray-500 mt-1 inline-block">Deixe em branco para herdar do nível superior.</span>
+                        </p>
+                `;
+
+                // Para cada agente, cria uma seção editável
+                for (const [slug, config] of Object.entries(data.agentes)) {
+                    const agentId = `${sistema}-${slug}`;
+
+                    html += `
+                        <div class="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm" id="agent-card-${agentId}">
+                            <div class="flex items-center justify-between mb-3">
+                                <div>
+                                    <h5 class="font-semibold text-gray-800">${slug}</h5>
+                                    <p class="text-xs text-gray-500">${config.descricao || ''}</p>
+                                </div>
+                                <button
+                                    onclick="resetarAgente('${sistema}', '${slug}')"
+                                    class="text-xs px-2 py-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                    title="Limpar todos os overrides deste agente"
+                                >
+                                    <i class="fas fa-undo mr-1"></i>Resetar
+                                </button>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <!-- Modelo -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                        Modelo
+                                        <span class="ml-1 px-1.5 py-0.5 ${SOURCE_COLORS[config.modelo_fonte]} rounded text-xs" id="source-modelo-${agentId}">${config.modelo_fonte}</span>
+                                    </label>
+                                    <select
+                                        id="modelo-${agentId}"
+                                        data-sistema="${sistema}"
+                                        data-agente="${slug}"
+                                        data-param="modelo"
+                                        data-original-source="${config.modelo_fonte}"
+                                        class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${config.modelo_fonte === 'agent' ? 'border-blue-400 bg-blue-50' : ''}"
+                                        onchange="marcarModificado(this)"
+                                    >
+                                        ${renderModeloOptions(config.modelo, config.modelo_fonte)}
+                                    </select>
+                                    ${config.modelo_fonte === 'agent' ?
+                                        `<div class="text-xs text-blue-600 mt-1"><i class="fas fa-check-circle"></i> Override ativo: ${config.modelo}</div>` :
+                                        `<div class="text-xs text-gray-400 mt-1">Efetivo: ${config.modelo}</div>`
+                                    }
+                                </div>
+
+                                <!-- Temperatura -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                        Temperatura
+                                        <span class="ml-1 px-1.5 py-0.5 ${SOURCE_COLORS[config.temperatura_fonte]} rounded text-xs" id="source-temperatura-${agentId}">${config.temperatura_fonte}</span>
+                                    </label>
+                                    <div class="flex gap-1">
+                                        <input
+                                            type="number"
+                                            id="temperatura-${agentId}"
+                                            data-sistema="${sistema}"
+                                            data-agente="${slug}"
+                                            data-param="temperatura"
+                                            data-original-source="${config.temperatura_fonte}"
+                                            min="0" max="2" step="0.1"
+                                            placeholder="${config.temperatura}"
+                                            value="${config.temperatura_fonte === 'agent' ? config.temperatura : ''}"
+                                            class="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${config.temperatura_fonte === 'agent' ? 'border-blue-400 bg-blue-50' : ''}"
+                                            onchange="marcarModificado(this)"
+                                        >
+                                        <button
+                                            onclick="limparCampo('temperatura-${agentId}')"
+                                            class="px-2 py-1 text-gray-400 hover:text-red-500 text-xs"
+                                            title="Limpar (herdar)"
+                                        >
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    ${config.temperatura_fonte === 'agent' ?
+                                        `<div class="text-xs text-blue-600 mt-1"><i class="fas fa-check-circle"></i> Override ativo</div>` :
+                                        `<div class="text-xs text-gray-400 mt-1">Efetivo: ${config.temperatura}</div>`
+                                    }
+                                </div>
+
+                                <!-- Max Tokens -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                        Max Tokens
+                                        <span class="ml-1 px-1.5 py-0.5 ${SOURCE_COLORS[config.max_tokens_fonte]} rounded text-xs" id="source-max_tokens-${agentId}">${config.max_tokens_fonte}</span>
+                                    </label>
+                                    <div class="flex gap-1">
+                                        <input
+                                            type="number"
+                                            id="max_tokens-${agentId}"
+                                            data-sistema="${sistema}"
+                                            data-agente="${slug}"
+                                            data-param="max_tokens"
+                                            data-original-source="${config.max_tokens_fonte}"
+                                            min="100" max="200000" step="100"
+                                            placeholder="${config.max_tokens || 'auto'}"
+                                            value="${config.max_tokens_fonte === 'agent' ? (config.max_tokens || '') : ''}"
+                                            class="flex-1 px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${config.max_tokens_fonte === 'agent' ? 'border-blue-400 bg-blue-50' : ''}"
+                                            onchange="marcarModificado(this)"
+                                        >
+                                        <button
+                                            onclick="limparCampo('max_tokens-${agentId}')"
+                                            class="px-2 py-1 text-gray-400 hover:text-red-500 text-xs"
+                                            title="Limpar (herdar)"
+                                        >
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    ${config.max_tokens_fonte === 'agent' ?
+                                        `<div class="text-xs text-blue-600 mt-1"><i class="fas fa-check-circle"></i> Override ativo</div>` :
+                                        `<div class="text-xs text-gray-400 mt-1">Efetivo: ${config.max_tokens || 'auto'}</div>`
+                                    }
+                                </div>
+
+                                <!-- Thinking Level -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">
+                                        Thinking Level
+                                        <span class="ml-1 px-1.5 py-0.5 ${SOURCE_COLORS[config.thinking_level_fonte]} rounded text-xs" id="source-thinking_level-${agentId}">${config.thinking_level_fonte}</span>
+                                    </label>
+                                    <select
+                                        id="thinking_level-${agentId}"
+                                        data-sistema="${sistema}"
+                                        data-agente="${slug}"
+                                        data-param="thinking_level"
+                                        data-original-source="${config.thinking_level_fonte}"
+                                        class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${config.thinking_level_fonte === 'agent' ? 'border-blue-400 bg-blue-50' : ''}"
+                                        onchange="marcarModificado(this)"
+                                    >
+                                        ${THINKING_LEVELS.map(t =>
+                                            `<option value="${t.value}" ${config.thinking_level === t.value && config.thinking_level_fonte === 'agent' ? 'selected' : (t.value === '' && config.thinking_level_fonte !== 'agent' ? 'selected' : '')}>${t.label}</option>`
+                                        ).join('')}
+                                    </select>
+                                    ${config.thinking_level_fonte === 'agent' ?
+                                        `<div class="text-xs text-blue-600 mt-1"><i class="fas fa-check-circle"></i> Override ativo: ${config.thinking_level}</div>` :
+                                        `<div class="text-xs text-gray-400 mt-1">Efetivo: ${config.thinking_level || 'default'}</div>`
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                html += `</div>`;
+
+                // Insere no container do sistema correspondente
+                const prefix = sistema === 'assistencia_judiciaria' ? 'assistencia' : sistema;
+                const container = document.getElementById(`config-${prefix}`);
+                if (container) {
+                    // Remove seção anterior se existir
+                    const existingSection = container.querySelector('.config-per-agent-table');
+                    if (existingSection) existingSection.remove();
+
+                    // Adiciona nova seção
+                    const div = document.createElement('div');
+                    div.className = 'config-per-agent-table';
+                    div.innerHTML = html;
+                    container.appendChild(div);
+                }
+
+            } catch (error) {
+                console.error('Erro ao carregar config por agente:', error);
+            }
+        }
+
+        // Marca campo como modificado visualmente
+        function marcarModificado(element) {
+            const card = element.closest('[id^="agent-card-"]');
+            if (card) {
+                card.classList.add('ring-2', 'ring-orange-300');
+            }
+            element.classList.add('border-orange-400', 'bg-orange-50');
+            element.classList.remove('border-gray-300');
+        }
+
+        // Limpa um campo (para herdar)
+        function limparCampo(fieldId) {
+            const field = document.getElementById(fieldId);
+            if (field) {
+                field.value = '';
+                marcarModificado(field);
+            }
+        }
+
+        // Reseta todos os campos de um agente
+        async function resetarAgente(sistema, agente) {
+            if (!confirm(`Deseja realmente limpar todos os overrides do agente "${agente}"? Ele passará a herdar todas as configurações do sistema.`)) {
+                return;
+            }
+
+            const token = localStorage.getItem('access_token');
+            const params = ['modelo', 'temperatura', 'max_tokens', 'thinking_level'];
+
+            try {
+                for (const param of params) {
+                    const chave = `${param}_${agente}`;
+
+                    // Salva valor vazio para remover o override
+                    await fetch(`${API_URL}/admin/config-ia/upsert`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            sistema: sistema,
+                            chave: chave,
+                            valor: ''
+                        })
+                    });
+                }
+
+                showToast(`Overrides do agente "${agente}" removidos!`, 'success');
+
+                // Recarrega as configurações
+                await loadConfigPerAgent(sistema);
+
+            } catch (error) {
+                console.error('Erro ao resetar agente:', error);
+                showToast('Erro ao resetar agente', 'error');
+            }
+        }
+
+        // Salva configurações de todos os agentes de um sistema
+        async function salvarConfigAgentes(sistema) {
+            const token = localStorage.getItem('access_token');
+            const prefix = sistema === 'assistencia_judiciaria' ? 'assistencia' : sistema;
+            const container = document.getElementById(`config-${prefix}`);
+
+            if (!container) return;
+
+            // Coleta todos os campos de configuração por agente
+            const campos = container.querySelectorAll('[data-sistema][data-agente][data-param]');
+
+            let salvos = 0;
+            let erros = 0;
+
+            try {
+                for (const campo of campos) {
+                    const sistemaData = campo.dataset.sistema;
+                    const agente = campo.dataset.agente;
+                    const param = campo.dataset.param;
+                    const valor = campo.value.trim();
+
+                    // Monta a chave no formato {param}_{agente}
+                    const chave = `${param}_${agente}`;
+
+                    // Salva apenas se houver valor OU se o campo foi modificado (para limpar override)
+                    // Para modelo e thinking_level vazios, salvamos "" para indicar "herdar"
+                    const originalSource = campo.dataset.originalSource;
+                    const foiModificado = campo.classList.contains('border-orange-400') ||
+                                          (originalSource === 'agent' && valor === '');
+
+                    if (valor || foiModificado) {
+                        try {
+                            await fetch(`${API_URL}/admin/config-ia/upsert`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${token}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    sistema: sistemaData,
+                                    chave: chave,
+                                    valor: valor
+                                })
+                            });
+                            salvos++;
+                        } catch (e) {
+                            erros++;
+                            console.error(`Erro ao salvar ${chave}:`, e);
+                        }
+                    }
+                }
+
+                if (erros === 0) {
+                    showToast(`Configurações dos agentes salvas! (${salvos} campos)`, 'success');
+                } else {
+                    showToast(`Salvo com ${erros} erro(s)`, 'warning');
+                }
+
+                // Recarrega para mostrar as fontes atualizadas
+                await loadConfigPerAgent(sistema);
+
+            } catch (error) {
+                console.error('Erro ao salvar configurações:', error);
+                showToast('Erro ao salvar configurações', 'error');
+            }
+        }
+
+        // Carrega configurações por agente para todos os sistemas
+        async function loadAllConfigPerAgent() {
+            const sistemas = ['gerador_pecas', 'pedido_calculo', 'prestacao_contas', 'matriculas', 'assistencia_judiciaria'];
+            for (const sistema of sistemas) {
+                try {
+                    await loadConfigPerAgent(sistema);
+                } catch (e) {
+                    console.log(`Sistema ${sistema} não tem configuração por agente`);
+                }
+            }
+        }
+
         // Inicialização
         (async function() {
             const user = await checkAdminAuth();
@@ -1566,6 +1984,8 @@
                 loadPrompts();
                 loadConfiguracoesIA();
                 checkApiKeyStatus();
+                // Carrega configurações por agente após um delay para garantir que os painéis estejam carregados
+                setTimeout(loadAllConfigPerAgent, 1000);
             }
         })();
     </script>

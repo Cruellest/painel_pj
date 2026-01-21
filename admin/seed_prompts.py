@@ -604,6 +604,160 @@ DEFAULT_CONFIG_IA = [
         "tipo_valor": "number",
         "descricao": "Limite de recursos recentes no modo 2º grau (1-50)"
     },
+    # ========================================
+    # Configurações por Agente (nova hierarquia)
+    # Convenção: {param}_{agente_slug}
+    # Hierarquia: agente > sistema > global > default
+    # ========================================
+
+    # --- gerador_pecas: Agente Coletor (Agent1) ---
+    {
+        "sistema": "gerador_pecas",
+        "chave": "modelo_coletor",
+        "valor": "gemini-3-flash-preview",
+        "tipo_valor": "string",
+        "descricao": "Modelo para Agent1/Coletor: coleta e resume documentos do TJ-MS"
+    },
+    {
+        "sistema": "gerador_pecas",
+        "chave": "temperatura_coletor",
+        "valor": "0.1",
+        "tipo_valor": "number",
+        "descricao": "Temperatura para Agent1/Coletor (0.0-1.0)"
+    },
+    {
+        "sistema": "gerador_pecas",
+        "chave": "max_tokens_coletor",
+        "valor": "50000",
+        "tipo_valor": "number",
+        "descricao": "Máximo de tokens para Agent1/Coletor"
+    },
+
+    # --- pedido_calculo: Agente Extração (Agent2) ---
+    {
+        "sistema": "pedido_calculo",
+        "chave": "modelo_extracao",
+        "valor": "gemini-3-flash-preview",
+        "tipo_valor": "string",
+        "descricao": "Modelo para Agent2/Extração: extrai dados dos PDFs"
+    },
+    {
+        "sistema": "pedido_calculo",
+        "chave": "temperatura_extracao",
+        "valor": "0.1",
+        "tipo_valor": "number",
+        "descricao": "Temperatura para Agent2/Extração (0.0-1.0)"
+    },
+    {
+        "sistema": "pedido_calculo",
+        "chave": "max_tokens_extracao",
+        "valor": "50000",
+        "tipo_valor": "number",
+        "descricao": "Máximo de tokens para Agent2/Extração"
+    },
+
+    # --- pedido_calculo: Agente Geração (Agent3) ---
+    {
+        "sistema": "pedido_calculo",
+        "chave": "modelo_geracao",
+        "valor": "gemini-3-flash-preview",
+        "tipo_valor": "string",
+        "descricao": "Modelo para Agent3/Geração: gera pedido de cálculo"
+    },
+    {
+        "sistema": "pedido_calculo",
+        "chave": "temperatura_geracao",
+        "valor": "0.3",
+        "tipo_valor": "number",
+        "descricao": "Temperatura para Agent3/Geração (0.0-1.0)"
+    },
+    {
+        "sistema": "pedido_calculo",
+        "chave": "max_tokens_geracao",
+        "valor": "16000",
+        "tipo_valor": "number",
+        "descricao": "Máximo de tokens para Agent3/Geração"
+    },
+
+    # --- pedido_calculo: Agente Edição (Agent4) ---
+    {
+        "sistema": "pedido_calculo",
+        "chave": "modelo_edicao",
+        "valor": "gemini-3-flash-preview",
+        "tipo_valor": "string",
+        "descricao": "Modelo para Agent4/Edição: edita via chat interativo"
+    },
+    {
+        "sistema": "pedido_calculo",
+        "chave": "temperatura_edicao",
+        "valor": "0.3",
+        "tipo_valor": "number",
+        "descricao": "Temperatura para Agent4/Edição (0.0-1.0)"
+    },
+
+    # --- prestacao_contas: Agente Identificação (Agent1) ---
+    {
+        "sistema": "prestacao_contas",
+        "chave": "modelo_identificacao",
+        "valor": "gemini-2.0-flash-lite",
+        "tipo_valor": "string",
+        "descricao": "Modelo para Agent1/Identificação: identifica petição"
+    },
+    {
+        "sistema": "prestacao_contas",
+        "chave": "temperatura_identificacao",
+        "valor": "0.1",
+        "tipo_valor": "number",
+        "descricao": "Temperatura para Agent1/Identificação (0.0-1.0)"
+    },
+
+    # --- prestacao_contas: Agente Análise (Agent2) ---
+    {
+        "sistema": "prestacao_contas",
+        "chave": "modelo_analise",
+        "valor": "gemini-3-flash-preview",
+        "tipo_valor": "string",
+        "descricao": "Modelo para Agent2/Análise: análise final"
+    },
+    {
+        "sistema": "prestacao_contas",
+        "chave": "temperatura_analise",
+        "valor": "0.3",
+        "tipo_valor": "number",
+        "descricao": "Temperatura para Agent2/Análise (0.0-1.0)"
+    },
+
+    # --- matriculas: Agente Relatório (Agent2) ---
+    {
+        "sistema": "matriculas",
+        "chave": "modelo_relatorio",
+        "valor": "gemini-3-flash-preview",
+        "tipo_valor": "string",
+        "descricao": "Modelo para Agent2/Relatório: gera relatório técnico"
+    },
+    {
+        "sistema": "matriculas",
+        "chave": "temperatura_relatorio",
+        "valor": "0.2",
+        "tipo_valor": "number",
+        "descricao": "Temperatura para Agent2/Relatório (0.0-1.0)"
+    },
+    {
+        "sistema": "matriculas",
+        "chave": "max_tokens_relatorio",
+        "valor": "8000",
+        "tipo_valor": "number",
+        "descricao": "Máximo de tokens para Agent2/Relatório"
+    },
+
+    # --- assistencia_judiciaria: Agente Relatório ---
+    {
+        "sistema": "assistencia_judiciaria",
+        "chave": "modelo_relatorio",
+        "valor": "gemini-3-pro-preview",
+        "tipo_valor": "string",
+        "descricao": "Modelo para Agente/Relatório: gera relatório"
+    },
 ]
 
 
