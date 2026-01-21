@@ -212,15 +212,18 @@ if _allowed_origins_env:
     ALLOWED_ORIGINS = [origin.strip() for origin in _allowed_origins_env.split(",") if origin.strip()]
 else:
     if IS_PRODUCTION:
-        # SECURITY: Em produção sem configuração, usar apenas a própria origem
-        import warnings
-        warnings.warn(
-            "ALLOWED_ORIGINS não configurado em produção! "
-            "Configure a variável de ambiente ALLOWED_ORIGINS com os domínios permitidos.",
-            RuntimeWarning
-        )
-        # Fallback seguro - apenas mesma origem
+        # Em produção, detecta automaticamente o domínio do Railway ou usa padrão
         ALLOWED_ORIGINS = []
+
+        # Railway fornece o domínio público via variável de ambiente
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+        if railway_domain:
+            ALLOWED_ORIGINS.append(f"https://{railway_domain}")
+
+        # Adiciona domínio padrão da PGE se não configurado
+        if not ALLOWED_ORIGINS:
+            # Fallback para o domínio conhecido da aplicação
+            ALLOWED_ORIGINS = ["https://portal-pge-production.up.railway.app"]
     else:
         # Desenvolvimento local - origens permissivas
         ALLOWED_ORIGINS = [
