@@ -957,6 +957,7 @@
                                 <div class="flex items-center justify-between mb-3">
                                     <label class="block text-xs font-medium text-slate-600">
                                         <i class="fas fa-layer-group text-slate-400 mr-1"></i>Regras por Tipo de Peça
+                                        <span id="badge-regras-tipo-peca"></span>
                                         <span class="ml-1 text-gray-400 cursor-help"
                                             title="Regras que se aplicam apenas a tipos específicos de peça (Contestação, Apelação, etc). Permitem comportamentos diferenciados por tipo, complementando ou substituindo a regra global.">
                                             <i class="fas fa-question-circle"></i>
@@ -968,6 +969,9 @@
                                         <i class="fas fa-plus mr-1"></i>Adicionar
                                     </button>
                                 </div>
+
+                                <!-- Alerta de regras específicas ativas -->
+                                <div id="alerta-regras-tipo-peca" class="mb-3 hidden"></div>
 
                                 <!-- Explicação -->
                                 <div
@@ -5177,6 +5181,9 @@
                 // Processa validação de integridade se disponível
                 processarValidacaoIntegridade(modulo.validacao_integridade);
 
+                // Carrega regras específicas por tipo de peça
+                await carregarRegrasTipoPeca(modulo.id);
+
                 document.getElementById('modal-editor').classList.remove('hidden');
             } catch (error) {
                 alert('Erro ao carregar módulo: ' + error.message);
@@ -5352,6 +5359,15 @@
 
         function fecharEditor() {
             document.getElementById('modal-editor').classList.add('hidden');
+            // Limpa cache e containers de regras específicas
+            regrasTipoPecaCache = [];
+            const badgeContainer = document.getElementById('badge-regras-tipo-peca');
+            const alertaContainer = document.getElementById('alerta-regras-tipo-peca');
+            if (badgeContainer) badgeContainer.innerHTML = '';
+            if (alertaContainer) {
+                alertaContainer.classList.add('hidden');
+                alertaContainer.innerHTML = '';
+            }
         }
 
         // Tags
@@ -6437,6 +6453,41 @@
 
         function renderizarListaRegrasTipoPeca(regras) {
             const container = document.getElementById('lista-regras-tipo-peca');
+            const badgeContainer = document.getElementById('badge-regras-tipo-peca');
+            const alertaContainer = document.getElementById('alerta-regras-tipo-peca');
+
+            // Conta regras ativas
+            const regrasAtivas = regras ? regras.filter(r => r.ativo) : [];
+            const temRegrasAtivas = regrasAtivas.length > 0;
+
+            // Atualiza badge de contagem
+            if (badgeContainer) {
+                if (temRegrasAtivas) {
+                    badgeContainer.innerHTML = `<span class="ml-2 px-1.5 py-0.5 text-xs font-bold bg-amber-500 text-white rounded-full">${regrasAtivas.length}</span>`;
+                } else {
+                    badgeContainer.innerHTML = '';
+                }
+            }
+
+            // Mostra/esconde alerta
+            if (alertaContainer) {
+                if (temRegrasAtivas) {
+                    alertaContainer.classList.remove('hidden');
+                    alertaContainer.innerHTML = `
+                        <div class="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800">
+                            <i class="fas fa-exclamation-triangle text-amber-500 mt-0.5"></i>
+                            <div class="text-xs">
+                                <strong>Atenção:</strong> Este módulo tem ${regrasAtivas.length} regra(s) específica(s) ativa(s) que
+                                <strong>sobrepõem a regra global</strong> para os tipos de peça configurados.
+                                A regra global só será usada para tipos de peça sem regra específica.
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    alertaContainer.classList.add('hidden');
+                    alertaContainer.innerHTML = '';
+                }
+            }
 
             if (!regras || regras.length === 0) {
                 container.innerHTML = `
