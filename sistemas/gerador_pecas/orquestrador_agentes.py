@@ -151,8 +151,37 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
                 print(f"[EXTRAÇÃO] Fallback: {len(dados_consolidados)} variáveis extraídas do resumo_consolidado")
         return dados_consolidados
 
+    # Debug: verificar estado do dados_brutos
+    total_docs = len(resultado_agente1.dados_brutos.documentos) if resultado_agente1.dados_brutos.documentos else 0
+    print(f"[EXTRAÇÃO] dados_brutos.documentos: {total_docs} documentos no total")
+
+    # Debug: contar documentos por estado
+    docs_com_resumo = 0
+    docs_sem_resumo = 0
+    docs_irrelevantes = 0
+    docs_json = 0
+    docs_nao_json = 0
+
+    for d in resultado_agente1.dados_brutos.documentos:
+        if d.irrelevante:
+            docs_irrelevantes += 1
+        elif d.resumo:
+            docs_com_resumo += 1
+            if d.resumo.strip().startswith('{') or d.resumo.strip().startswith('```json'):
+                docs_json += 1
+            else:
+                docs_nao_json += 1
+                # Log primeiro exemplo de não-JSON
+                if docs_nao_json == 1:
+                    print(f"[EXTRAÇÃO] Exemplo de doc não-JSON ({d.categoria_nome}): '{d.resumo[:100]}...'")
+        else:
+            docs_sem_resumo += 1
+
+    print(f"[EXTRAÇÃO] Breakdown: {docs_com_resumo} com resumo, {docs_sem_resumo} sem resumo, {docs_irrelevantes} irrelevantes")
+    print(f"[EXTRAÇÃO] Formato: {docs_json} JSON, {docs_nao_json} não-JSON")
+
     documentos = resultado_agente1.dados_brutos.documentos_com_resumo()
-    print(f"[EXTRAÇÃO] Total de documentos com resumo: {len(documentos)}")
+    print(f"[EXTRAÇÃO] documentos_com_resumo(): {len(documentos)} documentos com resumo válido")
 
     for doc in documentos:
         if not doc.resumo:
