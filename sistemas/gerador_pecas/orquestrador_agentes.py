@@ -804,13 +804,9 @@ Com base nos documentos acima e nas instruções do sistema, gere a peça juríd
 
 **REGRAS OBRIGATÓRIAS sobre os Argumentos e Teses:**
 
-1. **Argumentos marcados com [VALIDADO]**: DEVEM ser incluídos na peça SEM QUESTIONAMENTO. Estes argumentos já foram validados automaticamente com base nas variáveis extraídas dos documentos. NÃO os omita.
+1. **Seções vazias**: Se uma categoria (ex: PRELIMINARES) não tiver NENHUM argumento listado acima, NÃO crie essa seção na peça. Só inclua seções que tenham argumentos ativados.
 
-2. **Argumentos com "Condição de ativação"**: Avalie criticamente se a condição se aplica aos fatos. Se NÃO corresponder, NÃO inclua.
-
-3. **Seções vazias**: Se uma categoria (ex: PRELIMINARES) não tiver NENHUM argumento listado acima, NÃO crie essa seção na peça. Só inclua seções que tenham argumentos ativados.
-
-4. **Ordem**: Respeite a ordem das categorias e argumentos como apresentada em "ARGUMENTOS E TESES APLICÁVEIS".
+2. **Ordem**: Respeite a ordem das categorias e argumentos como apresentada em "ARGUMENTOS E TESES APLICÁVEIS".
 
 Retorne a peça formatada em **Markdown**, seguindo a estrutura indicada no prompt de peça acima.
 Use formatação adequada: ## para títulos de seção, **negrito** para ênfase, > para citações.

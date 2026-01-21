@@ -312,6 +312,7 @@ class DadosProcesso:
     classe_processual: Optional[str] = None
     data_ajuizamento: Optional[datetime] = None
     orgao_julgador: Optional[str] = None
+    competencia: Optional[str] = None  # Código de competência (999 = 2º grau)
     
     def to_json(self) -> dict:
         """Converte para dicionário JSON-serializável"""
@@ -340,7 +341,8 @@ class DadosProcesso:
             "valor_causa": self.valor_causa,
             "classe_processual": self.classe_processual,
             "data_ajuizamento": self.data_ajuizamento.strftime("%d/%m/%Y") if self.data_ajuizamento else None,
-            "orgao_julgador": self.orgao_julgador
+            "orgao_julgador": self.orgao_julgador,
+            "competencia": self.competencia
         }
 
 
@@ -608,7 +610,10 @@ def extrair_dados_processo_xml(xml_text: str) -> Optional[DadosProcesso]:
         
         # Extrai classe processual
         classe_processual = dados_basicos.attrib.get('classeProcessual')
-        
+
+        # Extrai competência (999 = 2º grau)
+        competencia = dados_basicos.attrib.get('competencia')
+
         # Extrai data de ajuizamento
         data_ajuizamento = None
         data_str = dados_basicos.attrib.get('dataAjuizamento')
@@ -711,7 +716,8 @@ def extrair_dados_processo_xml(xml_text: str) -> Optional[DadosProcesso]:
             valor_causa=valor_causa,
             classe_processual=classe_processual,
             data_ajuizamento=data_ajuizamento,
-            orgao_julgador=orgao_julgador
+            orgao_julgador=orgao_julgador,
+            competencia=competencia
         )
         
     except Exception as e:
@@ -1322,6 +1328,19 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         print(f"      {msg_filtro}")
                     else:
                         print(f"      Filtrado para {len(docs_para_analisar)} documentos (excluidas categorias administrativas)")
+
+                # [2º-GRAU] Seleção determinística para processos de competencia=999
+                if self.db_session and dados_processo and dados_processo.competencia:
+                    from sistemas.gerador_pecas.services_segundo_grau import (
+                        is_modo_segundo_grau,
+                        selecionar_documentos_segundo_grau
+                    )
+                    if is_modo_segundo_grau(dados_processo.competencia):
+                        print(f"[2º-GRAU] Modo determinístico ativado (competencia={dados_processo.competencia})")
+                        docs_para_analisar = selecionar_documentos_segundo_grau(
+                            docs_para_analisar,
+                            self.db_session
+                        )
 
                 if not docs_para_analisar:
                     resultado.erro_geral = "Nenhum documento encontrado com os filtros especificados"

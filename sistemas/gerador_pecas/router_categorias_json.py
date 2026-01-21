@@ -643,3 +643,91 @@ async def info_extracao(
         "json_gerado_por_ia": categoria.json_gerado_por_ia,
         "json_gerado_em": categoria.json_gerado_em.isoformat() if categoria.json_gerado_em else None
     }
+
+
+# ==========================================
+# Endpoints para Blacklist de Códigos
+# ==========================================
+
+class CodigosIgnoradosUpdate(BaseModel):
+    """Schema para atualizar a lista de códigos ignorados"""
+    codigos: List[int]
+
+
+@router.get("/config/codigos-ignorados")
+async def get_codigos_ignorados(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna a lista de códigos de documento ignorados na extração JSON.
+
+    Documentos com estes códigos não terão resumo JSON extraído.
+    """
+    from admin.models import ConfiguracaoIA
+
+    config = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "gerador_pecas",
+        ConfiguracaoIA.chave == "codigos_ignorar_extracao_json"
+    ).first()
+
+    codigos = []
+    if config and config.valor:
+        try:
+            codigos = json.loads(config.valor)
+            if not isinstance(codigos, list):
+                codigos = []
+        except json.JSONDecodeError:
+            codigos = []
+
+    return {
+        "codigos": codigos,
+        "descricao": config.descricao if config else "Lista de códigos de documento TJ-MS a ignorar na extração de JSON"
+    }
+
+
+@router.put("/config/codigos-ignorados")
+async def update_codigos_ignorados(
+    dados: CodigosIgnoradosUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Atualiza a lista de códigos de documento ignorados na extração JSON.
+
+    Args:
+        dados: Lista de códigos inteiros a ignorar
+    """
+    from admin.models import ConfiguracaoIA
+
+    config = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "gerador_pecas",
+        ConfiguracaoIA.chave == "codigos_ignorar_extracao_json"
+    ).first()
+
+    # Remove duplicatas e ordena
+    codigos_unicos = sorted(set(dados.codigos))
+    valor_json = json.dumps(codigos_unicos)
+
+    if config:
+        config.valor = valor_json
+    else:
+        # Cria configuração se não existir
+        config = ConfiguracaoIA(
+            sistema="gerador_pecas",
+            chave="codigos_ignorar_extracao_json",
+            valor=valor_json,
+            tipo_valor="json",
+            descricao="Lista de códigos de documento TJ-MS a ignorar na extração de JSON (ex: [9508, 60, 61])"
+        )
+        db.add(config)
+
+    db.commit()
+
+    logger.info(f"[BLACKLIST] Códigos ignorados atualizados por {current_user.username}: {codigos_unicos}")
+
+    return {
+        "success": True,
+        "codigos": codigos_unicos,
+        "mensagem": f"{len(codigos_unicos)} código(s) configurado(s) para ignorar"
+    }

@@ -1872,9 +1872,45 @@ IMPORTANTE: Os seguintes tipos de documento SÃO RELEVANTES e devem ser resumido
             )
             db.add(config_criterios)
             db.commit()
-            print("[OK] Configuração de critérios de relevância criada!")
+            print("[OK] Configuracao de criterios de relevancia criada!")
         else:
-            print("[INFO] Configuração de critérios de relevância já existe.")
+            print("[INFO] Configuracao de criterios de relevancia ja existe.")
+
+        # Verifica/cria configuracoes do modo 2o grau (competencia=999)
+        configs_segundo_grau = [
+            {
+                "chave": "competencia_999_last_peticoes_limit",
+                "valor": "10",
+                "tipo_valor": "number",
+                "descricao": "Limite de peticoes recentes no modo 2o grau (1-50)"
+            },
+            {
+                "chave": "competencia_999_last_recursos_limit",
+                "valor": "10",
+                "tipo_valor": "number",
+                "descricao": "Limite de recursos recentes no modo 2o grau (1-50)"
+            }
+        ]
+
+        for config_data in configs_segundo_grau:
+            existing = db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == config_data["chave"]
+            ).first()
+
+            if not existing:
+                config = ConfiguracaoIA(
+                    sistema="gerador_pecas",
+                    chave=config_data["chave"],
+                    valor=config_data["valor"],
+                    tipo_valor=config_data["tipo_valor"],
+                    descricao=config_data["descricao"]
+                )
+                db.add(config)
+                print(f"[OK] Configuracao {config_data['chave']} criada!")
+
+        db.commit()
+
     finally:
         db.close()
 

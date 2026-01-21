@@ -174,6 +174,47 @@
     <main class="max-w-7xl mx-auto p-6">
         <!-- REFATORADO: Bloco "Como funciona" removido - conteúdo movido para modal de ajuda (ícone no header) -->
 
+        <!-- Card de Códigos Ignorados (Blacklist) -->
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm mb-6">
+            <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-ban text-red-500"></i>
+                    <h3 class="font-medium text-gray-800">Códigos Ignorados na Extração JSON</h3>
+                    <span class="text-xs text-gray-500">(documentos com estes códigos não terão resumo extraído)</span>
+                </div>
+                <button onclick="toggleBlacklistEditor()" class="text-sm text-primary-600 hover:text-primary-700 flex items-center gap-1">
+                    <i class="fas fa-edit"></i> Editar
+                </button>
+            </div>
+            <div class="px-4 py-3">
+                <div id="blacklist-display" class="flex flex-wrap gap-2">
+                    <span class="text-gray-400 text-sm">Carregando...</span>
+                </div>
+                <!-- Editor inline (hidden por padrão) -->
+                <div id="blacklist-editor" class="hidden mt-3 pt-3 border-t border-gray-100">
+                    <div class="flex gap-2 mb-2">
+                        <input type="text" id="novo-codigo-blacklist" placeholder="Digite o código (ex: 9508)"
+                            class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm"
+                            onkeypress="if(event.key==='Enter'){event.preventDefault();adicionarCodigoBlacklist();}">
+                        <button type="button" onclick="adicionarCodigoBlacklist()" class="px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm">
+                            <i class="fas fa-plus"></i> Adicionar
+                        </button>
+                    </div>
+                    <div id="blacklist-edit-list" class="flex flex-wrap gap-2 min-h-[40px] p-2 border border-red-200 rounded-lg bg-red-50 mb-3">
+                        <span class="text-gray-400 text-sm">Nenhum código ignorado</span>
+                    </div>
+                    <div class="flex justify-end gap-2">
+                        <button type="button" onclick="toggleBlacklistEditor()" class="px-3 py-1.5 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
+                            Cancelar
+                        </button>
+                        <button type="button" onclick="salvarBlacklist()" class="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">
+                            <i class="fas fa-save mr-1"></i> Salvar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Lista de Categorias -->
         <div id="lista-categorias" class="space-y-4">
             <div class="text-center py-12 text-gray-400">
@@ -846,6 +887,7 @@ qual o valor da causa?"></textarea>
         let mapeamentoVariaveis = {}; // Mapeamento pergunta_id -> info da variável
         let variaveisGeradas = [];
         let perguntasExistentes = []; // Perguntas já salvas no banco
+        let codigosIgnorados = []; // Blacklist de códigos a ignorar na extração JSON
 
         // ==========================================
         // Performance Metrics (Frontend)
@@ -1037,14 +1079,17 @@ qual o valor da causa?"></textarea>
                 const response = await fetch(`${API_BASE}?apenas_ativos=false`, {
                     headers: getHeaders()
                 });
-                
+
                 if (response.status === 401) {
                     window.location.href = '/login?redirect=/admin/categorias-resumo-json';
                     return;
                 }
-                
+
                 categorias = await response.json();
                 renderizarCategorias();
+
+                // Também carrega a blacklist
+                carregarBlacklist();
             } catch (error) {
                 console.error('Erro ao carregar categorias:', error);
                 document.getElementById('lista-categorias').innerHTML = `
@@ -1053,6 +1098,132 @@ qual o valor da causa?"></textarea>
                         <p>Erro ao carregar categorias</p>
                     </div>
                 `;
+            }
+        }
+
+        // ==========================================
+        // Blacklist de Códigos Ignorados
+        // ==========================================
+
+        async function carregarBlacklist() {
+            try {
+                const response = await fetch(`${API_BASE}/config/codigos-ignorados`, {
+                    headers: getHeaders()
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    codigosIgnorados = data.codigos || [];
+                    renderizarBlacklistDisplay();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar blacklist:', error);
+            }
+        }
+
+        function renderizarBlacklistDisplay() {
+            const container = document.getElementById('blacklist-display');
+
+            if (codigosIgnorados.length === 0) {
+                container.innerHTML = '<span class="text-gray-400 text-sm italic">Nenhum código ignorado (todos os documentos serão processados)</span>';
+                return;
+            }
+
+            container.innerHTML = codigosIgnorados.map(codigo => `
+                <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 font-mono">${codigo}</span>
+            `).join('');
+        }
+
+        function renderizarBlacklistEditList() {
+            const container = document.getElementById('blacklist-edit-list');
+
+            if (codigosIgnorados.length === 0) {
+                container.innerHTML = '<span class="text-gray-400 text-sm">Nenhum código ignorado</span>';
+                return;
+            }
+
+            container.innerHTML = codigosIgnorados.map(codigo => `
+                <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-700 font-mono flex items-center gap-1">
+                    ${codigo}
+                    <button onclick="removerCodigoBlacklist(${codigo})" class="ml-1 hover:text-red-900" title="Remover">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </span>
+            `).join('');
+        }
+
+        function toggleBlacklistEditor() {
+            const editor = document.getElementById('blacklist-editor');
+            const isHidden = editor.classList.contains('hidden');
+
+            if (isHidden) {
+                editor.classList.remove('hidden');
+                renderizarBlacklistEditList();
+            } else {
+                editor.classList.add('hidden');
+                // Recarrega para descartar mudanças não salvas
+                carregarBlacklist();
+            }
+        }
+
+        function adicionarCodigoBlacklist() {
+            const input = document.getElementById('novo-codigo-blacklist');
+            const codigo = parseInt(input.value.trim());
+
+            if (isNaN(codigo) || codigo <= 0) {
+                alert('Digite um código numérico válido');
+                return;
+            }
+
+            if (codigosIgnorados.includes(codigo)) {
+                alert('Este código já está na lista');
+                input.value = '';
+                return;
+            }
+
+            codigosIgnorados.push(codigo);
+            codigosIgnorados.sort((a, b) => a - b);
+            input.value = '';
+            renderizarBlacklistEditList();
+        }
+
+        function removerCodigoBlacklist(codigo) {
+            codigosIgnorados = codigosIgnorados.filter(c => c !== codigo);
+            renderizarBlacklistEditList();
+        }
+
+        async function salvarBlacklist() {
+            try {
+                const response = await fetch(`${API_BASE}/config/codigos-ignorados`, {
+                    method: 'PUT',
+                    headers: getHeaders(),
+                    body: JSON.stringify({ codigos: codigosIgnorados })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    codigosIgnorados = data.codigos || [];
+                    renderizarBlacklistDisplay();
+                    document.getElementById('blacklist-editor').classList.add('hidden');
+
+                    // Feedback visual
+                    const btn = event.target;
+                    const originalText = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-check mr-1"></i> Salvo!';
+                    btn.classList.remove('bg-red-600');
+                    btn.classList.add('bg-green-600');
+                    setTimeout(() => {
+                        btn.innerHTML = originalText;
+                        btn.classList.remove('bg-green-600');
+                        btn.classList.add('bg-red-600');
+                    }, 1500);
+                } else {
+                    const error = await response.json();
+                    alert('Erro ao salvar: ' + (error.detail || 'Erro desconhecido'));
+                }
+            } catch (error) {
+                console.error('Erro ao salvar blacklist:', error);
+                alert('Erro ao salvar: ' + error.message);
             }
         }
 

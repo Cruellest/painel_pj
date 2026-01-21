@@ -538,6 +538,13 @@ DEFAULT_CONFIG_IA = [
         "tipo_valor": "number",
         "descricao": "Tempo de vida do cache de detecções em minutos"
     },
+    {
+        "sistema": "gerador_pecas",
+        "chave": "codigos_ignorar_extracao_json",
+        "valor": "[]",
+        "tipo_valor": "json",
+        "descricao": "Lista de códigos de documento TJ-MS a ignorar na extração de JSON (ex: [9508, 60, 61])"
+    },
     # ========================================
     # Configurações de Thinking Level (Gemini 3)
     # Valores: "minimal", "low", "medium", "high" ou vazio para default
@@ -578,6 +585,24 @@ DEFAULT_CONFIG_IA = [
         "valor": "",
         "tipo_valor": "string",
         "descricao": "Nível de raciocínio do Gemini 3 (vazio = default/high para análise complexa)"
+    },
+    # ========================================
+    # Configurações do Modo 2º Grau (competencia=999)
+    # Controla seleção determinística de documentos em processos de 2º grau
+    # ========================================
+    {
+        "sistema": "gerador_pecas",
+        "chave": "competencia_999_last_peticoes_limit",
+        "valor": "10",
+        "tipo_valor": "number",
+        "descricao": "Limite de petições recentes no modo 2º grau (1-50)"
+    },
+    {
+        "sistema": "gerador_pecas",
+        "chave": "competencia_999_last_recursos_limit",
+        "valor": "10",
+        "tipo_valor": "number",
+        "descricao": "Limite de recursos recentes no modo 2º grau (1-50)"
     },
 ]
 
