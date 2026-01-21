@@ -903,7 +903,71 @@ async def processar_pdfs_stream(
             yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'concluido', 'mensagem': f'{len(documentos_processados)} documento(s) processado(s) com extração JSON'})}\n\n"
 
             # ==================================================================
-            # ESTÁGIO 4: MONTAR RESUMO CONSOLIDADO
+            # ESTÁGIO 4: BUSCAR NAT NO PROCESSO DE ORIGEM (SE AGRAVO)
+            # ==================================================================
+            # Quando os PDFs indicam agravo e não há NAT entre os documentos,
+            # busca automaticamente o NAT no processo de origem (1º grau)
+            nat_source = None
+            try:
+                from sistemas.gerador_pecas.services_nat_origem import buscar_nat_para_pdfs_anexados
+
+                nat_result = await buscar_nat_para_pdfs_anexados(
+                    dados_consolidados=dados_extracao_consolidados,
+                    documentos_processados=documentos_processados,
+                    db_session=db
+                )
+
+                if nat_result.busca_realizada:
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'[NAT-ORIGEM] Buscando Parecer NAT no processo de origem: {nat_result.numero_processo_origem}...'})}\n\n"
+
+                if nat_result.nat_encontrado and nat_result.nat_source == "origem":
+                    # NAT encontrado no processo de origem - adiciona ao resumo
+                    nat_source = "origem"
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'[NAT-ORIGEM] ✅ Parecer NAT encontrado no processo de origem!'})}\n\n"
+
+                    # Adiciona resumo do NAT aos resumos markdown
+                    if nat_result.resumo_markdown:
+                        resumos_markdown.append(nat_result.resumo_markdown)
+
+                    # Adiciona documento NAT aos processados
+                    documentos_processados.append({
+                        "nome": f"Parecer NAT (Processo de Origem)",
+                        "ordem": len(documentos_processados) + 1,
+                        "categoria": "Parecer NAT",
+                        "categoria_id": None,
+                        "confianca": 1.0,
+                        "source": "origem",
+                        "role": "secondary",
+                        "processo_origem": nat_result.numero_processo_origem,
+                        "nat_source": "origem"
+                    })
+
+                    # Consolida dados JSON do NAT
+                    if nat_result.dados_json:
+                        namespace_prefix = "parecer_nat_"
+                        for chave, valor in nat_result.dados_json.items():
+                            slug = f"{namespace_prefix}{chave}" if not chave.startswith(namespace_prefix) else chave
+                            if slug not in dados_extracao_consolidados:
+                                dados_extracao_consolidados[slug] = valor
+                            elif isinstance(valor, bool) and isinstance(dados_extracao_consolidados[slug], bool):
+                                dados_extracao_consolidados[slug] = dados_extracao_consolidados[slug] or valor
+
+                elif nat_result.nat_encontrado and nat_result.nat_source == "pdfs_anexados":
+                    nat_source = "pdfs_anexados"
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': '[NAT-ORIGEM] Parecer NAT já presente nos PDFs anexados'})}\n\n"
+
+                elif nat_result.busca_realizada and not nat_result.nat_encontrado:
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'[NAT-ORIGEM] ⚠ {nat_result.motivo}'})}\n\n"
+
+            except Exception as e:
+                print(f"[NAT-ORIGEM] Erro na busca de NAT para PDFs: {e}")
+                import traceback
+                traceback.print_exc()
+                # Não interrompe o fluxo - apenas loga o erro
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'[NAT-ORIGEM] Busca de NAT não disponível: {str(e)}'})}\n\n"
+
+            # ==================================================================
+            # ESTÁGIO 5: MONTAR RESUMO CONSOLIDADO
             # ==================================================================
             resumo_consolidado = _montar_resumo_pdfs_classificados(
                 documentos_processados,
@@ -911,8 +975,12 @@ async def processar_pdfs_stream(
                 selecao
             )
 
+            # Adiciona informação de nat_source ao resumo se aplicável
+            if nat_source:
+                resumo_consolidado = f"**nat_source**: {nat_source}\n\n" + resumo_consolidado
+
             # ==================================================================
-            # ESTÁGIO 5: AGENTE 2 E 3 (mesmo fluxo anterior)
+            # ESTÁGIO 6: AGENTE 2 E 3 (mesmo fluxo anterior)
             # ==================================================================
             config_modelo = db.query(ConfiguracaoIA).filter(
                 ConfiguracaoIA.sistema == "gerador_pecas",

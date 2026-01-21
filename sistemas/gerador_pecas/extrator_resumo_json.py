@@ -329,6 +329,16 @@ def _corrigir_json_malformado(json_str: str) -> str:
         if json_str == json_anterior:
             break
 
+    # Corrige números com zeros à esquerda (JSON inválido)
+    # A IA às vezes retorna números de processo como: 08015048520258120013
+    # Em JSON, números não podem começar com 0, então convertemos para string
+    # Padrão: após : e espaço, número que começa com 0 e tem mais dígitos
+    json_str = re.sub(
+        r'(:\s*)0(\d{6,})',  # Captura números que começam com 0 e têm 7+ dígitos
+        r'\1"0\2"',  # Converte para string
+        json_str
+    )
+
     # Corrige quebras de linha dentro de strings
     # Isso é mais complexo - vamos tentar uma abordagem conservadora
     # Substitui quebras de linha por \n quando parecem estar dentro de strings
@@ -815,6 +825,7 @@ class GerenciadorFormatosJSON:
     - Categorias por código de documento (comportamento padrão)
     - Categorias com fonte especial (ex: "peticao_inicial" = primeiro doc com código 9500/500)
     - Exclusão automática de documentos de fontes especiais das categorias por código
+    - Blacklist de códigos a ignorar na extração (configurável via admin)
     """
 
     def __init__(self, db: Session):
@@ -829,12 +840,33 @@ class GerenciadorFormatosJSON:
         self._docs_excluir_codigo: set = set()  # doc_ids que devem ser excluídos de categorias por código
         self._lote_preparado = False
 
+        # Blacklist de códigos a ignorar
+        self._codigos_ignorados: set = set()
+
     def _carregar_formatos(self):
         """Carrega todos os formatos do banco para cache"""
         if self._carregado:
             return
 
         from sistemas.gerador_pecas.models_resumo_json import CategoriaResumoJSON
+        from admin.models import ConfiguracaoIA
+
+        # Carrega blacklist de códigos a ignorar
+        config_ignorar = self.db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "codigos_ignorar_extracao_json"
+        ).first()
+
+        if config_ignorar and config_ignorar.valor:
+            try:
+                import json
+                codigos_lista = json.loads(config_ignorar.valor)
+                if isinstance(codigos_lista, list):
+                    self._codigos_ignorados = set(int(c) for c in codigos_lista if c)
+                    if self._codigos_ignorados:
+                        print(f"[EXTRAÇÃO JSON] Códigos ignorados (blacklist): {sorted(self._codigos_ignorados)}")
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                print(f"[WARN] Erro ao carregar codigos_ignorar_extracao_json: {e}")
 
         categorias = self.db.query(CategoriaResumoJSON).filter(
             CategoriaResumoJSON.ativo == True
@@ -930,15 +962,18 @@ class GerenciadorFormatosJSON:
             doc_id: ID do documento (opcional, mas necessário para fontes especiais)
 
         Returns:
-            FormatoResumo ou None
+            FormatoResumo ou None (None se código estiver na blacklist e não for fonte especial)
         """
         self._carregar_formatos()
 
-        # Se doc_id fornecido e lote preparado, verifica fonte especial
+        # IMPORTANTE: Verifica fonte especial ANTES da blacklist
+        # Isso permite que um código esteja na blacklist mas ainda seja processado
+        # quando identificado como fonte especial (ex: código 10 como petição inicial)
         if doc_id and self._lote_preparado:
             doc_id_str = str(doc_id)
 
-            # Verifica se é documento de fonte especial
+            # Verifica se é documento de fonte especial (ex: petição inicial)
+            # Se for, retorna o formato especial IGNORANDO a blacklist
             if doc_id_str in self._doc_fonte_especial:
                 return self._doc_fonte_especial[doc_id_str]
 
@@ -948,6 +983,11 @@ class GerenciadorFormatosJSON:
                 # Já retornou acima se era deste doc, então não deve processar
                 # por categoria de código
                 return self._residual  # Usa residual como fallback
+
+        # Verifica blacklist de códigos a ignorar
+        # (só chega aqui se não for documento de fonte especial)
+        if codigo_documento in self._codigos_ignorados:
+            return None  # Documento será ignorado na extração JSON
 
         # Tenta cache específico por código
         if codigo_documento in self._cache:
@@ -960,3 +1000,13 @@ class GerenciadorFormatosJSON:
         """Verifica se há formatos JSON configurados no banco"""
         self._carregar_formatos()
         return self._residual is not None or len(self._cache) > 0 or len(self._fontes_especiais) > 0
+
+    def get_codigos_ignorados(self) -> set:
+        """Retorna conjunto de códigos na blacklist"""
+        self._carregar_formatos()
+        return self._codigos_ignorados.copy()
+
+    def codigo_ignorado(self, codigo: int) -> bool:
+        """Verifica se um código está na blacklist"""
+        self._carregar_formatos()
+        return codigo in self._codigos_ignorados
