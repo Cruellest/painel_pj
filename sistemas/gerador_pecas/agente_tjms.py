@@ -1653,16 +1653,25 @@ REGRAS IMPORTANTES:
 
 {prompt_original}"""
 
-    def _processar_resposta_resumo(self, doc: DocumentoTJMS, resposta: str) -> bool:
+    def _processar_resposta_resumo(self, doc: DocumentoTJMS, resposta: str, usar_json: bool = None) -> bool:
         """
         Processa a resposta da IA e atualiza o documento.
         Suporta tanto formato MD quanto JSON.
+
+        Args:
+            doc: Documento sendo processado
+            resposta: Resposta da IA
+            usar_json: Se True, processa como JSON. Se None, usa _deve_usar_json().
+                       IMPORTANTE: Deve ser True somente se o prompt enviado foi JSON.
 
         Returns:
             bool: True se JSON foi parseado com sucesso, False se falhou (quando usando JSON)
                   Sempre retorna True para formato MD.
         """
-        if self._deve_usar_json():
+        # Usa flag explícita se fornecida, senão verifica configuração geral
+        processar_como_json = usar_json if usar_json is not None else self._deve_usar_json()
+
+        if processar_como_json:
             # Processa resposta JSON
             from sistemas.gerador_pecas.extrator_resumo_json import (
                 parsear_resposta_json,
@@ -1810,7 +1819,8 @@ REGRAS IMPORTANTES:
                         modelo=self.modelo
                     )
 
-                    sucesso = self._processar_resposta_resumo(doc, resposta)
+                    # Passa flag indicando se prompt era JSON (corrige bug de inconsistência)
+                    sucesso = self._processar_resposta_resumo(doc, resposta, usar_json=bool(prompt_json))
 
                     # RETRY: Se JSON falhou, tenta novamente com prompt de correção
                     if not sucesso and prompt_json:
@@ -1821,7 +1831,7 @@ REGRAS IMPORTANTES:
                             prompt=prompt_retry,
                             modelo=self.modelo
                         )
-                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry)
+                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry, usar_json=True)
                         if sucesso_retry:
                             print(f"[JSON_RETRY] ✅ Retry bem-sucedido para doc '{doc.descricao or doc.id}'")
                         else:
@@ -1845,7 +1855,8 @@ REGRAS IMPORTANTES:
                         modelo=self.modelo
                     )
 
-                    sucesso = self._processar_resposta_resumo(doc, resposta)
+                    # Passa flag indicando se prompt era JSON
+                    sucesso = self._processar_resposta_resumo(doc, resposta, usar_json=bool(prompt_json))
 
                     # RETRY: Se JSON falhou em imagem, tenta novamente
                     if not sucesso and prompt_json:
@@ -1857,7 +1868,7 @@ REGRAS IMPORTANTES:
                             imagens_base64=imagens,
                             modelo=self.modelo
                         )
-                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry)
+                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry, usar_json=True)
                         if sucesso_retry:
                             print(f"[JSON_RETRY] ✅ Retry bem-sucedido (imagem) para doc '{doc.descricao or doc.id}'")
                         else:
@@ -1901,7 +1912,8 @@ REGRAS IMPORTANTES:
                         modelo=self.modelo
                     )
 
-                    sucesso = self._processar_resposta_resumo(doc, resposta)
+                    # Passa flag indicando se prompt era JSON
+                    sucesso = self._processar_resposta_resumo(doc, resposta, usar_json=bool(prompt_json))
 
                     # RETRY: Se JSON falhou, tenta novamente
                     if not sucesso and prompt_json:
@@ -1912,7 +1924,7 @@ REGRAS IMPORTANTES:
                             prompt=prompt_retry,
                             modelo=self.modelo
                         )
-                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry)
+                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry, usar_json=True)
                         if sucesso_retry:
                             print(f"[JSON_RETRY] ✅ Retry bem-sucedido para doc único '{doc.descricao or doc.id}'")
                         else:
@@ -1938,7 +1950,8 @@ REGRAS IMPORTANTES:
                         modelo=self.modelo
                     )
 
-                    sucesso = self._processar_resposta_resumo(doc, resposta)
+                    # Passa flag indicando se prompt era JSON
+                    sucesso = self._processar_resposta_resumo(doc, resposta, usar_json=bool(prompt_json))
 
                     # RETRY: Se JSON falhou em imagem, tenta novamente
                     if not sucesso and prompt_json:
@@ -1950,7 +1963,7 @@ REGRAS IMPORTANTES:
                             imagens_base64=imagens,
                             modelo=self.modelo
                         )
-                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry)
+                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry, usar_json=True)
                         if sucesso_retry:
                             print(f"[JSON_RETRY] ✅ Retry bem-sucedido (imagem única) para doc '{doc.descricao or doc.id}'")
                         else:
