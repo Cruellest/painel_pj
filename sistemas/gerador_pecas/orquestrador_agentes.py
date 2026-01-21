@@ -30,28 +30,125 @@ from admin.models_prompts import PromptModulo
 MODELO_AGENTE1_PADRAO = "gemini-3-flash-preview"
 
 
+def _extrair_json_de_resumo_consolidado(resumo_consolidado: str) -> Dict[str, Any]:
+    """
+    Extrai dados JSON do resumo_consolidado como fallback.
+
+    O resumo_consolidado tem formato:
+    ### 1. Petição
+    **Data**: ...
+
+    {
+      "campo": "valor",
+      ...
+    }
+
+    ---
+
+    Esta função encontra e parseia todos os blocos JSON.
+    """
+    dados_consolidados = {}
+
+    if not resumo_consolidado:
+        return dados_consolidados
+
+    # Divide em seções por separador ---
+    sections = resumo_consolidado.split('---')
+
+    for section in sections:
+        section = section.strip()
+        if not section:
+            continue
+
+        lines = section.split('\n')
+
+        # Encontra onde o JSON começa
+        json_start = -1
+        for j, line in enumerate(lines):
+            if line.strip().startswith('{'):
+                json_start = j
+                break
+
+        if json_start >= 0:
+            # Reconstrói o JSON
+            json_text = '\n'.join(lines[json_start:])
+            json_text = json_text.strip()
+
+            # Remove trailing markdown se houver
+            if json_text.endswith('```'):
+                json_text = json_text[:-3].strip()
+
+            try:
+                dados_doc = json.loads(json_text)
+
+                if not isinstance(dados_doc, dict):
+                    continue
+
+                # Consolida cada variável do documento
+                for slug, valor in dados_doc.items():
+                    if slug.startswith('_'):
+                        continue
+
+                    if slug not in dados_consolidados:
+                        dados_consolidados[slug] = valor
+                    else:
+                        valor_existente = dados_consolidados[slug]
+
+                        # Booleanos: lógica OR
+                        if isinstance(valor, bool) and isinstance(valor_existente, bool):
+                            dados_consolidados[slug] = valor_existente or valor
+                        # Listas: concatena valores únicos
+                        elif isinstance(valor, list):
+                            if isinstance(valor_existente, list):
+                                for v in valor:
+                                    if v not in valor_existente:
+                                        valor_existente.append(v)
+                            else:
+                                dados_consolidados[slug] = [valor_existente] + valor
+                        # Outros: mantém lista de valores
+                        elif valor != valor_existente:
+                            if isinstance(valor_existente, list):
+                                if valor not in valor_existente:
+                                    valor_existente.append(valor)
+                            else:
+                                dados_consolidados[slug] = [valor_existente, valor]
+
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+
+    return dados_consolidados
+
+
 def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, Any]:
     """
     Consolida dados extraídos dos resumos JSON dos documentos.
-    
+
     Percorre todos os documentos com resumo em formato JSON e extrai
     as variáveis para um dicionário consolidado.
-    
+
+    Se a extração dos documentos individuais falhar, tenta extrair
+    do resumo_consolidado como fallback.
+
     Regras de consolidação:
     - Para booleanos: lógica OR (se qualquer documento tem True, resultado é True)
     - Para listas: concatena valores únicos
     - Para strings/números: mantém o primeiro valor encontrado (ou lista se múltiplos)
-    
+
     Args:
         resultado_agente1: Resultado do Agente 1 com documentos analisados
-        
+
     Returns:
         Dicionário {slug: valor} com variáveis consolidadas
     """
     dados_consolidados = {}
 
     if not resultado_agente1.dados_brutos:
-        print("[EXTRAÇÃO] AVISO: dados_brutos é None - não há documentos para extrair")
+        print("[EXTRAÇÃO] AVISO: dados_brutos é None - tentando fallback do resumo_consolidado")
+        # Fallback: tenta extrair do resumo_consolidado
+        if resultado_agente1.resumo_consolidado:
+            dados_consolidados = _extrair_json_de_resumo_consolidado(resultado_agente1.resumo_consolidado)
+            if dados_consolidados:
+                print(f"[EXTRAÇÃO] Fallback: {len(dados_consolidados)} variáveis extraídas do resumo_consolidado")
         return dados_consolidados
 
     documentos = resultado_agente1.dados_brutos.documentos_com_resumo()
@@ -81,22 +178,22 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
 
             dados_doc = json.loads(resumo_limpo)
             print(f"[EXTRAÇÃO] Doc '{doc.categoria_nome}': JSON parseado com {len(dados_doc)} campos")
-            
+
             if not isinstance(dados_doc, dict):
                 continue
-            
+
             # Consolida cada variável do documento
             for slug, valor in dados_doc.items():
                 if slug.startswith('_'):  # Ignora campos internos/metadata
                     continue
-                    
+
                 if slug not in dados_consolidados:
                     # Primeira ocorrência
                     dados_consolidados[slug] = valor
                 else:
                     # Consolidação
                     valor_existente = dados_consolidados[slug]
-                    
+
                     # Booleanos: lógica OR
                     if isinstance(valor, bool) and isinstance(valor_existente, bool):
                         dados_consolidados[slug] = valor_existente or valor
@@ -115,13 +212,21 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
                                 valor_existente.append(valor)
                         else:
                             dados_consolidados[slug] = [valor_existente, valor]
-                            
+
         except (json.JSONDecodeError, TypeError, ValueError) as e:
             # Resumo não é JSON válido, ignora
             print(f"[EXTRAÇÃO] Doc '{doc.categoria_nome}': erro ao parsear JSON - {type(e).__name__}: {str(e)[:100]}")
             continue
 
-    if dados_consolidados:
+    # Se não conseguiu extrair nada dos documentos, tenta fallback do resumo_consolidado
+    if not dados_consolidados and resultado_agente1.resumo_consolidado:
+        print("[EXTRAÇÃO] Nenhuma variável extraída dos documentos - tentando fallback do resumo_consolidado")
+        dados_consolidados = _extrair_json_de_resumo_consolidado(resultado_agente1.resumo_consolidado)
+        if dados_consolidados:
+            print(f"[EXTRAÇÃO] Fallback: {len(dados_consolidados)} variáveis extraídas do resumo_consolidado")
+        else:
+            print("[EXTRAÇÃO] AVISO: Fallback também falhou - nenhuma variável extraída!")
+    elif dados_consolidados:
         print(f"[EXTRAÇÃO] Variáveis extraídas dos resumos JSON: {len(dados_consolidados)}")
         # Log de algumas variáveis para debug
         for slug, valor in list(dados_consolidados.items())[:5]:
