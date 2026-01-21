@@ -217,6 +217,41 @@ def parse_iso(iso_string: str) -> Optional[datetime]:
 
 
 # =============================================================================
+# FUNÇÕES PARA SERIALIZAÇÃO JSON
+# =============================================================================
+
+def to_iso_utc(dt: Optional[datetime]) -> Optional[str]:
+    """
+    Converte datetime para string ISO 8601 em UTC com sufixo 'Z'.
+
+    IMPORTANTE: Use esta função para serializar timestamps em APIs/JSON.
+    O sufixo 'Z' indica UTC e permite que o frontend converta corretamente
+    para o timezone local do usuário.
+
+    Args:
+        dt: Datetime a serializar (pode ser None)
+
+    Returns:
+        str: ISO 8601 com 'Z' (ex: "2026-01-20T18:30:00Z") ou None
+
+    Example:
+        >>> from utils.timezone import to_iso_utc, now_utc
+        >>> to_iso_utc(now_utc())
+        '2026-01-20T18:30:00Z'
+    """
+    if dt is None:
+        return None
+
+    # Se naive, assume UTC
+    if dt.tzinfo is None:
+        return dt.isoformat() + 'Z'
+
+    # Se aware, converte para UTC e adiciona Z
+    utc_time = dt.astimezone(UTC)
+    return utc_time.isoformat().replace('+00:00', 'Z')
+
+
+# =============================================================================
 # FUNÇÕES PARA SQLALCHEMY
 # =============================================================================
 

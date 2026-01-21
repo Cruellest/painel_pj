@@ -25,6 +25,7 @@ from database.connection import get_db
 from auth.dependencies import require_admin, get_optional_user
 from auth.models import User
 from admin.models_performance import PerformanceLog, RouteSystemMap
+from utils.timezone import to_iso_utc
 
 router = APIRouter(prefix="/admin/api/performance", tags=["Performance Logs"])
 
@@ -288,7 +289,7 @@ async def get_summary(
         'action': e.action,
         'error_type': e.error_type,
         'error_message': e.error_message_short,
-        'created_at': e.created_at.isoformat() if e.created_at else None,
+        'created_at': to_iso_utc(e.created_at),
     } for e in errors]
 
     return SummaryResponse(

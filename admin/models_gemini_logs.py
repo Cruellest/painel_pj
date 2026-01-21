@@ -11,7 +11,7 @@ Captura TODAS as chamadas de IA de TODOS os usuários/sistemas para:
 
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, Index
 from database.connection import Base
-from utils.timezone import get_utc_now
+from utils.timezone import get_utc_now, to_iso_utc
 
 
 class GeminiApiLog(Base):
@@ -78,7 +78,7 @@ class GeminiApiLog(Base):
         """Converte para dicionário para serialização"""
         return {
             "id": self.id,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "created_at": to_iso_utc(self.created_at),
             "user_id": self.user_id,
             "username": self.username,
             "sistema": self.sistema,

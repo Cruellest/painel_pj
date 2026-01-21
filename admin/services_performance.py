@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 
 from database.connection import SessionLocal
+from utils.timezone import to_iso_utc
 
 logger = logging.getLogger(__name__)
 
@@ -422,7 +423,7 @@ def get_performance_logs(
     return [
         {
             "id": log.id,
-            "created_at": log.created_at.isoformat(),
+            "created_at": to_iso_utc(log.created_at),
             "admin_user_id": log.admin_user_id,
             "admin_username": log.admin_username,
             "request_id": log.request_id,

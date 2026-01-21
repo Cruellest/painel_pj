@@ -12,7 +12,7 @@ import re
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, Text, Index, ForeignKey
 from sqlalchemy.orm import relationship
 from database.connection import Base
-from utils.timezone import get_utc_now
+from utils.timezone import get_utc_now, to_iso_utc
 
 
 class RouteSystemMap(Base):
@@ -46,23 +46,14 @@ class RouteSystemMap(Base):
         return False
 
     def to_dict(self):
-        def _to_utc_iso(dt):
-            """Converte datetime para ISO UTC com Z."""
-            if not dt:
-                return None
-            if dt.tzinfo is None:
-                return dt.isoformat() + 'Z'
-            from datetime import timezone
-            return dt.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
-
         return {
             "id": self.id,
             "route_pattern": self.route_pattern,
             "system_name": self.system_name,
             "match_type": self.match_type,
             "priority": self.priority,
-            "created_at": _to_utc_iso(self.created_at),
-            "updated_at": _to_utc_iso(self.updated_at),
+            "created_at": to_iso_utc(self.created_at),
+            "updated_at": to_iso_utc(self.updated_at),
         }
 
     def __repr__(self):
@@ -133,20 +124,9 @@ class PerformanceLog(Base):
 
     def to_dict(self):
         """Converte para dicionario com bottleneck calculado."""
-        # IMPORTANTE: Retorna timestamp em UTC com 'Z' para o frontend converter
-        created_at_str = None
-        if self.created_at:
-            # Se naive, assume UTC; se aware, converte para UTC
-            if self.created_at.tzinfo is None:
-                created_at_str = self.created_at.isoformat() + 'Z'
-            else:
-                from datetime import timezone
-                utc_time = self.created_at.astimezone(timezone.utc)
-                created_at_str = utc_time.isoformat().replace('+00:00', 'Z')
-
         data = {
             "id": self.id,
-            "created_at": created_at_str,
+            "created_at": to_iso_utc(self.created_at),
             "request_id": self.request_id,
             "admin_user_id": self.admin_user_id,
             "admin_username": self.admin_username,
