@@ -9,8 +9,8 @@ const ADMIN_API_URL = '/admin/api/prompts-modulos';
 // =====================================================
 // Para ativar/desativar funcionalidades temporariamente
 const FEATURE_FLAGS = {
-    // Assuntos (Subcategorias de Conteúdo) - filtro de prompts na geração de peças
-    SUBCATEGORIAS_ENABLED: true,
+    // Assuntos (Subcategorias de Conteúdo) - funcionalidade desabilitada
+    SUBCATEGORIAS_ENABLED: false,
 };
 // =====================================================
 
@@ -698,10 +698,6 @@ class GeradorPecasApp {
                 if (this.groupId) {
                     formData.append('group_id', this.groupId);
                 }
-                if (this.subcategoriaIds && this.subcategoriaIds.length) {
-                    formData.append('subcategoria_ids_json', JSON.stringify(this.subcategoriaIds));
-                }
-
                 response = await fetch(`${API_URL}/processar-pdfs-stream`, {
                     method: 'POST',
                     headers: {
@@ -727,8 +723,7 @@ class GeradorPecasApp {
                         numero_cnj: this.numeroCNJ,
                         tipo_peca: this.tipoPeca,
                         observacao_usuario: this.observacaoUsuario,
-                        group_id: this.groupId,
-                        subcategoria_ids: this.subcategoriaIds.length ? this.subcategoriaIds : null
+                        group_id: this.groupId
                     })
                 });
             }
