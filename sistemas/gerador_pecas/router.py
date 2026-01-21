@@ -504,6 +504,7 @@ async def processar_processo_stream(
                     numero_cnj=cnj_limpo,
                     numero_cnj_formatado=cnj_limpo,
                     tipo_peca=tipo_peca,
+                    dados_processo=dados_extracao,  # Persiste variáveis extraídas para auditoria
                     conteudo_gerado=resultado_agente3.conteudo_markdown,
                     prompt_enviado=resultado_agente3.prompt_enviado,
                     resumo_consolidado=resumo_para_geracao,
@@ -1055,6 +1056,7 @@ async def processar_pdfs_stream(
                     numero_cnj="PDF_UPLOAD",
                     numero_cnj_formatado="PDFs Anexados",
                     tipo_peca=tipo_peca_final,
+                    dados_processo=dados_extracao_consolidados,  # Persiste variáveis extraídas para auditoria
                     conteudo_gerado=resultado_agente3.conteudo_markdown,
                     prompt_enviado=resultado_agente3.prompt_enviado,
                     resumo_consolidado=resumo_consolidado,

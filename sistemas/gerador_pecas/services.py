@@ -428,13 +428,23 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
         # Sucesso - salva no banco
         # NOTA: Agora o conteúdo é diretamente em Markdown, não mais JSON
         minuta_markdown = resultado.conteudo_markdown
-        
+
+        # Extrai dados para auditoria
+        dados_extracao = None
+        if resultado.agente1:
+            try:
+                from sistemas.gerador_pecas.orquestrador_agentes import consolidar_dados_extracao
+                dados_extracao = consolidar_dados_extracao(resultado.agente1)
+            except Exception:
+                pass  # Se falhar, não é crítico
+
         # Salva no banco (incluindo prompt e resumo para auditoria)
         # conteudo_gerado agora armazena a string markdown diretamente
         geracao = GeracaoPeca(
             numero_cnj=numero_cnj,
             numero_cnj_formatado=numero_cnj_formatado,
             tipo_peca=resultado.tipo_peca,
+            dados_processo=dados_extracao,  # Persiste variáveis extraídas para auditoria
             conteudo_gerado=minuta_markdown,  # Agora é markdown string, não JSON dict
             prompt_enviado=resultado.agente3.prompt_enviado if resultado.agente3 else None,
             resumo_consolidado=resultado.agente1.resumo_consolidado if resultado.agente1 else None,
