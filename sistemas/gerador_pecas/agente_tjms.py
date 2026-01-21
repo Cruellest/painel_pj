@@ -1626,10 +1626,41 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
         from sistemas.gerador_pecas.extrator_resumo_json import gerar_prompt_extracao_json_imagem
         return gerar_prompt_extracao_json_imagem(formato, db=self.db_session)
 
-    def _processar_resposta_resumo(self, doc: DocumentoTJMS, resposta: str):
+    def _gerar_prompt_correcao_json(self, resposta_invalida: str, prompt_original: str) -> str:
+        """
+        Gera um prompt para corrigir uma resposta JSON inválida.
+
+        Args:
+            resposta_invalida: A resposta original que não foi parseável como JSON
+            prompt_original: O prompt original enviado ao LLM
+
+        Returns:
+            Prompt de correção para tentar obter JSON válido
+        """
+        return f"""A resposta anterior continha JSON inválido ou malformado.
+
+RESPOSTA ANTERIOR (COM ERRO):
+{resposta_invalida[:3000]}
+
+POR FAVOR, CORRIJA E RETORNE APENAS O JSON VÁLIDO.
+
+REGRAS IMPORTANTES:
+1. Retorne APENAS o JSON, sem texto adicional
+2. Não use caracteres de controle ou quebras de linha dentro de strings
+3. Escape corretamente aspas dentro de strings usando \\"
+4. Garanta que todas as chaves e colchetes estejam balanceados
+5. Use null para valores ausentes, não deixe campos vazios
+
+{prompt_original}"""
+
+    def _processar_resposta_resumo(self, doc: DocumentoTJMS, resposta: str) -> bool:
         """
         Processa a resposta da IA e atualiza o documento.
         Suporta tanto formato MD quanto JSON.
+
+        Returns:
+            bool: True se JSON foi parseado com sucesso, False se falhou (quando usando JSON)
+                  Sempre retorna True para formato MD.
         """
         if self._deve_usar_json():
             # Processa resposta JSON
@@ -1644,6 +1675,11 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
             json_dict, erro = parsear_resposta_json(resposta)
 
             if erro:
+                # Log detalhado para diagnóstico
+                print(f"[JSON_RETRY] ⚠️ Falha no parse JSON para doc '{doc.descricao or doc.id}' (tipo={doc.tipo_documento})")
+                print(f"[JSON_RETRY]    Erro: {erro}")
+                print(f"[JSON_RETRY]    Resposta (primeiros 500 chars): {resposta[:500]}...")
+
                 # Fallback: usa resposta como texto se não conseguir parsear JSON
                 is_irrelevante, conteudo = _verificar_irrelevante(resposta)
                 if is_irrelevante:
@@ -1652,7 +1688,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 else:
                     doc.resumo = resposta
                     doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
-                return
+                return False  # Indica que JSON falhou
 
             # Normaliza JSON garantindo que todas as chaves do schema estejam presentes
             gerenciador = self._obter_gerenciador_json()
@@ -1676,6 +1712,8 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 processo_origem = extrair_processo_origem_json(json_dict)
                 if processo_origem and hasattr(doc, '_processo_origem_extraido'):
                     doc._processo_origem_extraido = processo_origem
+
+            return True  # JSON parseado com sucesso
         else:
             # Processa resposta MD (comportamento original)
             is_irrelevante, conteudo = _verificar_irrelevante(resposta)
@@ -1685,6 +1723,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
             else:
                 doc.resumo = resposta
                 doc.descricao_ia = _extrair_tipo_documento_ia(resposta)
+            return True  # MD sempre "sucede"
 
     def _deve_enviar_texto_integral(self, doc: DocumentoTJMS) -> bool:
         """
@@ -1764,14 +1803,29 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         prompt = prompt_json.format(texto_documento=texto)
                     else:
                         prompt = self.prompt_resumo.format(texto_documento=texto)
-                    
+
                     resposta = await chamar_llm_async(
                         session,
                         prompt=prompt,
                         modelo=self.modelo
                     )
 
-                    self._processar_resposta_resumo(doc, resposta)
+                    sucesso = self._processar_resposta_resumo(doc, resposta)
+
+                    # RETRY: Se JSON falhou, tenta novamente com prompt de correção
+                    if not sucesso and prompt_json:
+                        print(f"[JSON_RETRY] 🔄 Tentando novamente para doc '{doc.descricao or doc.id}'...")
+                        prompt_retry = self._gerar_prompt_correcao_json(resposta, prompt_json.format(texto_documento=texto))
+                        resposta_retry = await chamar_llm_async(
+                            session,
+                            prompt=prompt_retry,
+                            modelo=self.modelo
+                        )
+                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry)
+                        if sucesso_retry:
+                            print(f"[JSON_RETRY] ✅ Retry bem-sucedido para doc '{doc.descricao or doc.id}'")
+                        else:
+                            print(f"[JSON_RETRY] ❌ Retry falhou para doc '{doc.descricao or doc.id}' - usando fallback texto")
 
                 elif todas_imagens:
                     # PDFs digitalizados - enviar imagens
@@ -1783,7 +1837,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     # Usa prompt JSON ou MD conforme configurado
                     prompt_json = self._obter_prompt_json_imagem(doc)
                     prompt_imagem = prompt_json if prompt_json else self._get_prompt_imagem()
-                    
+
                     resposta = await chamar_llm_com_imagens_async(
                         session,
                         prompt=prompt_imagem,
@@ -1791,7 +1845,23 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         modelo=self.modelo
                     )
 
-                    self._processar_resposta_resumo(doc, resposta)
+                    sucesso = self._processar_resposta_resumo(doc, resposta)
+
+                    # RETRY: Se JSON falhou em imagem, tenta novamente
+                    if not sucesso and prompt_json:
+                        print(f"[JSON_RETRY] 🔄 Tentando novamente (imagem) para doc '{doc.descricao or doc.id}'...")
+                        prompt_retry = self._gerar_prompt_correcao_json(resposta, prompt_imagem)
+                        resposta_retry = await chamar_llm_com_imagens_async(
+                            session,
+                            prompt=prompt_retry,
+                            imagens_base64=imagens,
+                            modelo=self.modelo
+                        )
+                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry)
+                        if sucesso_retry:
+                            print(f"[JSON_RETRY] ✅ Retry bem-sucedido (imagem) para doc '{doc.descricao or doc.id}'")
+                        else:
+                            print(f"[JSON_RETRY] ❌ Retry falhou (imagem) para doc '{doc.descricao or doc.id}'")
                 else:
                     doc.erro = "Nenhum conteúdo extraível"
 
@@ -1824,14 +1894,29 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         prompt = prompt_json.format(texto_documento=texto)
                     else:
                         prompt = self.prompt_resumo.format(texto_documento=texto)
-                    
+
                     resposta = await chamar_llm_async(
                         session,
                         prompt=prompt,
                         modelo=self.modelo
                     )
 
-                    self._processar_resposta_resumo(doc, resposta)
+                    sucesso = self._processar_resposta_resumo(doc, resposta)
+
+                    # RETRY: Se JSON falhou, tenta novamente
+                    if not sucesso and prompt_json:
+                        print(f"[JSON_RETRY] 🔄 Tentando novamente para doc único '{doc.descricao or doc.id}'...")
+                        prompt_retry = self._gerar_prompt_correcao_json(resposta, prompt_json.format(texto_documento=texto))
+                        resposta_retry = await chamar_llm_async(
+                            session,
+                            prompt=prompt_retry,
+                            modelo=self.modelo
+                        )
+                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry)
+                        if sucesso_retry:
+                            print(f"[JSON_RETRY] ✅ Retry bem-sucedido para doc único '{doc.descricao or doc.id}'")
+                        else:
+                            print(f"[JSON_RETRY] ❌ Retry falhou para doc único '{doc.descricao or doc.id}'")
                 else:
                     # PDF digitalizado - enviar imagens para IA
                     imagens = conteudo_pdf.conteudo
@@ -1845,7 +1930,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                     # Usa prompt JSON ou MD conforme configurado
                     prompt_json = self._obter_prompt_json_imagem(doc)
                     prompt_imagem = prompt_json if prompt_json else self._get_prompt_imagem()
-                    
+
                     resposta = await chamar_llm_com_imagens_async(
                         session,
                         prompt=prompt_imagem,
@@ -1853,7 +1938,23 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                         modelo=self.modelo
                     )
 
-                    self._processar_resposta_resumo(doc, resposta)
+                    sucesso = self._processar_resposta_resumo(doc, resposta)
+
+                    # RETRY: Se JSON falhou em imagem, tenta novamente
+                    if not sucesso and prompt_json:
+                        print(f"[JSON_RETRY] 🔄 Tentando novamente (imagem única) para doc '{doc.descricao or doc.id}'...")
+                        prompt_retry = self._gerar_prompt_correcao_json(resposta, prompt_imagem)
+                        resposta_retry = await chamar_llm_com_imagens_async(
+                            session,
+                            prompt=prompt_retry,
+                            imagens_base64=imagens,
+                            modelo=self.modelo
+                        )
+                        sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry)
+                        if sucesso_retry:
+                            print(f"[JSON_RETRY] ✅ Retry bem-sucedido (imagem única) para doc '{doc.descricao or doc.id}'")
+                        else:
+                            print(f"[JSON_RETRY] ❌ Retry falhou (imagem única) para doc '{doc.descricao or doc.id}'")
 
         except Exception as e:
             import traceback
