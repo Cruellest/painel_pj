@@ -1213,6 +1213,163 @@ async def gerar_relatorio(
         return RelatorioResponse(success=False, error=str(e))
 
 
+@router.get("/relatorio/download")
+async def download_relatorio_docx(
+    analise_id: Optional[int] = None,
+    file_id: Optional[str] = None,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Baixa o relatório em formato DOCX com formatação institucional.
+
+    Usa o mesmo template do gerador de peças (cabeçalho, rodapé, formatação)
+    para manter consistência visual nos documentos do portal.
+
+    Args:
+        analise_id: ID da análise específica (opcional)
+        file_id: ID do arquivo para buscar análise (opcional)
+        Se nenhum for informado, usa a última análise disponível.
+    """
+    import tempfile
+    from sistemas.matriculas_confrontantes.docx_converter import gerar_relatorio_docx
+
+    # Busca análise específica ou última disponível
+    if analise_id:
+        analise = db.query(Analise).filter(Analise.id == analise_id).first()
+    elif file_id:
+        analise = db.query(Analise).filter(Analise.file_id == file_id).order_by(Analise.id.desc()).first()
+    else:
+        analise = db.query(Analise).filter(
+            Analise.relatorio_texto.isnot(None)
+        ).order_by(Analise.id.desc()).first()
+
+    if not analise:
+        raise HTTPException(
+            status_code=404,
+            detail="Análise não encontrada."
+        )
+
+    # Se a análise não tem relatório texto, gera automaticamente
+    if not analise.relatorio_texto:
+        if not analise.resultado_json:
+            raise HTTPException(
+                status_code=400,
+                detail="Análise sem resultado. Execute a análise primeiro."
+            )
+
+        # Gera relatório usando IA
+        try:
+            from sistemas.matriculas_confrontantes.services_ia import (
+                call_openrouter_text, build_full_report_prompt, get_system_prompt, get_config_from_db
+            )
+
+            # Verifica API key
+            api_key = state.api_key
+            if not api_key:
+                import os
+                from admin.models import ConfiguracaoIA
+                api_key = os.getenv("OPENROUTER_API_KEY", "")
+                if not api_key:
+                    config = db.query(ConfiguracaoIA).filter(
+                        ConfiguracaoIA.sistema == "global",
+                        ConfiguracaoIA.chave == "openrouter_api_key"
+                    ).first()
+                    api_key = config.valor if config else None
+
+            if not api_key:
+                raise HTTPException(
+                    status_code=500,
+                    detail="API Key não configurada. Configure no painel admin."
+                )
+
+            # Configurações
+            modelo_relatorio = get_config_from_db("matriculas", "modelo_relatorio") or FULL_REPORT_MODEL
+            temperatura = float(get_config_from_db("matriculas", "temperatura_relatorio") or "0.2")
+            max_tokens = int(get_config_from_db("matriculas", "max_tokens_relatorio") or "3200")
+
+            # Monta payload e gera relatório
+            payload = analise.resultado_json.copy()
+            payload["gerado_em"] = to_iso_utc(now_utc())
+            payload["modelo_utilizado"] = modelo_relatorio
+            payload_json = json.dumps(payload, ensure_ascii=False, indent=2)
+
+            prompt = build_full_report_prompt(payload_json)
+            system_prompt = get_system_prompt()
+
+            report_text = call_openrouter_text(
+                model=modelo_relatorio,
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                temperature=temperatura,
+                max_tokens=max_tokens,
+                api_key=api_key
+            ).strip()
+
+            # Salva no banco
+            analise.relatorio_texto = report_text
+            analise.modelo_usado = modelo_relatorio
+            db.commit()
+            logger.info(f"Relatório gerado automaticamente para análise {analise.id}")
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Erro ao gerar relatório: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro ao gerar relatório: {str(e)}"
+            )
+
+    try:
+        # Cria arquivo temporário
+        with tempfile.NamedTemporaryFile(
+            suffix=".docx",
+            delete=False,
+            prefix="relatorio_matriculas_"
+        ) as tmp_file:
+            output_path = tmp_file.name
+
+        # Extrai metadados da análise
+        resultado = analise.resultado_json or {}
+
+        # Gera o DOCX
+        success = gerar_relatorio_docx(
+            relatorio_texto=analise.relatorio_texto,
+            output_path=output_path,
+            matricula_principal=analise.matricula_principal or resultado.get("matricula_principal"),
+            arquivo=analise.file_name,
+            modelo=analise.modelo_usado
+        )
+
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail="Erro ao gerar arquivo DOCX"
+            )
+
+        # Nome do arquivo para download
+        matricula = analise.matricula_principal or "analise"
+        matricula_clean = "".join(c for c in matricula if c.isalnum() or c in "-_.")
+        filename = f"relatorio_matricula_{matricula_clean}.docx"
+
+        add_log(db, f"Relatório DOCX baixado: {filename}", "success")
+
+        return FileResponse(
+            path=output_path,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            background=BackgroundTasks()  # Arquivo será removido após envio
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao gerar DOCX: {e}")
+        add_log(db, f"Erro ao gerar DOCX: {str(e)[:100]}", "error")
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar DOCX: {str(e)}")
+
+
 # ============================================
 # API - Feedback
 # ============================================

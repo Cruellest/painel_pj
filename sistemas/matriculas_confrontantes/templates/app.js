@@ -160,7 +160,7 @@ async function loadDocumentDetails(fileId) {
     }
 }
 
-function loadPdfViewer(fileId, fileType) {
+async function loadPdfViewer(fileId, fileType) {
     const viewer = document.getElementById('pdf-viewer');
     if (!viewer) return;
 
@@ -182,27 +182,118 @@ function loadPdfViewer(fileId, fileType) {
         return;
     }
 
-    if (fileType === 'pdf') {
-        // Usa iframe para PDFs - ocupa todo o espaço disponível
+    // Mostra loading enquanto carrega
+    viewer.innerHTML = `
+        <div class="text-center text-gray-400 py-20">
+            <i class="fas fa-spinner fa-spin text-4xl mb-4"></i>
+            <p class="text-lg">Carregando documento...</p>
+        </div>
+    `;
+
+    try {
+        // Busca o arquivo via fetch com Authorization header (mais seguro que token na URL)
+        const response = await fetch(`${API_BASE}/files/${fileId}/view`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        // Cria blob URL a partir da resposta
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        // Guarda referência para limpar depois
+        if (viewer._currentBlobUrl) {
+            URL.revokeObjectURL(viewer._currentBlobUrl);
+        }
+        viewer._currentBlobUrl = blobUrl;
+
+        if (fileType === 'pdf') {
+            // Usa object tag para PDFs com blob URL (evita problemas de CSP com iframe)
+            viewer.innerHTML = `
+                <div class="w-full h-full flex flex-col">
+                    <object
+                        data="${blobUrl}#view=FitH"
+                        type="application/pdf"
+                        class="w-full flex-1 border-0"
+                        style="min-height: 600px;"
+                    >
+                        <div class="text-center text-gray-400 py-20">
+                            <i class="fas fa-file-pdf text-6xl mb-4 text-red-400"></i>
+                            <p class="text-lg mb-4">Não foi possível exibir o PDF no navegador</p>
+                            <button onclick="openPdfInNewTab('${fileId}')"
+                                class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                                <i class="fas fa-external-link-alt mr-2"></i>Abrir PDF em nova aba
+                            </button>
+                        </div>
+                    </object>
+                    <div class="bg-gray-100 px-4 py-2 border-t flex justify-end">
+                        <button onclick="openPdfInNewTab('${fileId}')"
+                            class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                            <i class="fas fa-external-link-alt"></i>Abrir em nova aba
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Usa img para imagens com blob URL
+            viewer.innerHTML = `
+                <div class="flex items-center justify-center h-full w-full p-4">
+                    <img
+                        src="${blobUrl}"
+                        class="w-full h-auto object-contain rounded-lg shadow-lg"
+                        alt="Documento"
+                        style="max-height: 100%;"
+                    />
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Erro ao carregar documento:', error);
+        // Fallback: mostra botão para abrir em nova aba
         viewer.innerHTML = `
-            <iframe
-                src="/matriculas/api/files/${fileId}/view?token=${token}#view=FitH"
-                class="w-full h-full border-0"
-                style="width: 100%; height: 100%; min-height: 600px;"
-            ></iframe>
-        `;
-    } else {
-        // Usa img para imagens - ajustada à largura
-        viewer.innerHTML = `
-            <div class="flex items-center justify-center h-full w-full p-4">
-                <img
-                    src="/matriculas/api/files/${fileId}/view?token=${token}"
-                    class="w-full h-auto object-contain rounded-lg shadow-lg"
-                    alt="Documento"
-                    style="max-height: 100%;"
-                />
+            <div class="text-center text-gray-400 py-20">
+                <i class="fas fa-exclamation-triangle text-6xl mb-4 text-yellow-500"></i>
+                <p class="text-lg mb-2">Erro ao carregar documento</p>
+                <p class="text-sm text-gray-500 mb-4">${error.message || 'Tente novamente'}</p>
+                <button onclick="openPdfInNewTab('${fileId}')"
+                    class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                    <i class="fas fa-external-link-alt mr-2"></i>Abrir em nova aba
+                </button>
             </div>
         `;
+    }
+}
+
+// Função para abrir PDF em nova aba (fallback seguro)
+async function openPdfInNewTab(fileId) {
+    const token = getAuthToken();
+    try {
+        // Busca o arquivo via fetch com Authorization header
+        const response = await fetch(`${API_BASE}/files/${fileId}/view`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        // Cria blob URL e abre em nova aba
+        const blob = await response.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        window.open(blobUrl, '_blank');
+
+        // Limpa blob URL após alguns segundos (tempo suficiente para abrir)
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (error) {
+        console.error('Erro ao abrir PDF:', error);
+        showToast('Erro ao abrir documento: ' + (error.message || 'Tente novamente'), 'error');
     }
 }
 
@@ -846,47 +937,59 @@ function copyReport() {
     }
 }
 
-function downloadReportDocx() {
-    if (!window.currentReportText) {
-        showToast('Nenhum relatório para baixar', 'warning');
-        return;
+async function downloadReportDocx(analiseId = null) {
+    // Usa o ID passado, ou o ID da análise atual, ou nenhum (pega a última)
+    const idToUse = analiseId || appState.currentAnaliseId;
+
+    try {
+        showToast('Gerando documento DOCX...', 'info');
+
+        // Monta URL com parâmetro de análise se disponível
+        let url = `${API_BASE}/relatorio/download`;
+        if (idToUse) {
+            url += `?analise_id=${idToUse}`;
+        }
+
+        // Chama o endpoint do backend que gera DOCX com template institucional
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${window.authToken}`
+            }
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ detail: 'Erro desconhecido' }));
+            throw new Error(error.detail || 'Erro ao gerar DOCX');
+        }
+
+        // Obtém o blob do arquivo
+        const blob = await response.blob();
+
+        // Extrai nome do arquivo do header Content-Disposition, se disponível
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'relatorio_matriculas_confrontantes.docx';
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            if (match && match[1]) {
+                filename = match[1].replace(/['"]/g, '');
+            }
+        }
+
+        // Cria link e dispara download
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+
+        showToast('Download concluído!', 'success');
+    } catch (error) {
+        console.error('Erro ao baixar DOCX:', error);
+        showToast(`Erro ao gerar DOCX: ${error.message}`, 'error');
     }
-
-    // Cria conteúdo HTML formatado
-    const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>Relatório de Análise - Matrículas Confrontantes</title>
-            <style>
-                body { font-family: 'Calibri', sans-serif; font-size: 12pt; line-height: 1.5; margin: 2cm; }
-                h1 { font-size: 18pt; color: #1e3a5f; border-bottom: 2px solid #1e3a5f; padding-bottom: 10px; }
-                h2 { font-size: 14pt; color: #2563eb; margin-top: 20px; }
-                h3 { font-size: 12pt; color: #374151; }
-                p { margin: 10px 0; }
-                ul, ol { margin: 10px 0; padding-left: 30px; }
-                li { margin: 5px 0; }
-                strong { color: #1f2937; }
-            </style>
-        </head>
-        <body>
-            ${renderMarkdown(window.currentReportText)}
-        </body>
-        </html>
-    `;
-
-    // Cria blob e download
-    const blob = new Blob([htmlContent], { type: 'application/vnd.ms-word;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'relatorio_matriculas_confrontantes.doc';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
-
-    showToast('Download iniciado!', 'success');
 }
 
 function printReportPdf() {
@@ -1619,6 +1722,7 @@ async function viewAnalysis(id) {
     try {
         const result = await api(`/resultado/${id}`);
         appState.documentDetails = result;
+        appState.currentAnaliseId = result.analise_id || null;
 
         // Gera relatório automaticamente para esta análise
         await generateAndShowReport();
