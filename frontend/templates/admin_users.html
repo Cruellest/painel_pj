@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gerenciar Usuários - Portal PGE-MS</title>
+    <title>Gerenciar Usuarios - Portal PGE-MS</title>
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
@@ -26,9 +26,15 @@
             }
         }
     </script>
+    <style>
+        .group-header {
+            background: linear-gradient(to right, #f8fafc, #f1f5f9);
+            border-left: 4px solid #0ea5e9;
+        }
+    </style>
 </head>
 <body class="min-h-screen bg-gray-50">
-    
+
     <!-- Header -->
     <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -41,8 +47,8 @@
                         <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
                     </a>
                     <div class="border-l border-gray-300 pl-4">
-                        <h1 class="font-semibold text-gray-800">Gerenciamento de Usuários</h1>
-                        <p class="text-xs text-gray-500">Administração de acessos</p>
+                        <h1 class="font-semibold text-gray-800">Gerenciamento de Usuarios</h1>
+                        <p class="text-xs text-gray-500">Administracao de acessos</p>
                     </div>
                 </div>
 
@@ -57,40 +63,52 @@
 
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        <!-- Título e Botão Novo -->
-        <div class="mb-6 flex items-center justify-between">
+
+        <!-- Titulo e Controles -->
+        <div class="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-                <h2 class="text-2xl font-bold text-gray-800">Gerenciamento de Usuários</h2>
+                <h2 class="text-2xl font-bold text-gray-800">Gerenciamento de Usuarios</h2>
                 <p class="text-gray-500 mt-1">Controle de acessos ao Portal PGE-MS</p>
             </div>
-            <button 
-                onclick="openCreateModal()"
-                class="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
-            >
-                <i class="fas fa-user-plus"></i>
-                Novo Usuário
-            </button>
+            <div class="flex items-center gap-3">
+                <!-- Controle de Agrupamento -->
+                <div class="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200">
+                    <label class="text-sm text-gray-600">Agrupar por:</label>
+                    <select id="group-by" onchange="renderUsers(currentUsers)" class="text-sm border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500">
+                        <option value="none">Nenhum</option>
+                        <option value="sistema">Sistema</option>
+                        <option value="setor">Setor</option>
+                    </select>
+                </div>
+                <button
+                    onclick="openCreateModal()"
+                    class="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
+                >
+                    <i class="fas fa-user-plus"></i>
+                    Novo Usuario
+                </button>
+            </div>
         </div>
 
-        <!-- Tabela de Usuários -->
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <table class="w-full">
+        <!-- Tabela de Usuarios -->
+        <div id="users-container" class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <table class="w-full" id="users-table-wrapper">
                 <thead class="bg-gray-50 border-b border-gray-200">
                     <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuário</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome Completo</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Setor</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Perfil</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Criado em</th>
-                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                        <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acoes</th>
                     </tr>
                 </thead>
                 <tbody id="users-table" class="divide-y divide-gray-200">
                     <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-gray-400">
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-400">
                             <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
-                            <p>Carregando usuários...</p>
+                            <p>Carregando usuarios...</p>
                         </td>
                     </tr>
                 </tbody>
@@ -99,60 +117,103 @@
 
     </main>
 
-    <!-- Modal de Criar/Editar Usuário -->
+    <!-- Modal de Criar/Editar Usuario -->
     <div id="user-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
         <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden m-4 max-h-[90vh] flex flex-col">
             <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-primary-50 to-blue-50">
-                <h2 id="modal-title" class="text-lg font-semibold text-gray-800">Novo Usuário</h2>
+                <h2 id="modal-title" class="text-lg font-semibold text-gray-800">Novo Usuario</h2>
                 <button onclick="closeModal()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            
+
             <form id="user-form" class="p-6 space-y-4 overflow-y-auto flex-1">
                 <input type="hidden" id="user-id">
-                
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Username *</label>
-                    <input 
-                        type="text" 
-                        id="user-username" 
+                    <input
+                        type="text"
+                        id="user-username"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                         required
                     >
                 </div>
-                
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Nome Completo *</label>
-                    <input 
-                        type="text" 
-                        id="user-fullname" 
+                    <input
+                        type="text"
+                        id="user-fullname"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                         required
                     >
                 </div>
-                
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input 
-                        type="email" 
-                        id="user-email" 
+                    <input
+                        type="email"
+                        id="user-email"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
                 </div>
-                
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Setor</label>
+                    <input
+                        type="text"
+                        id="user-setor"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        placeholder="Ex: Procuradoria Fiscal, Assessoria Juridica..."
+                        maxlength="120"
+                    >
+                </div>
+
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">Perfil *</label>
-                    <select 
-                        id="user-role" 
+                    <select
+                        id="user-role"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                     >
-                        <option value="user">Usuário</option>
+                        <option value="user">Usuario</option>
                         <option value="admin">Administrador</option>
                     </select>
                 </div>
 
+                <!-- Sistemas Permitidos -->
                 <div class="border-t border-gray-200 pt-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-cubes text-primary-500 mr-1"></i>
+                        Sistemas Permitidos
+                    </label>
+                    <p class="text-xs text-gray-400 mb-2">Se nenhum for selecionado, o usuario tera acesso a todos</p>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-matriculas" value="matriculas" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Matriculas Confrontantes</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-assistencia" value="assistencia_judiciaria" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Assistencia Judiciaria</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-gerador" value="gerador_pecas" class="rounded border-gray-300 text-primary-600" onchange="toggleGruposSection()">
+                            <span class="text-sm text-gray-700">Gerador de Pecas</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-pedido-calculo" value="pedido_calculo" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Pedido de Calculo</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-prestacao-contas" value="prestacao_contas" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Prestacao de Contas</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Grupos de Conteudo (Gerador de Pecas) - Condicional -->
+                <div id="grupos-section" class="border-t border-gray-200 pt-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         <i class="fas fa-layer-group text-indigo-500 mr-1"></i>
                         Grupos de Conteudo (Gerador de Pecas)
@@ -160,7 +221,7 @@
                     <p class="text-xs text-gray-400 mb-2">Defina o grupo padrao e os grupos permitidos para prompts modulares.</p>
                     <div class="space-y-3">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Grupo padrao *</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Grupo padrao <span id="grupo-required-indicator" class="text-red-500">*</span></label>
                             <select id="user-default-group" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500">
                                 <option value="">Selecione o grupo</option>
                             </select>
@@ -175,51 +236,20 @@
 
                 <div id="password-section">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Senha</label>
-                    <input 
-                        type="password" 
-                        id="user-password" 
+                    <input
+                        type="password"
+                        id="user-password"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        placeholder="Deixe em branco para usar senha padrão"
+                        placeholder="Deixe em branco para usar senha padrao"
                     >
-                    <p class="text-xs text-gray-400 mt-1">Senha padrão: <code>senha</code></p>
-                </div>
-                
-                <!-- Sistemas Permitidos -->
-                <div class="border-t border-gray-200 pt-4">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        <i class="fas fa-cubes text-primary-500 mr-1"></i>
-                        Sistemas Permitidos
-                    </label>
-                    <p class="text-xs text-gray-400 mb-2">Se nenhum for selecionado, o usuário terá acesso a todos</p>
-                    <div class="space-y-2">
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="sistema-matriculas" value="matriculas" class="rounded border-gray-300 text-primary-600">
-                            <span class="text-sm text-gray-700">Matrículas Confrontantes</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="sistema-assistencia" value="assistencia_judiciaria" class="rounded border-gray-300 text-primary-600">
-                            <span class="text-sm text-gray-700">Assistência Judiciária</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="sistema-gerador" value="gerador_pecas" class="rounded border-gray-300 text-primary-600">
-                            <span class="text-sm text-gray-700">Gerador de Peças</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="sistema-pedido-calculo" value="pedido_calculo" class="rounded border-gray-300 text-primary-600">
-                            <span class="text-sm text-gray-700">Pedido de Cálculo</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" id="sistema-prestacao-contas" value="prestacao_contas" class="rounded border-gray-300 text-primary-600">
-                            <span class="text-sm text-gray-700">Prestação de Contas</span>
-                        </label>
-                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Senha padrao: <code>senha</code></p>
                 </div>
 
-                <!-- Permissões Especiais -->
+                <!-- Permissoes Especiais -->
                 <div class="border-t border-gray-200 pt-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
                         <i class="fas fa-key text-orange-500 mr-1"></i>
-                        Permissões Especiais
+                        Permissoes Especiais
                     </label>
                     <div class="space-y-2">
                         <label class="flex items-center gap-2">
@@ -236,25 +266,25 @@
                         </label>
                         <label class="flex items-center gap-2">
                             <input type="checkbox" id="perm-ver-historico" value="ver_historico_prompts" class="rounded border-gray-300 text-orange-600">
-                            <span class="text-sm text-gray-700">Ver Histórico de Prompts</span>
+                            <span class="text-sm text-gray-700">Ver Historico de Prompts</span>
                         </label>
                     </div>
                 </div>
-                
+
                 <div class="flex items-center gap-2 pt-2">
                     <input type="checkbox" id="user-active" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" checked>
-                    <label for="user-active" class="text-sm text-gray-700">Usuário ativo</label>
+                    <label for="user-active" class="text-sm text-gray-700">Usuario ativo</label>
                 </div>
             </form>
-            
+
             <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-between">
-                <button 
+                <button
                     onclick="closeModal()"
                     class="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                     Cancelar
                 </button>
-                <button 
+                <button
                     onclick="saveUser()"
                     class="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors flex items-center gap-2"
                 >
@@ -280,10 +310,19 @@
         let gruposConteudo = [];
         let gruposConteudoCarregados = false;
 
-        // Verifica autenticação e role admin
+        // Mapa de sistemas para exibicao
+        const SISTEMAS_MAP = {
+            'matriculas': 'Matriculas Confrontantes',
+            'assistencia_judiciaria': 'Assistencia Judiciaria',
+            'gerador_pecas': 'Gerador de Pecas',
+            'pedido_calculo': 'Pedido de Calculo',
+            'prestacao_contas': 'Prestacao de Contas'
+        };
+
+        // Verifica autenticacao e role admin
         async function checkAdminAuth() {
             const token = localStorage.getItem('access_token');
-            
+
             if (!token) {
                 window.location.href = '/login';
                 return null;
@@ -294,10 +333,10 @@
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
-                if (!response.ok) throw new Error('Token inválido');
+                if (!response.ok) throw new Error('Token invalido');
 
                 const user = await response.json();
-                
+
                 if (user.role !== 'admin') {
                     alert('Acesso restrito a administradores');
                     window.location.href = '/dashboard';
@@ -312,7 +351,7 @@
             }
         }
 
-        // Carrega usuários
+        // Carrega usuarios
         async function loadUsers() {
             const token = localStorage.getItem('access_token');
 
@@ -321,87 +360,193 @@
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
-                if (!response.ok) throw new Error('Erro ao carregar usuários');
+                if (!response.ok) throw new Error('Erro ao carregar usuarios');
 
                 currentUsers = await response.json();
                 renderUsers(currentUsers);
             } catch (error) {
                 console.error('Erro:', error);
-                showToast('Erro ao carregar usuários', 'error');
+                showToast('Erro ao carregar usuarios', 'error');
             }
         }
 
-        // Renderiza tabela de usuários
+        // Agrupa usuarios por sistema
+        function groupUsersBySystem(users) {
+            const groups = {};
+            const allSystems = ['Acesso a todos os sistemas'];
+
+            // Inicializa grupos para cada sistema
+            Object.values(SISTEMAS_MAP).forEach(name => {
+                groups[name] = [];
+            });
+            groups['Acesso a todos os sistemas'] = [];
+
+            users.forEach(user => {
+                const sistemas = user.sistemas_permitidos;
+
+                if (!sistemas || sistemas.length === 0) {
+                    // Usuario sem restricao = acesso a todos
+                    groups['Acesso a todos os sistemas'].push(user);
+                } else {
+                    // Usuario aparece em cada sistema que tem acesso
+                    sistemas.forEach(sistema => {
+                        const nome = SISTEMAS_MAP[sistema];
+                        if (nome && groups[nome]) {
+                            groups[nome].push(user);
+                        }
+                    });
+                }
+            });
+
+            return groups;
+        }
+
+        // Agrupa usuarios por setor
+        function groupUsersBySetor(users) {
+            const groups = {};
+
+            users.forEach(user => {
+                const setor = user.setor || 'Sem setor definido';
+                if (!groups[setor]) {
+                    groups[setor] = [];
+                }
+                groups[setor].push(user);
+            });
+
+            // Ordena grupos por nome
+            return Object.fromEntries(
+                Object.entries(groups).sort(([a], [b]) => {
+                    if (a === 'Sem setor definido') return 1;
+                    if (b === 'Sem setor definido') return -1;
+                    return a.localeCompare(b);
+                })
+            );
+        }
+
+        // Renderiza tabela de usuarios
         function renderUsers(users) {
+            const groupBy = document.getElementById('group-by').value;
             const tbody = document.getElementById('users-table');
-            
+
             if (!users || users.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="6" class="px-6 py-12 text-center text-gray-400">
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-400">
                             <i class="fas fa-users text-4xl mb-2"></i>
-                            <p>Nenhum usuário encontrado</p>
+                            <p>Nenhum usuario encontrado</p>
                         </td>
                     </tr>
                 `;
                 return;
             }
 
-            tbody.innerHTML = users.map(user => {
-                const roleBadge = user.role === 'admin' 
-                    ? '<span class="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">Admin</span>'
-                    : '<span class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">Usuário</span>';
-                
-                const statusBadge = user.is_active
-                    ? '<span class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">Ativo</span>'
-                    : '<span class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-full">Inativo</span>';
-                
-                const createdAt = formatDate(user.created_at);
+            if (groupBy === 'none') {
+                // Renderiza lista simples
+                tbody.innerHTML = users.map(user => renderUserRow(user)).join('');
+            } else if (groupBy === 'sistema') {
+                // Agrupa por sistema
+                const groups = groupUsersBySystem(users);
+                let html = '';
 
-                return `
-                    <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-6 py-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
-                                    <i class="fas fa-user text-primary-600 text-sm"></i>
+                Object.entries(groups).forEach(([groupName, groupUsers]) => {
+                    if (groupUsers.length === 0) return;
+
+                    html += `
+                        <tr class="group-header">
+                            <td colspan="7" class="px-6 py-3">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-cube text-primary-500"></i>
+                                    <span class="font-semibold text-gray-700">${groupName}</span>
+                                    <span class="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">${groupUsers.length}</span>
                                 </div>
-                                <span class="font-medium text-gray-800">${user.username}</span>
+                            </td>
+                        </tr>
+                    `;
+                    html += groupUsers.map(user => renderUserRow(user)).join('');
+                });
+
+                tbody.innerHTML = html;
+            } else if (groupBy === 'setor') {
+                // Agrupa por setor
+                const groups = groupUsersBySetor(users);
+                let html = '';
+
+                Object.entries(groups).forEach(([groupName, groupUsers]) => {
+                    html += `
+                        <tr class="group-header">
+                            <td colspan="7" class="px-6 py-3">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-building text-indigo-500"></i>
+                                    <span class="font-semibold text-gray-700">${groupName}</span>
+                                    <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">${groupUsers.length}</span>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                    html += groupUsers.map(user => renderUserRow(user)).join('');
+                });
+
+                tbody.innerHTML = html;
+            }
+        }
+
+        // Renderiza uma linha de usuario
+        function renderUserRow(user) {
+            const roleBadge = user.role === 'admin'
+                ? '<span class="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">Admin</span>'
+                : '<span class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded-full">Usuario</span>';
+
+            const statusBadge = user.is_active
+                ? '<span class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">Ativo</span>'
+                : '<span class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-full">Inativo</span>';
+
+            const createdAt = formatDate(user.created_at);
+            const setor = user.setor || '-';
+
+            return `
+                <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
+                                <i class="fas fa-user text-primary-600 text-sm"></i>
                             </div>
-                        </td>
-                        <td class="px-6 py-4 text-gray-600">${user.full_name}</td>
-                        <td class="px-6 py-4">${roleBadge}</td>
-                        <td class="px-6 py-4">${statusBadge}</td>
-                        <td class="px-6 py-4 text-gray-500 text-sm">${createdAt}</td>
-                        <td class="px-6 py-4 text-right">
-                            <div class="flex items-center justify-end gap-2">
-                                <button 
-                                    onclick="editUser(${user.id})"
-                                    class="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                                    title="Editar"
+                            <span class="font-medium text-gray-800">${user.username}</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-gray-600">${user.full_name}</td>
+                    <td class="px-6 py-4 text-gray-500 text-sm">${setor}</td>
+                    <td class="px-6 py-4">${roleBadge}</td>
+                    <td class="px-6 py-4">${statusBadge}</td>
+                    <td class="px-6 py-4 text-gray-500 text-sm">${createdAt}</td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex items-center justify-end gap-2">
+                            <button
+                                onclick="editUser(${user.id})"
+                                class="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                                title="Editar"
+                            >
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button
+                                onclick="resetPassword(${user.id}, '${user.username}')"
+                                class="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
+                                title="Resetar Senha"
+                            >
+                                <i class="fas fa-key"></i>
+                            </button>
+                            ${user.username !== 'admin' ? `
+                                <button
+                                    onclick="deleteUser(${user.id}, '${user.username}')"
+                                    class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Excluir"
                                 >
-                                    <i class="fas fa-edit"></i>
+                                    <i class="fas fa-trash"></i>
                                 </button>
-                                <button 
-                                    onclick="resetPassword(${user.id}, '${user.username}')"
-                                    class="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                                    title="Resetar Senha"
-                                >
-                                    <i class="fas fa-key"></i>
-                                </button>
-                                ${user.username !== 'admin' ? `
-                                    <button 
-                                        onclick="deleteUser(${user.id}, '${user.username}')"
-                                        class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                        title="Excluir"
-                                    >
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                ` : ''}
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
         }
 
         async function loadContentGroups() {
@@ -492,15 +637,36 @@
                 .filter(Number.isFinite);
         }
 
-        // Abre modal para criar usuário
+        // Verifica se Gerador de Pecas esta habilitado
+        function isGeradorPecasEnabled() {
+            const geradorCheckbox = document.getElementById('sistema-gerador');
+            const nenhumSistemaSelecionado = !getSistemasPermitidos();
+            return nenhumSistemaSelecionado || (geradorCheckbox && geradorCheckbox.checked);
+        }
+
+        // Mostra/esconde secao de grupos baseado no checkbox do Gerador de Pecas
+        function toggleGruposSection() {
+            const gruposSection = document.getElementById('grupos-section');
+            const geradorEnabled = isGeradorPecasEnabled();
+
+            if (geradorEnabled) {
+                gruposSection.style.display = 'block';
+                gruposSection.style.opacity = '1';
+            } else {
+                gruposSection.style.display = 'none';
+            }
+        }
+
+        // Abre modal para criar usuario
         async function openCreateModal() {
             editingUserId = null;
-            document.getElementById('modal-title').textContent = 'Novo Usuário';
+            document.getElementById('modal-title').textContent = 'Novo Usuario';
             document.getElementById('user-form').reset();
             document.getElementById('user-username').disabled = false;
             document.getElementById('password-section').style.display = 'block';
-            
-            // Limpa checkboxes de sistemas e permissões
+            document.getElementById('user-setor').value = '';
+
+            // Limpa checkboxes de sistemas e permissoes
             document.getElementById('sistema-matriculas').checked = false;
             document.getElementById('sistema-assistencia').checked = false;
             document.getElementById('sistema-gerador').checked = false;
@@ -510,29 +676,34 @@
             document.getElementById('perm-criar-prompts').checked = false;
             document.getElementById('perm-excluir-prompts').checked = false;
             document.getElementById('perm-ver-historico').checked = false;
+
             await ensureContentGroupsLoaded();
             const defaultGroupId = gruposConteudo.length === 1 ? gruposConteudo[0].id : '';
             renderContentGroups(defaultGroupId, defaultGroupId ? [defaultGroupId] : []);
 
+            // Mostra secao de grupos (nenhum sistema selecionado = acesso a todos)
+            toggleGruposSection();
+
             document.getElementById('user-modal').classList.remove('hidden');
         }
 
-        // Abre modal para editar usuário
+        // Abre modal para editar usuario
         async function editUser(id) {
             const user = currentUsers.find(u => u.id === id);
             if (!user) return;
 
             editingUserId = id;
-            document.getElementById('modal-title').textContent = 'Editar Usuário';
+            document.getElementById('modal-title').textContent = 'Editar Usuario';
             document.getElementById('user-id').value = user.id;
             document.getElementById('user-username').value = user.username;
             document.getElementById('user-username').disabled = true;
             document.getElementById('user-fullname').value = user.full_name;
             document.getElementById('user-email').value = user.email || '';
+            document.getElementById('user-setor').value = user.setor || '';
             document.getElementById('user-role').value = user.role;
             document.getElementById('user-active').checked = user.is_active;
             document.getElementById('password-section').style.display = 'none';
-            
+
             // Sistemas permitidos
             const sistemas = user.sistemas_permitidos || [];
             document.getElementById('sistema-matriculas').checked = sistemas.includes('matriculas');
@@ -541,18 +712,22 @@
             document.getElementById('sistema-pedido-calculo').checked = sistemas.includes('pedido_calculo');
             document.getElementById('sistema-prestacao-contas').checked = sistemas.includes('prestacao_contas');
 
-            // Permissões especiais
+            // Permissoes especiais
             const permissoes = user.permissoes_especiais || [];
             document.getElementById('perm-editar-prompts').checked = permissoes.includes('editar_prompts');
             document.getElementById('perm-criar-prompts').checked = permissoes.includes('criar_prompts');
             document.getElementById('perm-excluir-prompts').checked = permissoes.includes('excluir_prompts');
             document.getElementById('perm-ver-historico').checked = permissoes.includes('ver_historico_prompts');
+
             await ensureContentGroupsLoaded();
             const defaultGroupId = user.default_group_id || '';
             const allowedGroupIds = (user.allowed_group_ids && user.allowed_group_ids.length)
                 ? user.allowed_group_ids
                 : (defaultGroupId ? [defaultGroupId] : []);
             renderContentGroups(defaultGroupId, allowedGroupIds);
+
+            // Mostra/esconde secao de grupos
+            toggleGruposSection();
 
             document.getElementById('user-modal').classList.remove('hidden');
         }
@@ -573,7 +748,7 @@
             return sistemas.length > 0 ? sistemas : null;
         }
 
-        // Coleta permissões selecionadas
+        // Coleta permissoes selecionadas
         function getPermissoesEspeciais() {
             const permissoes = [];
             if (document.getElementById('perm-editar-prompts').checked) permissoes.push('editar_prompts');
@@ -583,29 +758,37 @@
             return permissoes.length > 0 ? permissoes : null;
         }
 
-        // Salva usuário
+        // Salva usuario
         async function saveUser() {
             const token = localStorage.getItem('access_token');
-            const defaultGroupId = parseInt(document.getElementById('user-default-group').value, 10);
-            if (!defaultGroupId) {
-                showToast('Selecione o grupo padrao', 'error');
-                return;
-            }
-            let allowedGroupIds = getAllowedGroupIds();
-            if (!allowedGroupIds.includes(defaultGroupId)) {
-                allowedGroupIds.push(defaultGroupId);
+            const geradorEnabled = isGeradorPecasEnabled();
+
+            let defaultGroupId = null;
+            let allowedGroupIds = [];
+
+            if (geradorEnabled) {
+                defaultGroupId = parseInt(document.getElementById('user-default-group').value, 10);
+                if (!defaultGroupId) {
+                    showToast('Selecione o grupo padrao', 'error');
+                    return;
+                }
+                allowedGroupIds = getAllowedGroupIds();
+                if (!allowedGroupIds.includes(defaultGroupId)) {
+                    allowedGroupIds.push(defaultGroupId);
+                }
             }
 
             const data = {
                 username: document.getElementById('user-username').value,
                 full_name: document.getElementById('user-fullname').value,
                 email: document.getElementById('user-email').value || null,
+                setor: document.getElementById('user-setor').value || null,
                 role: document.getElementById('user-role').value,
                 is_active: document.getElementById('user-active').checked,
                 sistemas_permitidos: getSistemasPermitidos(),
                 permissoes_especiais: getPermissoesEspeciais(),
                 default_group_id: defaultGroupId,
-                allowed_group_ids: allowedGroupIds
+                allowed_group_ids: allowedGroupIds.length > 0 ? allowedGroupIds : null
             };
 
             // Se criando, adiciona senha
@@ -643,18 +826,18 @@
                     throw new Error(error.detail || 'Erro ao salvar');
                 }
 
-                showToast(editingUserId ? 'Usuário atualizado!' : 'Usuário criado!', 'success');
+                showToast(editingUserId ? 'Usuario atualizado!' : 'Usuario criado!', 'success');
                 closeModal();
                 loadUsers();
             } catch (error) {
                 console.error('Erro:', error);
-                showToast(error.message || 'Erro ao salvar usuário', 'error');
+                showToast(error.message || 'Erro ao salvar usuario', 'error');
             }
         }
 
         // Resetar senha
         async function resetPassword(id, username) {
-            if (!confirm(`Deseja resetar a senha de "${username}" para a senha padrão?`)) return;
+            if (!confirm(`Deseja resetar a senha de "${username}" para a senha padrao?`)) return;
 
             const token = localStorage.getItem('access_token');
 
@@ -672,9 +855,9 @@
             }
         }
 
-        // Excluir usuário
+        // Excluir usuario
         async function deleteUser(id, username) {
-            if (!confirm(`Deseja realmente excluir o usuário "${username}"?`)) return;
+            if (!confirm(`Deseja realmente excluir o usuario "${username}"?`)) return;
 
             const token = localStorage.getItem('access_token');
 
@@ -686,10 +869,10 @@
 
                 if (!response.ok) throw new Error('Erro ao excluir');
 
-                showToast('Usuário excluído!', 'success');
+                showToast('Usuario excluido!', 'success');
                 loadUsers();
             } catch (error) {
-                showToast('Erro ao excluir usuário', 'error');
+                showToast('Erro ao excluir usuario', 'error');
             }
         }
 
@@ -700,7 +883,7 @@
             const msg = document.getElementById('toast-message');
 
             msg.textContent = message;
-            
+
             if (type === 'success') {
                 icon.className = 'fas fa-check-circle text-green-400';
             } else if (type === 'error') {
@@ -713,7 +896,7 @@
             setTimeout(() => toast.classList.add('hidden'), 3000);
         }
 
-        // Inicialização
+        // Inicializacao
         (async function() {
             const user = await checkAdminAuth();
             if (user) {
