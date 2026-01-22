@@ -249,10 +249,18 @@ class DetectorModulosIA:
                 ids_det.append(modulo.id)
                 print(f"[AGENTE2] [DET] >>> '{modulo.titulo}' ATIVADO (regra: {resultado.get('regra_usada', 'N/A')})")
             elif resultado["ativar"] is None:
-                # Indeterminado -> manda para LLM
-                modulos_para_llm.append(modulo)
+                # CORRIGIDO: Verifica se é modo LLM real ou indeterminado determinístico
+                modo_resultado = resultado.get("modo", "deterministic")
                 detalhes = resultado.get('detalhes', 'variaveis indisponiveis')
-                print(f"[AGENTE2] [DET] ??? '{modulo.titulo}' indeterminado -> LLM ({detalhes})")
+
+                if modo_resultado == "llm":
+                    # Modo LLM real -> manda para LLM
+                    modulos_para_llm.append(modulo)
+                    print(f"[AGENTE2] [DET] ??? '{modulo.titulo}' modo LLM -> enviando para LLM")
+                else:
+                    # Modo determinístico com resultado indeterminado (variáveis faltando)
+                    # NÃO envia para LLM - trata como não ativado
+                    print(f"[AGENTE2] [DET] --- '{modulo.titulo}' INDETERMINADO (vars faltando) - NAO ativado ({detalhes})")
             else:
                 detalhes = resultado.get('detalhes', '')
                 print(f"[AGENTE2] [DET] XXX '{modulo.titulo}' NAO ativado - {detalhes}")
@@ -275,7 +283,8 @@ class DetectorModulosIA:
         if ids_llm:
             self.ultimo_modo_ativacao = "misto" if ids_det else "llm"
         else:
-            self.ultimo_modo_ativacao = "fast_path" if ids_det else "llm"
+            # Sem LLM -> "fast_path" (100% determinístico, mesmo se nenhum ativado)
+            self.ultimo_modo_ativacao = "fast_path"
         self.ultimo_modulos_det = len(ids_det)
         self.ultimo_modulos_llm = len(ids_llm)
         self.ultimo_ids_det = ids_det.copy()
