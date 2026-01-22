@@ -365,6 +365,7 @@ class AgenteAnalise:
 
         self.modelo = modelo or self._params.modelo
         self.temperatura = temperatura if temperatura is not None else self._params.temperatura
+        self.thinking_level = self._params.thinking_level  # Expõe thinking_level para uso nas chamadas
         self.system_prompt = _buscar_prompt_admin(db, "system_prompt_analise") or SYSTEM_PROMPT
         self.prompt_analise = _buscar_prompt_admin(db, "prompt_analise") or PROMPT_ANALISE
 
@@ -470,6 +471,7 @@ class AgenteAnalise:
                         temperature=self.temperatura,
                         system_prompt=self.system_prompt,
                         search_threshold=0.2,  # Limiar baixo = mais buscas
+                        thinking_level=self.thinking_level,
                         context=log_context,
                     )
                 else:
@@ -479,6 +481,7 @@ class AgenteAnalise:
                         model=self.modelo,
                         temperature=self.temperatura,
                         system_prompt=self.system_prompt,
+                        thinking_level=self.thinking_level,
                         context=log_context,
                     )
             else:
@@ -490,6 +493,7 @@ class AgenteAnalise:
                         model=self.modelo,
                         temperature=self.temperatura,
                         search_threshold=0.2,
+                        thinking_level=self.thinking_level,
                         context=log_context,
                     )
                 else:
@@ -498,6 +502,7 @@ class AgenteAnalise:
                         system_prompt=self.system_prompt,
                         model=self.modelo,
                         temperature=self.temperatura,
+                        thinking_level=self.thinking_level,
                         context=log_context,
                     )
 

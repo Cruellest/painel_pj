@@ -440,7 +440,7 @@ class GeminiService:
                 metrics.response_tokens = cached.tokens_used
                 metrics.log()
                 # Log assíncrono para BD (mesmo para cache)
-                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
                 return GeminiResponse(
                     success=True,
                     content=cached.content,
@@ -508,7 +508,7 @@ class GeminiService:
                     metrics.error = "Resposta vazia do Gemini (sem conteúdo gerado)"
                     metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                     metrics.log()
-                    asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+                    asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
                     return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
                 metrics.time_generation_ms = (time.perf_counter() - t_parse) * 1000
@@ -529,7 +529,7 @@ class GeminiService:
                     _response_cache.set(prompt, system_prompt, model, temperature, result)
 
                 # Log assíncrono para BD (não bloqueia)
-                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
 
                 return result
 
@@ -549,7 +549,7 @@ class GeminiService:
                 metrics.error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.log()
-                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
                 return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
             except Exception as e:
@@ -557,7 +557,7 @@ class GeminiService:
                 metrics.error = str(e)
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.log()
-                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
                 return GeminiResponse(success=False, error=f"Erro: {str(e)}", metrics=metrics)
 
         # Todas as tentativas falharam
@@ -565,7 +565,7 @@ class GeminiService:
         metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
         metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
         metrics.log()
-        asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+        asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
         return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
     async def generate_stream(
@@ -716,7 +716,7 @@ class GeminiService:
             metrics.log()
 
             # Log assíncrono
-            asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+            asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
 
         except Exception as e:
             metrics.success = False
@@ -724,7 +724,7 @@ class GeminiService:
             metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
             metrics.log()
             logger.error(f"[Gemini Stream] Erro: {e}")
-            asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+            asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
 
     async def generate_with_sla(
         self,
@@ -1113,7 +1113,7 @@ class GeminiService:
                     metrics.success = False
                     metrics.error = "Resposta vazia do Gemini (sem conteúdo gerado)"
                     metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
-                    asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
+                    asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature, thinking_level=thinking_level))
                     return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
@@ -1121,7 +1121,7 @@ class GeminiService:
                 metrics.log()
 
                 # Log assíncrono para BD
-                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature, thinking_level=thinking_level))
 
                 return GeminiResponse(
                     success=True,
@@ -1141,21 +1141,21 @@ class GeminiService:
                 metrics.success = False
                 metrics.error = f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
-                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature, thinking_level=thinking_level))
                 return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
             except Exception as e:
                 metrics.success = False
                 metrics.error = str(e)
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
-                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature, thinking_level=thinking_level))
                 return GeminiResponse(success=False, error=f"Erro: {str(e)}", metrics=metrics)
 
         # Todas as tentativas falharam
         metrics.success = False
         metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
         metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
-        asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature))
+        asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature, thinking_level=thinking_level))
         return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
     async def generate_with_images_session(
@@ -1374,6 +1374,7 @@ class GeminiService:
         max_tokens: int = None,
         temperature: float = 0.3,
         search_threshold: float = 0.3,
+        thinking_level: str = None,
         context: Dict[str, Any] = None
     ) -> GeminiResponse:
         """
@@ -1389,6 +1390,7 @@ class GeminiService:
             max_tokens: Limite de tokens na resposta
             temperature: Temperatura (0-2)
             search_threshold: Limiar para ativar busca (0-1, menor = mais buscas)
+            thinking_level: Nível de raciocínio ("minimal", "low", "medium", "high")
             context: Dicionário com contexto para logging (sistema, modulo, user_id, username)
 
         Returns:
@@ -1421,6 +1423,19 @@ class GeminiService:
         generation_config = {"temperature": temperature}
         if max_tokens is not None:
             generation_config["maxOutputTokens"] = max_tokens
+
+        # Adiciona thinkingConfig se especificado e modelo suporta
+        if thinking_level and model:
+            model_lower = model.lower()
+            if "gemini-3" in model_lower:
+                if "flash" in model_lower:
+                    valid_levels = ("minimal", "low", "medium", "high")
+                else:
+                    valid_levels = ("low", "high")
+                if thinking_level in valid_levels:
+                    generation_config["thinkingConfig"] = {
+                        "thinkingLevel": thinking_level
+                    }
 
         payload = {
             "contents": [
@@ -1469,7 +1484,7 @@ class GeminiService:
                 metrics.log()
                 
                 # Loga no banco de dados
-                asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
 
                 return GeminiResponse(
                     success=True,
@@ -1483,7 +1498,7 @@ class GeminiService:
             metrics.error = f"HTTP {e.response.status_code}"
             metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
             metrics.log()
-            asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature))
+            asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
             return GeminiResponse(
                 success=False,
                 error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}",
@@ -1494,7 +1509,7 @@ class GeminiService:
             metrics.error = str(e)[:100]
             metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
             metrics.log()
-            asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature))
+            asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
             return GeminiResponse(
                 success=False,
                 error=f"Erro: {str(e)}",
@@ -1510,6 +1525,7 @@ class GeminiService:
         max_tokens: int = None,
         temperature: float = 0.3,
         search_threshold: float = 0.3,
+        thinking_level: str = None,
         context: Dict[str, Any] = None
     ) -> GeminiResponse:
         """
@@ -1517,6 +1533,9 @@ class GeminiService:
 
         Combina análise de imagens com busca na internet.
         Ideal para verificar informações em notas fiscais, medicamentos, etc.
+
+        Args:
+            thinking_level: Nível de raciocínio ("minimal", "low", "medium", "high")
         """
         ctx = context or {}
         metrics = GeminiMetrics()
@@ -1568,6 +1587,19 @@ class GeminiService:
         if max_tokens is not None:
             generation_config["maxOutputTokens"] = max_tokens
 
+        # Adiciona thinkingConfig se especificado e modelo suporta
+        if thinking_level and model:
+            model_lower = model.lower()
+            if "gemini-3" in model_lower:
+                if "flash" in model_lower:
+                    valid_levels = ("minimal", "low", "medium", "high")
+                else:
+                    valid_levels = ("low", "high")
+                if thinking_level in valid_levels:
+                    generation_config["thinkingConfig"] = {
+                        "thinkingLevel": thinking_level
+                    }
+
         payload = {
             "contents": [{"role": "user", "parts": parts}],
             "generationConfig": generation_config,
@@ -1601,7 +1633,7 @@ class GeminiService:
                 metrics.log()
 
                 # Loga no banco de dados
-                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature))
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
 
                 return GeminiResponse(
                     success=True,
@@ -1615,7 +1647,7 @@ class GeminiService:
             metrics.error = f"HTTP {e.response.status_code}"
             metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
             metrics.log()
-            asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature))
+            asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
             return GeminiResponse(
                 success=False,
                 error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}",
@@ -1626,7 +1658,7 @@ class GeminiService:
             metrics.error = str(e)[:100]
             metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
             metrics.log()
-            asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature))
+            asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
             return GeminiResponse(
                 success=False,
                 error=f"Erro: {str(e)}",
@@ -1700,7 +1732,8 @@ class GeminiService:
         context: Dict[str, Any],
         has_images: bool = False,
         has_search: bool = False,
-        temperature: float = None
+        temperature: float = None,
+        thinking_level: str = None
     ):
         """
         Registra a chamada no banco de dados de forma assíncrona.
@@ -1714,6 +1747,7 @@ class GeminiService:
             has_images: Se a chamada incluiu imagens
             has_search: Se usou Google Search Grounding
             temperature: Temperatura usada
+            thinking_level: Nível de thinking usado (minimal, low, medium, high)
         """
         try:
             from admin.services_gemini_logs import log_gemini_call_async
@@ -1749,6 +1783,7 @@ class GeminiService:
                 has_images=has_images,
                 has_search=has_search,
                 temperature=temperature,
+                thinking_level=thinking_level,
                 request_id=context.get('request_id'),
                 route=context.get('route')
             )

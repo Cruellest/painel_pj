@@ -43,6 +43,7 @@ class GeminiApiLog(Base):
     has_images = Column(Boolean, default=False)  # Se a chamada incluiu imagens
     has_search = Column(Boolean, default=False)  # Se usou Google Search Grounding
     temperature = Column(Float, nullable=True)
+    thinking_level = Column(String(20), nullable=True)  # minimal, low, medium, high
 
     # Response info
     response_tokens = Column(Integer, nullable=True)  # Tokens na resposta
@@ -91,6 +92,7 @@ class GeminiApiLog(Base):
             "has_images": self.has_images,
             "has_search": self.has_search,
             "temperature": self.temperature,
+            "thinking_level": self.thinking_level,
             "response_tokens": self.response_tokens,
             "success": self.success,
             "cached": self.cached,

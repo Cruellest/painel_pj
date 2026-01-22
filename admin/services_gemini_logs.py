@@ -36,6 +36,7 @@ def log_gemini_call(
     has_images: bool = False,
     has_search: bool = False,
     temperature: float = None,
+    thinking_level: str = None,
     request_id: str = None,
     route: str = None,
     db: Session = None
@@ -52,6 +53,7 @@ def log_gemini_call(
         has_images: Se a chamada incluiu imagens
         has_search: Se usou Google Search Grounding
         temperature: Temperatura usada na chamada
+        thinking_level: Nível de thinking usado (minimal, low, medium, high)
         request_id: ID da request HTTP (para rastreabilidade)
         route: Rota HTTP que originou a chamada
         db: Sessão do banco (se None, cria uma nova)
@@ -78,6 +80,7 @@ def log_gemini_call(
             has_images=has_images,
             has_search=has_search,
             temperature=temperature,
+            thinking_level=thinking_level,
             response_tokens=metrics.response_tokens if hasattr(metrics, 'response_tokens') else None,
             success=metrics.success if hasattr(metrics, 'success') else True,
             cached=metrics.cached if hasattr(metrics, 'cached') else False,
@@ -115,6 +118,7 @@ async def log_gemini_call_async(
     has_images: bool = False,
     has_search: bool = False,
     temperature: float = None,
+    thinking_level: str = None,
     request_id: str = None,
     route: str = None
 ) -> Optional[int]:
@@ -135,6 +139,7 @@ async def log_gemini_call_async(
             has_images=has_images,
             has_search=has_search,
             temperature=temperature,
+            thinking_level=thinking_level,
             request_id=request_id,
             route=route
         )

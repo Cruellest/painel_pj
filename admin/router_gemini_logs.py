@@ -317,3 +317,160 @@ async def get_gemini_service_status(
         "cache": get_cache_stats(),
         "background_tasks": get_background_stats()
     }
+
+
+# ==================================================
+# VERIFICAÇÃO DE THINKING_LEVEL
+# ==================================================
+
+@router.get("/thinking-level-status")
+async def get_thinking_level_status(
+    sistema: Optional[str] = Query(None, description="Sistema específico ou todos"),
+    hours: int = Query(24, ge=1, le=168, description="Período em horas para análise"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica se o thinking_level configurado está sendo usado efetivamente.
+
+    Compara:
+    - Configuração esperada (da ConfiguracaoIA por agente/sistema)
+    - Uso real (registrado nos logs de GeminiApiLog)
+
+    Retorna alertas quando há discrepâncias, indicando que a configuração
+    pode não estar sendo aplicada corretamente.
+    """
+    from sqlalchemy import func, and_
+    from admin.models_gemini_logs import GeminiApiLog
+    from admin.models import ConfiguracaoIA
+    from services.ia_params_resolver import AGENTES_POR_SISTEMA, resolve_ia_params
+
+    start_date = datetime.utcnow() - timedelta(hours=hours)
+
+    # Obtém sistemas para análise
+    if sistema:
+        sistemas = [sistema]
+    else:
+        sistemas = list(AGENTES_POR_SISTEMA.keys())
+
+    resultado = {
+        "periodo_horas": hours,
+        "sistemas": {},
+        "alertas": [],
+        "resumo": {
+            "total_sistemas": 0,
+            "sistemas_com_dados": 0,
+            "sistemas_com_alerta": 0,
+            "total_chamadas_analisadas": 0
+        }
+    }
+
+    for sis in sistemas:
+        if sis not in AGENTES_POR_SISTEMA:
+            continue
+
+        resultado["resumo"]["total_sistemas"] += 1
+
+        # Obtém configuração esperada para cada agente do sistema
+        agentes = AGENTES_POR_SISTEMA.get(sis, {})
+        config_esperada = {}
+
+        for agente_slug in agentes.keys():
+            params = resolve_ia_params(db, sis, agente_slug)
+            config_esperada[agente_slug] = {
+                "thinking_level": params.thinking_level,
+                "fonte": params.thinking_level_source
+            }
+
+        # Busca logs reais do sistema no período
+        logs_sistema = db.query(
+            GeminiApiLog.modulo,
+            GeminiApiLog.thinking_level,
+            func.count(GeminiApiLog.id).label('count')
+        ).filter(
+            and_(
+                GeminiApiLog.sistema == sis,
+                GeminiApiLog.created_at >= start_date,
+                GeminiApiLog.success == True
+            )
+        ).group_by(
+            GeminiApiLog.modulo,
+            GeminiApiLog.thinking_level
+        ).all()
+
+        # Agrupa por módulo
+        uso_real = {}
+        total_chamadas = 0
+        for log in logs_sistema:
+            modulo = log.modulo or "unknown"
+            if modulo not in uso_real:
+                uso_real[modulo] = {"total": 0, "por_level": {}}
+            count = log.count
+            level = log.thinking_level or "none"
+            uso_real[modulo]["total"] += count
+            uso_real[modulo]["por_level"][level] = uso_real[modulo]["por_level"].get(level, 0) + count
+            total_chamadas += count
+
+        if total_chamadas > 0:
+            resultado["resumo"]["sistemas_com_dados"] += 1
+        resultado["resumo"]["total_chamadas_analisadas"] += total_chamadas
+
+        # Verifica discrepâncias
+        alertas_sistema = []
+        for agente_slug, config in config_esperada.items():
+            esperado = config["thinking_level"]
+
+            # Verifica se há dados para esse agente
+            if agente_slug in uso_real:
+                usado = uso_real[agente_slug]
+                levels_usados = usado.get("por_level", {})
+
+                # Verifica se o level esperado foi o mais usado
+                if esperado:
+                    total_com_esperado = levels_usados.get(esperado, 0)
+                    total_sem_esperado = sum(
+                        c for l, c in levels_usados.items()
+                        if l != esperado
+                    )
+
+                    if total_com_esperado == 0 and usado["total"] > 0:
+                        # Configuração não está sendo usada
+                        alertas_sistema.append({
+                            "agente": agente_slug,
+                            "tipo": "nao_aplicado",
+                            "esperado": esperado,
+                            "encontrado": list(levels_usados.keys()),
+                            "mensagem": f"Agente '{agente_slug}' tem thinking_level='{esperado}' configurado mas não está sendo usado nas chamadas"
+                        })
+                    elif total_sem_esperado > total_com_esperado * 0.1:  # Mais de 10% diferente
+                        alertas_sistema.append({
+                            "agente": agente_slug,
+                            "tipo": "parcial",
+                            "esperado": esperado,
+                            "encontrado": levels_usados,
+                            "mensagem": f"Agente '{agente_slug}' usa thinking_level='{esperado}' parcialmente ({total_com_esperado}/{usado['total']} chamadas)"
+                        })
+                else:
+                    # Não há configuração mas há chamadas com thinking_level
+                    levels_nao_none = {l: c for l, c in levels_usados.items() if l != "none"}
+                    if levels_nao_none:
+                        alertas_sistema.append({
+                            "agente": agente_slug,
+                            "tipo": "info",
+                            "esperado": None,
+                            "encontrado": levels_nao_none,
+                            "mensagem": f"Agente '{agente_slug}' não tem thinking_level configurado mas está usando: {list(levels_nao_none.keys())}"
+                        })
+
+        if alertas_sistema:
+            resultado["resumo"]["sistemas_com_alerta"] += 1
+            resultado["alertas"].extend([{**a, "sistema": sis} for a in alertas_sistema])
+
+        resultado["sistemas"][sis] = {
+            "config_esperada": config_esperada,
+            "uso_real": uso_real,
+            "total_chamadas": total_chamadas,
+            "alertas": alertas_sistema
+        }
+
+    return resultado

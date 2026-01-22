@@ -98,13 +98,41 @@
             </select>
         </div>
 
+        <!-- Alerta de Thinking Level -->
+        <div id="thinking-level-alert" class="hidden mb-4 bg-amber-50 border border-amber-300 rounded-xl p-4">
+            <div class="flex items-start gap-3">
+                <div class="flex-shrink-0 mt-0.5">
+                    <i class="fas fa-exclamation-triangle text-amber-600 text-xl"></i>
+                </div>
+                <div class="flex-1">
+                    <h4 class="font-semibold text-amber-800 mb-1">
+                        Thinking Level não está sendo aplicado
+                    </h4>
+                    <p class="text-sm text-amber-700 mb-2">
+                        As configurações de thinking_level podem não estar sendo usadas em algumas chamadas de IA. Isso pode resultar em maior consumo de tokens.
+                    </p>
+                    <div id="thinking-level-details" class="text-xs text-amber-600 space-y-1"></div>
+                    <button
+                        onclick="document.getElementById('thinking-level-alert').classList.add('hidden')"
+                        class="mt-2 text-xs text-amber-700 hover:text-amber-900 underline"
+                    >
+                        Fechar alerta
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Configuração de Modelos de IA -->
         <div class="mb-8 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <i class="fas fa-robot text-primary-600"></i>
                 Configurações de IA
+                <span id="thinking-level-badge" class="hidden ml-2 px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full cursor-pointer hover:bg-amber-200" onclick="document.getElementById('thinking-level-alert').classList.toggle('hidden')">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    <span id="thinking-level-badge-count">0</span> alerta(s)
+                </span>
             </h3>
-            
+
             <!-- Tabs para sistemas -->
             <div class="border-b border-gray-200 mb-4">
                 <nav class="flex gap-4">
@@ -1543,6 +1571,67 @@
             }
         }
 
+        // ============================================
+        // Verificação de Thinking Level
+        // ============================================
+
+        /**
+         * Verifica se as configurações de thinking_level estão sendo aplicadas.
+         * Mostra alertas quando há discrepâncias entre a configuração e o uso real.
+         */
+        async function verificarThinkingLevelStatus() {
+            const token = localStorage.getItem('access_token');
+
+            try {
+                const response = await fetch(`${API_URL}/admin/api/gemini-logs/thinking-level-status?hours=24`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) {
+                    console.log('[ThinkingLevel] Endpoint não disponível ou erro:', response.status);
+                    return;
+                }
+
+                const data = await response.json();
+
+                // Filtra apenas alertas do tipo 'nao_aplicado' (mais críticos)
+                const alertasCriticos = data.alertas.filter(a => a.tipo === 'nao_aplicado');
+
+                if (alertasCriticos.length > 0) {
+                    // Mostra badge de alerta
+                    const badge = document.getElementById('thinking-level-badge');
+                    const badgeCount = document.getElementById('thinking-level-badge-count');
+                    const details = document.getElementById('thinking-level-details');
+
+                    badge.classList.remove('hidden');
+                    badgeCount.textContent = alertasCriticos.length;
+
+                    // Monta detalhes dos alertas
+                    let detailsHtml = '';
+                    alertasCriticos.forEach(alerta => {
+                        detailsHtml += `
+                            <div class="p-2 bg-amber-100 rounded">
+                                <strong>${alerta.sistema}</strong> → ${alerta.agente}:
+                                configurado <code class="bg-amber-200 px-1 rounded">${alerta.esperado}</code>,
+                                encontrado <code class="bg-red-200 px-1 rounded">${alerta.encontrado.join(', ')}</code>
+                            </div>
+                        `;
+                    });
+                    details.innerHTML = detailsHtml;
+
+                    console.log(`[ThinkingLevel] ${alertasCriticos.length} alerta(s) de thinking_level não aplicado`);
+                } else if (data.resumo.total_chamadas_analisadas === 0) {
+                    // Sem dados suficientes para análise
+                    console.log('[ThinkingLevel] Sem chamadas recentes para análise');
+                } else {
+                    console.log('[ThinkingLevel] Configurações de thinking_level estão sendo aplicadas corretamente');
+                }
+
+            } catch (error) {
+                console.log('[ThinkingLevel] Erro ao verificar status:', error.message);
+            }
+        }
+
         // Inicialização
         (async function() {
             const user = await checkAdminAuth();
@@ -1552,6 +1641,8 @@
                 loadAllConfigPerAgent();
                 // Carrega configs extras (sistemas_acessorios, campos extras do gerador_pecas)
                 loadConfiguracoesExtras();
+                // Verifica status do thinking_level (não bloqueia a UI)
+                verificarThinkingLevelStatus();
             }
         })();
     </script>
