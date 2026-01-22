@@ -18,6 +18,10 @@ class PedidoCalculoApp {
         this.historicoChat = [];
         this.isProcessingEdit = false;
 
+        // Streaming de geração em tempo real
+        this.streamingContent = '';
+        this.isStreaming = false;
+
         this.initEventListeners();
         this.checkAuth();
     }
@@ -222,23 +226,50 @@ class PedidoCalculoApp {
                 // Atualiza progresso para 100%
                 document.getElementById('progresso-barra').style.width = '100%';
                 this.atualizarStatusAgente(4, 'concluido');
-                
-                setTimeout(() => {
+
+                // Conteúdo final (do streaming ou do evento)
+                const conteudoFinal = this.isStreaming ? this.streamingContent : data.pedido_markdown;
+
+                if (this.isStreaming) {
+                    // Streaming já abriu o editor - apenas finaliza
+                    this.finalizarEditorStreaming(data.geracao_id, data.dados_basicos, data.dados_extracao, data.documentos_baixados, conteudoFinal);
                     this.esconderLoading();
                     this.showToast('Pedido de cálculo gerado com sucesso!', 'success');
-                    this.exibirEditor(data);
-                    // Recarrega histórico
-                    this.carregarHistoricoRecente();
-                }, 500);
+                } else {
+                    // Fallback: sem streaming, abre editor normalmente
+                    setTimeout(() => {
+                        this.esconderLoading();
+                        this.showToast('Pedido de cálculo gerado com sucesso!', 'success');
+                        this.exibirEditor(data);
+                    }, 500);
+                }
+                // Recarrega histórico
+                this.carregarHistoricoRecente();
                 break;
 
             case 'erro':
+                this.finalizarStreaming();  // Limpa streaming em caso de erro
                 this.esconderLoading();
                 this.mostrarErro(data.mensagem);
                 break;
 
             case 'info':
                 document.getElementById('progresso-mensagem').textContent = data.mensagem;
+                break;
+
+            case 'geracao_chunk':
+                // Streaming em tempo real: abre o editor e mostra texto sendo gerado
+                try {
+                    if (!this.isStreaming) {
+                        this.isStreaming = true;
+                        this.streamingContent = '';
+                        this.abrirEditorStreaming();
+                    }
+                    this.streamingContent += data.content;
+                    this.atualizarEditorStreaming();
+                } catch (err) {
+                    console.error('Erro no streaming:', err);
+                }
                 break;
         }
     }
@@ -1157,6 +1188,139 @@ class PedidoCalculoApp {
         this.historicoChat = [];
         this.notaSelecionada = null;
         this.isNovaGeracao = false;
+        this.streamingContent = '';
+        this.isStreaming = false;
+    }
+
+    // ==========================================
+    // Streaming de Geração em Tempo Real
+    // ==========================================
+
+    abrirEditorStreaming() {
+        try {
+            this.esconderLoading();
+
+            // Configura estado inicial
+            this.pedidoMarkdown = '';
+            this.historicoChat = [];
+            this.geracaoId = null;
+            this.isNovaGeracao = true;
+
+            // Atualiza título
+            const editorTipoPeca = document.getElementById('editor-tipo-peca');
+            if (editorTipoPeca) editorTipoPeca.textContent = 'Gerando...';
+
+            const editorCnj = document.getElementById('editor-cnj');
+            if (editorCnj) editorCnj.textContent = this.numeroCNJ ? `• ${this.numeroCNJ}` : '';
+
+            // Mostra indicador de streaming no editor
+            const container = document.getElementById('pedido-content');
+            if (container) {
+                container.innerHTML = `
+                    <div class="flex items-center gap-2 text-primary-600 mb-4">
+                        <div class="animate-spin h-4 w-4 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+                        <span class="text-sm font-medium">Gerando pedido em tempo real...</span>
+                    </div>
+                    <div id="streaming-content" class="prose prose-sm max-w-none"></div>
+                `;
+            }
+
+            // Status
+            const status = document.getElementById('pedido-status');
+            if (status) {
+                status.innerHTML = `
+                    <span class="text-primary-600 animate-pulse">
+                        <i class="fas fa-pen-fancy mr-1"></i> Escrevendo...
+                    </span>
+                `;
+            }
+
+            // Desabilita chat durante streaming
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) {
+                chatInput.disabled = true;
+                chatInput.placeholder = 'Aguarde a geração finalizar...';
+            }
+
+            // Abre o modal do editor
+            document.getElementById('modal-editor').classList.remove('hidden');
+
+        } catch (err) {
+            console.error('Erro em abrirEditorStreaming:', err);
+        }
+    }
+
+    atualizarEditorStreaming() {
+        const contentEl = document.getElementById('streaming-content');
+
+        if (contentEl && this.streamingContent) {
+            // Renderiza markdown em tempo real
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({ breaks: true, gfm: true });
+                contentEl.innerHTML = marked.parse(this.streamingContent);
+            } else {
+                contentEl.innerHTML = this.streamingContent
+                    .replace(/## (.*)/g, '<h2 class="text-lg font-semibold mt-4 mb-2">$1</h2>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/\n/g, '<br>');
+            }
+
+            // Scroll automático para o final
+            const container = document.getElementById('pedido-content');
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        // Atualiza status com contagem
+        const statusEl = document.getElementById('pedido-status');
+        if (statusEl) {
+            const chars = this.streamingContent.length;
+            const tokens = Math.round(chars / 4);
+            statusEl.innerHTML = `
+                <span class="text-primary-600 animate-pulse">
+                    <i class="fas fa-pen-fancy mr-1"></i>
+                    Escrevendo... ${tokens.toLocaleString()} tokens
+                </span>
+            `;
+        }
+    }
+
+    finalizarEditorStreaming(geracaoId, dadosBasicos, dadosExtracao, documentosBaixados, conteudoFinal) {
+        // Atualiza dados
+        this.geracaoId = geracaoId;
+        this.dadosBasicos = dadosBasicos || {};
+        this.dadosExtracao = dadosExtracao || {};
+        this.documentosBaixados = documentosBaixados || [];
+        this.pedidoMarkdown = conteudoFinal;
+
+        // Atualiza título
+        const editorTipoPeca = document.getElementById('editor-tipo-peca');
+        if (editorTipoPeca) editorTipoPeca.textContent = 'Pedido de Cálculo';
+
+        // Re-renderiza o pedido sem o indicador de streaming
+        this.renderizarPedido();
+
+        // Atualiza status
+        const status = document.getElementById('pedido-status');
+        if (status) status.textContent = 'Geração concluída';
+
+        // Habilita chat
+        const chatInput = document.getElementById('chat-input');
+        if (chatInput) {
+            chatInput.disabled = false;
+            chatInput.placeholder = 'Digite uma solicitação de alteração...';
+        }
+
+        // Reseta estado de streaming
+        this.isStreaming = false;
+        this.streamingContent = '';
+    }
+
+    finalizarStreaming() {
+        this.isStreaming = false;
+        this.streamingContent = '';
     }
 }
 

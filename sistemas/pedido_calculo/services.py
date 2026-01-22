@@ -336,7 +336,24 @@ class PedidoCalculoService:
             
         except Exception as e:
             return "", f"Erro ao gerar pedido: {str(e)}"
-    
+
+    async def gerar_pedido_stream(
+        self,
+        dados_agente1: ResultadoAgente1,
+        dados_agente2: ResultadoAgente2
+    ):
+        """
+        Versão STREAMING de gerar_pedido() - yields chunks em tempo real.
+
+        Yields:
+            dict com tipo='chunk'|'done'|'error'
+        """
+        try:
+            async for event in self.agente3.gerar_stream(dados_agente1, dados_agente2):
+                yield event
+        except Exception as e:
+            yield {"tipo": "error", "error": f"Erro ao gerar pedido: {str(e)}"}
+
     async def processar_completo(
         self, 
         xml_texto: str,

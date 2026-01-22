@@ -940,10 +940,20 @@ async def processar_stream(
             yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Aplicando formato padrão PGE-MS para pedido de cálculo...'})}\n\n"
             yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Gerando documento com IA...'})}\n\n"
 
-            markdown, erro = await service.gerar_pedido(agente1_result, agente2_result)
+            # Usa versão STREAMING para mostrar texto sendo gerado em tempo real
+            markdown = None
+            async for event in service.gerar_pedido_stream(agente1_result, agente2_result):
+                if event["tipo"] == "chunk":
+                    # Envia chunk de texto para o frontend
+                    yield f"data: {json.dumps({'tipo': 'geracao_chunk', 'content': event['content']})}\n\n"
+                elif event["tipo"] == "done":
+                    markdown = event["resultado"]
+                elif event["tipo"] == "error":
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro na geração do pedido: {event[\"error\"]}'})}\n\n"
+                    return
 
-            if erro:
-                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro na geração do pedido: {erro}'})}\n\n"
+            if not markdown:
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Erro: Nenhum conteúdo gerado'})}\n\n"
                 return
 
             tempo_processamento = int((datetime.now() - tempo_inicio).total_seconds())

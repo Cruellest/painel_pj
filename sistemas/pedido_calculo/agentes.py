@@ -1633,7 +1633,70 @@ Use APENAS as informações fornecidas. Use "[A VERIFICAR]" para dados faltantes
                 log_entry.set_erro(str(e))
                 self.logger._logs.append(log_entry)
             return f"# ERRO NA GERAÇÃO\n\n{str(e)}"
-    
+
+    async def gerar_stream(
+        self,
+        dados_agente1: ResultadoAgente1,
+        dados_agente2: ResultadoAgente2
+    ):
+        """
+        Versão STREAMING de gerar() - yields chunks de texto em tempo real.
+
+        Yields:
+            dict com tipo='chunk'|'done'|'error' e content/resultado
+        """
+        log_entry = None
+        content_accumulated = []
+
+        try:
+            # Consolida dados para o prompt
+            dados_consolidados = self._consolidar_dados(dados_agente1, dados_agente2)
+
+            # Busca prompt do banco de dados
+            prompt_template = self._get_prompt()
+            prompt = prompt_template.replace(
+                "{dados_json}", json.dumps(dados_consolidados, ensure_ascii=False, indent=2)
+            ).replace(
+                "{data_atual}", date.today().strftime("%d/%m/%Y")
+            )
+
+            # Prepara log se disponível
+            if self.logger:
+                from .ia_logger import LogEntry
+                log_entry = LogEntry("geracao_pedido_stream", "Gerando pedido de cálculo (streaming)")
+                log_entry.set_documento("dados_consolidados", json.dumps(dados_consolidados, ensure_ascii=False, indent=2))
+                log_entry.set_prompt(prompt)
+                log_entry.set_modelo(self.modelo)
+
+            # Streaming via gemini_service
+            async for chunk in gemini_service.generate_stream(
+                prompt=prompt,
+                model=self.modelo,
+                temperature=self.temperatura,
+                thinking_level=_get_pedido_calculo_thinking_level(),
+                context={
+                    "sistema": "pedido_calculo",
+                    "agente": "agente3_stream"
+                }
+            ):
+                content_accumulated.append(chunk)
+                yield {"tipo": "chunk", "content": chunk}
+
+            # Finaliza
+            content_final = "".join(content_accumulated)
+
+            if log_entry and self.logger:
+                log_entry.set_resposta(content_final, None)
+                self.logger._logs.append(log_entry)
+
+            yield {"tipo": "done", "resultado": content_final}
+
+        except Exception as e:
+            if log_entry and self.logger:
+                log_entry.set_erro(str(e))
+                self.logger._logs.append(log_entry)
+            yield {"tipo": "error", "error": str(e)}
+
     def _consolidar_dados(
         self,
         agente1: ResultadoAgente1,
