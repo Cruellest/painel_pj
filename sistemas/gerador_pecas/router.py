@@ -1445,9 +1445,20 @@ async def editar_minuta_stream(
             tipo_peca=tipo_peca
         )
 
+        # Wrapper para capturar erros durante o streaming
+        async def safe_generator():
+            try:
+                async for chunk in text_generator:
+                    yield chunk
+            except Exception as gen_error:
+                print(f"[EDITAR-MINUTA-STREAM] !!! ERRO NO GENERATOR: {type(gen_error).__name__}: {gen_error}", flush=True)
+                import traceback
+                traceback.print_exc()
+                raise
+
         # Converte para SSE com heartbeats
         sse_generator = stream_to_sse(
-            text_generator,
+            safe_generator(),
             event_type="chunk",
             include_heartbeat=True,
             heartbeat_interval=15.0
