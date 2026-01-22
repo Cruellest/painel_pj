@@ -113,6 +113,109 @@ Quando o modo 2º grau está ativo, o sistema emite logs detalhados:
 
 ---
 
+## Detecção Automática de Tipo de Peça
+
+### Visão Geral
+
+O sistema possui uma funcionalidade onde a IA pode detectar automaticamente qual tipo de peça jurídica gerar (contestação, recurso, contrarrazões, etc.) baseado na análise dos documentos do processo.
+
+**Esta funcionalidade está DESABILITADA por padrão** para garantir previsibilidade e controle do fluxo de geração em produção.
+
+### Feature Flag
+
+| Chave | Valor | Descrição |
+|-------|-------|-----------|
+| `enable_auto_piece_detection` | `"false"` | Habilita/desabilita detecção automática do tipo de peça pela IA |
+
+### Comportamento por Valor
+
+| Valor | Frontend | Backend |
+|-------|----------|---------|
+| `"false"` (padrão) | Mostra placeholder "-- Selecione o tipo de peça --" (obrigatório) | Rejeita requisições sem tipo_peca (HTTP 400) |
+| `"true"` | Mostra opção "🤖 Detectar automaticamente (IA decide)" | Permite tipo_peca vazio, Agente 2 detecta via IA |
+
+### Implementação
+
+#### Backend
+
+**Endpoint `/api/gerador-pecas/tipos-peca`**:
+- Retorna `permite_auto: true/false` baseado na flag
+- Frontend usa esse valor para renderizar opções
+
+**Endpoints de geração**:
+- `/api/gerador-pecas/processar-stream`
+- `/api/gerador-pecas/processar-pdfs-stream`
+
+Ambos validam:
+```python
+if not permite_auto and not tipo_peca:
+    raise HTTPException(400, "Tipo de peça é obrigatório...")
+```
+
+#### Frontend (`app.js`)
+
+```javascript
+// Propriedade da classe
+this.permiteAutoDetection = false; // fail-safe
+
+// Em carregarTiposPeca():
+this.permiteAutoDetection = data.permite_auto === true;
+
+// Em iniciarProcessamento():
+if (!this.permiteAutoDetection && !this.tipoPeca) {
+    this.mostrarErro('Selecione obrigatoriamente o tipo de peça.');
+    return;
+}
+```
+
+### Reativar a Funcionalidade
+
+Para habilitar a detecção automática no futuro:
+
+**Via SQL:**
+```sql
+UPDATE configuracoes_ia
+SET valor = 'true'
+WHERE sistema = 'gerador_pecas'
+AND chave = 'enable_auto_piece_detection';
+```
+
+**Via Admin Panel:**
+Acesse `/admin/config-ia?sistema=gerador_pecas` e altere o valor de `enable_auto_piece_detection` para `true`.
+
+### Fluxo de Detecção (quando habilitado)
+
+```
+Usuario seleciona "Detectar automaticamente"
+    │
+    ├─ [1] Agente 1: Coleta e resume documentos
+    │
+    ├─ [2] Agente 2: detectar_tipo_peca(resumo_consolidado)
+    │      ├─ Consulta módulos tipo="peca" ativos
+    │      ├─ Monta prompt com tipos disponíveis
+    │      ├─ Gemini classifica baseado em regras:
+    │      │   - Estado CITADO sem contestar → CONTESTAÇÃO
+    │      │   - Sentença desfavorável → RECURSO DE APELAÇÃO
+    │      │   - Adversário apelou → CONTRARRAZÕES
+    │      │   - Consulta interna → PARECER
+    │      └─ Retorna {tipo_peca, justificativa, confianca}
+    │
+    ├─ [3] Filtra documentos pelo tipo detectado
+    │
+    └─ [4] Agente 3: Gera a peça
+```
+
+### Arquivos Relacionados
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `sistemas/gerador_pecas/router.py` | Endpoints com validação |
+| `sistemas/gerador_pecas/detector_modulos.py` | Método `detectar_tipo_peca()` |
+| `sistemas/gerador_pecas/templates/app.js` | Lógica frontend |
+| `database/init_db.py` | Seed da configuração |
+
+---
+
 ## DadosProcesso
 
 Estrutura de dados extraídos do XML do processo:

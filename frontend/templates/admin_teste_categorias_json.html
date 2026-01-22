@@ -1266,8 +1266,9 @@
                     })
                 });
 
-                // Armazena para exportacao
+                // Armazena para exportacao e cache
                 resultadoComparacao = resultado;
+                comparacaoCache[doc.processo] = resultado;
 
                 if (resultado.sucesso) {
                     // Usa resultado_a como o principal para salvar no banco
@@ -1557,6 +1558,19 @@
                 const pdfDisponivel = temPdfDisponivel(d.processo);
                 const precisaRebaixar = !pdfDisponivel && (d.status === 'baixado' || d.status === 'classificado');
 
+                // Verifica se tem comparacao em cache
+                const comparacao = comparacaoCache[d.processo];
+                const temComparacao = comparacao && comparacao.report;
+                let badgeComparacao = '';
+                if (temComparacao) {
+                    const report = comparacao.report;
+                    if (report.campos_diferentes === 0) {
+                        badgeComparacao = '<span class="badge bg-green-100 text-green-700 border border-green-200"><i class="fas fa-balance-scale mr-1"></i>100% igual</span>';
+                    } else {
+                        badgeComparacao = `<span class="badge bg-amber-100 text-amber-700 border border-amber-200"><i class="fas fa-balance-scale mr-1"></i>${report.campos_diferentes} diff(s)</span>`;
+                    }
+                }
+
                 return `
                     <div class="processo-card p-4 bg-white border border-gray-200 rounded-lg mb-3 cursor-pointer ${documentoSelecionado === d.processo ? 'selected' : ''}"
                          onclick="selecionarDocumento('${d.processo}')">
@@ -1564,6 +1578,7 @@
                             <div class="flex items-center gap-3 flex-wrap">
                                 <span class="font-mono font-medium text-gray-800">${d.processo}</span>
                                 <span class="badge ${getStatusClass(d)}">${getStatusLabel(d)}</span>
+                                ${badgeComparacao}
                                 ${d.revisado ? '<span class="badge badge-info"><i class="fas fa-check-double mr-1"></i>Revisado</span>' : ''}
                                 ${precisaRebaixar ? '<span class="badge badge-warning"><i class="fas fa-exclamation-triangle mr-1"></i>PDF expirado</span>' : ''}
                             </div>

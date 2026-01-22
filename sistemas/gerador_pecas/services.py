@@ -736,7 +736,8 @@ Retorne SOMENTE a minuta editada em markdown."""
         self,
         minuta_atual: str,
         mensagem_usuario: str,
-        historico: List[Dict] = None
+        historico: List[Dict] = None,
+        tipo_peca: str = None
     ):
         """
         Processa edição da minuta com streaming real.
@@ -744,15 +745,52 @@ Retorne SOMENTE a minuta editada em markdown."""
         PERFORMANCE: Usa streamGenerateContent do Gemini para enviar
         tokens assim que são gerados, reduzindo TTFT de 15-60s para 1-3s.
 
+        BUSCA DE ARGUMENTOS: Quando detecta que o usuário quer adicionar
+        argumentos/teses, busca módulos relevantes na base de conhecimento
+        e inclui como contexto para a IA.
+
         Args:
             minuta_atual: Markdown da minuta atual
             mensagem_usuario: Pedido de alteração do usuário
             historico: Histórico de mensagens anteriores
+            tipo_peca: Tipo de peça atual (para filtrar argumentos)
 
         Yields:
             Chunks de texto conforme são gerados
         """
         from services.gemini_service import gemini_service
+        from sistemas.gerador_pecas.services_busca_argumentos import (
+            buscar_argumentos_relevantes,
+            formatar_contexto_argumentos,
+            detectar_intencao_busca
+        )
+
+        print(f"\n{'='*60}")
+        print(f"[EDITAR STREAM] 🚀 Iniciando edição de minuta")
+        print(f"[EDITAR STREAM] 📋 Tipo de peça: {tipo_peca or 'não especificado'}")
+        print(f"[EDITAR STREAM] 💬 Mensagem: {mensagem_usuario[:100]}...")
+        print(f"{'='*60}")
+
+        # Detecta se o usuário quer adicionar argumentos e busca na base
+        contexto_argumentos = ""
+        if self.db and detectar_intencao_busca(mensagem_usuario):
+            print(f"[EDITAR STREAM] 🔍 Detectada intenção de buscar argumentos!")
+
+            argumentos = buscar_argumentos_relevantes(
+                db=self.db,
+                query=mensagem_usuario,
+                tipo_peca=tipo_peca,
+                limit=3  # Top 3 mais relevantes
+            )
+
+            if argumentos:
+                contexto_argumentos = formatar_contexto_argumentos(argumentos)
+                print(f"[EDITAR STREAM] ✅ {len(argumentos)} argumento(s) encontrado(s) e adicionado(s) ao contexto")
+                print(f"[EDITAR STREAM] 📚 Argumentos: {[a['titulo'] for a in argumentos]}")
+            else:
+                print(f"[EDITAR STREAM] ⚠️ Nenhum argumento encontrado para a busca")
+        else:
+            print(f"[EDITAR STREAM] ℹ️ Não é pedido de argumento - edição simples")
 
         # Monta o prompt de sistema para edição
         system_prompt = """Você é um assistente jurídico especializado em edição de peças jurídicas.
@@ -767,6 +805,12 @@ REGRAS IMPORTANTES:
 5. Se o pedido não for claro, faça a melhor interpretação possível
 6. Mantenha o tom formal e técnico-jurídico
 
+QUANDO RECEBER ARGUMENTOS DA BASE DE CONHECIMENTO:
+- Use o conteúdo fornecido como BASE para inserir na minuta
+- Adapte ao caso concreto mantendo os fundamentos jurídicos
+- Substitua variáveis como {{ nome }} pelos dados do caso quando disponíveis
+- Integre de forma fluida na seção apropriada (Preliminares, Mérito, etc.)
+
 NÃO inclua:
 - Explicações sobre as alterações
 - Comentários sobre o documento
@@ -776,6 +820,11 @@ Retorne SOMENTE a minuta editada em markdown."""
 
         # Monta o prompt do usuário com histórico
         prompt_parts = []
+
+        # Adiciona contexto de argumentos se houver
+        if contexto_argumentos:
+            prompt_parts.append(contexto_argumentos)
+            prompt_parts.append("")
 
         # Adiciona histórico se houver
         if historico:
@@ -798,7 +847,7 @@ Retorne SOMENTE a minuta editada em markdown."""
 
         # Logging para diagnóstico
         prompt_len = len(prompt_completo)
-        print(f"[EDITAR STREAM] 📝 Prompt: {prompt_len:,} chars (~{prompt_len//4:,} tokens est.)")
+        print(f"[EDITAR STREAM] 📝 Prompt total: {prompt_len:,} chars (~{prompt_len//4:,} tokens est.)")
 
         # Usa streaming real do Gemini
         async for chunk in gemini_service.generate_stream(
@@ -810,3 +859,5 @@ Retorne SOMENTE a minuta editada em markdown."""
             context={"sistema": "gerador_pecas", "modulo": "editar_minuta"}
         ):
             yield chunk
+
+        print(f"[EDITAR STREAM] ✅ Edição concluída\n")

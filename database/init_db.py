@@ -1945,6 +1945,45 @@ IMPORTANTE: Os seguintes tipos de documento SÃO RELEVANTES e devem ser resumido
                 db.add(config)
                 print(f"[OK] Configuracao {config_data['chave']} criada!")
 
+        # Verifica/cria lista inicial de codigos ignorados na extracao JSON
+        existing_codigos_ignorados = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "codigos_ignorar_extracao_json"
+        ).first()
+
+        if not existing_codigos_ignorados:
+            # Codigos de documento TJ-MS que nao devem ter resumo JSON extraido
+            # (documentos administrativos, internos, sem relevancia processual)
+            import json
+            codigos_iniciais = [2, 5, 7, 10, 13, 53, 192, 8433, 8449, 8450, 8494, 8500, 9508, 9614, 9999]
+            config_codigos = ConfiguracaoIA(
+                sistema="gerador_pecas",
+                chave="codigos_ignorar_extracao_json",
+                valor=json.dumps(codigos_iniciais),
+                tipo_valor="json",
+                descricao="Lista de codigos de documento TJ-MS a ignorar na extracao de JSON"
+            )
+            db.add(config_codigos)
+            print(f"[OK] Configuracao codigos_ignorar_extracao_json criada com {len(codigos_iniciais)} codigos!")
+
+        # Verifica/cria flag de deteccao automatica de tipo de peca
+        existing_auto_detect = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "enable_auto_piece_detection"
+        ).first()
+
+        if not existing_auto_detect:
+            # Flag desabilitada por padrao - requer selecao manual do tipo de peca
+            config_auto_detect = ConfiguracaoIA(
+                sistema="gerador_pecas",
+                chave="enable_auto_piece_detection",
+                valor="false",
+                tipo_valor="boolean",
+                descricao="Habilita deteccao automatica do tipo de peca pela IA (false = obriga selecao manual)"
+            )
+            db.add(config_auto_detect)
+            print("[OK] Configuracao enable_auto_piece_detection criada (desabilitada por padrao)!")
+
         db.commit()
 
     finally:

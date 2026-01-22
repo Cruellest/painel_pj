@@ -170,6 +170,14 @@ class EditarMinutaRequest(BaseModel):
     minuta_atual: str  # Markdown da minuta atual
     mensagem: str  # Pedido de alteração do usuário
     historico: Optional[List[Dict]] = None  # Histórico de mensagens anteriores
+    tipo_peca: Optional[str] = None  # Tipo de peça atual (para busca de argumentos)
+
+
+class BuscarArgumentosRequest(BaseModel):
+    """Request para buscar argumentos na base de conhecimento"""
+    query: str  # Texto de busca
+    tipo_peca: Optional[str] = None  # Tipo de peça para filtrar regras específicas
+    limit: int = 5  # Número máximo de resultados
 
 
 @router.get("/tipos-peca")
@@ -180,15 +188,19 @@ async def listar_tipos_peca(
     """
     Lista os tipos de peças disponíveis baseado nos prompts modulares ativos.
     Retorna apenas os tipos de peça que têm prompt configurado no banco.
+
+    Retorna também `permite_auto` que indica se a detecção automática está habilitada.
+    Quando `permite_auto=false`, o usuário DEVE selecionar um tipo de peça manualmente.
     """
     from admin.models_prompts import PromptModulo
-    
+    from admin.models import ConfiguracaoIA
+
     # Busca módulos do tipo "peca" que estão ativos
     modulos_peca = db.query(PromptModulo).filter(
         PromptModulo.tipo == "peca",
         PromptModulo.ativo == True
     ).order_by(PromptModulo.ordem).all()
-    
+
     tipos = []
     for modulo in modulos_peca:
         tipos.append({
@@ -196,13 +208,64 @@ async def listar_tipos_peca(
             "label": modulo.titulo,  # Ex: "Contestação", "Agravo de Instrumento"
             "descricao": modulo.conteudo[:100] + "..." if len(modulo.conteudo) > 100 else modulo.conteudo
         })
-    
+
+    # Verifica flag de detecção automática
+    config_auto = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "gerador_pecas",
+        ConfiguracaoIA.chave == "enable_auto_piece_detection"
+    ).first()
+
+    # Por padrão, não permite auto se a flag não existir (fail-safe)
+    permite_auto = False
+    if config_auto and config_auto.valor:
+        permite_auto = config_auto.valor.lower() == "true"
+
     return {
         "tipos": tipos,
-        "permite_auto": True  # Permite a opção "detectar automaticamente"
+        "permite_auto": permite_auto
     }
 
 
+@router.post("/buscar-argumentos")
+async def buscar_argumentos(
+    req: BuscarArgumentosRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Busca argumentos jurídicos relevantes na base de conhecimento.
+
+    Usado pelo chatbot de edição para encontrar módulos de conteúdo
+    que podem ser inseridos na minuta baseado na mensagem do usuário.
+
+    Busca em:
+    - Título do módulo
+    - Condição de ativação
+    - Regras determinísticas
+    - Categoria/subcategoria
+    """
+    from sistemas.gerador_pecas.services_busca_argumentos import buscar_argumentos_relevantes
+
+    print(f"\n{'='*60}")
+    print(f"[ENDPOINT] 🔎 Busca de argumentos solicitada")
+    print(f"[ENDPOINT] 👤 Usuário: {current_user.username}")
+    print(f"{'='*60}")
+
+    argumentos = buscar_argumentos_relevantes(
+        db=db,
+        query=req.query,
+        tipo_peca=req.tipo_peca,
+        limit=req.limit
+    )
+
+    print(f"[ENDPOINT] ✅ Retornando {len(argumentos)} argumento(s)\n")
+
+    return {
+        "query": req.query,
+        "tipo_peca": req.tipo_peca,
+        "total": len(argumentos),
+        "argumentos": argumentos
+    }
 
 
 @router.get("/grupos-disponiveis")
@@ -320,10 +383,31 @@ async def processar_processo_stream(
     """
     Processa um processo com streaming SSE para atualização em tempo real.
     Retorna eventos conforme cada agente processa.
-    
-    Se tipo_peca não for especificado, o Agente 2 detecta automaticamente
-    qual tipo de peça é mais adequado baseado nos documentos do processo.
+
+    Se tipo_peca não for especificado e a flag `enable_auto_piece_detection` estiver habilitada,
+    o Agente 2 detecta automaticamente qual tipo de peça é mais adequado.
+
+    Se a flag estiver desabilitada, tipo_peca é OBRIGATÓRIO.
     """
+    from admin.models import ConfiguracaoIA
+
+    # Verifica se detecção automática está habilitada
+    config_auto = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "gerador_pecas",
+        ConfiguracaoIA.chave == "enable_auto_piece_detection"
+    ).first()
+
+    permite_auto = False
+    if config_auto and config_auto.valor:
+        permite_auto = config_auto.valor.lower() == "true"
+
+    # Validação: se auto-detecção está desabilitada, tipo_peca é obrigatório
+    if not permite_auto and not req.tipo_peca:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tipo de peça é obrigatório. Selecione o tipo de peça antes de gerar."
+        )
+
     grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
         current_user,
         db,
@@ -664,9 +748,30 @@ async def processar_pdfs_stream(
     4. Monta resumo consolidado com dados estruturados
     5. Executa Agente 2 (detector de módulos) e Agente 3 (gerador)
 
+    Se a flag `enable_auto_piece_detection` estiver desabilitada, tipo_peca é OBRIGATÓRIO.
+
     Returns:
         Stream SSE com progresso da geração
     """
+    from admin.models import ConfiguracaoIA
+
+    # Verifica se detecção automática está habilitada
+    config_auto = db.query(ConfiguracaoIA).filter(
+        ConfiguracaoIA.sistema == "gerador_pecas",
+        ConfiguracaoIA.chave == "enable_auto_piece_detection"
+    ).first()
+
+    permite_auto = False
+    if config_auto and config_auto.valor:
+        permite_auto = config_auto.valor.lower() == "true"
+
+    # Validação: se auto-detecção está desabilitada, tipo_peca é obrigatório
+    if not permite_auto and not tipo_peca:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tipo de peça é obrigatório. Selecione o tipo de peça antes de gerar."
+        )
+
     subcategoria_ids = _parse_subcategoria_ids_form(subcategoria_ids_json)
     grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
         current_user,
@@ -1311,7 +1416,8 @@ async def editar_minuta_stream(
         minuta_len = len(req.minuta_atual) if req.minuta_atual else 0
         mensagem_len = len(req.mensagem) if req.mensagem else 0
         historico_len = len(req.historico) if req.historico else 0
-        print(f"[EDITAR-MINUTA-STREAM] 📝 Minuta: {minuta_len:,} chars, mensagem: {mensagem_len:,} chars, histórico: {historico_len} msgs")
+        tipo_peca = req.tipo_peca
+        print(f"[EDITAR-MINUTA-STREAM] 📝 Minuta: {minuta_len:,} chars, mensagem: {mensagem_len:,} chars, histórico: {historico_len} msgs, tipo: {tipo_peca or 'N/A'}")
 
         # Busca configurações de IA
         config_modelo = db.query(ConfiguracaoIA).filter(
@@ -1326,11 +1432,12 @@ async def editar_minuta_stream(
             db=db
         )
 
-        # Generator de streaming
+        # Generator de streaming (com busca de argumentos integrada)
         text_generator = service.editar_minuta_stream(
             minuta_atual=req.minuta_atual,
             mensagem_usuario=req.mensagem,
-            historico=req.historico
+            historico=req.historico,
+            tipo_peca=tipo_peca
         )
 
         # Converte para SSE com heartbeats

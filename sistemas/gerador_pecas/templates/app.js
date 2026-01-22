@@ -51,6 +51,9 @@ class GeradorPecasApp {
         this.streamingContent = '';
         this.isStreaming = false;
 
+        // Flag de detecção automática de tipo de peça
+        this.permiteAutoDetection = false; // Por padrão desabilitado (fail-safe)
+
         this.initEventListeners();
         this.checkAuth();
     }
@@ -100,12 +103,29 @@ class GeradorPecasApp {
 
             const data = await response.json();
             const select = document.getElementById('tipo-peca');
-            
-            // Limpa opções existentes (exceto a primeira)
-            while (select.options.length > 1) {
-                select.remove(1);
+
+            // Armazena flag de detecção automática
+            this.permiteAutoDetection = data.permite_auto === true;
+
+            // Limpa todas as opções
+            select.innerHTML = '';
+
+            // Adiciona opção de auto-detecção apenas se permitido
+            if (this.permiteAutoDetection) {
+                const autoOption = document.createElement('option');
+                autoOption.value = '';
+                autoOption.textContent = '🤖 Detectar automaticamente (IA decide)';
+                select.appendChild(autoOption);
+            } else {
+                // Opção placeholder que força seleção
+                const placeholderOption = document.createElement('option');
+                placeholderOption.value = '';
+                placeholderOption.textContent = '-- Selecione o tipo de peça --';
+                placeholderOption.disabled = true;
+                placeholderOption.selected = true;
+                select.appendChild(placeholderOption);
             }
-            
+
             // Adiciona tipos do banco
             data.tipos.forEach(tipo => {
                 const option = document.createElement('option');
@@ -113,6 +133,16 @@ class GeradorPecasApp {
                 option.textContent = tipo.label;
                 select.appendChild(option);
             });
+
+            // Atualiza texto de ajuda
+            const helpText = select.parentElement.querySelector('p.text-xs');
+            if (helpText) {
+                if (this.permiteAutoDetection) {
+                    helpText.textContent = 'A IA analisa os documentos e decide qual peça gerar, ou selecione manualmente';
+                } else {
+                    helpText.innerHTML = '<i class="fas fa-exclamation-circle text-amber-500 mr-1"></i>Seleção obrigatória do tipo de peça';
+                }
+            }
         } catch (error) {
             console.error('Erro ao carregar tipos de peça:', error);
         }
@@ -664,6 +694,14 @@ class GeradorPecasApp {
         this.tipoPeca = document.getElementById('tipo-peca').value || null;
         this.observacaoUsuario = document.getElementById('observacao-usuario').value.trim() || null;
 
+        // Validação obrigatória do tipo de peça quando detecção automática está desabilitada
+        if (!this.permiteAutoDetection && !this.tipoPeca) {
+            this.mostrarErro('Selecione obrigatoriamente o tipo de peça.');
+            // Foca no select para chamar atenção
+            document.getElementById('tipo-peca').focus();
+            return;
+        }
+
         if (this.requiresGroupSelection && !this.groupId) {
             this.mostrarErro('Selecione o grupo de conteúdo antes de gerar a peça.');
             return;
@@ -1118,6 +1156,7 @@ class GeradorPecasApp {
 
         try {
             // Usa endpoint com streaming para melhor TTFT
+            // Inclui tipo_peca para busca de argumentos relevantes
             const response = await fetch(`${API_URL}/editar-minuta-stream`, {
                 method: 'POST',
                 headers: {
@@ -1127,7 +1166,8 @@ class GeradorPecasApp {
                 body: JSON.stringify({
                     minuta_atual: this.minutaMarkdown,
                     mensagem: mensagem,
-                    historico: this.historicoChat
+                    historico: this.historicoChat,
+                    tipo_peca: this.tipoPeca
                 })
             });
 

@@ -207,7 +207,7 @@
                         <button type="button" onclick="toggleBlacklistEditor()" class="px-3 py-1.5 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm">
                             Cancelar
                         </button>
-                        <button type="button" onclick="salvarBlacklist()" class="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">
+                        <button type="button" id="btn-salvar-blacklist" onclick="salvarBlacklist()" class="px-3 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm">
                             <i class="fas fa-save mr-1"></i> Salvar
                         </button>
                     </div>
@@ -1193,6 +1193,13 @@ qual o valor da causa?"></textarea>
         }
 
         async function salvarBlacklist() {
+            const btn = document.getElementById('btn-salvar-blacklist');
+            const originalText = btn.innerHTML;
+
+            // Feedback visual: salvando
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Salvando...';
+            btn.disabled = true;
+
             try {
                 const response = await fetch(`${API_BASE}/config/codigos-ignorados`, {
                     method: 'PUT',
@@ -1206,9 +1213,7 @@ qual o valor da causa?"></textarea>
                     renderizarBlacklistDisplay();
                     document.getElementById('blacklist-editor').classList.add('hidden');
 
-                    // Feedback visual
-                    const btn = event.target;
-                    const originalText = btn.innerHTML;
+                    // Feedback visual: sucesso
                     btn.innerHTML = '<i class="fas fa-check mr-1"></i> Salvo!';
                     btn.classList.remove('bg-red-600');
                     btn.classList.add('bg-green-600');
@@ -1216,14 +1221,19 @@ qual o valor da causa?"></textarea>
                         btn.innerHTML = originalText;
                         btn.classList.remove('bg-green-600');
                         btn.classList.add('bg-red-600');
+                        btn.disabled = false;
                     }, 1500);
                 } else {
                     const error = await response.json();
                     alert('Erro ao salvar: ' + (error.detail || 'Erro desconhecido'));
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
                 }
             } catch (error) {
                 console.error('Erro ao salvar blacklist:', error);
                 alert('Erro ao salvar: ' + error.message);
+                btn.innerHTML = originalText;
+                btn.disabled = false;
             }
         }
 
