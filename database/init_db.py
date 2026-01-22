@@ -88,13 +88,17 @@ def run_migrations():
     is_sqlite = 'sqlite' in str(engine.url)
 
     # Fast-path: verifica se a última migração já foi aplicada
-    # Se a coluna 'route' existe em gemini_api_logs, todas as migrações estão ok
+    # Se as colunas 'setor' (users) e 'thinking_level' (gemini_api_logs) existem, todas as migrações estão ok
     try:
-        result = db.execute(text("""
+        result_setor = db.execute(text("""
             SELECT column_name FROM information_schema.columns
-            WHERE table_name = 'gemini_api_logs' AND column_name = 'route'
+            WHERE table_name = 'users' AND column_name = 'setor'
         """)).fetchone()
-        if result:
+        result_thinking = db.execute(text("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'gemini_api_logs' AND column_name = 'thinking_level'
+        """)).fetchone()
+        if result_setor and result_thinking:
             # Migrações já aplicadas, apenas executa seed_prompt_groups
             seed_prompt_groups(db)
             db.close()
@@ -602,6 +606,16 @@ def run_migrations():
         except Exception as e:
             db.rollback()
             print(f"[WARN] Migracao default_group_id users: {e}")
+
+    # Migracao: Adicionar coluna setor na tabela users
+    if table_exists('users') and not column_exists('users', 'setor'):
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN setor VARCHAR(120)"))
+            db.commit()
+            print("[OK] Migracao: coluna setor adicionada em users")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao setor users: {e}")
 
     # Migracao: Adicionar colunas group_id e subgroup_id na tabela prompt_modulos
     if table_exists('prompt_modulos') and not column_exists('prompt_modulos', 'group_id'):
@@ -1539,6 +1553,26 @@ def run_migrations():
     # Verificação extra: garante que a tabela existe
     if not table_exists('regra_deterministica_tipo_peca'):
         print("[ERRO CRÍTICO] Tabela regra_deterministica_tipo_peca NÃO EXISTE após migração!")
+
+    # Migração: Adicionar coluna setor na tabela users
+    if table_exists('users') and not column_exists('users', 'setor'):
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN setor VARCHAR(120)"))
+            db.commit()
+            print("[OK] Migração: coluna setor adicionada em users")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração setor: {e}")
+
+    # Migração: Adicionar coluna thinking_level na tabela gemini_api_logs
+    if table_exists('gemini_api_logs') and not column_exists('gemini_api_logs', 'thinking_level'):
+        try:
+            db.execute(text("ALTER TABLE gemini_api_logs ADD COLUMN thinking_level VARCHAR(20)"))
+            db.commit()
+            print("[OK] Migração: coluna thinking_level adicionada em gemini_api_logs")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração thinking_level: {e}")
 
     seed_prompt_groups(db)
 
