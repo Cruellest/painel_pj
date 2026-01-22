@@ -104,8 +104,8 @@ class ExtractionQuestion(Base):
     atualizado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
     atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
-    # Relacionamentos
-    categoria = relationship("CategoriaResumoJSON", backref="perguntas_extracao")
+    # Nota: Removido relationship para evitar problemas de importação circular
+    # Use join manual se precisar acessar a categoria
 
     @property
     def is_conditional(self) -> bool:
@@ -179,8 +179,7 @@ class ExtractionModel(Base):
     criado_por = Column(Integer, ForeignKey("users.id"), nullable=True)
     criado_em = Column(DateTime, default=get_utc_now)
 
-    # Relacionamentos
-    categoria = relationship("CategoriaResumoJSON", backref="modelos_extracao")
+    # Nota: Removido relationship para evitar problemas de importação circular
 
     __table_args__ = (
         UniqueConstraint('categoria_id', 'versao', name='uq_extraction_model_categoria_versao'),
@@ -262,8 +261,7 @@ class ExtractionVariable(Base):
     criado_em = Column(DateTime, default=get_utc_now)
     atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
-    # Relacionamentos
-    categoria = relationship("CategoriaResumoJSON", backref="variaveis")
+    # Relacionamentos (removido CategoriaResumoJSON para evitar problemas de importação circular)
     source_question = relationship("ExtractionQuestion", backref="variavel_gerada")
     prompt_usages = relationship("PromptVariableUsage", back_populates="variable", cascade="all, delete-orphan")
 
