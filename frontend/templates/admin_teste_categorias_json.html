@@ -246,6 +246,17 @@
                                 </select>
                             </div>
                             <div class="flex-1"></div>
+                            <!-- Toggle modo comparacao -->
+                            <div class="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 rounded-lg border border-indigo-200">
+                                <input type="checkbox" id="toggle-comparacao" onchange="toggleModoComparacao()"
+                                    class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500">
+                                <label for="toggle-comparacao" class="text-sm text-indigo-700 cursor-pointer whitespace-nowrap">
+                                    Comparar 2 modelos
+                                </label>
+                                <span title="Modelo A: Flash+thinking low | Modelo B: Flash-lite+default" class="cursor-help">
+                                    <i class="fas fa-info-circle text-indigo-500"></i>
+                                </span>
+                            </div>
                             <button onclick="baixarPdfsExpirados()" id="btn-baixar-expirados"
                                 class="hidden px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm">
                                 <i class="fas fa-download mr-1"></i> <span id="btn-baixar-expirados-texto">Baixar Expirados</span>
@@ -374,6 +385,11 @@
         let pdfBlobUrlCache = {};  // { processo: blobUrl } - Blob URLs para exibicao
         let documentoSelecionado = null;
         let salvandoEmBackground = false;  // Flag para evitar multiplos saves simultaneos
+
+        // Modo comparacao de modelos
+        let modoComparacao = false;
+        let resultadoComparacao = null;  // Armazena ultimo resultado da comparacao
+        let comparacaoCache = {};  // { processo: resultadoComparacao } - Cache de comparacoes por processo
 
         // Debounce para salvar observacoes
         let observacaoTimeout = null;
@@ -511,6 +527,7 @@
             Object.values(pdfBlobUrlCache).forEach(url => URL.revokeObjectURL(url));
             pdfBase64Cache = {};
             pdfBlobUrlCache = {};
+            comparacaoCache = {};  // Limpa cache de comparacoes
 
             if (categoriaAtual) {
                 // Carrega formato e documentos em paralelo
@@ -862,6 +879,12 @@
                 return;
             }
 
+            // Se modo comparacao esta ativo, usa fluxo especifico
+            if (modoComparacao) {
+                await classificarTodosComComparacao(baixados);
+                return;
+            }
+
             mostrarAba('progresso');
             const listaProgresso = document.getElementById('lista-progresso');
             listaProgresso.innerHTML = `
@@ -981,6 +1004,146 @@
             }
         }
 
+        async function classificarTodosComComparacao(baixados) {
+            mostrarAba('progresso');
+            const listaProgresso = document.getElementById('lista-progresso');
+            listaProgresso.innerHTML = `
+                <div class="p-4 bg-indigo-50 rounded-lg mb-4">
+                    <div class="flex items-center gap-2 text-indigo-700">
+                        <i class="fas fa-balance-scale"></i>
+                        <span class="font-medium">Comparando ${baixados.length} documento(s) com 2 modelos...</span>
+                    </div>
+                    <p class="text-sm text-indigo-500 mt-1">Modelo A: Flash+thinking low | Modelo B: Flash-lite+default</p>
+                </div>
+            `;
+
+            for (const d of baixados) {
+                listaProgresso.innerHTML += `
+                    <div id="prog-${d.processo.replace(/\./g, '-')}" class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg mb-2">
+                        <i class="fas fa-spinner fa-spin text-indigo-500"></i>
+                        <span class="font-mono text-sm">${d.processo}</span>
+                        <span class="text-sm text-gray-500">Aguardando...</span>
+                    </div>
+                `;
+            }
+
+            const atualizacoes = [];
+            let sucessos = 0;
+            let diferencasTotal = 0;
+
+            // Processa sequencialmente para evitar sobrecarga (2 modelos por doc)
+            for (const doc of baixados) {
+                const itemEl = document.getElementById(`prog-${doc.processo.replace(/\./g, '-')}`);
+
+                try {
+                    if (itemEl) {
+                        itemEl.querySelector('.text-gray-500').textContent = 'Comparando A vs B...';
+                    }
+
+                    const pdfBase64 = await obterPdfBase64(doc.processo);
+                    if (!pdfBase64) {
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-times-circle text-red-500"></i>
+                                <span class="font-mono text-sm">${doc.processo}</span>
+                                <span class="text-sm text-red-600">PDF nao disponivel</span>
+                            `;
+                        }
+                        continue;
+                    }
+
+                    const resultado = await apiCall('/admin/api/teste-categorias/classificar-comparacao', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            processo: doc.processo,
+                            categoria_id: categoriaAtual.id,
+                            pdf_base64: pdfBase64
+                        })
+                    });
+
+                    // Armazena no cache de comparacoes
+                    comparacaoCache[doc.processo] = resultado;
+
+                    if (resultado.sucesso) {
+                        const jsonPrincipal = resultado.resultado_a || resultado.resultado_b;
+                        const report = resultado.report;
+                        const temDiff = report && report.campos_diferentes > 0;
+
+                        if (temDiff) diferencasTotal++;
+                        sucessos++;
+
+                        atualizacoes.push({
+                            processo: doc.processo,
+                            categoria_id: categoriaAtual.id,
+                            status: 'classificado',
+                            json_resultado: jsonPrincipal,
+                            num_documentos: doc.num_documentos || 0,
+                            revisado: doc.revisado || false
+                        });
+
+                        // Atualiza progresso com info de comparacao
+                        if (itemEl) {
+                            const statusIcon = temDiff ? 'fa-exclamation-triangle text-amber-500' : 'fa-check-circle text-green-500';
+                            const statusText = temDiff
+                                ? `<span class="text-amber-600">${report.campos_diferentes} diff(s)</span>`
+                                : '<span class="text-green-600">100% igual</span>';
+                            itemEl.innerHTML = `
+                                <i class="fas ${statusIcon}"></i>
+                                <span class="font-mono text-sm">${doc.processo}</span>
+                                ${statusText}
+                                <span class="text-xs text-gray-400">(${resultado.tempo_a_ms}+${resultado.tempo_b_ms}ms)</span>
+                            `;
+                        }
+                    } else {
+                        atualizacoes.push({
+                            processo: doc.processo,
+                            categoria_id: categoriaAtual.id,
+                            status: 'erro',
+                            erro: resultado.erro || 'Erro na comparacao',
+                            num_documentos: doc.num_documentos || 0,
+                            revisado: false
+                        });
+
+                        if (itemEl) {
+                            itemEl.innerHTML = `
+                                <i class="fas fa-times-circle text-red-500"></i>
+                                <span class="font-mono text-sm">${doc.processo}</span>
+                                <span class="text-sm text-red-600">${resultado.erro || 'Erro'}</span>
+                            `;
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Erro ao comparar ${doc.processo}:`, e);
+                    if (itemEl) {
+                        itemEl.innerHTML = `
+                            <i class="fas fa-times-circle text-red-500"></i>
+                            <span class="font-mono text-sm">${doc.processo}</span>
+                            <span class="text-sm text-red-600">Erro: ${e.message}</span>
+                        `;
+                    }
+                }
+            }
+
+            // Salva no banco
+            if (atualizacoes.length > 0) {
+                await apiCall('/admin/api/teste-categorias/documentos/lote', {
+                    method: 'POST',
+                    body: JSON.stringify(atualizacoes)
+                });
+            }
+
+            // Recarrega
+            await carregarDocumentosCategoria(categoriaAtual.id);
+            atualizarListaResultados();
+
+            // Mensagem final
+            if (diferencasTotal > 0) {
+                mostrarAviso(`${sucessos} comparado(s), ${diferencasTotal} com diferenca(s)`);
+            } else {
+                mostrarSucesso(`${sucessos} comparado(s), todos 100% iguais!`);
+            }
+        }
+
         async function classificarAtual() {
             if (!documentoSelecionado || !categoriaAtual) return;
 
@@ -989,6 +1152,12 @@
 
             if (!temPdfDisponivel(documentoSelecionado)) {
                 mostrarErro('PDF nao disponivel - baixe novamente');
+                return;
+            }
+
+            // Se modo comparacao esta ativo, usa endpoint de comparacao
+            if (modoComparacao) {
+                await classificarComComparacao(d);
                 return;
             }
 
@@ -1049,6 +1218,290 @@
                 console.error('Erro:', e);
                 mostrarErro('Erro ao classificar');
             }
+        }
+
+        // ==========================
+        // Modo Comparacao de Modelos
+        // ==========================
+
+        function toggleModoComparacao() {
+            modoComparacao = document.getElementById('toggle-comparacao').checked;
+            console.log('Modo comparacao:', modoComparacao);
+
+            // Se desativou, limpa resultado de comparacao anterior
+            if (!modoComparacao) {
+                resultadoComparacao = null;
+                // Se tem documento selecionado, re-renderiza o JSON normal
+                if (documentoSelecionado) {
+                    const d = documentosCategoria.find(doc => doc.processo === documentoSelecionado);
+                    if (d && d.json_resultado) {
+                        renderizarJSON(d.json_resultado);
+                    }
+                }
+            }
+        }
+
+        async function classificarComComparacao(doc) {
+            document.getElementById('resultado-json').innerHTML = `
+                <div class="text-center py-12">
+                    <i class="fas fa-spinner fa-spin text-4xl text-indigo-500 mb-4"></i>
+                    <p class="text-gray-600">Comparando modelos A e B...</p>
+                    <p class="text-sm text-gray-400 mt-2">Executando duas classificacoes em paralelo</p>
+                </div>
+            `;
+
+            try {
+                const pdfBase64 = await obterPdfBase64(doc.processo);
+                if (!pdfBase64) {
+                    mostrarErro('Erro ao obter PDF');
+                    return;
+                }
+
+                const resultado = await apiCall('/admin/api/teste-categorias/classificar-comparacao', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        processo: doc.processo,
+                        categoria_id: categoriaAtual.id,
+                        pdf_base64: pdfBase64
+                    })
+                });
+
+                // Armazena para exportacao
+                resultadoComparacao = resultado;
+
+                if (resultado.sucesso) {
+                    // Usa resultado_a como o principal para salvar no banco
+                    const jsonPrincipal = resultado.resultado_a || resultado.resultado_b;
+
+                    if (jsonPrincipal) {
+                        // Salva no banco com resultado do modelo A
+                        await apiCall('/admin/api/teste-categorias/documentos', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                processo: doc.processo,
+                                categoria_id: categoriaAtual.id,
+                                status: 'classificado',
+                                json_resultado: jsonPrincipal,
+                                num_documentos: doc.num_documentos || 0,
+                                revisado: doc.revisado || false
+                            })
+                        });
+
+                        // Atualiza local
+                        doc.json_resultado = jsonPrincipal;
+                        doc.status = 'classificado';
+                        atualizarListaResultados();
+                    }
+
+                    // Renderiza comparacao
+                    renderizarComparacao(resultado);
+
+                    // Mensagem de sucesso
+                    const report = resultado.report;
+                    if (report) {
+                        if (report.campos_diferentes === 0) {
+                            mostrarSucesso(`100% igual! (${resultado.tempo_a_ms}ms + ${resultado.tempo_b_ms}ms)`);
+                        } else {
+                            mostrarAviso(`${report.campos_diferentes} diferenca(s) encontrada(s)`);
+                        }
+                    }
+                } else {
+                    document.getElementById('resultado-json').innerHTML = `
+                        <div class="text-center py-12 text-red-500">
+                            <i class="fas fa-times-circle text-4xl mb-4"></i>
+                            <p>${resultado.erro || 'Erro na comparacao'}</p>
+                        </div>
+                    `;
+                }
+
+            } catch (e) {
+                console.error('Erro:', e);
+                mostrarErro('Erro ao comparar modelos');
+            }
+        }
+
+        function renderizarComparacao(resultado) {
+            const container = document.getElementById('resultado-json');
+            const report = resultado.report;
+
+            if (!report) {
+                // Se nao tem report mas tem resultados, mostra o que tem
+                if (resultado.resultado_a) {
+                    renderizarJSON(resultado.resultado_a);
+                } else if (resultado.resultado_b) {
+                    renderizarJSON(resultado.resultado_b);
+                }
+                return;
+            }
+
+            let html = '';
+
+            // Banner de resumo
+            const isIgual = report.campos_diferentes === 0;
+            html += `
+                <div class="mb-4 p-4 rounded-lg ${isIgual ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'}">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <i class="fas ${isIgual ? 'fa-check-circle text-green-500' : 'fa-exclamation-triangle text-amber-500'} text-2xl"></i>
+                            <div>
+                                <h3 class="font-semibold ${isIgual ? 'text-green-700' : 'text-amber-700'}">
+                                    ${isIgual ? '100% de Acordo' : `${report.campos_diferentes} Diferenca(s)`}
+                                </h3>
+                                <p class="text-sm ${isIgual ? 'text-green-600' : 'text-amber-600'}">${report.resumo}</p>
+                            </div>
+                        </div>
+                        <button onclick="exportarRelatorioComparacao()" class="px-3 py-1.5 bg-white border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+                            <i class="fas fa-download mr-1"></i> Exportar
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            // Stats
+            html += `
+                <div class="grid grid-cols-4 gap-3 mb-4">
+                    <div class="bg-white p-3 rounded-lg border border-gray-200 text-center">
+                        <div class="text-2xl font-bold text-gray-800">${report.campos_comparados}</div>
+                        <div class="text-xs text-gray-500">Comparados</div>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border border-gray-200 text-center">
+                        <div class="text-2xl font-bold text-green-600">${report.campos_iguais}</div>
+                        <div class="text-xs text-gray-500">Iguais</div>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border border-gray-200 text-center">
+                        <div class="text-2xl font-bold text-amber-600">${report.campos_diferentes}</div>
+                        <div class="text-xs text-gray-500">Diferentes</div>
+                    </div>
+                    <div class="bg-white p-3 rounded-lg border border-gray-200 text-center">
+                        <div class="text-2xl font-bold text-gray-400">${report.campos_text_ignorados}</div>
+                        <div class="text-xs text-gray-500">Texto (ignorados)</div>
+                    </div>
+                </div>
+            `;
+
+            // Info dos modelos
+            html += `
+                <div class="flex gap-4 mb-4">
+                    <div class="flex-1 bg-blue-50 p-3 rounded-lg border border-blue-200">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium text-blue-700">Modelo A</span>
+                            <span class="text-sm text-blue-500">${resultado.tempo_a_ms}ms</span>
+                        </div>
+                        <div class="text-xs text-blue-600 mt-1">${resultado.modelo_a} (${resultado.config_a})</div>
+                    </div>
+                    <div class="flex-1 bg-purple-50 p-3 rounded-lg border border-purple-200">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium text-purple-700">Modelo B</span>
+                            <span class="text-sm text-purple-500">${resultado.tempo_b_ms}ms</span>
+                        </div>
+                        <div class="text-xs text-purple-600 mt-1">${resultado.modelo_b} (${resultado.config_b})</div>
+                    </div>
+                </div>
+            `;
+
+            // Lista de diferencas (apenas campos comparaveis)
+            const diferencasComparaveis = report.diferencas.filter(d => d.comparavel);
+            if (diferencasComparaveis.length > 0) {
+                html += `
+                    <div class="mb-4">
+                        <h4 class="font-medium text-gray-700 mb-2 flex items-center gap-2">
+                            <i class="fas fa-not-equal text-amber-500"></i>
+                            Diferencas Encontradas
+                        </h4>
+                        <div class="space-y-2">
+                `;
+
+                for (const diff of diferencasComparaveis) {
+                    html += `
+                        <div class="bg-white p-3 rounded-lg border border-gray-200">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium text-gray-700">${formatarLabelDiff(diff.campo)}</span>
+                                <span class="text-xs px-2 py-0.5 bg-gray-100 rounded text-gray-500">${diff.tipo_campo}</span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div class="p-2 bg-blue-50 rounded text-sm">
+                                    <span class="text-xs text-blue-500 block mb-1">Modelo A:</span>
+                                    <span class="text-blue-700">${formatarValorComparacao(diff.valor_a)}</span>
+                                </div>
+                                <div class="p-2 bg-purple-50 rounded text-sm">
+                                    <span class="text-xs text-purple-500 block mb-1">Modelo B:</span>
+                                    <span class="text-purple-700">${formatarValorComparacao(diff.valor_b)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                html += `</div></div>`;
+            }
+
+            // Campos texto ignorados (colapsados)
+            const camposTexto = report.diferencas.filter(d => !d.comparavel);
+            if (camposTexto.length > 0) {
+                html += `
+                    <details class="bg-gray-50 rounded-lg border border-gray-200">
+                        <summary class="p-3 cursor-pointer text-sm text-gray-600 hover:bg-gray-100">
+                            <i class="fas fa-text-width mr-2"></i>
+                            Campos texto nao comparados (${camposTexto.length})
+                        </summary>
+                        <div class="p-3 border-t border-gray-200 space-y-1">
+                            ${camposTexto.map(d => `
+                                <div class="text-xs text-gray-500 font-mono">${d.campo}</div>
+                            `).join('')}
+                        </div>
+                    </details>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function formatarLabelDiff(campo) {
+            // Usa o formato da categoria se disponivel
+            if (formatoCategoria[campo]?.description) {
+                return formatoCategoria[campo].description;
+            }
+            return campo.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+        }
+
+        function formatarValorComparacao(valor) {
+            if (valor === null || valor === undefined) {
+                return '<span class="text-gray-400 italic">nulo</span>';
+            }
+            if (typeof valor === 'boolean') {
+                return valor ? '<i class="fas fa-check text-green-500"></i> Sim' : '<i class="fas fa-times text-red-500"></i> Nao';
+            }
+            if (Array.isArray(valor)) {
+                if (valor.length === 0) return '<span class="text-gray-400">[]</span>';
+                return `[${valor.map(v => typeof v === 'object' ? JSON.stringify(v) : v).join(', ')}]`;
+            }
+            if (typeof valor === 'object') {
+                return `<code class="text-xs">${JSON.stringify(valor)}</code>`;
+            }
+            return escapeHtml(String(valor));
+        }
+
+        function exportarRelatorioComparacao() {
+            if (!resultadoComparacao) {
+                mostrarErro('Nenhum relatorio para exportar');
+                return;
+            }
+
+            const processo = resultadoComparacao.processo.replace(/\./g, '-');
+            const filename = `comparison_report_${processo}.json`;
+            const data = JSON.stringify(resultadoComparacao, null, 2);
+
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            mostrarSucesso('Relatorio exportado!');
         }
 
         // ==========================
@@ -1217,10 +1670,20 @@
             // Atualiza botao de revisado
             atualizarBotaoRevisado(d.revisado);
 
-            // JSON
-            if (d.json_resultado) {
+            // Verifica se tem comparacao em cache
+            const comparacao = comparacaoCache[processo];
+
+            // JSON ou Comparacao
+            if (comparacao && comparacao.report) {
+                // Tem resultado de comparacao - mostra view de comparacao
+                resultadoComparacao = comparacao;  // Atualiza global para export
+                renderizarComparacao(comparacao);
+            } else if (d.json_resultado) {
+                // Mostra JSON normal
+                resultadoComparacao = null;
                 renderizarJSON(d.json_resultado);
             } else {
+                resultadoComparacao = null;
                 document.getElementById('resultado-json').innerHTML = `
                     <div class="text-center py-12 text-gray-400">
                         <i class="fas fa-robot text-4xl mb-4"></i>

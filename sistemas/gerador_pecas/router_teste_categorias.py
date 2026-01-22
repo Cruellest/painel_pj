@@ -13,7 +13,7 @@ import io
 import re
 import logging
 import uuid
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 
@@ -163,6 +163,54 @@ class ObservacaoCategoria(BaseModel):
     """Observações persistentes de uma categoria"""
     categoria_id: int
     texto: str
+
+
+# ==========================
+# Schemas para Comparação de Modelos
+# ==========================
+
+class ClassificarComparacaoRequest(BaseModel):
+    """Request para classificar com comparação de modelos"""
+    processo: str
+    categoria_id: int
+    pdf_base64: str
+
+
+class DiferencaCampoSchema(BaseModel):
+    """Diferença entre valores de um campo"""
+    campo: str
+    tipo_campo: str
+    valor_a: Any
+    valor_b: Any
+    comparavel: bool
+
+
+class RelatorioComparacaoSchema(BaseModel):
+    """Relatório de comparação entre dois JSONs"""
+    total_campos: int
+    campos_comparados: int
+    campos_iguais: int
+    campos_diferentes: int
+    campos_text_ignorados: int
+    porcentagem_acordo: float
+    diferencas: List[DiferencaCampoSchema]
+    resumo: str
+
+
+class ClassificacaoComparacaoResultado(BaseModel):
+    """Resultado da classificação com comparação de modelos"""
+    processo: str
+    sucesso: bool
+    resultado_a: Optional[Dict[str, Any]] = None
+    resultado_b: Optional[Dict[str, Any]] = None
+    modelo_a: str
+    modelo_b: str
+    config_a: str  # ex: "thinking: low"
+    config_b: str  # ex: "thinking: default"
+    tempo_a_ms: int
+    tempo_b_ms: int
+    report: Optional[RelatorioComparacaoSchema] = None
+    erro: Optional[str] = None
 
 
 # ==========================
@@ -498,6 +546,130 @@ async def classificar_documento_com_ia(
         return None, str(e), ""
 
 
+async def classificar_documento_com_modelo(
+    pdf_base64: str,
+    categoria: CategoriaResumoJSON,
+    modelo: str,
+    thinking_level: Optional[str],
+    db: Session
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], int]:
+    """
+    Versão parametrizada de classificar_documento_com_ia.
+
+    Permite especificar modelo e thinking_level para comparações A/B.
+
+    Args:
+        pdf_base64: PDF em base64
+        categoria: Categoria de resumo JSON
+        modelo: Nome do modelo (ex: "gemini-3-flash-preview", "gemini-2.5-flash-lite")
+        thinking_level: Nível de thinking ("low", "medium", "high", None)
+        db: Sessão do banco de dados
+
+    Returns:
+        Tupla (json_extraido, erro, tempo_ms)
+    """
+    import time
+    from services.gemini_service import gemini_service
+    from sistemas.gerador_pecas.extrator_resumo_json import (
+        FormatoResumo, gerar_prompt_extracao_json,
+        gerar_prompt_extracao_json_imagem, parsear_resposta_json,
+        normalizar_json_com_schema
+    )
+
+    inicio = time.time()
+
+    try:
+        # Cria objeto de formato
+        formato = FormatoResumo(
+            categoria_id=categoria.id,
+            categoria_nome=categoria.nome,
+            formato_json=categoria.formato_json,
+            instrucoes_extracao=categoria.instrucoes_extracao,
+            is_residual=categoria.is_residual
+        )
+
+        # Decodifica PDF
+        pdf_bytes = base64.b64decode(pdf_base64)
+
+        # Extrai texto do PDF
+        texto_extraido = ""
+        if HAS_PYMUPDF:
+            try:
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                for pagina in doc:
+                    texto_extraido += pagina.get_text()
+                doc.close()
+                # Normaliza texto extraído
+                if texto_extraido:
+                    result = text_normalizer.normalize(texto_extraido)
+                    texto_extraido = result.text
+            except Exception as e:
+                logger.warning(f"Erro ao extrair texto do PDF: {e}")
+
+        # Decide se usa texto ou imagem
+        if texto_extraido and len(texto_extraido.strip()) > 100:
+            # Usa texto
+            prompt_template = gerar_prompt_extracao_json(formato, db=db)
+            prompt = prompt_template.format(texto_documento=texto_extraido[:50000])
+
+            response = await gemini_service.generate(
+                prompt=prompt,
+                model=modelo,
+                temperature=0.1,
+                max_tokens=8000,
+                thinking_level=thinking_level
+            )
+        else:
+            # Usa imagem (PDF digitalizado)
+            prompt = gerar_prompt_extracao_json_imagem(formato, db=db)
+
+            # Converte PDF para imagens
+            imagens_base64 = []
+            if HAS_PYMUPDF:
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                for i, pagina in enumerate(doc):
+                    if i >= 10:  # Limita a 10 páginas
+                        break
+                    pix = pagina.get_pixmap(matrix=fitz.Matrix(2, 2))
+                    img_bytes = pix.tobytes("png")
+                    imagens_base64.append(base64.b64encode(img_bytes).decode())
+                doc.close()
+
+            if imagens_base64:
+                response = await gemini_service.generate_with_images(
+                    prompt=prompt,
+                    images_base64=imagens_base64,
+                    model=modelo,
+                    temperature=0.1,
+                    max_tokens=8000,
+                    thinking_level=thinking_level
+                )
+            else:
+                tempo_ms = int((time.time() - inicio) * 1000)
+                return None, "Não foi possível processar o PDF", tempo_ms
+
+        tempo_ms = int((time.time() - inicio) * 1000)
+
+        if not response.success:
+            return None, response.error, tempo_ms
+
+        # Parseia resposta JSON
+        json_dict, erro_parse = parsear_resposta_json(response.content)
+
+        if erro_parse:
+            return None, erro_parse, tempo_ms
+
+        # Normaliza JSON garantindo que todas as chaves do schema estejam presentes
+        json_normalizado = normalizar_json_com_schema(json_dict, categoria.formato_json)
+
+        return json_normalizado, None, tempo_ms
+
+    except Exception as e:
+        tempo_ms = int((time.time() - inicio) * 1000)
+        logger.error(f"Erro ao classificar documento com modelo {modelo}: {e}")
+        return None, str(e), tempo_ms
+
+
 # ==========================
 # Endpoints
 # ==========================
@@ -831,6 +1003,153 @@ async def classificar_lote(
     )
 
     return resultados
+
+
+@router.post("/classificar-comparacao", response_model=ClassificacaoComparacaoResultado)
+async def classificar_com_comparacao(
+    request: ClassificarComparacaoRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Classifica um documento usando dois modelos de IA e compara resultados.
+
+    Modelo A: gemini-3-flash-preview com thinking="low"
+    Modelo B: gemini-2.5-flash-lite com thinking=None (padrão)
+
+    Executa ambos em paralelo e retorna relatório de comparação.
+    """
+    from sistemas.gerador_pecas.services_comparacao import comparar_jsons_estruturados
+
+    verificar_permissao(current_user)
+
+    # Busca categoria
+    categoria = db.query(CategoriaResumoJSON).filter(
+        CategoriaResumoJSON.id == request.categoria_id
+    ).first()
+
+    if not categoria:
+        raise HTTPException(status_code=404, detail="Categoria não encontrada")
+
+    # Configurações dos modelos
+    MODELO_A = "gemini-3-flash-preview"
+    THINKING_A = "low"
+    CONFIG_A = "thinking: low"
+
+    MODELO_B = "gemini-2.5-flash-lite"
+    THINKING_B = None
+    CONFIG_B = "thinking: default"
+
+    # Executa ambos modelos em paralelo
+    logger.info(f"[COMPARE] Iniciando comparação: processo={request.processo}, "
+                f"modelo_a={MODELO_A}, modelo_b={MODELO_B}")
+
+    task_a = classificar_documento_com_modelo(
+        request.pdf_base64, categoria, MODELO_A, THINKING_A, db
+    )
+    task_b = classificar_documento_com_modelo(
+        request.pdf_base64, categoria, MODELO_B, THINKING_B, db
+    )
+
+    # Aguarda ambas completarem
+    resultado_a, resultado_b = await asyncio.gather(task_a, task_b)
+    json_a, erro_a, tempo_a = resultado_a
+    json_b, erro_b, tempo_b = resultado_b
+
+    # Log
+    logger.info(f"[COMPARE] Resultado: compare_mode=true, modelo_a={MODELO_A}, "
+                f"modelo_b={MODELO_B}, tempo_a={tempo_a}ms, tempo_b={tempo_b}ms, "
+                f"erro_a={erro_a}, erro_b={erro_b}")
+
+    # Se ambos falharam, retorna erro
+    if erro_a and erro_b:
+        return ClassificacaoComparacaoResultado(
+            processo=request.processo,
+            sucesso=False,
+            modelo_a=MODELO_A,
+            modelo_b=MODELO_B,
+            config_a=CONFIG_A,
+            config_b=CONFIG_B,
+            tempo_a_ms=tempo_a,
+            tempo_b_ms=tempo_b,
+            erro=f"Ambos modelos falharam. A: {erro_a} | B: {erro_b}"
+        )
+
+    # Se apenas um falhou, ainda retorna parcialmente
+    if erro_a:
+        return ClassificacaoComparacaoResultado(
+            processo=request.processo,
+            sucesso=True,  # Parcialmente bem-sucedido
+            resultado_a=None,
+            resultado_b=json_b,
+            modelo_a=MODELO_A,
+            modelo_b=MODELO_B,
+            config_a=CONFIG_A,
+            config_b=CONFIG_B,
+            tempo_a_ms=tempo_a,
+            tempo_b_ms=tempo_b,
+            erro=f"Modelo A falhou: {erro_a}"
+        )
+
+    if erro_b:
+        return ClassificacaoComparacaoResultado(
+            processo=request.processo,
+            sucesso=True,  # Parcialmente bem-sucedido
+            resultado_a=json_a,
+            resultado_b=None,
+            modelo_a=MODELO_A,
+            modelo_b=MODELO_B,
+            config_a=CONFIG_A,
+            config_b=CONFIG_B,
+            tempo_a_ms=tempo_a,
+            tempo_b_ms=tempo_b,
+            erro=f"Modelo B falhou: {erro_b}"
+        )
+
+    # Compara os resultados
+    try:
+        schema = json.loads(categoria.formato_json) if categoria.formato_json else {}
+    except json.JSONDecodeError:
+        schema = {}
+
+    relatorio = comparar_jsons_estruturados(json_a, json_b, schema)
+
+    # Converte para schema Pydantic
+    report_schema = RelatorioComparacaoSchema(
+        total_campos=relatorio.total_campos,
+        campos_comparados=relatorio.campos_comparados,
+        campos_iguais=relatorio.campos_iguais,
+        campos_diferentes=relatorio.campos_diferentes,
+        campos_text_ignorados=relatorio.campos_text_ignorados,
+        porcentagem_acordo=relatorio.porcentagem_acordo,
+        diferencas=[
+            DiferencaCampoSchema(
+                campo=d.campo,
+                tipo_campo=d.tipo_campo,
+                valor_a=d.valor_a,
+                valor_b=d.valor_b,
+                comparavel=d.comparavel
+            )
+            for d in relatorio.diferencas
+        ],
+        resumo=relatorio.resumo
+    )
+
+    logger.info(f"[COMPARE] Comparação concluída: {relatorio.resumo}")
+
+    return ClassificacaoComparacaoResultado(
+        processo=request.processo,
+        sucesso=True,
+        resultado_a=json_a,
+        resultado_b=json_b,
+        modelo_a=MODELO_A,
+        modelo_b=MODELO_B,
+        config_a=CONFIG_A,
+        config_b=CONFIG_B,
+        tempo_a_ms=tempo_a,
+        tempo_b_ms=tempo_b,
+        report=report_schema
+    )
 
 
 @router.get("/categorias-ativas")

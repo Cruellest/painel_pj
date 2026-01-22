@@ -1049,16 +1049,30 @@ async def processar_pdfs_stream(
                 if observacao_usuario:
                     yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Observações do usuário serão consideradas na geração'})}\n\n"
 
-                resultado_agente3 = await orq._executar_agente3(
+                # Usa versão STREAMING do Agente 3 para TTFT rápido
+                resultado_agente3 = None
+                async for event in orq._executar_agente3_stream(
                     resumo_consolidado=resumo_consolidado,
                     prompt_sistema=resultado_agente2.prompt_sistema,
                     prompt_peca=resultado_agente2.prompt_peca,
                     prompt_conteudo=resultado_agente2.prompt_conteudo,
                     tipo_peca=tipo_peca_final,
                     observacao_usuario=observacao_usuario
-                )
+                ):
+                    if event["tipo"] == "chunk":
+                        # Envia chunk de texto para o frontend em tempo real
+                        yield f"data: {json.dumps({'tipo': 'geracao_chunk', 'content': event['content']})}\n\n"
 
-                if resultado_agente3.erro:
+                    elif event["tipo"] == "done":
+                        resultado_agente3 = event["resultado"]
+
+                    elif event["tipo"] == "error":
+                        resultado_agente3 = event["resultado"]
+                        yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': event['error']})}\n\n"
+                        yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': event['error']})}\n\n"
+                        return
+
+                if resultado_agente3 and resultado_agente3.erro:
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
                     return

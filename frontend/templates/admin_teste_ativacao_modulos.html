@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Ativacao de Modulos - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff', 100: '#e0f2fe', 200: '#bae6fd',
+                            300: '#7dd3fc', 400: '#38bdf8', 500: '#0ea5e9',
+                            600: '#0284c7', 700: '#0369a1', 800: '#075985', 900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .tab-active {
+            border-bottom: 3px solid #0284c7;
+            color: #0284c7;
+            background: #f0f9ff;
+        }
+        .tab-inactive {
+            border-bottom: 3px solid transparent;
+            color: #6b7280;
+        }
+        .tab-inactive:hover {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-error { background: #fee2e2; color: #991b1b; }
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+        .badge-neutral { background: #f3f4f6; color: #4b5563; }
+        .json-editor {
+            font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .accordion-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .accordion-content.open {
+            max-height: none; /* Remove limite para permitir scroll completo */
+            overflow: visible;
+        }
+        .modulo-card {
+            transition: all 0.2s;
+        }
+        .modulo-card:hover {
+            transform: translateX(4px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .modulo-card.ativado {
+            border-left: 4px solid #10b981;
+            background: linear-gradient(90deg, #ecfdf5 0%, white 100%);
+        }
+        .modulo-card.nao-ativado {
+            border-left: 4px solid #ef4444;
+            background: linear-gradient(90deg, #fef2f2 0%, white 100%);
+        }
+        .modulo-card.indeterminado {
+            border-left: 4px solid #f59e0b;
+            background: linear-gradient(90deg, #fffbeb 0%, white 100%);
+        }
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(255,255,255,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #0284c7;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 shadow-sm sticky top-0 z-40">
+        <div class="flex items-center justify-between max-w-full mx-auto">
+            <div class="flex items-center gap-4">
+                <a href="/admin/prompts-modulos" class="text-gray-500 hover:text-primary-600 p-2 rounded-lg hover:bg-gray-100" title="Voltar">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10">
+                <div>
+                    <h1 class="text-xl font-semibold text-gray-800">Teste de Ativacao de Modulos</h1>
+                    <p class="text-sm text-gray-500">Simule ativacao de prompts com variaveis de teste</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <!-- Seletor de Tipo de Peca (OBRIGATORIO) -->
+                <div id="container-tipo-peca" class="flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-lg border-2 border-amber-300 transition-all">
+                    <i class="fas fa-file-alt text-amber-600"></i>
+                    <label class="text-sm font-medium text-amber-700">Tipo de Peca:</label>
+                    <select id="select-tipo-peca" onchange="trocarTipoPeca()"
+                        class="px-4 py-2 border-2 border-amber-400 rounded-lg focus:ring-2 focus:ring-amber-500 font-semibold min-w-[200px] bg-white">
+                        <option value="">-- Selecione --</option>
+                    </select>
+                    <span id="tipo-peca-aviso" class="text-xs text-red-600 font-medium animate-pulse">
+                        (obrigatorio)
+                    </span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="p-4">
+        <div class="grid grid-cols-12 gap-4">
+            <!-- Sidebar Esquerdo -->
+            <div class="col-span-3 space-y-4">
+                <!-- Card: Descricao da Situacao -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-indigo-50">
+                        <h3 class="font-semibold text-gray-700 flex items-center gap-2">
+                            <i class="fas fa-edit text-purple-500"></i>
+                            Descricao da Situacao
+                        </h3>
+                    </div>
+                    <div class="p-4">
+                        <textarea id="descricao-situacao" rows="5"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm resize-none"
+                            placeholder="Descreva a situacao processual...&#10;Ex: Acao para medicamento nao incorporado ao SUS, valor R$ 450.000, Estado no polo passivo."></textarea>
+                        <button onclick="gerarVariaveis()" id="btn-gerar"
+                            class="w-full mt-3 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                            <i class="fas fa-magic"></i> Gerar Variaveis via IA
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card: Categorias de Extracao -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-cyan-50">
+                        <h3 class="font-semibold text-gray-700 flex items-center gap-2">
+                            <i class="fas fa-tags text-blue-500"></i>
+                            Categorias de Extracao
+                        </h3>
+                    </div>
+                    <div class="p-4 max-h-[200px] overflow-y-auto" id="lista-categorias">
+                        <p class="text-center text-gray-400 text-sm py-4">Carregando...</p>
+                    </div>
+                </div>
+
+                <!-- Card: Cenarios Salvos -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div class="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-green-50 to-emerald-50 flex items-center justify-between">
+                        <h3 class="font-semibold text-gray-700 flex items-center gap-2">
+                            <i class="fas fa-bookmark text-green-500"></i>
+                            Cenarios Salvos
+                        </h3>
+                        <button onclick="salvarCenario()" class="text-green-600 hover:text-green-800 text-sm" title="Salvar cenario atual">
+                            <i class="fas fa-save"></i>
+                        </button>
+                    </div>
+                    <div class="p-2">
+                        <select id="select-cenario" onchange="carregarCenario()"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="">-- Selecionar cenario --</option>
+                        </select>
+                        <div class="mt-2 flex gap-2">
+                            <button onclick="carregarCenarioPredefinido()"
+                                class="flex-1 px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200 text-xs">
+                                <i class="fas fa-folder-open mr-1"></i> Pre-definidos
+                            </button>
+                            <button onclick="excluirCenario()" id="btn-excluir-cenario"
+                                class="px-3 py-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 text-xs hidden">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Painel Central/Direito -->
+            <div class="col-span-9">
+                <!-- Container Principal com Tabs e Conteudo -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 relative">
+                    <!-- Loading Overlay -->
+                    <div id="loading-overlay" class="loading-overlay hidden">
+                        <div class="text-center">
+                            <div class="spinner mx-auto mb-4"></div>
+                            <p class="text-gray-600" id="loading-text">Processando...</p>
+                        </div>
+                    </div>
+
+                    <!-- Tabs (altura fixa) -->
+                    <div class="flex border-b border-gray-200">
+                        <button onclick="mostrarAba('variaveis-extracao')" id="tab-variaveis-extracao"
+                            class="flex-1 px-6 py-3 text-sm font-medium tab-active flex items-center justify-center gap-2">
+                            <i class="fas fa-file-alt"></i>
+                            Variaveis Extracao
+                        </button>
+                        <button onclick="mostrarAba('variaveis-processo')" id="tab-variaveis-processo"
+                            class="flex-1 px-6 py-3 text-sm font-medium tab-inactive flex items-center justify-center gap-2">
+                            <i class="fas fa-gavel"></i>
+                            Variaveis Processo
+                        </button>
+                        <button onclick="mostrarAba('resultados')" id="tab-resultados"
+                            class="flex-1 px-6 py-3 text-sm font-medium tab-inactive flex items-center justify-center gap-2">
+                            <i class="fas fa-check-circle"></i>
+                            Resultados
+                        </button>
+                    </div>
+
+                    <!-- Aba: Variaveis de Extracao -->
+                    <div id="aba-variaveis-extracao" class="p-4 overflow-y-auto" style="height: calc(100vh - 280px); max-height: calc(100vh - 280px);">
+                        <div id="container-variaveis-extracao">
+                            <p class="text-center text-gray-400 py-8">Selecione categorias para ver as variaveis</p>
+                        </div>
+                    </div>
+
+                    <!-- Aba: Variaveis de Processo -->
+                    <div id="aba-variaveis-processo" class="hidden p-4 overflow-y-auto" style="height: calc(100vh - 280px); max-height: calc(100vh - 280px);">
+                        <div id="container-variaveis-processo">
+                            <p class="text-center text-gray-400 py-8">Carregando...</p>
+                        </div>
+                    </div>
+
+                    <!-- Aba: Resultados -->
+                    <div id="aba-resultados" class="hidden" style="height: calc(100vh - 280px); max-height: calc(100vh - 280px);">
+                        <!-- Toolbar -->
+                        <div class="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-4">
+                            <span class="text-sm text-gray-600">
+                                <span id="total-ativados" class="font-bold text-green-600">0</span> ativados |
+                                <span id="total-nao-ativados" class="font-bold text-red-600">0</span> nao ativados |
+                                <span id="total-indeterminados" class="font-bold text-amber-600">0</span> indeterminados
+                            </span>
+                            <div class="flex-1"></div>
+                            <button onclick="exportarResultados()" class="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">
+                                <i class="fas fa-download mr-1"></i> Exportar JSON
+                            </button>
+                        </div>
+
+                        <!-- Lista de Resultados -->
+                        <div class="overflow-y-auto p-4" id="container-resultados" style="height: calc(100% - 52px);">
+                            <div class="text-center py-12 text-gray-400">
+                                <i class="fas fa-flask text-5xl mb-4"></i>
+                                <p class="text-lg">Clique em "Simular Ativacao" para ver os resultados</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer com Botao Simular (FORA da area scrollavel) -->
+                <div class="mt-3">
+                    <button onclick="simularAtivacao()" id="btn-simular"
+                        class="w-full py-4 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-xl hover:from-primary-700 hover:to-primary-800 font-bold text-lg shadow-lg disabled:opacity-50 flex items-center justify-center gap-3 transition-all">
+                        <i class="fas fa-play-circle text-xl"></i>
+                        SIMULAR ATIVACAO
+                        <span id="tipo-peca-badge" class="hidden ml-2 px-2 py-1 bg-white/20 rounded text-sm font-normal"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal: Cenarios Pre-definidos -->
+    <div id="modal-predefinidos" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-green-50 to-emerald-50">
+                <h3 class="font-semibold text-lg text-gray-800">
+                    <i class="fas fa-folder-open text-green-500 mr-2"></i>
+                    Cenarios Pre-definidos
+                </h3>
+                <button onclick="fecharModalPredefinidos()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto max-h-[60vh]" id="lista-predefinidos">
+                <p class="text-center text-gray-400 py-8">Carregando...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Salvar Cenario -->
+    <div id="modal-salvar" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4">
+            <div class="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                <h3 class="font-semibold text-lg text-gray-800">
+                    <i class="fas fa-save text-blue-500 mr-2"></i>
+                    Salvar Cenario
+                </h3>
+            </div>
+            <div class="p-6">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Nome do Cenario</label>
+                <input type="text" id="input-nome-cenario"
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ex: Medicamento nao incorporado SUS">
+                <div class="flex gap-3 mt-6">
+                    <button onclick="fecharModalSalvar()" class="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                        Cancelar
+                    </button>
+                    <button onclick="confirmarSalvarCenario()" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                        Salvar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Relatorio de Ativacao -->
+    <div id="modal-relatorio" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
+                <h3 class="font-semibold text-lg text-gray-800">
+                    <i class="fas fa-clipboard-list text-amber-500 mr-2"></i>
+                    Relatorio de Ativacao
+                </h3>
+                <button onclick="fecharModalRelatorio()" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6">
+                <div id="relatorio-loading" class="text-center py-12">
+                    <i class="fas fa-spinner fa-spin text-4xl text-amber-500 mb-4"></i>
+                    <p class="text-gray-600">Gerando relatorio com IA...</p>
+                    <p class="text-sm text-gray-400 mt-2">Analisando regras e variaveis do modulo</p>
+                </div>
+                <div id="relatorio-erro" class="hidden text-center py-12">
+                    <i class="fas fa-exclamation-circle text-4xl text-red-500 mb-4"></i>
+                    <p class="text-red-600 font-medium">Erro ao gerar relatorio</p>
+                    <p id="relatorio-erro-msg" class="text-sm text-gray-500 mt-2"></p>
+                    <button onclick="fecharModalRelatorio()" class="mt-4 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                        Fechar
+                    </button>
+                </div>
+                <div id="relatorio-conteudo" class="hidden prose prose-sm max-w-none">
+                    <!-- Conteudo do relatorio sera inserido aqui -->
+                </div>
+            </div>
+            <div id="relatorio-footer" class="hidden px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+                <button onclick="copiarRelatorio()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                    <i class="fas fa-copy mr-2"></i>Copiar
+                </button>
+                <button onclick="fecharModalRelatorio()" class="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================
+        // Estado Global
+        // ==========================
+        let tiposPeca = [];
+        let tipoPecaAtual = null;
+        let categoriasExtracao = [];
+        let categoriasSelecionadas = [];
+        let variaveisProcesso = [];
+        let variaveisExtracaoValores = {};
+        let variaveisProcessoValores = {};
+        let cenariosSalvos = [];
+        let cenarioAtualId = null;
+        let ultimoResultado = null;
+
+        // ==========================
+        // Autenticacao
+        // ==========================
+        function getToken() {
+            return localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+        }
+
+        // ==========================
+        // API Helper
+        // ==========================
+        async function apiCall(url, options = {}) {
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    'Authorization': `Bearer ${getToken()}`,
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return null;
+            }
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ detail: 'Erro desconhecido' }));
+                throw new Error(error.detail || 'Erro na requisicao');
+            }
+
+            return response.json();
+        }
+
+        // ==========================
+        // Loading
+        // ==========================
+        function mostrarLoading(texto = 'Processando...') {
+            document.getElementById('loading-text').textContent = texto;
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+
+        function esconderLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        // ==========================
+        // Abas
+        // ==========================
+        function mostrarAba(aba) {
+            // Esconde todas as abas
+            ['variaveis-extracao', 'variaveis-processo', 'resultados'].forEach(id => {
+                const abaEl = document.getElementById(`aba-${id}`);
+                const tabEl = document.getElementById(`tab-${id}`);
+                if (abaEl) abaEl.classList.add('hidden');
+                if (tabEl) {
+                    tabEl.classList.remove('tab-active');
+                    tabEl.classList.add('tab-inactive');
+                }
+            });
+
+            // Mostra aba selecionada
+            const abaAtiva = document.getElementById(`aba-${aba}`);
+            const tabAtiva = document.getElementById(`tab-${aba}`);
+            if (abaAtiva) abaAtiva.classList.remove('hidden');
+            if (tabAtiva) {
+                tabAtiva.classList.add('tab-active');
+                tabAtiva.classList.remove('tab-inactive');
+            }
+        }
+
+        // ==========================
+        // Inicializacao
+        // ==========================
+        document.addEventListener('DOMContentLoaded', async () => {
+            const token = getToken();
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+
+            await Promise.all([
+                carregarTiposPeca(),
+                carregarCategoriasExtracao(),
+                carregarVariaveisProcesso(),
+                carregarCenariosSalvos()
+            ]);
+        });
+
+        // ==========================
+        // Tipos de Peca
+        // ==========================
+        async function carregarTiposPeca() {
+            const select = document.getElementById('select-tipo-peca');
+            try {
+                tiposPeca = await apiCall('/admin/api/teste-ativacao/tipos-peca');
+                console.log('[DEBUG] Tipos de peca carregados:', tiposPeca);
+
+                select.innerHTML = '<option value="">-- Selecione o tipo de peca --</option>';
+
+                if (!tiposPeca || tiposPeca.length === 0) {
+                    console.warn('[WARN] Nenhum tipo de peca encontrado no banco');
+                    select.innerHTML = '<option value="">-- Nenhum tipo cadastrado --</option>';
+                    return;
+                }
+
+                for (const tipo of tiposPeca) {
+                    const option = document.createElement('option');
+                    option.value = tipo.slug;
+                    option.textContent = tipo.nome;
+                    select.appendChild(option);
+                }
+
+                // Se so tem um tipo, seleciona automaticamente
+                if (tiposPeca.length === 1) {
+                    select.value = tiposPeca[0].slug;
+                    trocarTipoPeca();
+                }
+            } catch (e) {
+                console.error('Erro ao carregar tipos de peca:', e);
+                select.innerHTML = '<option value="">-- Erro ao carregar --</option>';
+            }
+        }
+
+        function trocarTipoPeca() {
+            const select = document.getElementById('select-tipo-peca');
+            tipoPecaAtual = select.value;
+
+            // Atualiza o badge no botao
+            const badge = document.getElementById('tipo-peca-badge');
+            const btn = document.getElementById('btn-simular');
+            const aviso = document.getElementById('tipo-peca-aviso');
+            const container = document.getElementById('container-tipo-peca');
+
+            if (tipoPecaAtual) {
+                const tipoSelecionado = tiposPeca.find(t => t.slug === tipoPecaAtual);
+                badge.textContent = tipoSelecionado ? tipoSelecionado.nome : tipoPecaAtual;
+                badge.classList.remove('hidden');
+                btn.classList.remove('opacity-75');
+                // Esconde aviso e muda estilo do container
+                aviso.classList.add('hidden');
+                container.classList.remove('border-red-400', 'bg-red-50');
+                container.classList.add('border-green-400', 'bg-green-50');
+            } else {
+                badge.classList.add('hidden');
+                btn.classList.add('opacity-75');
+                // Mostra aviso
+                aviso.classList.remove('hidden');
+                container.classList.remove('border-green-400', 'bg-green-50');
+                container.classList.add('border-amber-300', 'bg-amber-50');
+            }
+
+            console.log('[DEBUG] Tipo de peca selecionado:', tipoPecaAtual);
+        }
+
+        // ==========================
+        // Categorias de Extracao
+        // ==========================
+        async function carregarCategoriasExtracao() {
+            try {
+                categoriasExtracao = await apiCall('/admin/api/teste-ativacao/categorias-extracao');
+                renderizarCategorias();
+                renderizarVariaveisExtracao();
+            } catch (e) {
+                console.error('Erro ao carregar categorias:', e);
+            }
+        }
+
+        function renderizarCategorias() {
+            const container = document.getElementById('lista-categorias');
+            container.innerHTML = '';
+
+            for (const cat of categoriasExtracao) {
+                const checked = categoriasSelecionadas.includes(cat.id) ? 'checked' : '';
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2 py-1';
+                div.innerHTML = `
+                    <input type="checkbox" id="cat-${cat.id}" value="${cat.id}"
+                        ${checked} onchange="toggleCategoria(${cat.id})"
+                        class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                    <label for="cat-${cat.id}" class="text-sm text-gray-700 cursor-pointer">${cat.titulo}</label>
+                    <span class="text-xs text-gray-400">(${cat.variaveis.length})</span>
+                `;
+                container.appendChild(div);
+            }
+        }
+
+        function toggleCategoria(id) {
+            const idx = categoriasSelecionadas.indexOf(id);
+            if (idx > -1) {
+                categoriasSelecionadas.splice(idx, 1);
+            } else {
+                categoriasSelecionadas.push(id);
+            }
+            renderizarVariaveisExtracao();
+        }
+
+        // ==========================
+        // Variaveis de Extracao
+        // ==========================
+        function renderizarVariaveisExtracao() {
+            const container = document.getElementById('container-variaveis-extracao');
+
+            if (categoriasSelecionadas.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-400 py-8">Selecione categorias para ver as variaveis</p>';
+                return;
+            }
+
+            let html = '';
+
+            for (const catId of categoriasSelecionadas) {
+                const cat = categoriasExtracao.find(c => c.id === catId);
+                if (!cat) continue;
+
+                html += `
+                    <div class="mb-4">
+                        <div class="flex items-center gap-2 cursor-pointer py-2 px-3 bg-blue-50 rounded-lg hover:bg-blue-100" onclick="toggleAccordion('acc-cat-${cat.id}')">
+                            <i class="fas fa-chevron-right transition-transform" id="icon-acc-cat-${cat.id}"></i>
+                            <span class="font-medium text-blue-800">${cat.titulo}</span>
+                            <span class="text-xs text-blue-600">(${cat.variaveis.length} variaveis)</span>
+                        </div>
+                        <div class="accordion-content open pl-4 pt-2" id="acc-cat-${cat.id}">
+                `;
+
+                for (const v of cat.variaveis) {
+                    const valor = variaveisExtracaoValores[v.slug];
+                    html += renderizarCampoVariavel(v, valor, 'extracao');
+                }
+
+                html += '</div></div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function renderizarCampoVariavel(variavel, valor, tipo) {
+            const inputId = `var-${tipo}-${variavel.slug}`;
+            const valorStr = valor !== undefined && valor !== null ? JSON.stringify(valor) : '';
+
+            let inputHtml = '';
+
+            if (variavel.tipo === 'boolean') {
+                const checkedTrue = valor === true ? 'checked' : '';
+                const checkedFalse = valor === false ? 'checked' : '';
+                const checkedNull = valor === undefined || valor === null ? 'checked' : '';
+
+                inputHtml = `
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-1 cursor-pointer">
+                            <input type="radio" name="${inputId}" value="true" ${checkedTrue}
+                                onchange="setVariavelValor('${variavel.slug}', true, '${tipo}')"
+                                class="w-4 h-4 text-green-600">
+                            <span class="text-sm text-green-700">True</span>
+                        </label>
+                        <label class="flex items-center gap-1 cursor-pointer">
+                            <input type="radio" name="${inputId}" value="false" ${checkedFalse}
+                                onchange="setVariavelValor('${variavel.slug}', false, '${tipo}')"
+                                class="w-4 h-4 text-red-600">
+                            <span class="text-sm text-red-700">False</span>
+                        </label>
+                        <label class="flex items-center gap-1 cursor-pointer">
+                            <input type="radio" name="${inputId}" value="null" ${checkedNull}
+                                onchange="setVariavelValor('${variavel.slug}', null, '${tipo}')"
+                                class="w-4 h-4 text-gray-400">
+                            <span class="text-sm text-gray-500">N/A</span>
+                        </label>
+                    </div>
+                `;
+            } else if (variavel.tipo === 'number') {
+                inputHtml = `
+                    <input type="number" id="${inputId}" value="${valor !== null && valor !== undefined ? valor : ''}"
+                        onchange="setVariavelValor('${variavel.slug}', this.value ? parseFloat(this.value) : null, '${tipo}')"
+                        class="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                        placeholder="Valor numerico">
+                `;
+            } else {
+                inputHtml = `
+                    <input type="text" id="${inputId}" value="${valor || ''}"
+                        onchange="setVariavelValor('${variavel.slug}', this.value || null, '${tipo}')"
+                        class="w-full px-3 py-1.5 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                        placeholder="Valor">
+                `;
+            }
+
+            return `
+                <div class="py-2 border-b border-gray-100 last:border-b-0">
+                    <div class="flex items-start gap-3">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <code class="text-xs font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-700">${variavel.slug}</code>
+                                <span class="badge badge-neutral text-xs">${variavel.tipo}</span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-0.5">${variavel.descricao || variavel.label}</p>
+                        </div>
+                        <div class="w-48">
+                            ${inputHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function setVariavelValor(slug, valor, tipo) {
+            if (tipo === 'extracao') {
+                if (valor === null) {
+                    delete variaveisExtracaoValores[slug];
+                } else {
+                    variaveisExtracaoValores[slug] = valor;
+                }
+            } else {
+                if (valor === null) {
+                    delete variaveisProcessoValores[slug];
+                } else {
+                    variaveisProcessoValores[slug] = valor;
+                }
+            }
+        }
+
+        function toggleAccordion(id) {
+            const content = document.getElementById(id);
+            const icon = document.getElementById('icon-' + id);
+
+            if (content.classList.contains('open')) {
+                content.classList.remove('open');
+                icon.style.transform = 'rotate(0deg)';
+            } else {
+                content.classList.add('open');
+                icon.style.transform = 'rotate(90deg)';
+            }
+        }
+
+        // ==========================
+        // Variaveis de Processo
+        // ==========================
+        async function carregarVariaveisProcesso() {
+            try {
+                variaveisProcesso = await apiCall('/admin/api/teste-ativacao/variaveis-processo');
+                renderizarVariaveisProcesso();
+            } catch (e) {
+                console.error('Erro ao carregar variaveis de processo:', e);
+            }
+        }
+
+        function renderizarVariaveisProcesso() {
+            const container = document.getElementById('container-variaveis-processo');
+            let html = '<div class="space-y-2">';
+
+            for (const v of variaveisProcesso) {
+                const valor = variaveisProcessoValores[v.slug];
+                html += renderizarCampoVariavel(v, valor, 'processo');
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        // ==========================
+        // Gerar Variaveis via IA
+        // ==========================
+        async function gerarVariaveis() {
+            const descricao = document.getElementById('descricao-situacao').value.trim();
+            if (!descricao) {
+                alert('Digite uma descricao da situacao processual');
+                return;
+            }
+
+            mostrarLoading('Gerando variaveis via IA...');
+
+            try {
+                const resultado = await apiCall('/admin/api/teste-ativacao/gerar-variaveis', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        descricao_situacao: descricao,
+                        categorias_ids: categoriasSelecionadas,
+                        tipo_peca: tipoPecaAtual
+                    })
+                });
+
+                if (resultado.sucesso) {
+                    variaveisExtracaoValores = resultado.variaveis_extracao || {};
+                    variaveisProcessoValores = resultado.variaveis_processo || {};
+
+                    renderizarVariaveisExtracao();
+                    renderizarVariaveisProcesso();
+
+                    alert('Variaveis geradas com sucesso! Revise os valores nas abas.');
+                } else {
+                    alert('Erro ao gerar variaveis: ' + (resultado.erro || 'Erro desconhecido'));
+                }
+            } catch (e) {
+                console.error('Erro:', e);
+                alert('Erro ao gerar variaveis: ' + e.message);
+            } finally {
+                esconderLoading();
+            }
+        }
+
+        // ==========================
+        // Simular Ativacao
+        // ==========================
+        async function simularAtivacao() {
+            if (!tipoPecaAtual) {
+                alert('OBRIGATORIO: Selecione um tipo de peca no cabecalho antes de simular.\n\nO tipo de peca e necessario para avaliar regras especificas por tipo.');
+                // Destaca o seletor
+                const container = document.getElementById('container-tipo-peca');
+                container.classList.add('border-red-400', 'bg-red-50');
+                container.classList.remove('border-amber-300', 'bg-amber-50');
+                document.getElementById('select-tipo-peca').focus();
+                return;
+            }
+
+            mostrarLoading('Simulando ativacao de modulos...');
+
+            try {
+                ultimoResultado = await apiCall('/admin/api/teste-ativacao/simular', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        variaveis_extracao: variaveisExtracaoValores,
+                        variaveis_processo: variaveisProcessoValores,
+                        tipo_peca: tipoPecaAtual,
+                        categorias_ids: categoriasSelecionadas
+                    })
+                });
+
+                renderizarResultados();
+                mostrarAba('resultados');
+            } catch (e) {
+                console.error('Erro:', e);
+                alert('Erro ao simular ativacao: ' + e.message);
+            } finally {
+                esconderLoading();
+            }
+        }
+
+        function renderizarResultados() {
+            if (!ultimoResultado) return;
+
+            const container = document.getElementById('container-resultados');
+
+            // Atualiza totais
+            document.getElementById('total-ativados').textContent = ultimoResultado.totais.ativados;
+            document.getElementById('total-nao-ativados').textContent = ultimoResultado.totais.nao_ativados;
+            document.getElementById('total-indeterminados').textContent = ultimoResultado.totais.indeterminados;
+
+            let html = '';
+
+            // Modulos Ativados
+            if (ultimoResultado.modulos_ativados.length > 0) {
+                html += `
+                    <div class="mb-6">
+                        <h3 class="font-semibold text-green-700 flex items-center gap-2 mb-3">
+                            <i class="fas fa-check-circle"></i>
+                            Modulos Ativados (${ultimoResultado.modulos_ativados.length})
+                        </h3>
+                        <div class="space-y-2">
+                `;
+                for (const m of ultimoResultado.modulos_ativados) {
+                    html += renderizarModuloCard(m, 'ativado');
+                }
+                html += '</div></div>';
+            }
+
+            // Modulos Nao Ativados
+            if (ultimoResultado.modulos_nao_ativados.length > 0) {
+                html += `
+                    <div class="mb-6">
+                        <h3 class="font-semibold text-red-700 flex items-center gap-2 mb-3">
+                            <i class="fas fa-times-circle"></i>
+                            Modulos Nao Ativados (${ultimoResultado.modulos_nao_ativados.length})
+                        </h3>
+                        <div class="space-y-2">
+                `;
+                for (const m of ultimoResultado.modulos_nao_ativados) {
+                    html += renderizarModuloCard(m, 'nao-ativado');
+                }
+                html += '</div></div>';
+            }
+
+            // Modulos Indeterminados
+            if (ultimoResultado.modulos_indeterminados.length > 0) {
+                html += `
+                    <div class="mb-6">
+                        <h3 class="font-semibold text-amber-700 flex items-center gap-2 mb-3">
+                            <i class="fas fa-question-circle"></i>
+                            Modulos Indeterminados (${ultimoResultado.modulos_indeterminados.length})
+                        </h3>
+                        <div class="space-y-2">
+                `;
+                for (const m of ultimoResultado.modulos_indeterminados) {
+                    html += renderizarModuloCard(m, 'indeterminado');
+                }
+                html += '</div></div>';
+            }
+
+            container.innerHTML = html || '<p class="text-center text-gray-400 py-8">Nenhum modulo encontrado</p>';
+        }
+
+        function renderizarModuloCard(modulo, status) {
+            const badgeClass = status === 'ativado' ? 'badge-success' :
+                             status === 'nao-ativado' ? 'badge-error' : 'badge-warning';
+            const modoLabel = modulo.modo === 'deterministic' ? 'Deterministico' :
+                             modulo.modo === 'llm' ? 'LLM' : modulo.modo;
+
+            // Variaveis avaliadas (com valores)
+            let varsHtml = '';
+            if (modulo.variaveis_avaliadas && modulo.variaveis_avaliadas.length > 0) {
+                varsHtml = '<div class="mt-2 flex flex-wrap gap-1">';
+                for (const v of modulo.variaveis_avaliadas) {
+                    const valor = modulo.valores_usados[v];
+                    const valorStr = valor !== undefined ? JSON.stringify(valor) : 'N/A';
+                    varsHtml += `<code class="text-xs bg-gray-100 px-2 py-0.5 rounded">${v}=${valorStr}</code>`;
+                }
+                varsHtml += '</div>';
+            }
+
+            // Variaveis faltantes (para modulos indeterminados)
+            let varsFaltantesHtml = '';
+            if (modulo.variaveis_faltantes && modulo.variaveis_faltantes.length > 0) {
+                varsFaltantesHtml = `
+                    <div class="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                        <p class="text-xs text-amber-800 font-medium mb-1">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>
+                            Variaveis necessarias nao fornecidas:
+                        </p>
+                        <div class="flex flex-wrap gap-1">
+                            ${modulo.variaveis_faltantes.map(v =>
+                                `<code class="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded border border-amber-300">${v}</code>`
+                            ).join('')}
+                        </div>
+                        <p class="text-xs text-amber-600 mt-1">
+                            Defina estas variaveis na aba "Variaveis de Extracao" para avaliar este modulo.
+                        </p>
+                    </div>
+                `;
+            }
+
+            // Botao de relatorio para modulos nao ativados ou indeterminados
+            const podeGerarRelatorio = status !== 'ativado';
+            const botaoRelatorioHtml = podeGerarRelatorio ? `
+                <button onclick="event.stopPropagation(); gerarRelatorioModulo(${modulo.id}, '${status}')"
+                    class="mt-2 w-full py-1.5 text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 flex items-center justify-center gap-2 transition-all shadow-sm">
+                    <i class="fas fa-robot"></i>
+                    Gerar Relatorio com IA
+                </button>
+            ` : '';
+
+            // Card clicavel para modulos nao ativados ou indeterminados
+            const cursorClass = podeGerarRelatorio ? 'cursor-pointer hover:shadow-md transition-shadow' : '';
+            const onClickAttr = podeGerarRelatorio ? `onclick="gerarRelatorioModulo(${modulo.id}, '${status}')"` : '';
+
+            return `
+                <div class="modulo-card ${status} p-3 rounded-lg border border-gray-200 bg-white ${cursorClass}"
+                     data-modulo-id="${modulo.id}" data-modulo-status="${status}">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium text-gray-800">${modulo.titulo}</span>
+                                <span class="badge ${badgeClass}">${modoLabel}</span>
+                                ${modulo.regra_usada ? `<span class="text-xs text-gray-500">(${modulo.regra_usada})</span>` : ''}
+                            </div>
+                            ${modulo.grupo ? `<p class="text-xs text-gray-500 mt-0.5">Grupo: ${modulo.grupo}</p>` : ''}
+                            ${modulo.detalhes ? `<p class="text-xs text-gray-600 mt-1">${modulo.detalhes}</p>` : ''}
+                            ${varsHtml}
+                            ${varsFaltantesHtml}
+                            ${botaoRelatorioHtml}
+                        </div>
+                        <code class="text-xs text-gray-400">#${modulo.id}</code>
+                    </div>
+                </div>
+            `;
+        }
+
+        function exportarResultados() {
+            if (!ultimoResultado) {
+                alert('Nenhum resultado para exportar');
+                return;
+            }
+
+            const blob = new Blob([JSON.stringify(ultimoResultado, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `resultado-ativacao-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // ==========================
+        // Cenarios
+        // ==========================
+        async function carregarCenariosSalvos() {
+            try {
+                cenariosSalvos = await apiCall('/admin/api/teste-ativacao/cenarios');
+                renderizarSelectCenarios();
+            } catch (e) {
+                console.error('Erro ao carregar cenarios:', e);
+            }
+        }
+
+        function renderizarSelectCenarios() {
+            const select = document.getElementById('select-cenario');
+            select.innerHTML = '<option value="">-- Selecionar cenario --</option>';
+
+            for (const c of cenariosSalvos) {
+                const option = document.createElement('option');
+                option.value = c.id;
+                option.textContent = c.nome;
+                select.appendChild(option);
+            }
+        }
+
+        async function carregarCenario() {
+            const cenarioId = document.getElementById('select-cenario').value;
+            if (!cenarioId) {
+                cenarioAtualId = null;
+                document.getElementById('btn-excluir-cenario').classList.add('hidden');
+                return;
+            }
+
+            try {
+                const cenario = await apiCall(`/admin/api/teste-ativacao/cenarios/${cenarioId}`);
+                aplicarCenario(cenario);
+                cenarioAtualId = cenario.id;
+                document.getElementById('btn-excluir-cenario').classList.remove('hidden');
+            } catch (e) {
+                console.error('Erro ao carregar cenario:', e);
+                alert('Erro ao carregar cenario');
+            }
+        }
+
+        function aplicarCenario(cenario) {
+            // Aplica tipo de peca
+            if (cenario.tipo_peca) {
+                document.getElementById('select-tipo-peca').value = cenario.tipo_peca;
+                trocarTipoPeca(); // Atualiza estado e badge
+            }
+
+            // Aplica categorias
+            categoriasSelecionadas = cenario.categorias_selecionadas || [];
+            renderizarCategorias();
+
+            // Aplica variaveis
+            variaveisExtracaoValores = cenario.variaveis_extracao || {};
+            variaveisProcessoValores = cenario.variaveis_processo || {};
+
+            // Aplica descricao
+            if (cenario.descricao_situacao) {
+                document.getElementById('descricao-situacao').value = cenario.descricao_situacao;
+            }
+
+            renderizarVariaveisExtracao();
+            renderizarVariaveisProcesso();
+
+            console.log('[DEBUG] Cenario aplicado:', {
+                tipo_peca: tipoPecaAtual,
+                categorias: categoriasSelecionadas.length,
+                vars_extracao: Object.keys(variaveisExtracaoValores).length,
+                vars_processo: Object.keys(variaveisProcessoValores).length
+            });
+        }
+
+        function salvarCenario() {
+            document.getElementById('modal-salvar').classList.remove('hidden');
+            document.getElementById('input-nome-cenario').value = '';
+            document.getElementById('input-nome-cenario').focus();
+        }
+
+        function fecharModalSalvar() {
+            document.getElementById('modal-salvar').classList.add('hidden');
+        }
+
+        async function confirmarSalvarCenario() {
+            const nome = document.getElementById('input-nome-cenario').value.trim();
+            if (!nome) {
+                alert('Digite um nome para o cenario');
+                return;
+            }
+
+            try {
+                const cenario = await apiCall('/admin/api/teste-ativacao/cenarios', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        nome: nome,
+                        descricao_situacao: document.getElementById('descricao-situacao').value,
+                        variaveis_extracao: variaveisExtracaoValores,
+                        variaveis_processo: variaveisProcessoValores,
+                        tipo_peca: tipoPecaAtual,
+                        categorias_selecionadas: categoriasSelecionadas,
+                        modulos_esperados_ativados: []
+                    })
+                });
+
+                cenariosSalvos.push(cenario);
+                renderizarSelectCenarios();
+                document.getElementById('select-cenario').value = cenario.id;
+                cenarioAtualId = cenario.id;
+                document.getElementById('btn-excluir-cenario').classList.remove('hidden');
+
+                fecharModalSalvar();
+                alert('Cenario salvo com sucesso!');
+            } catch (e) {
+                console.error('Erro:', e);
+                alert('Erro ao salvar cenario: ' + e.message);
+            }
+        }
+
+        async function excluirCenario() {
+            if (!cenarioAtualId) return;
+
+            if (!confirm('Tem certeza que deseja excluir este cenario?')) return;
+
+            try {
+                await apiCall(`/admin/api/teste-ativacao/cenarios/${cenarioAtualId}`, {
+                    method: 'DELETE'
+                });
+
+                cenariosSalvos = cenariosSalvos.filter(c => c.id !== cenarioAtualId);
+                cenarioAtualId = null;
+                renderizarSelectCenarios();
+                document.getElementById('btn-excluir-cenario').classList.add('hidden');
+
+                alert('Cenario excluido');
+            } catch (e) {
+                console.error('Erro:', e);
+                alert('Erro ao excluir cenario');
+            }
+        }
+
+        // ==========================
+        // Cenarios Pre-definidos
+        // ==========================
+        async function carregarCenarioPredefinido() {
+            document.getElementById('modal-predefinidos').classList.remove('hidden');
+
+            try {
+                const predefinidos = await apiCall('/admin/api/teste-ativacao/cenarios-predefinidos');
+                renderizarPredefinidos(predefinidos);
+            } catch (e) {
+                console.error('Erro:', e);
+                document.getElementById('lista-predefinidos').innerHTML = '<p class="text-center text-red-500 py-4">Erro ao carregar</p>';
+            }
+        }
+
+        function renderizarPredefinidos(predefinidos) {
+            const container = document.getElementById('lista-predefinidos');
+            let html = '';
+
+            for (const p of predefinidos) {
+                html += `
+                    <div class="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer mb-3"
+                         onclick="aplicarCenarioPredefinido(${JSON.stringify(p).replace(/"/g, '&quot;')})">
+                        <div class="font-medium text-gray-800">${p.nome}</div>
+                        <p class="text-sm text-gray-600 mt-1">${p.descricao_situacao}</p>
+                        <div class="mt-2 flex items-center gap-2">
+                            <span class="badge badge-info">${p.tipo_peca}</span>
+                            <span class="text-xs text-gray-500">${Object.keys(p.variaveis_extracao).length} vars extracao</span>
+                            <span class="text-xs text-gray-500">${Object.keys(p.variaveis_processo).length} vars processo</span>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        function aplicarCenarioPredefinido(cenario) {
+            aplicarCenario(cenario);
+            fecharModalPredefinidos();
+        }
+
+        function fecharModalPredefinidos() {
+            document.getElementById('modal-predefinidos').classList.add('hidden');
+        }
+
+        // ==========================
+        // Relatorio de Ativacao com IA
+        // ==========================
+        let relatorioAtual = null;
+
+        async function gerarRelatorioModulo(moduloId, status) {
+            // Abre o modal
+            document.getElementById('modal-relatorio').classList.remove('hidden');
+            document.getElementById('relatorio-loading').classList.remove('hidden');
+            document.getElementById('relatorio-erro').classList.add('hidden');
+            document.getElementById('relatorio-conteudo').classList.add('hidden');
+            document.getElementById('relatorio-footer').classList.add('hidden');
+
+            // Busca os dados do modulo nos resultados
+            let moduloDados = null;
+            if (ultimoResultado) {
+                // Procura em todas as listas
+                moduloDados = ultimoResultado.modulos_nao_ativados.find(m => m.id === moduloId)
+                    || ultimoResultado.modulos_indeterminados.find(m => m.id === moduloId)
+                    || ultimoResultado.modulos_ativados.find(m => m.id === moduloId);
+            }
+
+            try {
+                // Monta as variaveis fornecidas
+                const variaveisFornecidas = {
+                    ...variaveisExtracaoValores,
+                    ...variaveisProcessoValores
+                };
+
+                // Monta o resultado da avaliacao
+                const resultadoAvaliacao = moduloDados ? {
+                    ativado: moduloDados.ativado,
+                    modo: moduloDados.modo,
+                    regra_usada: moduloDados.regra_usada,
+                    detalhes: moduloDados.detalhes,
+                    variaveis_avaliadas: moduloDados.variaveis_avaliadas,
+                    variaveis_faltantes: moduloDados.variaveis_faltantes,
+                    valores_usados: moduloDados.valores_usados,
+                    condicao_falha: moduloDados.condicao_falha
+                } : {};
+
+                const response = await apiCall('/admin/api/teste-ativacao/relatorio-ativacao', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        modulo_id: moduloId,
+                        tipo_peca: tipoPecaAtual,
+                        variaveis_fornecidas: variaveisFornecidas,
+                        resultado_avaliacao: resultadoAvaliacao
+                    })
+                });
+
+                if (response.sucesso && response.relatorio) {
+                    relatorioAtual = response.relatorio;
+                    exibirRelatorio(response.relatorio);
+                } else {
+                    exibirErroRelatorio(response.erro || 'Erro desconhecido ao gerar relatorio');
+                }
+            } catch (e) {
+                console.error('Erro ao gerar relatorio:', e);
+                exibirErroRelatorio(e.message || 'Erro de conexao');
+            }
+        }
+
+        function exibirRelatorio(relatorioMarkdown) {
+            document.getElementById('relatorio-loading').classList.add('hidden');
+            document.getElementById('relatorio-erro').classList.add('hidden');
+
+            // Converte Markdown para HTML (simples)
+            const html = converterMarkdownParaHtml(relatorioMarkdown);
+
+            document.getElementById('relatorio-conteudo').innerHTML = html;
+            document.getElementById('relatorio-conteudo').classList.remove('hidden');
+            document.getElementById('relatorio-footer').classList.remove('hidden');
+        }
+
+        function exibirErroRelatorio(mensagem) {
+            document.getElementById('relatorio-loading').classList.add('hidden');
+            document.getElementById('relatorio-conteudo').classList.add('hidden');
+            document.getElementById('relatorio-footer').classList.add('hidden');
+
+            document.getElementById('relatorio-erro-msg').textContent = mensagem;
+            document.getElementById('relatorio-erro').classList.remove('hidden');
+        }
+
+        function fecharModalRelatorio() {
+            document.getElementById('modal-relatorio').classList.add('hidden');
+            relatorioAtual = null;
+        }
+
+        function copiarRelatorio() {
+            if (!relatorioAtual) return;
+
+            navigator.clipboard.writeText(relatorioAtual).then(() => {
+                alert('Relatorio copiado para a area de transferencia!');
+            }).catch(err => {
+                console.error('Erro ao copiar:', err);
+                // Fallback
+                const textarea = document.createElement('textarea');
+                textarea.value = relatorioAtual;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                alert('Relatorio copiado!');
+            });
+        }
+
+        function converterMarkdownParaHtml(markdown) {
+            // Conversao simples de Markdown para HTML
+            let html = markdown
+                // Escape HTML first
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                // Headers
+                .replace(/^##### (.+)$/gm, '<h5 class="text-sm font-semibold text-gray-700 mt-3 mb-1">$1</h5>')
+                .replace(/^#### (.+)$/gm, '<h4 class="text-base font-semibold text-gray-700 mt-4 mb-2">$1</h4>')
+                .replace(/^### (.+)$/gm, '<h3 class="text-lg font-semibold text-gray-800 mt-4 mb-2">$1</h3>')
+                .replace(/^## (.+)$/gm, '<h2 class="text-xl font-bold text-gray-800 mt-5 mb-3 pb-2 border-b border-gray-200">$1</h2>')
+                .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold text-gray-900 mt-6 mb-4">$1</h1>')
+                // Bold and italic
+                .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong class="text-gray-900">$1</strong>')
+                .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                // Code blocks
+                .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="bg-gray-100 rounded-lg p-3 overflow-x-auto text-sm my-2"><code>$2</code></pre>')
+                // Inline code
+                .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1.5 py-0.5 rounded text-sm text-red-600">$1</code>')
+                // Lists
+                .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
+                .replace(/^\* (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
+                .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
+                // Line breaks
+                .replace(/\n\n/g, '</p><p class="my-2">')
+                .replace(/\n/g, '<br>');
+
+            // Wrap lists
+            html = html.replace(/(<li[^>]*>.*?<\/li>)+/g, '<ul class="my-2 space-y-1">$&</ul>');
+
+            return '<div class="text-gray-700"><p class="my-2">' + html + '</p></div>';
+        }
+    </script>
+</body>
+</html>
