@@ -949,7 +949,8 @@ async def processar_stream(
                 elif event["tipo"] == "done":
                     markdown = event["resultado"]
                 elif event["tipo"] == "error":
-                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro na geração do pedido: {event[\"error\"]}'})}\n\n"
+                    error_msg = event["error"]
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro na geração do pedido: {error_msg}'})}\n\n"
                     return
 
             if not markdown:
