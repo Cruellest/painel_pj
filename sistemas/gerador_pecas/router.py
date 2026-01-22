@@ -1410,6 +1410,11 @@ async def editar_minuta_stream(
     from fastapi.responses import StreamingResponse
     from services.gemini_service import stream_to_sse
     import json
+    import sys
+
+    # Log imediato para confirmar que a requisicao chegou
+    print(f"[EDITAR-MINUTA-STREAM] >>> REQUISICAO RECEBIDA de {current_user.email}", flush=True)
+    sys.stdout.flush()
 
     try:
         # Logging de tamanho para diagnóstico
@@ -1460,7 +1465,9 @@ async def editar_minuta_stream(
 
     except Exception as e:
         import traceback
+        print(f"[EDITAR-MINUTA-STREAM] !!! ERRO CAPTURADO: {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
+        sys.stdout.flush()
 
         # Retorna erro como SSE para compatibilidade
         async def error_generator():
