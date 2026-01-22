@@ -104,6 +104,16 @@ async def lifespan(app: FastAPI):
     init_database()
 
     # ==========================================================================
+    # Inicializa tabela de embeddings vetoriais (com pgvector se disponível)
+    # ==========================================================================
+    try:
+        from sistemas.gerador_pecas.models_embeddings import init_embeddings_table
+        pgvector_ok = init_embeddings_table()
+        print(f"[EMBEDDINGS] Tabela inicializada (pgvector: {'disponível' if pgvector_ok else 'não disponível - usando fallback'})")
+    except Exception as e:
+        print(f"[WARN] Erro ao inicializar tabela de embeddings: {e}")
+
+    # ==========================================================================
     # REGRA DE OURO: Corrige modos de ativação inconsistentes no startup
     # Garante que dados legados ou corrompidos sejam corrigidos automaticamente
     # ==========================================================================

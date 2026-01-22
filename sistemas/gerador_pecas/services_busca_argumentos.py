@@ -38,8 +38,8 @@ def buscar_argumentos_relevantes(
     Returns:
         Lista de módulos relevantes com suas condições de ativação
     """
-    print(f"\n[BUSCA-ARGUMENTOS] 🔍 Query: '{query}'")
-    print(f"[BUSCA-ARGUMENTOS] 📋 Tipo de peça: {tipo_peca or 'não especificado'}")
+    print(f"\n[BUSCA-ARGUMENTOS] Query: '{query}'")
+    print(f"[BUSCA-ARGUMENTOS] Tipo de peca: {tipo_peca or 'nao especificado'}")
 
     # Normaliza a query para busca
     query_normalizada = query.lower().strip()
@@ -51,10 +51,10 @@ def buscar_argumentos_relevantes(
                  'tese', 'teses', 'incluir', 'inclua', 'mencione', 'mencionar'}
 
     palavras = [p for p in query_normalizada.split() if p not in stopwords and len(p) > 2]
-    print(f"[BUSCA-ARGUMENTOS] 🏷️  Palavras-chave extraídas: {palavras}")
+    print(f"[BUSCA-ARGUMENTOS] Palavras-chave extraidas: {palavras}")
 
     if not palavras:
-        print(f"[BUSCA-ARGUMENTOS] ⚠️  Nenhuma palavra-chave válida encontrada")
+        print(f"[BUSCA-ARGUMENTOS] [WARN] Nenhuma palavra-chave valida encontrada")
         return []
 
     # Monta filtro de busca com ILIKE para cada palavra
@@ -79,7 +79,7 @@ def buscar_argumentos_relevantes(
         or_(*filtros)  # Qualquer palavra encontrada
     ).order_by(PromptModulo.ordem).limit(limit * 2).all()  # Pega mais para rankear
 
-    print(f"[BUSCA-ARGUMENTOS] 📦 Módulos encontrados: {len(modulos)}")
+    print(f"[BUSCA-ARGUMENTOS] Modulos encontrados: {len(modulos)}")
 
     # Rankeia por relevância (número de palavras encontradas)
     resultados_rankeados = []
@@ -150,7 +150,7 @@ def buscar_argumentos_relevantes(
             resultado["regras_tipo_peca"] = regras_por_modulo[modulo.id]
 
         resultados.append(resultado)
-        print(f"[BUSCA-ARGUMENTOS]   ✓ [{score}] {modulo.titulo} (match: {', '.join(campos)})")
+        print(f"[BUSCA-ARGUMENTOS]   [OK] [{score}] {modulo.titulo} (match: {', '.join(campos)})")
 
     return resultados
 

@@ -1129,6 +1129,26 @@ async def criar_modulo(
     db.commit()
     db.refresh(modulo)
 
+    # ==========================================================================
+    # BANCO VETORIAL: Cria embedding se for módulo de conteúdo
+    # ==========================================================================
+    if modulo.tipo == 'conteudo':
+        try:
+            from sistemas.gerador_pecas.services_embeddings import atualizar_embedding_modulo_sync
+            # Executa em background para não bloquear a resposta
+            import threading
+            thread = threading.Thread(
+                target=atualizar_embedding_modulo_sync,
+                args=(modulo.id,),
+                daemon=True
+            )
+            thread.start()
+            import logging
+            logging.getLogger(__name__).info(f"[EMBEDDING] Agendada criacao do embedding do modulo {modulo.id}")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Erro ao agendar criacao de embedding: {e}")
+
     # Retorna com subcategoria_ids e effective_activation_mode
     response = modulo.__dict__.copy()
     response["subcategoria_ids"] = [s.id for s in modulo.subcategorias]
@@ -1275,6 +1295,26 @@ async def atualizar_modulo(
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Erro ao limpar uso de variáveis: {e}")
+
+    # ==========================================================================
+    # BANCO VETORIAL: Atualiza embedding se for módulo de conteúdo
+    # ==========================================================================
+    if modulo.tipo == 'conteudo':
+        try:
+            from sistemas.gerador_pecas.services_embeddings import atualizar_embedding_modulo_sync
+            # Executa em background para não bloquear a resposta
+            import threading
+            thread = threading.Thread(
+                target=atualizar_embedding_modulo_sync,
+                args=(modulo.id,),
+                daemon=True
+            )
+            thread.start()
+            import logging
+            logging.getLogger(__name__).info(f"[EMBEDDING] Agendada atualizacao do embedding do modulo {modulo.id}")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Erro ao agendar atualizacao de embedding: {e}")
 
     # Retorna com subcategoria_ids e effective_activation_mode
     response = modulo.__dict__.copy()

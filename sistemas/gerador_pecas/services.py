@@ -764,33 +764,55 @@ Retorne SOMENTE a minuta editada em markdown."""
             formatar_contexto_argumentos,
             detectar_intencao_busca
         )
+        from sistemas.gerador_pecas.services_busca_vetorial import (
+            buscar_argumentos_vetorial,
+            formatar_contexto_argumentos_vetorial,
+            verificar_embeddings_disponiveis
+        )
 
         print(f"\n{'='*60}")
-        print(f"[EDITAR STREAM] 🚀 Iniciando edição de minuta")
-        print(f"[EDITAR STREAM] 📋 Tipo de peça: {tipo_peca or 'não especificado'}")
-        print(f"[EDITAR STREAM] 💬 Mensagem: {mensagem_usuario[:100]}...")
+        print(f"[EDITAR STREAM] Iniciando edicao de minuta")
+        print(f"[EDITAR STREAM] Tipo de peca: {tipo_peca or 'nao especificado'}")
+        print(f"[EDITAR STREAM] Mensagem: {mensagem_usuario[:100]}...")
         print(f"{'='*60}")
 
         # Detecta se o usuário quer adicionar argumentos e busca na base
         contexto_argumentos = ""
         if self.db and detectar_intencao_busca(mensagem_usuario):
-            print(f"[EDITAR STREAM] 🔍 Detectada intenção de buscar argumentos!")
+            print(f"[EDITAR STREAM] Detectada intencao de buscar argumentos!")
 
-            argumentos = buscar_argumentos_relevantes(
-                db=self.db,
-                query=mensagem_usuario,
-                tipo_peca=tipo_peca,
-                limit=3  # Top 3 mais relevantes
-            )
+            # Verifica se há embeddings disponíveis para busca vetorial
+            usar_vetorial = verificar_embeddings_disponiveis(self.db)
+
+            if usar_vetorial:
+                print(f"[EDITAR STREAM] Usando busca VETORIAL (semantica)")
+                argumentos = await buscar_argumentos_vetorial(
+                    db=self.db,
+                    query=mensagem_usuario,
+                    tipo_peca=tipo_peca,
+                    limit=3,  # Top 3 mais relevantes
+                    threshold=0.35  # Minimo 35% de similaridade
+                )
+                if argumentos:
+                    contexto_argumentos = formatar_contexto_argumentos_vetorial(argumentos)
+            else:
+                print(f"[EDITAR STREAM] Usando busca por KEYWORD (embeddings nao disponiveis)")
+                argumentos = buscar_argumentos_relevantes(
+                    db=self.db,
+                    query=mensagem_usuario,
+                    tipo_peca=tipo_peca,
+                    limit=3  # Top 3 mais relevantes
+                )
+                if argumentos:
+                    contexto_argumentos = formatar_contexto_argumentos(argumentos)
 
             if argumentos:
-                contexto_argumentos = formatar_contexto_argumentos(argumentos)
-                print(f"[EDITAR STREAM] ✅ {len(argumentos)} argumento(s) encontrado(s) e adicionado(s) ao contexto")
-                print(f"[EDITAR STREAM] 📚 Argumentos: {[a['titulo'] for a in argumentos]}")
+                print(f"[EDITAR STREAM] {len(argumentos)} argumento(s) encontrado(s)")
+                print(f"[EDITAR STREAM] Argumentos: {[a['titulo'] for a in argumentos]}")
             else:
-                print(f"[EDITAR STREAM] ⚠️ Nenhum argumento encontrado para a busca")
+                print(f"[EDITAR STREAM] Nenhum argumento encontrado para a busca")
         else:
-            print(f"[EDITAR STREAM] ℹ️ Não é pedido de argumento - edição simples")
+            print(f"[EDITAR STREAM] Nao e pedido de argumento - edicao simples")
 
         # Monta o prompt de sistema para edição
         system_prompt = """Você é um assistente jurídico especializado em edição de peças jurídicas.
