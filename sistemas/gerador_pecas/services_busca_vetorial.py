@@ -311,5 +311,10 @@ Conteúdo:
 
 def verificar_embeddings_disponiveis(db: Session) -> bool:
     """Verifica se há embeddings suficientes para busca vetorial."""
-    count = db.query(ModuloEmbedding).filter(ModuloEmbedding.ativo == True).count()
-    return count > 0
+    try:
+        count = db.query(ModuloEmbedding).filter(ModuloEmbedding.ativo == True).count()
+        print(f"[VERIFICAR-EMBEDDINGS] Encontrados {count} embeddings ativos")
+        return count > 0
+    except Exception as e:
+        print(f"[VERIFICAR-EMBEDDINGS] Erro ao verificar: {e}")
+        return False
