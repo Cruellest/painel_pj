@@ -484,6 +484,7 @@
                                 <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Sistema</th>
                                 <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rota</th>
                                 <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Modelo</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Thinking</th>
                                 <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tokens</th>
                                 <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Latencia</th>
                                 <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">TTFT</th>
@@ -494,7 +495,7 @@
                         </thead>
                         <tbody id="geminiLogsTable" class="bg-white divide-y divide-gray-200">
                             <tr>
-                                <td colspan="10" class="px-4 py-8 text-center text-gray-500">
+                                <td colspan="11" class="px-4 py-8 text-center text-gray-500">
                                     Carregando logs...
                                 </td>
                             </tr>
@@ -1172,12 +1173,22 @@
             // Marca "unknown" em vermelho para facilitar identificação
             const sistemaClass = (log.sistema === 'unknown' || !log.sistema) ? 'text-red-500' : 'text-gray-700';
 
+            // Cor do badge de thinking level
+            const thinkingLevel = log.thinking_level || '-';
+            const thinkingClass = {
+                'minimal': 'bg-gray-100 text-gray-600',
+                'low': 'bg-blue-100 text-blue-700',
+                'medium': 'bg-yellow-100 text-yellow-700',
+                'high': 'bg-red-100 text-red-700'
+            }[log.thinking_level] || 'text-gray-400';
+
             return `
                 <tr class="hover:bg-gray-50">
                     <td class="px-3 py-2 text-gray-500">${time}</td>
                     <td class="px-3 py-2 font-medium ${sistemaClass}">${log.sistema || 'unknown'}</td>
                     <td class="px-3 py-2 text-gray-500 text-xs" title="${routeTitle}">${route}</td>
                     <td class="px-3 py-2 text-gray-600 text-xs">${log.model || '-'}</td>
+                    <td class="px-3 py-2"><span class="px-2 py-0.5 rounded text-xs ${thinkingClass}">${thinkingLevel}</span></td>
                     <td class="px-3 py-2 text-gray-600">
                         <span class="text-purple-600">${log.prompt_tokens_estimated || '-'}</span> /
                         <span class="text-blue-600">${log.response_tokens || '-'}</span>
