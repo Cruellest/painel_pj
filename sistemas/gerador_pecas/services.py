@@ -440,6 +440,19 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
 
         # Salva no banco (incluindo prompt e resumo para auditoria)
         # conteudo_gerado agora armazena a string markdown diretamente
+
+        # Calcula tempo de processamento (usa tempo_total ou soma dos tempos individuais)
+        tempo_total = resultado.tempo_total
+        if not tempo_total or tempo_total == 0.0:
+            # Fallback: soma tempos individuais dos agentes
+            tempo_total = (
+                (resultado.tempo_agente1 or 0.0) +
+                (resultado.tempo_agente2 or 0.0) +
+                (resultado.tempo_agente3 or 0.0)
+            )
+        tempo_processamento = int(tempo_total) if tempo_total > 0 else None
+        print(f"[DEBUG] tempo_total: {resultado.tempo_total}, tempos individuais: a1={resultado.tempo_agente1}, a2={resultado.tempo_agente2}, a3={resultado.tempo_agente3}, final={tempo_processamento}")
+
         geracao = GeracaoPeca(
             numero_cnj=numero_cnj,
             numero_cnj_formatado=numero_cnj_formatado,
@@ -449,7 +462,7 @@ Se você NÃO conseguir determinar com certeza qual peça gerar ou precisar de i
             prompt_enviado=resultado.agente3.prompt_enviado if resultado.agente3 else None,
             resumo_consolidado=resultado.agente1.resumo_consolidado if resultado.agente1 else None,
             modelo_usado=self.modelo,
-            tempo_processamento=int(resultado.tempo_total) if resultado.tempo_total else None,
+            tempo_processamento=tempo_processamento,
             usuario_id=usuario_id
         )
 
@@ -699,12 +712,12 @@ Retorne SOMENTE a minuta editada em markdown."""
                 minuta_editada = minuta_editada[:-3]
             
             minuta_editada = minuta_editada.strip()
-            
+
             return {
                 "status": "sucesso",
                 "minuta_markdown": minuta_editada
             }
-                
+
         except httpx.HTTPStatusError as e:
             print(f"[ERRO] Erro HTTP na edicao: {e}")
             return {
@@ -718,3 +731,82 @@ Retorne SOMENTE a minuta editada em markdown."""
                 "status": "erro",
                 "mensagem": str(e)
             }
+
+    async def editar_minuta_stream(
+        self,
+        minuta_atual: str,
+        mensagem_usuario: str,
+        historico: List[Dict] = None
+    ):
+        """
+        Processa edição da minuta com streaming real.
+
+        PERFORMANCE: Usa streamGenerateContent do Gemini para enviar
+        tokens assim que são gerados, reduzindo TTFT de 15-60s para 1-3s.
+
+        Args:
+            minuta_atual: Markdown da minuta atual
+            mensagem_usuario: Pedido de alteração do usuário
+            historico: Histórico de mensagens anteriores
+
+        Yields:
+            Chunks de texto conforme são gerados
+        """
+        from services.gemini_service import gemini_service
+
+        # Monta o prompt de sistema para edição
+        system_prompt = """Você é um assistente jurídico especializado em edição de peças jurídicas.
+
+Sua função é modificar a minuta fornecida de acordo com o pedido do usuário.
+
+REGRAS IMPORTANTES:
+1. Retorne APENAS a minuta editada em markdown, sem explicações adicionais
+2. Mantenha a formatação formal juridica
+3. Preserve as partes que não foram solicitadas para alteração
+4. Use markdown correto (## para títulos, **negrito**, *itálico*, > para citações)
+5. Se o pedido não for claro, faça a melhor interpretação possível
+6. Mantenha o tom formal e técnico-jurídico
+
+NÃO inclua:
+- Explicações sobre as alterações
+- Comentários sobre o documento
+- Texto como "Aqui está a minuta editada"
+
+Retorne SOMENTE a minuta editada em markdown."""
+
+        # Monta o prompt do usuário com histórico
+        prompt_parts = []
+
+        # Adiciona histórico se houver
+        if historico:
+            prompt_parts.append("### Histórico da conversa:")
+            for msg in historico:
+                role = "Usuário" if msg.get("role") == "user" else "Assistente"
+                prompt_parts.append(f"{role}: {msg.get('content', '')}")
+            prompt_parts.append("")
+
+        # Adiciona a mensagem atual com a minuta
+        prompt_parts.append(f"""### Minuta atual:
+
+{minuta_atual}
+
+---
+
+### Pedido de alteração: {mensagem_usuario}""")
+
+        prompt_completo = "\n".join(prompt_parts)
+
+        # Logging para diagnóstico
+        prompt_len = len(prompt_completo)
+        print(f"[EDITAR STREAM] 📝 Prompt: {prompt_len:,} chars (~{prompt_len//4:,} tokens est.)")
+
+        # Usa streaming real do Gemini
+        async for chunk in gemini_service.generate_stream(
+            prompt=prompt_completo,
+            system_prompt=system_prompt,
+            model=self.modelo,
+            max_tokens=50000,
+            temperature=0.3,
+            context={"sistema": "gerador_pecas", "modulo": "editar_minuta"}
+        ):
+            yield chunk

@@ -23,6 +23,7 @@ from sistemas.gerador_pecas.models_extraction import (
     PromptVariableUsage, PromptActivationLog
 )
 from sistemas.gerador_pecas.models_teste_categorias import TesteDocumento, TesteObservacao
+from sistemas.gerador_pecas.models_teste_ativacao import CenarioTesteAtivacao
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from admin.models import PromptConfig, ConfiguracaoIA
@@ -63,7 +64,8 @@ def create_tables():
     # Verifica se as tabelas principais existem (incluindo tabelas mais recentes)
     required_tables = {
         'users', 'geracoes_prestacao_contas', 'gemini_api_logs', 'performance_logs',
-        'regra_deterministica_tipo_peca'  # Adicionado para regras por tipo de peça
+        'regra_deterministica_tipo_peca',  # Adicionado para regras por tipo de peça
+        'teste_ativacao_cenarios'  # Adicionado para teste de ativação de módulos
     }
 
     # Se todas as tabelas obrigatórias existem, não precisa criar

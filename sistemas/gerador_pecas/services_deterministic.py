@@ -1670,12 +1670,21 @@ def avaliar_ativacao_prompt(
                     }
 
             # Variáveis não existem - resultado indeterminado
+            # Adiciona info ao regras_avaliadas para debug
+            regras_avaliadas.append({
+                "tipo": f"especifica_{tipo_peca}",
+                "resultado": None,
+                "variaveis": vars_especifica,
+                "variaveis_faltantes": vars_faltantes,
+                "erro": "Variáveis necessárias não fornecidas"
+            })
             return {
                 "ativar": None,
                 "modo": "deterministic",
-                "regra_usada": f"especifica_{tipo_peca}",
-                "detalhes": f"Variáveis da regra específica de {tipo_peca} não encontradas",
-                "regras_avaliadas": regras_avaliadas
+                "regra_usada": f"especifica_{tipo_peca}_pendente",
+                "detalhes": f"Variáveis necessárias não fornecidas para regra específica de {tipo_peca}: {vars_faltantes}",
+                "regras_avaliadas": regras_avaliadas,
+                "variaveis_faltantes": vars_faltantes
             }
 
     # ========================================
@@ -1742,65 +1751,82 @@ def avaliar_ativacao_prompt(
                     "regras_avaliadas": regras_avaliadas
                 }
 
-        elif fallback_habilitado and regra_secundaria:
-            # Tenta regra global secundária
-            # Usa pode_avaliar_regra para verificação inteligente (considera OR/AND)
-            pode_avaliar_secundaria, vars_existentes_sec, vars_faltantes_sec = pode_avaliar_regra(
-                regra_secundaria, dados_extracao
-            )
-            vars_secundaria = vars_existentes_sec + vars_faltantes_sec
+        else:
+            # Regra global primária existe, mas não pode ser avaliada (variáveis faltando)
+            # Adiciona info ao regras_avaliadas para debug
+            regras_avaliadas.append({
+                "tipo": "global_primaria",
+                "resultado": None,
+                "variaveis": vars_primaria,
+                "variaveis_faltantes": vars_faltantes_primaria,
+                "erro": "Variáveis necessárias não fornecidas"
+            })
 
-            logger.info(
-                f"[DETERMINISTIC] Prompt {prompt_id}: "
-                f"GLOBAL secundária - pode_avaliar={pode_avaliar_secundaria}, "
-                f"vars_existentes={vars_existentes_sec}, vars_faltantes={vars_faltantes_sec}"
-            )
-
-            if pode_avaliar_secundaria:
-                resultado_global = avaliador.avaliar(regra_secundaria, dados_extracao)
-                regras_avaliadas.append({
-                    "tipo": "global_secundaria",
-                    "resultado": resultado_global,
-                    "variaveis": vars_secundaria
-                })
+            # Tenta fallback se habilitado
+            if fallback_habilitado and regra_secundaria:
+                # Tenta regra global secundária
+                pode_avaliar_secundaria, vars_existentes_sec, vars_faltantes_sec = pode_avaliar_regra(
+                    regra_secundaria, dados_extracao
+                )
+                vars_secundaria = vars_existentes_sec + vars_faltantes_sec
 
                 logger.info(
-                    f"[DETERMINISTIC] Prompt {prompt_id}: GLOBAL secundária = {resultado_global}"
+                    f"[DETERMINISTIC] Prompt {prompt_id}: "
+                    f"GLOBAL secundária (fallback após primária sem vars) - pode_avaliar={pode_avaliar_secundaria}, "
+                    f"vars_existentes={vars_existentes_sec}, vars_faltantes={vars_faltantes_sec}"
                 )
 
-                if resultado_global is True:
-                    _registrar_log_ativacao(
-                        db=db,
-                        prompt_id=prompt_id,
-                        modo="deterministic_global",
-                        resultado=True,
-                        variaveis_usadas=vars_secundaria,
-                        detalhe="secondary"
-                    )
-                    return {
-                        "ativar": True,
-                        "modo": "deterministic",
-                        "regra_usada": "global_secundaria",
-                        "detalhes": f"Ativado por regra GLOBAL secundária (vars: {vars_secundaria})",
-                        "regras_avaliadas": regras_avaliadas
-                    }
+                if pode_avaliar_secundaria:
+                    resultado_global = avaliador.avaliar(regra_secundaria, dados_extracao)
+                    regras_avaliadas.append({
+                        "tipo": "global_secundaria",
+                        "resultado": resultado_global,
+                        "variaveis": vars_secundaria
+                    })
 
-                if resultado_global is False:
-                    _registrar_log_ativacao(
-                        db=db,
-                        prompt_id=prompt_id,
-                        modo="deterministic_global",
-                        resultado=False,
-                        variaveis_usadas=vars_secundaria,
-                        detalhe="secondary_false"
-                    )
-                    return {
-                        "ativar": False,
-                        "modo": "deterministic",
-                        "regra_usada": "global_secundaria",
-                        "detalhes": f"Regra GLOBAL secundária retornou False",
-                        "regras_avaliadas": regras_avaliadas
-                    }
+                    if resultado_global is True:
+                        _registrar_log_ativacao(
+                            db=db,
+                            prompt_id=prompt_id,
+                            modo="deterministic_global",
+                            resultado=True,
+                            variaveis_usadas=vars_secundaria,
+                            detalhe="secondary_fallback"
+                        )
+                        return {
+                            "ativar": True,
+                            "modo": "deterministic",
+                            "regra_usada": "global_secundaria",
+                            "detalhes": f"Ativado por regra GLOBAL secundária (fallback, variáveis primárias faltando: {vars_faltantes_primaria})",
+                            "regras_avaliadas": regras_avaliadas
+                        }
+
+                    if resultado_global is False:
+                        _registrar_log_ativacao(
+                            db=db,
+                            prompt_id=prompt_id,
+                            modo="deterministic_global",
+                            resultado=False,
+                            variaveis_usadas=vars_secundaria,
+                            detalhe="secondary_fallback_false"
+                        )
+                        return {
+                            "ativar": False,
+                            "modo": "deterministic",
+                            "regra_usada": "global_secundaria",
+                            "detalhes": f"Regra GLOBAL secundária retornou False (fallback)",
+                            "regras_avaliadas": regras_avaliadas
+                        }
+
+            # Retorna com info sobre variáveis faltantes
+            return {
+                "ativar": None,
+                "modo": "deterministic",
+                "regra_usada": "global_primaria_pendente",
+                "detalhes": f"Variáveis necessárias não fornecidas: {vars_faltantes_primaria}",
+                "regras_avaliadas": regras_avaliadas,
+                "variaveis_faltantes": vars_faltantes_primaria
+            }
 
     # Nenhuma regra aplicável ou avaliável
     return {

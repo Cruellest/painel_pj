@@ -55,6 +55,7 @@ from sistemas.gerador_pecas.router_admin import router as gerador_pecas_admin_ro
 from sistemas.gerador_pecas.router_categorias_json import router as categorias_json_router
 from sistemas.gerador_pecas.router_config_pecas import router as config_pecas_router
 from sistemas.gerador_pecas.router_teste_categorias import router as teste_categorias_router
+from sistemas.gerador_pecas.router_teste_ativacao import router as teste_ativacao_router
 
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
@@ -378,6 +379,9 @@ app.include_router(categorias_json_router, prefix="/admin/api")
 # Router de Teste de Categorias JSON (admin)
 app.include_router(teste_categorias_router, prefix="/admin/api")
 
+# Router de Teste de Ativacao de Modulos (admin)
+app.include_router(teste_ativacao_router, prefix="/admin/api")
+
 # Router de Extração (perguntas, modelos, variáveis, regras determinísticas)
 app.include_router(extraction_router, prefix="/admin/api/extraction")
 
@@ -645,6 +649,12 @@ async def admin_categorias_json_page(request: Request):
 async def admin_teste_categorias_json_page(request: Request):
     """Página de teste/validação de categorias de resumo JSON"""
     return templates.TemplateResponse("admin_teste_categorias_json.html", {"request": request})
+
+
+@app.get("/admin/prompts-modulos/teste")
+async def admin_teste_ativacao_modulos_page(request: Request):
+    """Página de teste de ativação de prompts modulares"""
+    return templates.TemplateResponse("admin_teste_ativacao_modulos.html", {"request": request})
 
 
 @app.get("/admin/variaveis")
