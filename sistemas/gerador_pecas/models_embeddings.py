@@ -106,8 +106,8 @@ class ModuloEmbedding(Base):
     criado_em = Column(DateTime, default=get_utc_now)
     atualizado_em = Column(DateTime, default=get_utc_now, onupdate=get_utc_now)
 
-    # Relacionamento
-    modulo = relationship("PromptModulo", backref="embedding", uselist=False)
+    # Nota: Removido relationship para evitar problemas de importação circular
+    # Use join manual: db.query(ModuloEmbedding).join(PromptModulo, ...)
 
     def __repr__(self):
         return f"<ModuloEmbedding(modulo_id={self.modulo_id}, dim={self.dimensao})>"
