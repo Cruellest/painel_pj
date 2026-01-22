@@ -758,17 +758,40 @@ Retorne SOMENTE a minuta editada em markdown."""
         Yields:
             Chunks de texto conforme são gerados
         """
-        from services.gemini_service import gemini_service
-        from sistemas.gerador_pecas.services_busca_argumentos import (
-            buscar_argumentos_relevantes,
-            formatar_contexto_argumentos,
-            detectar_intencao_busca
-        )
-        from sistemas.gerador_pecas.services_busca_vetorial import (
-            buscar_argumentos_vetorial,
-            formatar_contexto_argumentos_vetorial,
-            verificar_embeddings_disponiveis
-        )
+        import sys
+        print(f"[EDITAR STREAM] Iniciando imports...", flush=True)
+        sys.stdout.flush()
+
+        try:
+            from services.gemini_service import gemini_service
+            print(f"[EDITAR STREAM] Import gemini_service OK", flush=True)
+        except Exception as e:
+            print(f"[EDITAR STREAM] !!! ERRO import gemini_service: {e}", flush=True)
+            raise
+
+        try:
+            from sistemas.gerador_pecas.services_busca_argumentos import (
+                buscar_argumentos_relevantes,
+                formatar_contexto_argumentos,
+                detectar_intencao_busca
+            )
+            print(f"[EDITAR STREAM] Import services_busca_argumentos OK", flush=True)
+        except Exception as e:
+            print(f"[EDITAR STREAM] !!! ERRO import services_busca_argumentos: {e}", flush=True)
+            raise
+
+        try:
+            from sistemas.gerador_pecas.services_busca_vetorial import (
+                buscar_argumentos_vetorial,
+                formatar_contexto_argumentos_vetorial,
+                verificar_embeddings_disponiveis
+            )
+            print(f"[EDITAR STREAM] Import services_busca_vetorial OK", flush=True)
+        except Exception as e:
+            print(f"[EDITAR STREAM] !!! ERRO import services_busca_vetorial: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            raise
 
         print(f"\n{'='*60}")
         print(f"[EDITAR STREAM] Iniciando edicao de minuta")
