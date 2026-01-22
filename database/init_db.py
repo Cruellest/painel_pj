@@ -2195,22 +2195,45 @@ def init_database():
     print("[*] Inicializando banco de dados...")
 
     # Fast-path com cache em arquivo (evita query ao banco em dev)
+    # IMPORTANTE: Versão do schema - incrementar quando adicionar novas colunas
+    SCHEMA_VERSION = "v3"  # v3: adicionado users.setor e gemini_api_logs.thinking_level
     import hashlib
     cache_file = Path(__file__).parent / ".db_initialized"
-    db_url_hash = hashlib.md5(str(engine.url).encode()).hexdigest()[:8]
+    db_url_hash = hashlib.md5(f"{engine.url}:{SCHEMA_VERSION}".encode()).hexdigest()[:8]
 
     if cache_file.exists():
         cached_hash = cache_file.read_text().strip()
         if cached_hash == db_url_hash:
-            # Mesmo banco, assume que está ok (verificação lazy na primeira query real)
-            print("[OK] Conexao com banco de dados estabelecida!")
-            _DB_INITIALIZED = True
-            return
+            # Mesmo banco E mesma versão do schema - verifica colunas críticas
+            try:
+                db = SessionLocal()
+                # Verifica se as colunas mais recentes existem
+                db.execute(text("SELECT setor FROM users LIMIT 1"))
+                db.execute(text("SELECT thinking_level FROM gemini_api_logs LIMIT 1"))
+                db.close()
+                print("[OK] Conexao com banco de dados estabelecida!")
+                _DB_INITIALIZED = True
+                return
+            except Exception as e:
+                # Colunas não existem - precisa rodar migrações
+                print(f"[INFO] Novas colunas necessárias, executando migrações... ({e})")
+                try:
+                    db.close()
+                except:
+                    pass
+                # Invalida cache
+                try:
+                    cache_file.unlink()
+                except:
+                    pass
 
     # Primeira vez ou banco diferente - verifica de verdade
     try:
         db = SessionLocal()
         result = db.execute(text("SELECT 1 FROM users LIMIT 1")).fetchone()
+        # Verifica colunas mais recentes
+        db.execute(text("SELECT setor FROM users LIMIT 1"))
+        db.execute(text("SELECT thinking_level FROM gemini_api_logs LIMIT 1"))
         db.close()
         if result:
             # Banco ok, salva cache
@@ -2219,7 +2242,7 @@ def init_database():
             _DB_INITIALIZED = True
             return
     except Exception:
-        pass  # Tabela não existe ou erro - continua com inicialização
+        pass  # Tabela/coluna não existe ou erro - continua com inicialização
 
     # Inicialização completa (só roda na primeira vez)
     wait_for_db()
