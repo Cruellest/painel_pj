@@ -1117,7 +1117,8 @@ class GeradorPecasApp {
         this.mostrarTypingIndicator();
 
         try {
-            const response = await fetch(`${API_URL}/editar-minuta`, {
+            // Usa endpoint com streaming para melhor TTFT
+            const response = await fetch(`${API_URL}/editar-minuta-stream`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1130,13 +1131,76 @@ class GeradorPecasApp {
                 })
             });
 
-            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            // Processa stream SSE
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let minutaCompleta = '';
+            let primeiroChunk = true;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        const eventType = line.substring(7).trim();
+                        continue;
+                    }
+                    if (line.startsWith('data: ')) {
+                        const data = line.substring(6);
+                        if (data === '[DONE]') {
+                            // Streaming finalizado
+                            continue;
+                        }
+                        if (data.trim() === '' || data === ':heartbeat') {
+                            continue;
+                        }
+
+                        try {
+                            const parsed = JSON.parse(data);
+
+                            if (parsed.error) {
+                                throw new Error(parsed.error);
+                            }
+
+                            if (parsed.text) {
+                                // Esconde indicador de digitação no primeiro chunk
+                                if (primeiroChunk) {
+                                    this.esconderTypingIndicator();
+                                    primeiroChunk = false;
+                                }
+
+                                // Acumula texto
+                                minutaCompleta += parsed.text;
+
+                                // Atualiza preview em tempo real (a cada 500 chars para não sobrecarregar)
+                                if (minutaCompleta.length % 500 < parsed.text.length) {
+                                    this.minutaMarkdown = minutaCompleta;
+                                    this.renderizarMinuta();
+                                }
+                            }
+                        } catch (e) {
+                            // Ignora linhas que não são JSON válido
+                        }
+                    }
+                }
+            }
 
             this.esconderTypingIndicator();
 
-            if (data.status === 'sucesso') {
-                // Atualiza a minuta
-                this.minutaMarkdown = data.minuta_markdown;
+            // Verifica se recebeu conteúdo
+            if (minutaCompleta) {
+                // Atualiza a minuta final
+                this.minutaMarkdown = minutaCompleta;
                 this.renderizarMinuta();
 
                 // Adiciona histórico
@@ -1151,9 +1215,8 @@ class GeradorPecasApp {
 
                 // Salvamento automático
                 this.salvarMinutaAuto();
-
             } else {
-                this.adicionarMensagemChat('ai', `Desculpe, encontrei um problema: ${data.mensagem}`, false);
+                this.adicionarMensagemChat('ai', 'Não foi possível processar a edição. Tente novamente.', false);
             }
 
         } catch (error) {
