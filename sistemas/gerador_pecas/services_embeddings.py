@@ -27,8 +27,8 @@ from sistemas.gerador_pecas.models_embeddings import (
 
 logger = logging.getLogger(__name__)
 
-# Configuração da API
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+# Configuração da API (aceita vários nomes de variável)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
 EMBEDDING_MODEL = "text-embedding-004"
 EMBEDDING_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{EMBEDDING_MODEL}:embedContent"
 
