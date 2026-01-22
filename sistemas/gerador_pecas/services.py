@@ -791,7 +791,7 @@ Retorne SOMENTE a minuta editada em markdown."""
                     query=mensagem_usuario,
                     tipo_peca=tipo_peca,
                     limit=3,  # Top 3 mais relevantes
-                    threshold=0.35  # Minimo 35% de similaridade
+                    threshold=0.60  # Minimo 60% de similaridade
                 )
                 if argumentos:
                     contexto_argumentos = formatar_contexto_argumentos_vetorial(argumentos)
