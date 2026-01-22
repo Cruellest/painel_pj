@@ -209,3 +209,111 @@ async def cleanup_logs(
         deleted_count=deleted,
         message=f"{deleted} logs removidos"
     )
+
+
+# ==================================================
+# MÉTRICAS DE ROTA (LATÊNCIA)
+# ==================================================
+
+@router.get("/route-metrics")
+async def get_route_latency_metrics(
+    route: Optional[str] = Query(None, description="Rota específica ou vazia para todas"),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Retorna métricas de latência por rota.
+
+    Métricas incluem:
+    - Total de chamadas
+    - Taxa de sucesso/fallback
+    - Latência média/min/max
+    - TTFT (Time to First Token) média/min/max
+
+    Útil para identificar rotas problemáticas e ajustar configurações.
+    """
+    from services.route_config import get_route_metrics
+
+    return get_route_metrics(route)
+
+
+@router.delete("/route-metrics")
+async def reset_route_latency_metrics(
+    route: Optional[str] = Query(None, description="Rota específica ou vazia para todas"),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Reseta métricas de latência por rota.
+    """
+    from services.route_config import reset_route_metrics
+
+    reset_route_metrics(route)
+    return {"message": f"Métricas resetadas: {route or 'todas as rotas'}"}
+
+
+@router.get("/route-config")
+async def get_route_configurations(
+    route: Optional[str] = Query(None, description="Rota específica ou vazia para todas"),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Retorna configurações de rota (modelo, timeout, streaming, etc).
+
+    Mostra as configurações de fast/slow path para cada rota.
+    """
+    from services.route_config import get_route_config, DEFAULT_ROUTE_CONFIGS
+
+    if route:
+        config = get_route_config(route)
+        return {
+            "route": route,
+            "profile": config.profile.value,
+            "model_primary": config.model_primary,
+            "model_fallback": config.model_fallback,
+            "sla_timeout": config.sla_timeout,
+            "max_timeout": config.max_timeout,
+            "thinking_level": config.thinking_level,
+            "use_streaming": config.use_streaming,
+            "temperature": config.temperature,
+            "max_prompt_chars": config.max_prompt_chars,
+            "auto_truncate": config.auto_truncate
+        }
+
+    # Todas as rotas configuradas
+    return {
+        "routes": [
+            {
+                "route": pattern,
+                "profile": config.profile.value,
+                "model_primary": config.model_primary,
+                "model_fallback": config.model_fallback,
+                "sla_timeout": config.sla_timeout,
+                "use_streaming": config.use_streaming
+            }
+            for pattern, config in DEFAULT_ROUTE_CONFIGS.items()
+        ]
+    }
+
+
+@router.get("/service-status")
+async def get_gemini_service_status(
+    current_user: User = Depends(require_admin)
+):
+    """
+    Retorna status do serviço Gemini.
+
+    Inclui:
+    - Status do HTTP client
+    - Estatísticas de cache
+    - Configurações de timeout
+    - Background tasks pendentes
+    """
+    from services.gemini_service import get_service_status, get_cache_stats
+    from utils.background_tasks import get_background_stats
+
+    service_status = await get_service_status()
+
+    return {
+        "gemini_service": service_status,
+        "cache": get_cache_stats(),
+        "background_tasks": get_background_stats()
+    }

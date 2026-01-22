@@ -47,6 +47,10 @@ class GeradorPecasApp {
         this.versaoSelecionada = null;
         this.painelVersoesAberto = false;
 
+        // Streaming de geração em tempo real
+        this.streamingContent = '';
+        this.isStreaming = false;
+
         this.initEventListeners();
         this.checkAuth();
     }
@@ -670,6 +674,10 @@ class GeradorPecasApp {
             return;
         }
 
+        // Reset estado de streaming para nova geração
+        this.streamingContent = '';
+        this.isStreaming = false;
+
         this.esconderErro();
         this.resetarStatusAgentes();
         this.mostrarLoading('Conectando ao servidor...', null);
@@ -805,26 +813,56 @@ class GeradorPecasApp {
                 // Atualiza progresso para 100%
                 document.getElementById('progresso-barra').style.width = '100%';
                 this.atualizarStatusAgente(3, 'concluido');
-                
-                setTimeout(() => {
+
+                // Conteúdo final (do streaming ou do evento)
+                const conteudoFinal = this.isStreaming ? this.streamingContent : data.minuta_markdown;
+
+                if (this.isStreaming) {
+                    // Streaming já abriu o editor - apenas finaliza
+                    this.finalizarEditorStreaming(data.geracao_id, data.tipo_peca, conteudoFinal);
                     this.esconderLoading();
                     this.showToast('Peça gerada com sucesso!', 'success');
-                    this.exibirEditor({
-                        status: 'sucesso',
-                        geracao_id: data.geracao_id,
-                        tipo_peca: data.tipo_peca,
-                        minuta_markdown: data.minuta_markdown
-                    });
-                }, 500);
+                } else {
+                    // Fallback: sem streaming, abre editor normalmente
+                    this.finalizarStreaming();
+                    setTimeout(() => {
+                        this.esconderLoading();
+                        this.showToast('Peça gerada com sucesso!', 'success');
+                        this.exibirEditor({
+                            status: 'sucesso',
+                            geracao_id: data.geracao_id,
+                            tipo_peca: data.tipo_peca,
+                            minuta_markdown: conteudoFinal || data.minuta_markdown
+                        });
+                    }, 500);
+                }
                 break;
 
             case 'erro':
+                this.finalizarStreaming();  // Limpa streaming em caso de erro
                 this.esconderLoading();
                 this.mostrarErro(data.mensagem);
                 break;
 
             case 'info':
                 document.getElementById('progresso-mensagem').textContent = data.mensagem;
+                break;
+
+            case 'geracao_chunk':
+                // Streaming em tempo real: abre o editor e mostra texto sendo gerado
+                console.log('🔥 CHUNK RECEBIDO:', data.content?.substring(0, 50));
+                try {
+                    if (!this.isStreaming) {
+                        console.log('🚀 Iniciando streaming - abrindo editor');
+                        this.isStreaming = true;
+                        this.streamingContent = '';
+                        this.abrirEditorStreaming();
+                    }
+                    this.streamingContent += data.content;
+                    this.atualizarEditorStreaming();
+                } catch (err) {
+                    console.error('❌ Erro no streaming:', err);
+                }
                 break;
 
             default:
@@ -874,6 +912,10 @@ class GeradorPecasApp {
 
     async enviarResposta() {
         const resposta = document.getElementById('resposta-usuario').value || this.tipoPeca;
+
+        // Reset estado de streaming
+        this.streamingContent = '';
+        this.isStreaming = false;
 
         this.fecharModal('modal-pergunta');
         this.resetarStatusAgentes();
@@ -2271,6 +2313,162 @@ class GeradorPecasApp {
             console.error('Erro ao restaurar versão:', error);
             this.showToast('Erro ao restaurar versão', 'error');
         }
+    }
+
+    // ==========================================
+    // Streaming de Geração em Tempo Real (no Editor)
+    // ==========================================
+
+    abrirEditorStreaming() {
+        console.log('📝 abrirEditorStreaming() chamado');
+
+        try {
+            // Abre o editor imediatamente com estado de "gerando"
+            this.esconderLoading();
+
+            // Configura estado inicial
+            this.minutaMarkdown = '';
+            this.historicoChat = [];
+            this.geracaoId = null;  // Será definido quando finalizar
+            this.isNovaGeracao = true;
+
+            // Reset estado de versões
+            this.versoesLista = [];
+            this.versaoSelecionada = null;
+            this.painelVersoesAberto = false;
+
+            // Esses elementos podem não existir - usar optional chaining
+            document.getElementById('painel-versoes')?.classList.add('hidden');
+            document.getElementById('versao-detalhe')?.classList.add('hidden');
+            document.getElementById('versoes-count')?.classList.add('hidden');
+
+            // Atualiza título com tipo da peça (ainda não sabemos)
+            const editorTipoPeca = document.getElementById('editor-tipo-peca');
+            if (editorTipoPeca) editorTipoPeca.textContent = 'Gerando...';
+
+            const editorCnj = document.getElementById('editor-cnj');
+            if (editorCnj) editorCnj.textContent = this.numeroCNJ ? `• ${this.numeroCNJ}` : '';
+
+            // Mostra indicador de streaming no editor
+            const container = document.getElementById('minuta-content');
+            if (container) {
+                container.innerHTML = `
+                    <div class="flex items-center gap-2 text-primary-600 mb-4">
+                        <div class="animate-spin h-4 w-4 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+                        <span class="text-sm font-medium">Gerando peça em tempo real...</span>
+                    </div>
+                    <div id="streaming-content" class="prose prose-sm max-w-none"></div>
+                `;
+            }
+
+            // Status
+            const minutaStatus = document.getElementById('minuta-status');
+            if (minutaStatus) {
+                minutaStatus.innerHTML = `
+                    <span class="text-primary-600 animate-pulse">
+                        <i class="fas fa-pen-fancy mr-1"></i> Escrevendo...
+                    </span>
+                `;
+            }
+
+            // Desabilita chat durante streaming
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) {
+                chatInput.disabled = true;
+                chatInput.placeholder = 'Aguarde a geração finalizar...';
+            }
+
+            // Reseta o chat (se existir o método)
+            if (typeof this.resetarChat === 'function') {
+                this.resetarChat();
+            }
+
+            // Abre o modal do editor
+            console.log('📝 Abrindo modal-editor...');
+            this.abrirModal('modal-editor');
+            console.log('✅ Modal aberto com sucesso');
+
+        } catch (err) {
+            console.error('❌ Erro em abrirEditorStreaming:', err);
+        }
+    }
+
+    atualizarEditorStreaming() {
+        const contentEl = document.getElementById('streaming-content');
+
+        if (contentEl && this.streamingContent) {
+            // Renderiza markdown em tempo real
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({ breaks: true, gfm: true });
+                contentEl.innerHTML = marked.parse(this.streamingContent);
+            } else {
+                // Fallback simples
+                contentEl.innerHTML = this.streamingContent
+                    .replace(/## (.*)/g, '<h2 class="text-lg font-semibold mt-4 mb-2">$1</h2>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/\n/g, '<br>');
+            }
+
+            // Scroll automático para o final
+            const container = document.getElementById('minuta-content');
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        // Atualiza status com contagem
+        const statusEl = document.getElementById('minuta-status');
+        if (statusEl) {
+            const chars = this.streamingContent.length;
+            const tokens = Math.round(chars / 4);
+            statusEl.innerHTML = `
+                <span class="text-primary-600 animate-pulse">
+                    <i class="fas fa-pen-fancy mr-1"></i>
+                    Escrevendo... ${tokens.toLocaleString()} tokens
+                </span>
+            `;
+        }
+    }
+
+    finalizarEditorStreaming(geracaoId, tipoPeca, conteudoFinal) {
+        // Atualiza dados
+        this.geracaoId = geracaoId;
+        this.tipoPeca = tipoPeca;
+        this.minutaMarkdown = conteudoFinal;
+
+        // Atualiza título
+        document.getElementById('editor-tipo-peca').textContent = this.formatarOpcao(tipoPeca);
+
+        // Re-renderiza a minuta sem o indicador de streaming
+        this.renderizarMinuta();
+
+        // Atualiza status
+        document.getElementById('minuta-status').textContent = 'Geração concluída';
+
+        // Habilita chat
+        const chatInput = document.getElementById('chat-input');
+        if (chatInput) {
+            chatInput.disabled = false;
+            chatInput.placeholder = 'Digite uma solicitação de alteração...';
+        }
+
+        // Reseta estado de streaming
+        this.isStreaming = false;
+        this.streamingContent = '';
+
+        // Carrega histórico e versões em background
+        this.carregarHistoricoRecente();
+        this.carregarContagemVersoes();
+
+        // Efeito visual de conclusão
+        this.destacarMinuta();
+    }
+
+    finalizarStreaming() {
+        // Reseta estado (usado para limpeza em caso de erro)
+        this.isStreaming = false;
+        this.streamingContent = '';
     }
 }
 

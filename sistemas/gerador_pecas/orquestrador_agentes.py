@@ -22,6 +22,7 @@ from sistemas.gerador_pecas.agente_tjms_integrado import AgenteTJMSIntegrado, Re
 from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
 from sistemas.gerador_pecas.gemini_client import chamar_gemini_async, normalizar_modelo
 # NOTA: TemplateFormatacao não é mais importado aqui - templates serão usados apenas para MD->DOCX
+from services.gemini_service import gemini_service
 from admin.models import ConfiguracaoIA
 from admin.models_prompts import PromptModulo
 from services.ia_params_resolver import get_ia_params, IAParams
@@ -1006,6 +1007,179 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
                 print(f"[AGENTE3] ❌ TIMEOUT! Prompt tinha ~{len(prompt_completo)//4:,} tokens estimados")
             resultado.erro = f"Erro no Agente 3: {erro_str}"
             return resultado
+
+    async def _executar_agente3_stream(
+        self,
+        resumo_consolidado: str,
+        prompt_sistema: str,
+        prompt_peca: str,
+        prompt_conteudo: str,
+        tipo_peca: str,
+        observacao_usuario: Optional[str] = None,
+        dados_processo: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Versão STREAMING do Agente 3 - Gerador de Peça.
+
+        Diferente de _executar_agente3, este método é um async generator
+        que YIELD chunks de texto conforme são gerados pelo modelo.
+
+        Isso permite TTFT (Time To First Token) de 1-3s ao invés de 20-60s,
+        melhorando drasticamente a experiência do usuário.
+
+        Yields:
+            dict com:
+                - tipo: 'chunk' | 'done' | 'error'
+                - content: texto do chunk (quando tipo='chunk')
+                - resultado: ResultadoAgente3 completo (quando tipo='done')
+                - error: mensagem de erro (quando tipo='error')
+        """
+        from typing import AsyncGenerator
+
+        resultado = ResultadoAgente3(tipo_peca=tipo_peca)
+        content_accumulated = []
+
+        try:
+            # === Monta seções auxiliares (igual ao método não-streaming) ===
+            secao_observacao = ""
+            if observacao_usuario:
+                secao_observacao = f"""
+---
+
+## OBSERVAÇÕES DO USUÁRIO:
+
+O usuário responsável pela peça forneceu as seguintes observações importantes que DEVEM ser consideradas na elaboração:
+
+> {observacao_usuario}
+
+**ATENÇÃO:** As observações acima são instruções específicas do usuário e devem ser incorporadas na peça conforme solicitado.
+
+"""
+                print(f" Observação do usuário incluída: {len(observacao_usuario)} caracteres")
+
+            secao_dados_processo = ""
+            if dados_processo:
+                dados_json = json.dumps(dados_processo, indent=2, ensure_ascii=False)
+                secao_dados_processo = f"""
+---
+
+## DADOS ESTRUTURADOS DO PROCESSO
+
+Os dados abaixo foram extraídos automaticamente do sistema judicial e são confiáveis:
+
+```json
+{dados_json}
+```
+
+**IMPORTANTE:** Utilize estes dados para:
+- Identificar corretamente as partes (polo ativo e polo passivo)
+- Verificar a data de ajuizamento da demanda
+- Consultar o valor da causa
+- Identificar o órgão julgador
+- Verificar representação processual (advogados, defensoria, etc.)
+
+"""
+                print(f" Dados do processo incluídos: {len(dados_json)} caracteres")
+
+            # === Monta prompt completo ===
+            prompt_completo = f"""{prompt_sistema}
+
+{prompt_peca}
+
+{prompt_conteudo}
+{secao_observacao}{secao_dados_processo}
+---
+
+## DOCUMENTOS DO PROCESSO PARA ANÁLISE:
+
+{resumo_consolidado}
+
+---
+
+## INSTRUÇÕES FINAIS:
+
+Com base nos documentos acima e nas instruções do sistema, gere a peça jurídica completa.
+
+**REGRAS OBRIGATÓRIAS sobre os Argumentos e Teses:**
+
+1. **Seções vazias**: Se uma categoria (ex: PRELIMINARES) não tiver NENHUM argumento listado acima, NÃO crie essa seção na peça. Só inclua seções que tenham argumentos ativados.
+
+2. **Ordem**: Respeite a ordem das categorias e argumentos como apresentada em "ARGUMENTOS E TESES APLICÁVEIS".
+
+Retorne a peça formatada em **Markdown**, seguindo a estrutura indicada no prompt de peça acima.
+Use formatação adequada: ## para títulos de seção, **negrito** para ênfase, > para citações.
+"""
+
+            resultado.prompt_enviado = prompt_completo
+
+            # Logging
+            prompt_len = len(prompt_completo)
+            prompt_tokens_est = prompt_len // 4
+            max_tokens_efetivo = self.params_agente3.max_tokens or 50000
+
+            print(f"[AGENTE3-STREAM] Prompt montado:")
+            print(f"[AGENTE3-STREAM]    - Tamanho: {prompt_len:,} caracteres (~{prompt_tokens_est:,} tokens estimados)")
+            print(f"[AGENTE3-STREAM]    - Modelo: {self.params_agente3.modelo}")
+            print(f"[AGENTE3-STREAM]    - Temperatura: {self.params_agente3.temperatura}")
+
+            # === STREAMING: Itera sobre chunks do Gemini ===
+            chunk_count = 0
+            async for chunk in gemini_service.generate_stream(
+                prompt=prompt_completo,
+                model=self.params_agente3.modelo,
+                max_tokens=max_tokens_efetivo,
+                temperature=self.params_agente3.temperatura,
+                thinking_level=self.params_agente3.thinking_level,
+                context={
+                    "sistema": "gerador_pecas",
+                    "agente": "agente3_stream",
+                    "tipo_peca": tipo_peca
+                }
+            ):
+                chunk_count += 1
+                content_accumulated.append(chunk)
+
+                # Yield cada chunk para o caller
+                yield {
+                    "tipo": "chunk",
+                    "content": chunk
+                }
+
+            # === Finalização: monta resultado completo ===
+            content_final = "".join(content_accumulated)
+
+            # Remove possíveis blocos de código markdown
+            content_limpo = content_final.strip()
+            if content_limpo.startswith('```markdown'):
+                content_limpo = content_limpo[11:]
+            elif content_limpo.startswith('```'):
+                content_limpo = content_limpo[3:]
+            if content_limpo.endswith('```'):
+                content_limpo = content_limpo[:-3]
+
+            resultado.conteudo_markdown = content_limpo.strip()
+
+            print(f"[AGENTE3-STREAM] Geração concluída!")
+            print(f"[AGENTE3-STREAM]    - Chunks recebidos: {chunk_count}")
+            print(f"[AGENTE3-STREAM]    - Tamanho final: {len(resultado.conteudo_markdown):,} caracteres")
+
+            yield {
+                "tipo": "done",
+                "resultado": resultado
+            }
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            erro_str = str(e)
+            print(f"[AGENTE3-STREAM] ERRO: {erro_str}")
+
+            resultado.erro = f"Erro no Agente 3: {erro_str}"
+            yield {
+                "tipo": "error",
+                "error": erro_str,
+                "resultado": resultado
+            }
 
 
 async def processar_com_agentes(

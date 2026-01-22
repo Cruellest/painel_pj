@@ -758,6 +758,36 @@ DEFAULT_CONFIG_IA = [
         "tipo_valor": "string",
         "descricao": "Modelo para Agente/Relatório: gera relatório"
     },
+
+    # ==========================================
+    # CONFIGURAÇÕES DE SLA FALLBACK (GLOBAL)
+    # ==========================================
+    # Permite fallback automático para modelo mais rápido
+    # quando o modelo principal demora mais que o timeout.
+    # DESABILITADO por padrão - habilite se precisar de respostas rápidas
+    # mesmo com qualidade reduzida.
+
+    {
+        "sistema": "global",
+        "chave": "sla_fallback_habilitado",
+        "valor": "false",
+        "tipo_valor": "boolean",
+        "descricao": "Habilita fallback automático para modelo mais rápido quando timeout (DESABILITADO por padrão)"
+    },
+    {
+        "sistema": "global",
+        "chave": "sla_timeout_segundos",
+        "valor": "30",
+        "tipo_valor": "number",
+        "descricao": "Tempo em segundos antes de acionar fallback (se habilitado)"
+    },
+    {
+        "sistema": "global",
+        "chave": "modelo_fallback",
+        "valor": "gemini-2.0-flash-lite",
+        "tipo_valor": "string",
+        "descricao": "Modelo de fallback quando SLA é excedido (usado apenas se sla_fallback_habilitado=true)"
+    },
 ]
 
 

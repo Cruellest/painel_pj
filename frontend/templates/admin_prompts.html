@@ -126,6 +126,9 @@
                     <button onclick="showConfigTab('sistemas_acessorios')" id="tab-sistemas_acessorios" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
                         <i class="fas fa-cogs mr-1"></i> Sistemas Acessórios
                     </button>
+                    <button onclick="showConfigTab('global')" id="tab-global" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-globe mr-1"></i> Global
+                    </button>
                 </nav>
             </div>
             
@@ -386,6 +389,104 @@
                     >
                         <i class="fas fa-save"></i>
                         Salvar Configurações Sistemas Acessórios
+                    </button>
+                </div>
+            </div>
+
+            <!-- Config Global -->
+            <div id="config-global" class="config-panel hidden">
+                <div class="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                    <p class="text-sm text-purple-800">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        <strong>Configurações Globais</strong> afetam todos os sistemas. Use com cautela.
+                    </p>
+                </div>
+
+                <!-- SLA Fallback -->
+                <div class="border border-gray-200 rounded-lg p-4 mb-6 bg-white">
+                    <h4 class="text-md font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <i class="fas fa-clock text-amber-500"></i>
+                        SLA Fallback Automático
+                    </h4>
+                    <p class="text-xs text-gray-500 mb-4">
+                        Quando habilitado, se o modelo principal demorar mais que o timeout configurado para responder (TTFT),
+                        automaticamente troca para um modelo mais rápido.
+                        <strong class="text-red-600">DESABILITADO por padrão</strong> - habilite apenas se souber o que está fazendo.
+                    </p>
+
+                    <div class="grid md:grid-cols-3 gap-4">
+                        <!-- Habilitado -->
+                        <div class="border border-amber-200 rounded-lg p-3 bg-amber-50">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-toggle-on text-amber-500 mr-1"></i>
+                                SLA Fallback Habilitado
+                            </label>
+                            <select
+                                id="global-sla_fallback_habilitado"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                            >
+                                <option value="false">Desabilitado (Recomendado)</option>
+                                <option value="true">Habilitado</option>
+                            </select>
+                            <p class="text-xs text-red-600 mt-1 font-medium">
+                                <i class="fas fa-exclamation-triangle mr-1"></i>
+                                Habilitar pode resultar em respostas de menor qualidade
+                            </p>
+                        </div>
+
+                        <!-- Timeout -->
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-stopwatch text-blue-500 mr-1"></i>
+                                Timeout (segundos)
+                            </label>
+                            <input
+                                type="number"
+                                id="global-sla_timeout_segundos"
+                                min="5" max="120" step="5"
+                                placeholder="30"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                            >
+                            <p class="text-xs text-gray-400 mt-1">Tempo máximo para TTFT antes de fallback</p>
+                        </div>
+
+                        <!-- Modelo Fallback -->
+                        <div class="border border-gray-200 rounded-lg p-3">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-robot text-gray-500 mr-1"></i>
+                                Modelo de Fallback
+                            </label>
+                            <select
+                                id="global-modelo_fallback"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                            >
+                                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (Mais rápido)</option>
+                                <option value="gemini-3-flash-preview">Gemini 3 Flash Preview</option>
+                            </select>
+                            <p class="text-xs text-gray-400 mt-1">Modelo usado quando timeout excede</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 p-2 bg-gray-50 rounded text-xs text-gray-600">
+                        <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>
+                        <strong>Comportamento:</strong> Se o modelo principal não responder em X segundos, o sistema automaticamente
+                        tenta com o modelo de fallback. Útil para alta disponibilidade, mas pode comprometer qualidade em tarefas complexas.
+                    </div>
+                </div>
+
+                <!-- Espaço para futuras configurações globais -->
+                <div class="border border-dashed border-gray-300 rounded-lg p-4 text-center text-gray-400">
+                    <i class="fas fa-plus-circle text-2xl mb-2"></i>
+                    <p class="text-sm">Outras configurações globais podem ser adicionadas aqui futuramente</p>
+                </div>
+
+                <div class="mt-4 flex justify-end">
+                    <button
+                        onclick="salvarConfigSistema('global')"
+                        class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+                    >
+                        <i class="fas fa-save"></i>
+                        Salvar Configurações Globais
                     </button>
                 </div>
             </div>
@@ -926,14 +1027,19 @@
 
                 const configs = await response.json();
 
-                // Preenche apenas os campos de sistemas_acessorios e extras do gerador_pecas
+                // Preenche campos de sistemas_acessorios, global e extras do gerador_pecas
                 configs.forEach(config => {
-                    if (config.sistema === 'sistemas_acessorios' || config.sistema === 'gerador_pecas') {
+                    if (config.sistema === 'sistemas_acessorios' || config.sistema === 'gerador_pecas' || config.sistema === 'global') {
                         const prefix = config.sistema;
                         const inputId = `${prefix}-${config.chave}`;
                         const input = document.getElementById(inputId);
                         if (input) {
-                            input.value = config.valor || '';
+                            // Para selects, precisamos selecionar a opção correta
+                            if (input.tagName === 'SELECT') {
+                                input.value = config.valor || '';
+                            } else {
+                                input.value = config.valor || '';
+                            }
                         }
                     }
                 });

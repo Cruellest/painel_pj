@@ -459,27 +459,41 @@ async def processar_processo_stream(
                 
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'concluido', 'mensagem': f'{len(resultado_agente2.modulos_ids)} módulos ativados'})}\n\n"
                 
-                # Agente 3: Gerador
+                # Agente 3: Gerador (COM STREAMING REAL)
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peça jurídica com IA...'})}\n\n"
 
                 # Log se há observação do usuário
                 if req.observacao_usuario:
                     yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Observações do usuário serão consideradas na geração'})}\n\n"
 
-                resultado_agente3 = await orq._executar_agente3(
+                # Usa versão STREAMING do Agente 3 para TTFT rápido
+                resultado_agente3 = None
+                async for event in orq._executar_agente3_stream(
                     resumo_consolidado=resumo_para_geracao,
                     prompt_sistema=resultado_agente2.prompt_sistema,
                     prompt_peca=resultado_agente2.prompt_peca,
                     prompt_conteudo=resultado_agente2.prompt_conteudo,
                     tipo_peca=tipo_peca,
                     observacao_usuario=req.observacao_usuario
-                )
-                
-                if resultado_agente3.erro:
+                ):
+                    if event["tipo"] == "chunk":
+                        # Envia chunk de texto para o frontend em tempo real
+                        yield f"data: {json.dumps({'tipo': 'geracao_chunk', 'content': event['content']})}\n\n"
+
+                    elif event["tipo"] == "done":
+                        resultado_agente3 = event["resultado"]
+
+                    elif event["tipo"] == "error":
+                        resultado_agente3 = event["resultado"]
+                        yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': event['error']})}\n\n"
+                        yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': event['error']})}\n\n"
+                        return
+
+                if resultado_agente3 and resultado_agente3.erro:
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
                     return
-                
+
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'concluido', 'mensagem': 'Peça gerada com sucesso!'})}\n\n"
                 
                 # Prepara lista de documentos processados para salvar
@@ -1253,6 +1267,87 @@ async def editar_minuta(
             "status": "erro",
             "mensagem": mensagem_erro
         }
+
+
+@router.post("/editar-minuta-stream")
+async def editar_minuta_stream(
+    req: EditarMinutaRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Processa edição da minuta via chat com streaming real.
+
+    PERFORMANCE: Usa streamGenerateContent do Gemini para enviar
+    tokens assim que são gerados, reduzindo TTFT de 15-60s para 1-3s.
+
+    Retorna um stream SSE com eventos:
+    - event: start - início do streaming
+    - event: chunk - cada chunk de texto gerado
+    - event: done - conclusão do streaming
+    - event: error - erro durante o processo
+    """
+    from fastapi.responses import StreamingResponse
+    from services.gemini_service import stream_to_sse
+    import json
+
+    try:
+        # Logging de tamanho para diagnóstico
+        minuta_len = len(req.minuta_atual) if req.minuta_atual else 0
+        mensagem_len = len(req.mensagem) if req.mensagem else 0
+        historico_len = len(req.historico) if req.historico else 0
+        print(f"[EDITAR-MINUTA-STREAM] 📝 Minuta: {minuta_len:,} chars, mensagem: {mensagem_len:,} chars, histórico: {historico_len} msgs")
+
+        # Busca configurações de IA
+        config_modelo = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "modelo_geracao"
+        ).first()
+        modelo = config_modelo.valor if config_modelo else "anthropic/claude-3.5-sonnet"
+
+        # Inicializa o serviço
+        service = GeradorPecasService(
+            modelo=modelo,
+            db=db
+        )
+
+        # Generator de streaming
+        text_generator = service.editar_minuta_stream(
+            minuta_atual=req.minuta_atual,
+            mensagem_usuario=req.mensagem,
+            historico=req.historico
+        )
+
+        # Converte para SSE com heartbeats
+        sse_generator = stream_to_sse(
+            text_generator,
+            event_type="chunk",
+            include_heartbeat=True,
+            heartbeat_interval=15.0
+        )
+
+        return StreamingResponse(
+            sse_generator,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"  # Desabilita buffering no nginx
+            }
+        )
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+
+        # Retorna erro como SSE para compatibilidade
+        async def error_generator():
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+        return StreamingResponse(
+            error_generator(),
+            media_type="text/event-stream"
+        )
 
 
 @router.post("/exportar-docx")

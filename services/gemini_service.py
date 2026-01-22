@@ -25,7 +25,7 @@ import httpx
 import hashlib
 import logging
 import time
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, AsyncGenerator
 from dataclasses import dataclass, field
 from functools import lru_cache
 from datetime import datetime, timedelta
@@ -567,6 +567,304 @@ class GeminiService:
         metrics.log()
         asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
         return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        model: str = None,
+        task: str = None,
+        max_tokens: int = None,
+        temperature: float = 0.3,
+        thinking_level: str = None,
+        context: Dict[str, Any] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Gera texto usando streaming real do Gemini (streamGenerateContent).
+
+        PERFORMANCE: Reduz TTFT (Time To First Token) de 15-60s para 1-3s
+        permitindo que o frontend mostre tokens assim que chegam.
+
+        Args:
+            prompt: Prompt do usuário
+            system_prompt: Instruções do sistema (opcional)
+            model: Nome do modelo (opcional)
+            task: Tipo de tarefa para selecionar modelo automaticamente
+            max_tokens: Limite de tokens na resposta
+            temperature: Temperatura (0-2)
+            thinking_level: Nível de raciocínio ("minimal", "low", "medium", "high")
+            context: Dicionário com contexto para logging
+
+        Yields:
+            Chunks de texto conforme são gerados pelo modelo
+
+        Exemplo:
+            async for chunk in gemini_service.generate_stream(prompt="Olá!"):
+                yield f"data: {json.dumps({'chunk': chunk})}\\n\\n"
+        """
+        ctx = context or {}
+        metrics = GeminiMetrics()
+        t_start = time.perf_counter()
+        first_chunk_received = False
+
+        if not self._api_key:
+            metrics.success = False
+            metrics.error = "GEMINI_KEY não configurada"
+            logger.error("[Gemini Stream] API key não configurada")
+            return
+
+        # Determina o modelo
+        if model:
+            model = self.normalize_model(model)
+        elif task:
+            model = self.get_model_for_task(task)
+        else:
+            model = self.DEFAULT_MODELS["analise"]
+
+        metrics.model = model
+        metrics.prompt_chars = len(prompt)
+        metrics.prompt_tokens_estimated = len(prompt) // 4
+
+        # Monta payload
+        payload = self._build_payload(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            thinking_level=thinking_level,
+            model=model
+        )
+
+        # URL da API com streaming
+        url = f"{self.BASE_URL}/{model}:streamGenerateContent?alt=sse&key={self._api_key}"
+
+        total_content = ""
+        total_tokens = 0
+
+        try:
+            t_connect = time.perf_counter()
+
+            # Usa httpx para streaming
+            client = await get_http_client()
+
+            async with client.stream("POST", url, json=payload, timeout=TIMEOUT_TOTAL) as response:
+                metrics.time_connect_ms = (time.perf_counter() - t_connect) * 1000
+
+                if response.status_code != 200:
+                    error_text = await response.aread()
+                    metrics.success = False
+                    metrics.error = f"HTTP {response.status_code}: {error_text.decode()[:200]}"
+                    metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                    metrics.log()
+                    logger.error(f"[Gemini Stream] Erro: {metrics.error}")
+                    return
+
+                # Processa eventos SSE
+                buffer = ""
+                async for raw_chunk in response.aiter_bytes():
+                    buffer += raw_chunk.decode("utf-8")
+
+                    # Processa linhas completas
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+
+                        if not line:
+                            continue
+
+                        # Formato SSE: "data: {...json...}"
+                        if line.startswith("data: "):
+                            json_str = line[6:]  # Remove "data: "
+
+                            try:
+                                data = __import__("json").loads(json_str)
+
+                                # Extrai texto do chunk
+                                candidates = data.get("candidates", [])
+                                if candidates:
+                                    content_obj = candidates[0].get("content", {})
+                                    parts = content_obj.get("parts", [])
+                                    for part in parts:
+                                        text = part.get("text", "")
+                                        if text:
+                                            # TTFT - primeiro chunk
+                                            if not first_chunk_received:
+                                                first_chunk_received = True
+                                                metrics.time_ttft_ms = (time.perf_counter() - t_start) * 1000
+                                                logger.info(
+                                                    f"[Gemini Stream] TTFT: {metrics.time_ttft_ms:.0f}ms "
+                                                    f"model={model}"
+                                                )
+
+                                            total_content += text
+                                            yield text
+
+                                # Extrai tokens se disponível
+                                usage = data.get("usageMetadata", {})
+                                if usage:
+                                    total_tokens = usage.get("totalTokenCount", total_tokens)
+
+                            except __import__("json").JSONDecodeError:
+                                # Linha não é JSON válido, ignora
+                                continue
+
+            # Finaliza métricas
+            metrics.success = True
+            metrics.response_tokens = total_tokens or len(total_content) // 4
+            metrics.time_generation_ms = (time.perf_counter() - t_start) * 1000 - metrics.time_ttft_ms
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+            metrics.log()
+
+            # Log assíncrono
+            asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+
+        except Exception as e:
+            metrics.success = False
+            metrics.error = str(e)
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+            metrics.log()
+            logger.error(f"[Gemini Stream] Erro: {e}")
+            asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature))
+
+    async def generate_with_sla(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        model_primary: str = "gemini-3-flash-preview",
+        model_fallback: str = "gemini-2.0-flash-lite",
+        sla_timeout_seconds: float = 5.0,
+        max_tokens: int = None,
+        temperature: float = 0.3,
+        thinking_level: str = None,
+        context: Dict[str, Any] = None
+    ) -> GeminiResponse:
+        """
+        Gera texto com fallback automático baseado em SLA.
+
+        Se o modelo primário não responder dentro do timeout SLA,
+        automaticamente faz fallback para um modelo mais rápido.
+
+        Args:
+            prompt: Prompt do usuário
+            system_prompt: Instruções do sistema
+            model_primary: Modelo preferido (mais capaz, pode ser lento)
+            model_fallback: Modelo de fallback (mais rápido, menos capaz)
+            sla_timeout_seconds: Timeout em segundos para TTFT do modelo primário
+            max_tokens: Limite de tokens na resposta
+            temperature: Temperatura (0-2)
+            thinking_level: Nível de raciocínio
+            context: Contexto para logging
+
+        Returns:
+            GeminiResponse com indicação de qual modelo foi usado
+
+        Exemplo:
+            # Tenta gemini-3-flash-preview, fallback para lite se > 5s
+            response = await gemini_service.generate_with_sla(
+                prompt=prompt,
+                sla_timeout_seconds=5.0
+            )
+        """
+        ctx = context or {}
+        metrics = GeminiMetrics()
+        t_start = time.perf_counter()
+
+        if not self._api_key:
+            return GeminiResponse(
+                success=False,
+                error="GEMINI_KEY não configurada"
+            )
+
+        model_primary = self.normalize_model(model_primary)
+        model_fallback = self.normalize_model(model_fallback)
+
+        metrics.model = model_primary
+        metrics.prompt_chars = len(prompt)
+
+        # Tenta modelo primário com timeout
+        try:
+            # Cria task para o modelo primário
+            primary_task = asyncio.create_task(
+                self.generate(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model=model_primary,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    thinking_level=thinking_level,
+                    use_cache=True,
+                    context=ctx
+                )
+            )
+
+            # Aguarda com timeout
+            response = await asyncio.wait_for(primary_task, timeout=sla_timeout_seconds)
+
+            # Modelo primário respondeu dentro do SLA
+            if response.success:
+                logger.info(
+                    f"[Gemini SLA] Primário OK: {model_primary} "
+                    f"em {response.metrics.time_total_ms:.0f}ms (SLA: {sla_timeout_seconds}s)"
+                )
+                return response
+            else:
+                # Erro no primário, tenta fallback
+                logger.warning(
+                    f"[Gemini SLA] Primário falhou ({response.error}), tentando fallback"
+                )
+
+        except asyncio.TimeoutError:
+            # Timeout no primário - cancela e usa fallback
+            primary_task.cancel()
+            try:
+                await primary_task
+            except asyncio.CancelledError:
+                pass
+
+            logger.warning(
+                f"[Gemini SLA] Timeout no primário ({model_primary}) "
+                f"após {sla_timeout_seconds}s, usando fallback: {model_fallback}"
+            )
+
+        except Exception as e:
+            logger.warning(
+                f"[Gemini SLA] Erro no primário ({e}), tentando fallback"
+            )
+
+        # Fallback para modelo mais rápido
+        try:
+            response = await self.generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model=model_fallback,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                thinking_level=None,  # Fallback não usa thinking avançado
+                use_cache=True,
+                context=ctx
+            )
+
+            if response.success:
+                logger.info(
+                    f"[Gemini SLA] Fallback OK: {model_fallback} "
+                    f"em {response.metrics.time_total_ms:.0f}ms"
+                )
+                # Marca nas métricas que usou fallback
+                if response.metrics:
+                    response.metrics.error = f"fallback_from:{model_primary}"
+
+            return response
+
+        except Exception as e:
+            metrics.success = False
+            metrics.error = f"Fallback também falhou: {str(e)}"
+            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+            metrics.log()
+            return GeminiResponse(
+                success=False,
+                error=metrics.error,
+                metrics=metrics
+            )
 
     async def generate_with_params(
         self,
@@ -1597,6 +1895,276 @@ def get_thinking_level(db, sistema: str) -> str:
         return None
 
 
+# ============================================
+# TRUNCAMENTO INTELIGENTE DE PROMPTS
+# ============================================
+
+def truncate_prompt(
+    prompt: str,
+    max_chars: int = 100000,
+    truncate_middle: bool = True,
+    placeholder: str = "\n\n[... conteúdo truncado para reduzir tamanho ...]\n\n"
+) -> Tuple[str, bool]:
+    """
+    Trunca prompt muito grande de forma inteligente.
+
+    PROBLEMA: Prompts com 100k+ chars causam latência alta e podem
+    exceder limites de contexto do modelo.
+
+    SOLUÇÃO: Trunca o meio do prompt (geralmente documentos anexados)
+    preservando início (instruções) e fim (pergunta/tarefa).
+
+    Args:
+        prompt: Prompt original
+        max_chars: Tamanho máximo em caracteres (default: 100k)
+        truncate_middle: Se True, remove o meio; se False, remove o final
+        placeholder: Texto que substitui a parte removida
+
+    Returns:
+        Tuple[str, bool]: (prompt_truncado, foi_truncado)
+
+    Exemplo:
+        prompt, truncado = truncate_prompt(prompt_grande, max_chars=80000)
+        if truncado:
+            logger.warning("Prompt foi truncado")
+    """
+    if len(prompt) <= max_chars:
+        return prompt, False
+
+    if truncate_middle:
+        # Preserva início e fim, remove o meio
+        # 40% início, 60% fim (fim geralmente tem a tarefa/pergunta)
+        keep_start = int(max_chars * 0.4)
+        keep_end = max_chars - keep_start - len(placeholder)
+
+        truncated = (
+            prompt[:keep_start] +
+            placeholder +
+            prompt[-keep_end:]
+        )
+    else:
+        # Remove apenas o final
+        truncated = prompt[:max_chars - len(placeholder)] + placeholder
+
+    chars_removed = len(prompt) - len(truncated) + len(placeholder)
+    logger.warning(
+        f"[Prompt] Truncado de {len(prompt):,} para {len(truncated):,} chars "
+        f"(-{chars_removed:,} chars, ~{chars_removed//4:,} tokens)"
+    )
+
+    return truncated, True
+
+
+def estimate_tokens(text: str) -> int:
+    """
+    Estima número de tokens para texto em português.
+
+    Regra: ~4 caracteres por token para português/inglês.
+    Mais preciso que len(text)/4 pois considera espaços.
+
+    Args:
+        text: Texto para estimar
+
+    Returns:
+        Estimativa de tokens
+    """
+    # Conta palavras + pontuação como aproximação
+    # Português tem ~1.3 tokens por palavra em média
+    words = len(text.split())
+    chars = len(text)
+
+    # Média ponderada entre contagem de palavras e caracteres
+    by_words = int(words * 1.3)
+    by_chars = chars // 4
+
+    return (by_words + by_chars) // 2
+
+
+def smart_truncate_for_context(
+    system_prompt: str,
+    user_prompt: str,
+    max_total_tokens: int = 128000,
+    reserve_output_tokens: int = 8000
+) -> Tuple[str, str, bool]:
+    """
+    Trunca prompts para caber no contexto do modelo.
+
+    INTELIGÊNCIA: Prioriza system_prompt (instruções) e trunca
+    user_prompt (documentos/dados) quando necessário.
+
+    Args:
+        system_prompt: Prompt do sistema (preservado integralmente se possível)
+        user_prompt: Prompt do usuário (pode ser truncado)
+        max_total_tokens: Limite de contexto do modelo (default: 128k)
+        reserve_output_tokens: Tokens reservados para saída (default: 8k)
+
+    Returns:
+        Tuple[system_prompt, user_prompt, foi_truncado]
+
+    Exemplo:
+        sys, user, truncado = smart_truncate_for_context(
+            system_prompt=instrucoes,
+            user_prompt=documentos_longos,
+            max_total_tokens=128000
+        )
+    """
+    available_tokens = max_total_tokens - reserve_output_tokens
+
+    sys_tokens = estimate_tokens(system_prompt)
+    user_tokens = estimate_tokens(user_prompt)
+    total_tokens = sys_tokens + user_tokens
+
+    if total_tokens <= available_tokens:
+        return system_prompt, user_prompt, False
+
+    # Precisa truncar - prioriza manter system_prompt
+    tokens_to_remove = total_tokens - available_tokens
+
+    # Se system_prompt já é grande demais, trunca ambos
+    if sys_tokens > available_tokens * 0.3:
+        # System prompt usa mais de 30% do contexto - trunca proporcionalmente
+        sys_budget = int(available_tokens * 0.3)
+        user_budget = available_tokens - sys_budget
+
+        sys_max_chars = sys_budget * 4
+        user_max_chars = user_budget * 4
+
+        system_prompt, _ = truncate_prompt(system_prompt, sys_max_chars)
+        user_prompt, _ = truncate_prompt(user_prompt, user_max_chars)
+    else:
+        # Trunca apenas user_prompt
+        user_budget = available_tokens - sys_tokens
+        user_max_chars = user_budget * 4
+        user_prompt, _ = truncate_prompt(user_prompt, user_max_chars)
+
+    logger.info(
+        f"[Prompt] Contexto ajustado: system={estimate_tokens(system_prompt)} tokens, "
+        f"user={estimate_tokens(user_prompt)} tokens "
+        f"(limite: {available_tokens} tokens)"
+    )
+
+    return system_prompt, user_prompt, True
+
+
+# ============================================
+# WRAPPER SSE COM HEARTBEAT
+# ============================================
+
+async def sse_with_heartbeat(
+    generator: AsyncGenerator[str, None],
+    heartbeat_interval: float = 15.0,
+    heartbeat_comment: str = ": heartbeat"
+) -> AsyncGenerator[str, None]:
+    """
+    Wrapper que adiciona heartbeats a um generator SSE para manter conexão viva.
+
+    PROBLEMA: Proxies reversos (nginx, cloudflare) podem fechar conexões ociosas
+    após 30-60s sem dados. Se o modelo demora para gerar o primeiro token,
+    a conexão pode cair.
+
+    SOLUÇÃO: Envia comentários SSE periódicos (que o cliente ignora) para
+    manter a conexão ativa.
+
+    Args:
+        generator: Generator original que produz chunks de texto
+        heartbeat_interval: Intervalo entre heartbeats em segundos (default: 15s)
+        heartbeat_comment: Formato do comentário SSE (default: ": heartbeat")
+
+    Yields:
+        Chunks de texto intercalados com heartbeats
+
+    Exemplo:
+        async def stream_response():
+            gen = gemini_service.generate_stream(prompt)
+            async for chunk in sse_with_heartbeat(gen):
+                yield f"data: {json.dumps({'text': chunk})}\\n\\n"
+    """
+    import json
+
+    last_heartbeat = time.perf_counter()
+    generator_exhausted = False
+    pending_chunk = None
+
+    while not generator_exhausted:
+        try:
+            # Tenta obter próximo chunk com timeout
+            chunk = await asyncio.wait_for(
+                generator.__anext__(),
+                timeout=heartbeat_interval
+            )
+            yield chunk
+            last_heartbeat = time.perf_counter()
+
+        except asyncio.TimeoutError:
+            # Timeout - envia heartbeat e continua esperando
+            yield heartbeat_comment + "\n"
+            logger.debug("[SSE] Heartbeat enviado")
+
+        except StopAsyncIteration:
+            # Generator terminou
+            generator_exhausted = True
+
+
+async def stream_to_sse(
+    generator: AsyncGenerator[str, None],
+    event_type: str = "chunk",
+    include_heartbeat: bool = True,
+    heartbeat_interval: float = 15.0
+) -> AsyncGenerator[str, None]:
+    """
+    Converte generator de texto em eventos SSE formatados.
+
+    Args:
+        generator: Generator que produz chunks de texto
+        event_type: Tipo do evento SSE (default: "chunk")
+        include_heartbeat: Se True, adiciona heartbeats periódicos
+        heartbeat_interval: Intervalo entre heartbeats
+
+    Yields:
+        Eventos SSE formatados: "event: chunk\\ndata: {...}\\n\\n"
+
+    Exemplo:
+        @app.get("/stream")
+        async def stream():
+            gen = gemini_service.generate_stream(prompt)
+            return StreamingResponse(
+                stream_to_sse(gen),
+                media_type="text/event-stream"
+            )
+    """
+    import json
+
+    # Envia evento de início
+    yield f"event: start\ndata: {json.dumps({'status': 'started'})}\n\n"
+
+    full_content = ""
+    chunk_count = 0
+    last_heartbeat = time.perf_counter()
+
+    try:
+        async for chunk in generator:
+            # Verifica se é hora de heartbeat
+            now = time.perf_counter()
+            if include_heartbeat and (now - last_heartbeat) > heartbeat_interval:
+                yield ": heartbeat\n\n"
+                last_heartbeat = now
+
+            full_content += chunk
+            chunk_count += 1
+
+            # Envia chunk como evento SSE
+            yield f"event: {event_type}\ndata: {json.dumps({'text': chunk, 'index': chunk_count})}\n\n"
+            last_heartbeat = time.perf_counter()
+
+        # Envia evento de conclusão
+        yield f"event: done\ndata: {json.dumps({'status': 'completed', 'total_chunks': chunk_count, 'total_chars': len(full_content)})}\n\n"
+
+    except Exception as e:
+        # Envia evento de erro
+        yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        logger.error(f"[SSE] Erro no stream: {e}")
+
+
 # Exports para outros módulos
 __all__ = [
     # Classes
@@ -1612,6 +2180,13 @@ __all__ = [
     # HTTP Client
     "get_http_client",
     "close_http_client",
+    # Truncamento de prompts
+    "truncate_prompt",
+    "estimate_tokens",
+    "smart_truncate_for_context",
+    # SSE com heartbeat
+    "sse_with_heartbeat",
+    "stream_to_sse",
     # Diagnóstico
     "get_cache_stats",
     "clear_cache",
