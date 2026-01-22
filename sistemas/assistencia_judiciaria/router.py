@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
+from utils.timezone import to_iso_utc
 from sistemas.assistencia_judiciaria.core.logic import full_flow, DEFAULT_MODEL
 from sistemas.assistencia_judiciaria.core.document import markdown_to_docx, docx_to_pdf
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
@@ -241,7 +242,7 @@ async def consultar_processo(
                     "dados": consulta_existente.dados_json or {},
                     "relatorio": consulta_existente.relatorio,
                     "cached": True,
-                    "consultado_em": consulta_existente.consultado_em.isoformat() if consulta_existente.consultado_em else None
+                    "consultado_em": to_iso_utc(consulta_existente.consultado_em)
                 }
         
         # Faz nova consulta
@@ -319,7 +320,7 @@ async def listar_historico(
                 "id": c.id,
                 "cnj": c.cnj_formatado or c.cnj,
                 "classe": c.dados_json.get("classeProcessual") if c.dados_json else None,
-                "data": c.consultado_em.isoformat() if c.consultado_em else None
+                "data": to_iso_utc(c.consultado_em)
             }
             for c in consultas
         ]
@@ -490,7 +491,7 @@ async def obter_feedback(
             "avaliacao": feedback.avaliacao,
             "comentario": feedback.comentario,
             "campos_incorretos": feedback.campos_incorretos,
-            "criado_em": feedback.criado_em.isoformat() if feedback.criado_em else None
+            "criado_em": to_iso_utc(feedback.criado_em)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

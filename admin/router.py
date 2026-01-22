@@ -11,6 +11,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 
 from database.connection import get_db
+from utils.timezone import to_iso_utc
 from auth.dependencies import get_current_active_user, require_admin
 from auth.models import User
 
@@ -1225,7 +1226,7 @@ async def dashboard_feedbacks(
                 "sistema": "assistencia_judiciaria",
                 "identificador": cnj_fmt or cnj,
                 "usuario": full_name or username,
-                "data": consultado_em.isoformat() if consultado_em else None
+                "data": to_iso_utc(consultado_em)
             })
         for id, file_name, matricula, analisado_em, username, full_name in analises_sem_feedback_mat:
             pendentes_feedback.append({
@@ -1233,7 +1234,7 @@ async def dashboard_feedbacks(
                 "sistema": "matriculas",
                 "identificador": matricula or file_name,
                 "usuario": full_name or username,
-                "data": analisado_em.isoformat() if analisado_em else None
+                "data": to_iso_utc(analisado_em)
             })
         for id, tipo_peca, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_gp:
             pendentes_feedback.append({
@@ -1241,7 +1242,7 @@ async def dashboard_feedbacks(
                 "sistema": "gerador_pecas",
                 "identificador": numero_cnj or tipo_peca,
                 "usuario": full_name or username,
-                "data": criado_em.isoformat() if criado_em else None
+                "data": to_iso_utc(criado_em)
             })
         for id, numero_cnj_fmt, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_pc:
             pendentes_feedback.append({
@@ -1249,7 +1250,7 @@ async def dashboard_feedbacks(
                 "sistema": "pedido_calculo",
                 "identificador": numero_cnj_fmt or numero_cnj,
                 "usuario": full_name or username,
-                "data": criado_em.isoformat() if criado_em else None
+                "data": to_iso_utc(criado_em)
             })
         for id, numero_cnj_fmt, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_prest:
             pendentes_feedback.append({
@@ -1257,7 +1258,7 @@ async def dashboard_feedbacks(
                 "sistema": "prestacao_contas",
                 "identificador": numero_cnj_fmt or numero_cnj,
                 "usuario": full_name or username,
-                "data": criado_em.isoformat() if criado_em else None
+                "data": to_iso_utc(criado_em)
             })
 
         # Ordena por data (mais recentes primeiro)
@@ -1385,7 +1386,7 @@ async def listar_feedbacks(
                     "avaliacao": fb.avaliacao,
                     "comentario": fb.comentario,
                     "campos_incorretos": fb.campos_incorretos,
-                    "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
+                    "criado_em": to_iso_utc(fb.criado_em),
                     "criado_em_dt": fb.criado_em
                 })
         
@@ -1436,7 +1437,7 @@ async def listar_feedbacks(
                     "avaliacao": fb.avaliacao,
                     "comentario": fb.comentario,
                     "campos_incorretos": fb.campos_incorretos,
-                    "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
+                    "criado_em": to_iso_utc(fb.criado_em),
                     "criado_em_dt": fb.criado_em
                 })
 
@@ -1480,7 +1481,7 @@ async def listar_feedbacks(
                     "avaliacao": fb.avaliacao,
                     "comentario": fb.comentario,
                     "campos_incorretos": fb.campos_incorretos,
-                    "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
+                    "criado_em": to_iso_utc(fb.criado_em),
                     "criado_em_dt": fb.criado_em
                 })
 
@@ -1524,7 +1525,7 @@ async def listar_feedbacks(
                     "avaliacao": fb.avaliacao,
                     "comentario": fb.comentario,
                     "campos_incorretos": fb.campos_incorretos,
-                    "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
+                    "criado_em": to_iso_utc(fb.criado_em),
                     "criado_em_dt": fb.criado_em
                 })
 
@@ -1577,7 +1578,7 @@ async def listar_feedbacks(
                     "avaliacao": fb.avaliacao,
                     "comentario": fb.comentario,
                     "campos_incorretos": campos_incorretos if campos_incorretos else None,
-                    "criado_em": fb.criado_em.isoformat() if fb.criado_em else None,
+                    "criado_em": to_iso_utc(fb.criado_em),
                     "criado_em_dt": fb.criado_em
                 })
 
@@ -1647,12 +1648,12 @@ async def obter_consulta_detalhes(
                 "relatorio": c.relatorio,
                 "modelo": c.modelo_usado,
                 "usuario": full_name or username,
-                "consultado_em": c.consultado_em.isoformat() if c.consultado_em else None,
+                "consultado_em": to_iso_utc(c.consultado_em),
                 "feedback": {
                     "avaliacao": feedback.avaliacao if feedback else None,
                     "comentario": feedback.comentario if feedback else None,
                     "campos_incorretos": feedback.campos_incorretos if feedback else None,
-                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                    "criado_em": to_iso_utc(feedback.criado_em) if feedback else None
                 } if feedback else None
             }
         
@@ -1687,12 +1688,12 @@ async def obter_consulta_detalhes(
                 "relatorio": a.relatorio_texto,
                 "modelo": a.modelo_usado,
                 "usuario": full_name or username,
-                "analisado_em": a.analisado_em.isoformat() if a.analisado_em else None,
+                "analisado_em": to_iso_utc(a.analisado_em),
                 "feedback": {
                     "avaliacao": feedback.avaliacao if feedback else None,
                     "comentario": feedback.comentario if feedback else None,
                     "campos_incorretos": feedback.campos_incorretos if feedback else None,
-                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                    "criado_em": to_iso_utc(feedback.criado_em) if feedback else None
                 } if feedback else None
             }
 
@@ -1727,13 +1728,13 @@ async def obter_consulta_detalhes(
                 "relatorio": g.conteudo_gerado,
                 "modelo": g.modelo_usado,
                 "usuario": full_name or username,
-                "criado_em": g.criado_em.isoformat() if g.criado_em else None,
+                "criado_em": to_iso_utc(g.criado_em),
                 "historico_chat": g.historico_chat,  # Histórico de edições via chat
                 "feedback": {
                     "avaliacao": feedback.avaliacao if feedback else None,
                     "comentario": feedback.comentario if feedback else None,
                     "campos_incorretos": feedback.campos_incorretos if feedback else None,
-                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                    "criado_em": to_iso_utc(feedback.criado_em) if feedback else None
                 } if feedback else None
             }
 
@@ -1768,12 +1769,12 @@ async def obter_consulta_detalhes(
                 "relatorio": p.conteudo_gerado,
                 "modelo": p.modelo_usado,
                 "usuario": full_name or username,
-                "analisado_em": p.criado_em.isoformat() if p.criado_em else None,
+                "analisado_em": to_iso_utc(p.criado_em),
                 "feedback": {
                     "avaliacao": feedback.avaliacao if feedback else None,
                     "comentario": feedback.comentario if feedback else None,
                     "campos_incorretos": feedback.campos_incorretos if feedback else None,
-                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                    "criado_em": to_iso_utc(feedback.criado_em) if feedback else None
                 } if feedback else None
             }
 
@@ -1808,12 +1809,12 @@ async def obter_consulta_detalhes(
                 "relatorio": g.fundamentacao,
                 "modelo": g.modelo_usado,
                 "usuario": full_name or username,
-                "criado_em": g.criado_em.isoformat() if g.criado_em else None,
+                "criado_em": to_iso_utc(g.criado_em),
                 "feedback": {
                     "avaliacao": feedback.avaliacao if feedback else None,
                     "comentario": feedback.comentario if feedback else None,
                     "campos_incorretos": None,
-                    "criado_em": feedback.criado_em.isoformat() if feedback and feedback.criado_em else None
+                    "criado_em": to_iso_utc(feedback.criado_em) if feedback else None
                 } if feedback else None
             }
 
@@ -1863,7 +1864,7 @@ async def exportar_feedbacks(
                 "avaliacao": fb.avaliacao,
                 "comentario": fb.comentario,
                 "campos_incorretos": fb.campos_incorretos,
-                "criado_em": fb.criado_em.isoformat() if fb.criado_em else None
+                "criado_em": to_iso_utc(fb.criado_em)
             })
 
         # Feedbacks de Matrículas
@@ -1890,7 +1891,7 @@ async def exportar_feedbacks(
                 "avaliacao": fb.avaliacao,
                 "comentario": fb.comentario,
                 "campos_incorretos": fb.campos_incorretos,
-                "criado_em": fb.criado_em.isoformat() if fb.criado_em else None
+                "criado_em": to_iso_utc(fb.criado_em)
             })
 
         # Feedbacks de Gerador de Peças
@@ -1917,7 +1918,7 @@ async def exportar_feedbacks(
                 "avaliacao": fb.avaliacao,
                 "comentario": fb.comentario,
                 "campos_incorretos": fb.campos_incorretos,
-                "criado_em": fb.criado_em.isoformat() if fb.criado_em else None
+                "criado_em": to_iso_utc(fb.criado_em)
             })
 
         # Feedbacks de Pedido de Cálculo
@@ -1944,7 +1945,7 @@ async def exportar_feedbacks(
                 "avaliacao": fb.avaliacao,
                 "comentario": fb.comentario,
                 "campos_incorretos": fb.campos_incorretos,
-                "criado_em": fb.criado_em.isoformat() if fb.criado_em else None
+                "criado_em": to_iso_utc(fb.criado_em)
             })
 
         return {"feedbacks": data, "total": len(data)}

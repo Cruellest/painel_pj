@@ -14,6 +14,7 @@ from datetime import datetime
 from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
+from utils.timezone import to_iso_utc
 from sistemas.gerador_pecas.models import GeracaoPeca, VersaoPeca
 
 router = APIRouter(prefix="/gerador-pecas-admin", tags=["Gerador de Peças - Admin"])
@@ -121,7 +122,7 @@ async def obter_prompt_geracao(
         "tipo_peca": geracao.tipo_peca,
         "prompt_enviado": geracao.prompt_enviado,
         "resumo_consolidado": geracao.resumo_consolidado,
-        "criado_em": geracao.criado_em.isoformat() if geracao.criado_em else None
+        "criado_em": to_iso_utc(geracao.criado_em)
     }
 
 
@@ -150,7 +151,7 @@ async def listar_versoes_geracao(
                 "tipo_alteracao": v.origem,  # Campo correto do modelo
                 "descricao": v.descricao_alteracao,  # Campo correto do modelo
                 "conteudo_markdown": v.conteudo,  # Campo correto do modelo
-                "criado_em": v.criado_em.isoformat() if v.criado_em else None
+                "criado_em": to_iso_utc(v.criado_em)
             }
             for v in versoes
         ]
@@ -180,5 +181,5 @@ async def obter_versao_geracao(
         "tipo_alteracao": versao.origem,  # Campo correto do modelo
         "descricao": versao.descricao_alteracao,  # Campo correto do modelo
         "conteudo_markdown": versao.conteudo,  # Campo correto do modelo
-        "criado_em": versao.criado_em.isoformat() if versao.criado_em else None
+        "criado_em": to_iso_utc(versao.criado_em)
     }

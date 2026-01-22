@@ -17,6 +17,7 @@ from datetime import datetime
 from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
+from utils.timezone import to_iso_utc
 from .models import GeracaoPedidoCalculo, LogChamadaIA, FeedbackPedidoCalculo
 
 router = APIRouter(prefix="/pedido-calculo-admin", tags=["Pedido de Cálculo - Admin"])
@@ -156,7 +157,7 @@ async def obter_geracao(
         "conteudo_gerado": geracao.conteudo_gerado,
         "modelo_usado": geracao.modelo_usado,
         "tempo_processamento": geracao.tempo_processamento,
-        "criado_em": geracao.criado_em.isoformat() if geracao.criado_em else None,
+        "criado_em": to_iso_utc(geracao.criado_em),
         "logs_ia": [
             {
                 "id": log.id,
@@ -171,7 +172,7 @@ async def obter_geracao(
                 "tempo_ms": log.tempo_ms,
                 "sucesso": log.sucesso,
                 "erro": log.erro,
-                "criado_em": log.criado_em.isoformat() if log.criado_em else None
+                "criado_em": to_iso_utc(log.criado_em)
             }
             for log in logs
         ]
@@ -203,7 +204,7 @@ async def obter_logs_geracao(
             "tempo_ms": log.tempo_ms,
             "sucesso": log.sucesso,
             "erro": log.erro,
-            "criado_em": log.criado_em.isoformat() if log.criado_em else None
+            "criado_em": to_iso_utc(log.criado_em)
         }
         for log in logs
     ]
@@ -236,7 +237,7 @@ async def obter_log_detalhado(
         "tempo_ms": log.tempo_ms,
         "sucesso": log.sucesso,
         "erro": log.erro,
-        "criado_em": log.criado_em.isoformat() if log.criado_em else None
+        "criado_em": to_iso_utc(log.criado_em)
     }
 
 
@@ -269,7 +270,7 @@ async def listar_logs_recentes(
             "sucesso": log.sucesso,
             "erro": log.erro,
             "tempo_ms": log.tempo_ms,
-            "criado_em": log.criado_em.isoformat() if log.criado_em else None
+            "criado_em": to_iso_utc(log.criado_em)
         }
         for log in logs
     ]

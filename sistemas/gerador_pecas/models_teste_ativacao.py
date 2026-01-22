@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from database.connection import Base
-from utils.timezone import get_utc_now
+from utils.timezone import get_utc_now, to_iso_utc
 
 
 class CenarioTesteAtivacao(Base):
@@ -71,6 +71,6 @@ class CenarioTesteAtivacao(Base):
             "tipo_peca": self.tipo_peca,
             "categorias_selecionadas": self.categorias_selecionadas or [],
             "modulos_esperados_ativados": self.modulos_esperados_ativados or [],
-            "criado_em": self.criado_em.isoformat() if self.criado_em else None,
-            "atualizado_em": self.atualizado_em.isoformat() if self.atualizado_em else None,
+            "criado_em": to_iso_utc(self.criado_em),
+            "atualizado_em": to_iso_utc(self.atualizado_em),
         }

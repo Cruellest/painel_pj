@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
 from auth.models import User
 from database.connection import get_db
+from utils.timezone import to_iso_utc
 from admin.models import ConfiguracaoIA, PromptConfig
 
 from .services import PedidoCalculoService
@@ -1379,15 +1380,6 @@ async def listar_historico(
         GeracaoPedidoCalculo.usuario_id == current_user.id
     ).order_by(GeracaoPedidoCalculo.criado_em.desc()).limit(50).all()
 
-    def converter_para_brasilia(dt):
-        """Converte datetime UTC para horário de Brasília"""
-        if not dt:
-            return None
-        # Assume que o datetime está em UTC (como salvo pelo banco)
-        dt_utc = dt.replace(tzinfo=timezone.utc)
-        dt_brasilia = dt_utc.astimezone(tz_brasilia)
-        return dt_brasilia.isoformat()
-
     return [
         {
             "id": h.id,
@@ -1396,7 +1388,7 @@ async def listar_historico(
             "dados_processo": h.dados_processo,
             "conteudo_gerado": h.conteudo_gerado,
             "documentos_baixados": h.documentos_baixados,
-            "criado_em": converter_para_brasilia(h.criado_em),
+            "criado_em": to_iso_utc(h.criado_em),
             "tempo_processamento": h.tempo_processamento
         }
         for h in historico
@@ -1413,16 +1405,6 @@ async def obter_historico(
     Obtém um pedido específico do histórico.
     """
     from .models import GeracaoPedidoCalculo
-    from datetime import timezone, timedelta
-
-    # Timezone de Brasília (UTC-3)
-    tz_brasilia = timezone(timedelta(hours=-3))
-
-    def converter_para_brasilia(dt):
-        if not dt:
-            return None
-        dt_utc = dt.replace(tzinfo=timezone.utc)
-        return dt_utc.astimezone(tz_brasilia).isoformat()
 
     geracao = db.query(GeracaoPedidoCalculo).filter(
         GeracaoPedidoCalculo.id == id,
@@ -1442,7 +1424,7 @@ async def obter_historico(
         "documentos_baixados": geracao.documentos_baixados,
         "conteudo_gerado": geracao.conteudo_gerado,
         "historico_chat": geracao.historico_chat,
-        "criado_em": converter_para_brasilia(geracao.criado_em),
+        "criado_em": to_iso_utc(geracao.criado_em),
         "tempo_processamento": geracao.tempo_processamento
     }
 
@@ -1576,7 +1558,7 @@ async def listar_prompts(
             "nome": p.nome,
             "descricao": p.descricao,
             "conteudo": p.conteudo,
-            "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+            "updated_at": to_iso_utc(p.updated_at),
             "updated_by": p.updated_by
         }
         for p in prompts
@@ -1605,7 +1587,7 @@ async def obter_prompt(
         "nome": prompt.nome,
         "descricao": prompt.descricao,
         "conteudo": prompt.conteudo,
-        "updated_at": prompt.updated_at.isoformat() if prompt.updated_at else None,
+        "updated_at": to_iso_utc(prompt.updated_at),
         "updated_by": prompt.updated_by
     }
 
@@ -1788,7 +1770,7 @@ async def obter_feedback(
             "nota": feedback.nota,
             "comentario": feedback.comentario,
             "campos_incorretos": feedback.campos_incorretos,
-            "criado_em": feedback.criado_em.isoformat() if feedback.criado_em else None
+            "criado_em": to_iso_utc(feedback.criado_em)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

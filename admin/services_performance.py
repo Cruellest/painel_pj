@@ -259,7 +259,7 @@ def _log_to_file(log_entry):
 
         # Formato compacto
         line = (
-            f"{log_entry.created_at.isoformat()} | "
+            f"{to_iso_utc(log_entry.created_at)} | "
             f"user={log_entry.admin_user_id} | "
             f"{log_entry.method} {log_entry.route} | "
             f"layer={log_entry.layer} | "

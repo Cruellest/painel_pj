@@ -10,7 +10,7 @@ from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, JSON, ForeignKey, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from database.connection import Base
-from utils.timezone import get_utc_now
+from utils.timezone import get_utc_now, to_iso_utc
 
 
 class TesteDocumento(Base):
@@ -72,10 +72,10 @@ class TesteDocumento(Base):
             "num_documentos": self.num_documentos,
             "erro": self.erro,
             "revisado": self.revisado,
-            "data_criacao": self.data_criacao.isoformat() if self.data_criacao else None,
-            "data_download": self.data_download.isoformat() if self.data_download else None,
-            "data_classificacao": self.data_classificacao.isoformat() if self.data_classificacao else None,
-            "data_revisao": self.data_revisao.isoformat() if self.data_revisao else None,
+            "data_criacao": to_iso_utc(self.data_criacao),
+            "data_download": to_iso_utc(self.data_download),
+            "data_classificacao": to_iso_utc(self.data_classificacao),
+            "data_revisao": to_iso_utc(self.data_revisao),
         }
 
 

@@ -11,6 +11,7 @@ from datetime import datetime
 import difflib
 
 from database.connection import get_db
+from utils.timezone import to_iso_utc, now_utc
 from auth.models import User
 from auth.dependencies import get_current_active_user, require_admin
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca, RegraDeterministicaTipoPeca
@@ -1536,7 +1537,7 @@ async def exportar_todos(
 
     export_data = {
         "versao": "2.0",
-        "exportado_em": datetime.utcnow().isoformat(),
+        "exportado_em": to_iso_utc(now_utc()),
         "exportado_por": current_user.username,
         "modulos": []
     }
@@ -1594,7 +1595,7 @@ async def exportar_selecionados(
 
     export_data = {
         "versao": "2.0",
-        "exportado_em": datetime.utcnow().isoformat(),
+        "exportado_em": to_iso_utc(now_utc()),
         "exportado_por": current_user.username,
         "total": len(modulos),
         "modulos": []
@@ -2279,8 +2280,8 @@ async def listar_regras_tipo_peca(
                 "regra_deterministica": r.regra_deterministica,
                 "regra_texto_original": r.regra_texto_original,
                 "ativo": r.ativo,
-                "criado_em": r.criado_em.isoformat() if r.criado_em else None,
-                "atualizado_em": r.atualizado_em.isoformat() if r.atualizado_em else None
+                "criado_em": to_iso_utc(r.criado_em),
+                "atualizado_em": to_iso_utc(r.atualizado_em)
             }
             for r in regras
         ],

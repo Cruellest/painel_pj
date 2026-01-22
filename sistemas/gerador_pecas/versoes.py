@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from sistemas.gerador_pecas.models import GeracaoPeca, VersaoPeca
+from utils.timezone import to_iso_utc
 
 
 def calcular_diff(texto_antigo: str, texto_novo: str) -> Dict:
@@ -168,7 +169,7 @@ def obter_versoes(db: Session, geracao_id: int) -> List[Dict]:
             "numero_versao": v.numero_versao,
             "origem": v.origem,
             "descricao_alteracao": v.descricao_alteracao,
-            "criado_em": v.criado_em.isoformat() if v.criado_em else None,
+            "criado_em": to_iso_utc(v.criado_em),
             "resumo_diff": v.diff_anterior.get("resumo") if v.diff_anterior else "Versão inicial"
         }
         for v in versoes
@@ -192,7 +193,7 @@ def obter_versao_detalhada(db: Session, versao_id: int) -> Optional[Dict]:
         "origem": versao.origem,
         "descricao_alteracao": versao.descricao_alteracao,
         "diff_anterior": versao.diff_anterior,
-        "criado_em": versao.criado_em.isoformat() if versao.criado_em else None
+        "criado_em": to_iso_utc(versao.criado_em)
     }
 
 
@@ -216,12 +217,12 @@ def comparar_versoes(db: Session, versao_id_1: int, versao_id_2: int) -> Optiona
         "versao_antiga": {
             "id": versao1.id,
             "numero_versao": versao1.numero_versao,
-            "criado_em": versao1.criado_em.isoformat() if versao1.criado_em else None
+            "criado_em": to_iso_utc(versao1.criado_em)
         },
         "versao_nova": {
             "id": versao2.id,
             "numero_versao": versao2.numero_versao,
-            "criado_em": versao2.criado_em.isoformat() if versao2.criado_em else None
+            "criado_em": to_iso_utc(versao2.criado_em)
         },
         "diff": diff
     }

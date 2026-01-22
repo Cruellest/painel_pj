@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
 from auth.models import User
 from database.connection import get_db
+from utils.timezone import to_iso_utc
 from services.text_normalizer import text_normalizer
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
 from sistemas.gerador_pecas.services import GeradorPecasService
@@ -508,7 +509,7 @@ async def processar_processo_stream(
                                 "descricao": doc.descricao,
                                 "descricao_ia": doc.descricao_ia,
                                 "tipo_documento": doc.tipo_documento,
-                                "data_juntada": doc.data_juntada.isoformat() if doc.data_juntada else None,
+                                "data_juntada": to_iso_utc(doc.data_juntada),
                                 "data_formatada": doc.data_formatada,
                                 "processo_origem": doc.processo_origem
                             })
@@ -1489,7 +1490,7 @@ async def listar_historico(
                 "id": g.id,
                 "cnj": g.numero_cnj_formatado or g.numero_cnj,
                 "tipo_peca": g.tipo_peca,
-                "data": g.criado_em.isoformat() if g.criado_em else None
+                "data": to_iso_utc(g.criado_em)
             }
             for g in geracoes
         ]
@@ -1558,7 +1559,7 @@ async def obter_geracao(
             "id": geracao.id,
             "cnj": geracao.numero_cnj_formatado or geracao.numero_cnj,
             "tipo_peca": geracao.tipo_peca,
-            "data": geracao.criado_em.isoformat() if geracao.criado_em else None,
+            "data": to_iso_utc(geracao.criado_em),
             "minuta_markdown": geracao.conteudo_gerado if is_markdown else None,
             "conteudo_json": geracao.conteudo_gerado if not is_markdown else None,
             "resumo_consolidado": geracao.resumo_consolidado,
@@ -1881,7 +1882,7 @@ async def obter_feedback(
             "nota": feedback.nota,
             "comentario": feedback.comentario,
             "campos_incorretos": feedback.campos_incorretos,
-            "criado_em": feedback.criado_em.isoformat() if feedback.criado_em else None
+            "criado_em": to_iso_utc(feedback.criado_em)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

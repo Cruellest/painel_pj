@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from werkzeug.utils import secure_filename
 
 from database.connection import get_db
+from utils.timezone import to_iso_utc, now_utc
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
 from auth.models import User
 from config import UPLOAD_FOLDER, ALLOWED_EXTENSIONS, DEFAULT_MODEL, FULL_REPORT_MODEL
@@ -546,7 +547,7 @@ async def status_grupo(
         "status": grupo.status,
         "total_arquivos": len(analises),
         "arquivos": [a.file_id for a in analises],
-        "criado_em": grupo.criado_em.isoformat() if grupo.criado_em else None,
+        "criado_em": to_iso_utc(grupo.criado_em),
         "has_result": grupo.resultado_json is not None
     }
 
@@ -1160,7 +1161,7 @@ async def gerar_relatorio(
         
         # Monta payload
         payload = analise.resultado_json or {}
-        payload["gerado_em"] = datetime.now().isoformat()
+        payload["gerado_em"] = to_iso_utc(now_utc())
         
         # Obtém configurações do banco
         from sistemas.matriculas_confrontantes.services_ia import get_config_from_db
@@ -1283,7 +1284,7 @@ async def obter_feedback_matricula(
             "avaliacao": feedback.avaliacao,
             "comentario": feedback.comentario,
             "campos_incorretos": feedback.campos_incorretos,
-            "criado_em": feedback.criado_em.isoformat() if feedback.criado_em else None
+            "criado_em": to_iso_utc(feedback.criado_em)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
