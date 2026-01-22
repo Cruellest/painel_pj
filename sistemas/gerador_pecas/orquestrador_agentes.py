@@ -1121,6 +1121,7 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
             print(f"[AGENTE3-STREAM]    - Tamanho: {prompt_len:,} caracteres (~{prompt_tokens_est:,} tokens estimados)")
             print(f"[AGENTE3-STREAM]    - Modelo: {self.params_agente3.modelo}")
             print(f"[AGENTE3-STREAM]    - Temperatura: {self.params_agente3.temperatura}")
+            print(f"[AGENTE3-STREAM]    - Thinking Level: {self.params_agente3.thinking_level or 'None (modelo usa default)'}")
 
             # === STREAMING: Itera sobre chunks do Gemini ===
             chunk_count = 0

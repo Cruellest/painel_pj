@@ -399,8 +399,8 @@ class GeminiService:
             temperature: Temperatura (0-2)
             use_cache: Se True, usa cache para respostas idênticas (padrão: True)
             thinking_level: Nível de raciocínio do Gemini 3 ("minimal", "low", "medium", "high")
-                           None = usa padrão do modelo (high/dynamic)
-                           "low" recomendado para classificação JSON (reduz latência ~80%)
+                           AVISO: None causa TTFT de 60s+ porque Gemini 3 usa "high" como default!
+                           Use "low" para latência reduzida ou "minimal" para máxima velocidade
             context: Dicionário com contexto para logging (sistema, modulo, user_id, username)
 
         Returns:

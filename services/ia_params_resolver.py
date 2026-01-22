@@ -60,7 +60,8 @@ DEFAULTS = {
     "modelo": "gemini-3-flash-preview",
     "temperatura": 0.3,
     "max_tokens": None,  # None = usa máximo do modelo
-    "thinking_level": None,  # None = usa padrão do modelo
+    "thinking_level": "low",  # "low" = reduz latência TTFT sem degradar qualidade significativamente
+    # IMPORTANTE: None causava TTFT de 60s+ porque Gemini 3 usa "high" como default
 }
 
 
