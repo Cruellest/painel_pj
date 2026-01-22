@@ -1410,19 +1410,9 @@ async def editar_minuta_stream(
     from fastapi.responses import StreamingResponse
     from services.gemini_service import stream_to_sse
     import json
-    import sys
-
-    # Log imediato para confirmar que a requisicao chegou
-    print(f"[EDITAR-MINUTA-STREAM] >>> REQUISICAO RECEBIDA de {current_user.email}", flush=True)
-    sys.stdout.flush()
 
     try:
-        # Logging de tamanho para diagnóstico
-        minuta_len = len(req.minuta_atual) if req.minuta_atual else 0
-        mensagem_len = len(req.mensagem) if req.mensagem else 0
-        historico_len = len(req.historico) if req.historico else 0
         tipo_peca = req.tipo_peca
-        print(f"[EDITAR-MINUTA-STREAM] 📝 Minuta: {minuta_len:,} chars, mensagem: {mensagem_len:,} chars, histórico: {historico_len} msgs, tipo: {tipo_peca or 'N/A'}")
 
         # Busca configurações de IA
         config_modelo = db.query(ConfiguracaoIA).filter(
@@ -1445,20 +1435,9 @@ async def editar_minuta_stream(
             tipo_peca=tipo_peca
         )
 
-        # Wrapper para capturar erros durante o streaming
-        async def safe_generator():
-            try:
-                async for chunk in text_generator:
-                    yield chunk
-            except Exception as gen_error:
-                print(f"[EDITAR-MINUTA-STREAM] !!! ERRO NO GENERATOR: {type(gen_error).__name__}: {gen_error}", flush=True)
-                import traceback
-                traceback.print_exc()
-                raise
-
         # Converte para SSE com heartbeats
         sse_generator = stream_to_sse(
-            safe_generator(),
+            text_generator,
             event_type="chunk",
             include_heartbeat=True,
             heartbeat_interval=15.0
@@ -1476,9 +1455,7 @@ async def editar_minuta_stream(
 
     except Exception as e:
         import traceback
-        print(f"[EDITAR-MINUTA-STREAM] !!! ERRO CAPTURADO: {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
-        sys.stdout.flush()
 
         # Retorna erro como SSE para compatibilidade
         async def error_generator():
