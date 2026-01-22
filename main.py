@@ -87,6 +87,11 @@ GERADOR_PECAS_TEMPLATES = BASE_DIR / "sistemas" / "gerador_pecas" / "templates"
 PEDIDO_CALCULO_TEMPLATES = BASE_DIR / "sistemas" / "pedido_calculo" / "templates"
 PRESTACAO_CONTAS_TEMPLATES = BASE_DIR / "sistemas" / "prestacao_contas" / "templates"
 
+# IMPORTANTE: Inicializa banco de dados ANTES de criar o app
+# Isso garante que migrações sejam executadas antes de qualquer query
+print("[*] Pré-inicializando banco de dados...")
+init_database()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
