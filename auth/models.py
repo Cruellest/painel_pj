@@ -31,6 +31,9 @@ class User(Base):
     # Ex: ["editar_prompts", "criar_prompts", "ver_historico_prompts"]
     permissoes_especiais = Column(JSON, nullable=True, default=None)
 
+    # Setor/departamento do usuário (texto livre)
+    setor = Column(String(120), nullable=True)
+
     # Grupo padrão e grupos permitidos para prompts modulares
     default_group_id = Column(Integer, ForeignKey("prompt_groups.id"), nullable=True)
     default_group = relationship("PromptGroup", foreign_keys=[default_group_id])

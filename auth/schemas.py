@@ -77,6 +77,7 @@ class UserCreate(UserBase):
     password: Optional[str] = None  # Se None, usa senha padrão
     sistemas_permitidos: Optional[List[str]] = None  # Lista de sistemas
     permissoes_especiais: Optional[List[str]] = None  # Lista de permissões
+    setor: Optional[str] = Field(None, max_length=120)  # Setor/departamento
     default_group_id: Optional[int] = None
     allowed_group_ids: Optional[List[int]] = None
 
@@ -97,6 +98,7 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     sistemas_permitidos: Optional[List[str]] = None
     permissoes_especiais: Optional[List[str]] = None
+    setor: Optional[str] = Field(None, max_length=120)
     default_group_id: Optional[int] = None
     allowed_group_ids: Optional[List[int]] = None
 
@@ -108,6 +110,7 @@ class UserResponse(UserBase):
     must_change_password: bool
     sistemas_permitidos: Optional[List[str]] = None
     permissoes_especiais: Optional[List[str]] = None
+    setor: Optional[str] = None
     default_group_id: Optional[int] = None
     allowed_group_ids: Optional[List[int]] = None
     created_at: datetime
@@ -127,6 +130,7 @@ class UserMe(BaseModel):
     must_change_password: bool
     sistemas_permitidos: Optional[List[str]] = None
     permissoes_especiais: Optional[List[str]] = None
+    setor: Optional[str] = None
     default_group_id: Optional[int] = None
     allowed_group_ids: Optional[List[int]] = None
 
