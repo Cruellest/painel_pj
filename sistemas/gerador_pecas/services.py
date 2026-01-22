@@ -781,17 +781,32 @@ Retorne SOMENTE a minuta editada em markdown."""
         if self.db and detectar_intencao_busca(mensagem_usuario):
             print(f"[EDITAR STREAM] Detectada intencao de buscar argumentos!")
 
+            # Busca configurações de threshold e limit do banco
+            threshold_config = self.db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == "busca_vetorial_threshold"
+            ).first()
+            limit_config = self.db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == "busca_vetorial_limit"
+            ).first()
+
+            # Usa valores do banco ou defaults (threshold em %, converte para 0-1)
+            threshold_percent = int(threshold_config.valor) if threshold_config and threshold_config.valor else 70
+            threshold = threshold_percent / 100.0
+            limit = int(limit_config.valor) if limit_config and limit_config.valor else 3
+
             # Verifica se há embeddings disponíveis para busca vetorial
             usar_vetorial = verificar_embeddings_disponiveis(self.db)
 
             if usar_vetorial:
-                print(f"[EDITAR STREAM] Usando busca VETORIAL (semantica)")
+                print(f"[EDITAR STREAM] Usando busca VETORIAL (threshold={threshold_percent}%, limit={limit})")
                 argumentos = await buscar_argumentos_vetorial(
                     db=self.db,
                     query=mensagem_usuario,
                     tipo_peca=tipo_peca,
-                    limit=3,  # Top 3 mais relevantes
-                    threshold=0.70  # Minimo 70% de similaridade
+                    limit=limit,
+                    threshold=threshold
                 )
                 if argumentos:
                     contexto_argumentos = formatar_contexto_argumentos_vetorial(argumentos)
@@ -801,7 +816,7 @@ Retorne SOMENTE a minuta editada em markdown."""
                     db=self.db,
                     query=mensagem_usuario,
                     tipo_peca=tipo_peca,
-                    limit=3  # Top 3 mais relevantes
+                    limit=limit
                 )
                 if argumentos:
                     contexto_argumentos = formatar_contexto_argumentos(argumentos)
