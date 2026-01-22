@@ -16,8 +16,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Dimensão dos embeddings do Google text-embedding-004
-# https://cloud.google.com/vertex-ai/generative-ai/docs/embeddings/get-text-embeddings
+# Dimensão dos embeddings do Google gemini-embedding-001
+# Usa Matryoshka (outputDimensionality) para manter 768 dims por compatibilidade
+# Modelo suporta 128-3072 dims, mas 768 é suficiente para nosso caso de uso
 EMBEDDING_DIMENSION = 768
 
 

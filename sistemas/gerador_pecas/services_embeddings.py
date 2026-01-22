@@ -2,7 +2,7 @@
 """
 Serviço para geração e gerenciamento de embeddings vetoriais.
 
-Usa a API do Google text-embedding-004 para gerar embeddings
+Usa a API do Google gemini-embedding-001 para gerar embeddings
 dos módulos de conteúdo jurídico.
 """
 
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Configuração da API (aceita vários nomes de variável)
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
-EMBEDDING_MODEL = "text-embedding-004"
+EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{EMBEDDING_MODEL}:embedContent"
 
 # Limites
@@ -61,7 +61,8 @@ async def generate_embedding(text: str) -> Optional[List[float]]:
         "content": {
             "parts": [{"text": text}]
         },
-        "taskType": "RETRIEVAL_DOCUMENT"  # Otimizado para busca
+        "taskType": "RETRIEVAL_DOCUMENT",  # Otimizado para busca
+        "outputDimensionality": EMBEDDING_DIMENSION  # Matryoshka: mantém 768 dims para compatibilidade
     }
 
     try:
@@ -105,7 +106,8 @@ async def generate_embedding_for_query(query: str) -> Optional[List[float]]:
         "content": {
             "parts": [{"text": query}]
         },
-        "taskType": "RETRIEVAL_QUERY"  # Otimizado para queries
+        "taskType": "RETRIEVAL_QUERY",  # Otimizado para queries
+        "outputDimensionality": EMBEDDING_DIMENSION  # Matryoshka: mantém 768 dims para compatibilidade
     }
 
     try:
