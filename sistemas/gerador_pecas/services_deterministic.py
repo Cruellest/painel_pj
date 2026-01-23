@@ -1892,6 +1892,43 @@ def _existe_regra_especifica_ativa(
     return count > 0
 
 
+def batch_verificar_regras_especificas(
+    db: Session,
+    modulo_ids: List[int],
+    tipo_peca: str
+) -> Dict[int, bool]:
+    """
+    Batch: Verifica quais módulos têm regra específica ativa para o tipo de peça.
+
+    OTIMIZAÇÃO: Faz UMA única query para todos os módulos ao invés de N queries.
+
+    Args:
+        db: Sessão do banco
+        modulo_ids: Lista de IDs dos módulos
+        tipo_peca: Tipo de peça (ex: 'contestacao', 'apelacao')
+
+    Returns:
+        Dict {modulo_id: bool} - True se existe regra específica ativa
+    """
+    from admin.models_prompts import RegraDeterministicaTipoPeca
+
+    if not modulo_ids:
+        return {}
+
+    # Query única para todos os módulos
+    regras = db.query(RegraDeterministicaTipoPeca.modulo_id).filter(
+        RegraDeterministicaTipoPeca.modulo_id.in_(modulo_ids),
+        RegraDeterministicaTipoPeca.tipo_peca == tipo_peca,
+        RegraDeterministicaTipoPeca.ativo == True
+    ).distinct().all()
+
+    # Set de módulos com regra específica
+    modulos_com_regra = {r.modulo_id for r in regras}
+
+    # Retorna dict com resultado para cada módulo
+    return {mid: (mid in modulos_com_regra) for mid in modulo_ids}
+
+
 def carregar_regras_tipo_peca_modulo(
     db: Session,
     modulo_id: int

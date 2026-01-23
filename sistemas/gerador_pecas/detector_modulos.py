@@ -13,14 +13,23 @@ Suporta:
 import os
 import json
 import httpx
+import time
+import logging
 from typing import List, Dict, Optional, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from admin.models_prompts import PromptModulo, RegraDeterministicaTipoPeca
 from sistemas.gerador_pecas.gemini_client import chamar_gemini_async, normalizar_modelo
-from sistemas.gerador_pecas.services_deterministic import avaliar_ativacao_prompt, _existe_regra_especifica_ativa
+from sistemas.gerador_pecas.services_deterministic import (
+    avaliar_ativacao_prompt,
+    _existe_regra_especifica_ativa,
+    batch_verificar_regras_especificas
+)
 from sistemas.gerador_pecas.services_process_variables import ProcessVariableResolver
+
+# Logger estruturado para métricas de performance
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sistemas.gerador_pecas.agente_tjms import DadosProcesso
@@ -93,6 +102,10 @@ class DetectorModulosIA:
         Returns:
             Lista de IDs dos módulos relevantes
         """
+        # Timing: marca o início da detecção
+        t_inicio = time.perf_counter()
+        timings = {}  # Dicionário para armazenar tempos de cada fase
+
         print(f"\n[AGENTE2] ========== INICIO detectar_modulos_relevantes ==========")
         print(f"[AGENTE2] tipo_peca={tipo_peca}, group_id={group_id}, subcategoria_ids={subcategoria_ids}")
         print(f"[AGENTE2] Tamanho do resumo: {len(documentos_resumo)} chars")
@@ -100,18 +113,24 @@ class DetectorModulosIA:
         print(f"[AGENTE2] dados_extracao presente: {dados_extracao is not None}")
 
         # Verificar cache (inclui tipo_peca na chave)
+        t_cache_inicio = time.perf_counter()
         subcategoria_cache = ",".join(str(i) for i in (subcategoria_ids or []))
         cache_key = self._gerar_cache_key(f"{tipo_peca or ''}:{group_id or ''}:{subcategoria_cache}:{documentos_resumo}")
         cached = self._verificar_cache(cache_key)
+        timings['cache_check'] = time.perf_counter() - t_cache_inicio
         if cached is not None:
+            timings['total'] = time.perf_counter() - t_inicio
             print(f"[AGENTE2] ✅ Cache hit - módulos detectados anteriormente: {cached}")
+            print(f"[AGENTE2] ⏱️ TIMING: cache_check={timings['cache_check']*1000:.1f}ms, total={timings['total']*1000:.1f}ms")
             return cached
 
         print(f"[AGENTE2] Cache miss - carregando módulos do banco...")
 
         # Carregar módulos de CONTEÚDO disponíveis (filtrado por tipo de peça se especificado)
+        t_db_inicio = time.perf_counter()
         modulos = self._carregar_modulos_disponiveis(tipo_peca, group_id, subcategoria_ids)
-        print(f"[AGENTE2] Módulos carregados do banco: {len(modulos)}")
+        timings['db_load_modules'] = time.perf_counter() - t_db_inicio
+        print(f"[AGENTE2] Módulos carregados do banco: {len(modulos)} (em {timings['db_load_modules']*1000:.1f}ms)")
 
         if not modulos:
             if tipo_peca:
@@ -126,6 +145,7 @@ class DetectorModulosIA:
         # ========================================
         # RESOLUÇÃO DE VARIÁVEIS DERIVADAS DO PROCESSO
         # ========================================
+        t_vars_inicio = time.perf_counter()
         variaveis = dados_extracao.copy() if dados_extracao else {}
 
         if dados_processo:
@@ -141,6 +161,8 @@ class DetectorModulosIA:
             # Merge: variáveis do processo têm precedência
             variaveis.update(variaveis_processo)
             print(f"[AGENTE2] Variáveis derivadas do processo: {variaveis_processo}")
+
+        timings['variable_resolution'] = time.perf_counter() - t_vars_inicio
 
         print(f"[AGENTE2] Total de variáveis disponíveis: {len(variaveis)}")
         if variaveis:
@@ -171,21 +193,29 @@ class DetectorModulosIA:
         # 1. Tem modo_ativacao = "deterministic" E
         # 2. Tem regra global (regra_deterministica) OU
         #    Tem regra específica para o tipo_peca atual (na tabela regra_deterministica_tipo_peca)
+        t_separacao_inicio = time.perf_counter()
         modulos_det = []
         modulos_llm = []
+
+        # OTIMIZAÇÃO: Batch load das regras específicas (1 query vs N queries)
+        regras_especificas_map = {}
+        if tipo_peca:
+            modulos_det_ids = [m.id for m in modulos if m.modo_ativacao == "deterministic"]
+            if modulos_det_ids:
+                regras_especificas_map = batch_verificar_regras_especificas(
+                    self.db, modulos_det_ids, tipo_peca
+                )
+                print(f"[AGENTE2] Batch: {len(regras_especificas_map)} módulos verificados para regras específicas")
 
         for modulo in modulos:
             if modulo.modo_ativacao == "deterministic":
                 # Verifica se tem regra global OU regra específica para o tipo_peca
                 tem_regra_global = modulo.regra_deterministica is not None
-                tem_regra_especifica = False
-                
-                if tipo_peca:
-                    # Verifica se existe regra específica ATIVA para este tipo de peça
-                    tem_regra_especifica = _existe_regra_especifica_ativa(self.db, modulo.id, tipo_peca)
-                    if tem_regra_especifica:
-                        print(f"[AGENTE2] Módulo '{modulo.nome}' tem regra específica para '{tipo_peca}'")
-                
+                tem_regra_especifica = regras_especificas_map.get(modulo.id, False)
+
+                if tem_regra_especifica:
+                    print(f"[AGENTE2] Módulo '{modulo.nome}' tem regra específica para '{tipo_peca}'")
+
                 if tem_regra_global or tem_regra_especifica:
                     modulos_det.append(modulo)
                 else:
@@ -194,19 +224,26 @@ class DetectorModulosIA:
             else:
                 modulos_llm.append(modulo)
 
+        timings['module_separation'] = time.perf_counter() - t_separacao_inicio
         print(f"[AGENTE2] Módulos determinísticos: {len(modulos_det)} (inclui regras específicas por tipo de peça)")
         print(f"[AGENTE2] Módulos LLM: {len(modulos_llm)}")
+        print(f"[AGENTE2] ⏱️ Separação de módulos: {timings['module_separation']*1000:.1f}ms")
 
         # ========================================
         # FAST PATH: 100% DETERMINÍSTICO
         # ========================================
         if modulos_det and not modulos_llm:
             print(f"[AGENTE2] ⚡ FAST PATH: 100% determinístico, pulando LLM")
+            t_eval_inicio = time.perf_counter()
             ids_ativados = self._avaliar_todos_deterministicos(modulos_det, variaveis, tipo_peca)
+            timings['deterministic_evaluation'] = time.perf_counter() - t_eval_inicio
 
             # Salvar no cache
             self._salvar_cache(cache_key, ids_ativados)
-            
+
+            # Calcular tempo total
+            timings['total'] = time.perf_counter() - t_inicio
+
             # Salvar estatísticas para auditoria
             self.ultimo_modo_ativacao = "fast_path"
             self.ultimo_modulos_det = len(ids_ativados)
@@ -214,13 +251,32 @@ class DetectorModulosIA:
             self.ultimo_ids_det = ids_ativados.copy()
             self.ultimo_ids_llm = []
 
+            # Log estruturado de performance
             print(f"[AGENTE2] 🎯 FAST PATH: {len(ids_ativados)} módulos ativados: {ids_ativados}")
+            print(f"[AGENTE2] ⏱️ TIMING FAST PATH:")
+            print(f"[AGENTE2]   - db_load_modules: {timings.get('db_load_modules', 0)*1000:.1f}ms")
+            print(f"[AGENTE2]   - variable_resolution: {timings.get('variable_resolution', 0)*1000:.1f}ms")
+            print(f"[AGENTE2]   - module_separation: {timings.get('module_separation', 0)*1000:.1f}ms")
+            print(f"[AGENTE2]   - deterministic_evaluation: {timings['deterministic_evaluation']*1000:.1f}ms")
+            print(f"[AGENTE2]   - TOTAL: {timings['total']*1000:.1f}ms")
             print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes (FAST PATH) ==========\n")
+
+            # Log JSON estruturado para análise posterior
+            logger.info(json.dumps({
+                "event": "ag2_fast_path_complete",
+                "path": "fast_path",
+                "modules_evaluated": len(modulos_det),
+                "modules_activated": len(ids_ativados),
+                "timings_ms": {k: round(v * 1000, 2) for k, v in timings.items()},
+                "total_ms": round(timings['total'] * 1000, 2)
+            }))
+
             return ids_ativados
 
         # ========================================
         # MODO MISTO: DETERMINÍSTICOS + LLM
         # ========================================
+        t_eval_inicio = time.perf_counter()
         ids_det = []
         modulos_para_llm = list(modulos_llm)  # Cópia para não modificar original
 
@@ -265,20 +321,29 @@ class DetectorModulosIA:
                 detalhes = resultado.get('detalhes', '')
                 print(f"[AGENTE2] [DET] XXX '{modulo.titulo}' NAO ativado - {detalhes}")
 
+        # Timing: avaliação determinística do modo misto
+        timings['deterministic_evaluation'] = time.perf_counter() - t_eval_inicio
+
         # Chama LLM apenas para módulos que precisam
         ids_llm = []
         if modulos_para_llm:
             print(f"[AGENTE2] Enviando {len(modulos_para_llm)} módulos para LLM...")
+            t_llm_inicio = time.perf_counter()
             ids_llm = await self._detectar_via_llm(documentos_resumo, documentos_completos, modulos_para_llm)
+            timings['llm_detection'] = time.perf_counter() - t_llm_inicio
         else:
             print(f"[AGENTE2] Nenhum módulo precisa de LLM")
+            timings['llm_detection'] = 0
 
         # Combina resultados
         modulos_relevantes = ids_det + ids_llm
 
         # Salvar no cache
         self._salvar_cache(cache_key, modulos_relevantes)
-        
+
+        # Calcular tempo total
+        timings['total'] = time.perf_counter() - t_inicio
+
         # Salvar estatísticas para auditoria
         if ids_llm:
             self.ultimo_modo_ativacao = "misto" if ids_det else "llm"
@@ -294,7 +359,28 @@ class DetectorModulosIA:
         print(f"[AGENTE2]    - Determinísticos: {len(ids_det)}")
         print(f"[AGENTE2]    - LLM: {len(ids_llm)}")
         print(f"[AGENTE2]    - Modo: {self.ultimo_modo_ativacao}")
+        print(f"[AGENTE2] ⏱️ TIMING ({self.ultimo_modo_ativacao.upper()}):")
+        print(f"[AGENTE2]   - db_load_modules: {timings.get('db_load_modules', 0)*1000:.1f}ms")
+        print(f"[AGENTE2]   - variable_resolution: {timings.get('variable_resolution', 0)*1000:.1f}ms")
+        print(f"[AGENTE2]   - module_separation: {timings.get('module_separation', 0)*1000:.1f}ms")
+        print(f"[AGENTE2]   - deterministic_evaluation: {timings.get('deterministic_evaluation', 0)*1000:.1f}ms")
+        if timings.get('llm_detection', 0) > 0:
+            print(f"[AGENTE2]   - llm_detection: {timings['llm_detection']*1000:.1f}ms")
+        print(f"[AGENTE2]   - TOTAL: {timings['total']*1000:.1f}ms")
         print(f"[AGENTE2] ========== FIM detectar_modulos_relevantes ==========\n")
+
+        # Log JSON estruturado para análise posterior
+        logger.info(json.dumps({
+            "event": "ag2_detection_complete",
+            "path": self.ultimo_modo_ativacao,
+            "modules_det_evaluated": len(modulos_det),
+            "modules_llm_evaluated": len(modulos_para_llm),
+            "modules_det_activated": len(ids_det),
+            "modules_llm_activated": len(ids_llm),
+            "timings_ms": {k: round(v * 1000, 2) for k, v in timings.items()},
+            "total_ms": round(timings['total'] * 1000, 2)
+        }))
+
         return modulos_relevantes
 
     def _avaliar_todos_deterministicos(

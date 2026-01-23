@@ -31,6 +31,10 @@ from services.ia_params_resolver import get_ia_params, IAParams
 # Modelos padrão (usados se não houver configuração no banco)
 MODELO_AGENTE1_PADRAO = "gemini-3-flash-preview"
 
+# Timeouts em segundos
+TIMEOUT_AG2_DETECCAO = 60  # Timeout para detecção de módulos (AG2)
+TIMEOUT_AG2_FAST_PATH = 30  # Timeout mais curto para fast path (sem LLM)
+
 
 def _extrair_json_de_resumo_consolidado(resumo_consolidado: str) -> Dict[str, Any]:
     """
@@ -690,24 +694,43 @@ class OrquestradorAgentes:
             dados_extracao: Variáveis extraídas dos resumos JSON (opcional)
         """
         resultado = ResultadoAgente2()
+        import time
+        ag2_inicio = time.perf_counter()
 
         try:
             # Detecta módulos de conteúdo relevantes
             # Passa dados_processo para resolução de variáveis derivadas
             # Passa dados_extracao para avaliação determinística
             # Permite fast path se todos os módulos são determinísticos
-            modulos_ids = await self.agente2.detectar_modulos_relevantes(
-                documentos_resumo=resumo_consolidado,
-                tipo_peca=tipo_peca,
-                group_id=self.group_id,
-                subcategoria_ids=self.subcategoria_ids,
-                dados_processo=dados_processo,
-                dados_extracao=dados_extracao
-            )
+            # TIMEOUT: Usa TIMEOUT_AG2_DETECCAO para evitar travamentos infinitos
+            try:
+                modulos_ids = await asyncio.wait_for(
+                    self.agente2.detectar_modulos_relevantes(
+                        documentos_resumo=resumo_consolidado,
+                        tipo_peca=tipo_peca,
+                        group_id=self.group_id,
+                        subcategoria_ids=self.subcategoria_ids,
+                        dados_processo=dados_processo,
+                        dados_extracao=dados_extracao
+                    ),
+                    timeout=TIMEOUT_AG2_DETECCAO
+                )
+            except asyncio.TimeoutError:
+                ag2_tempo = time.perf_counter() - ag2_inicio
+                print(f"[AGENTE2] ⚠️ TIMEOUT após {ag2_tempo:.2f}s (limite: {TIMEOUT_AG2_DETECCAO}s)")
+                print(f"[AGENTE2] Continuando com módulos vazios para não travar o fluxo")
+                modulos_ids = []
+                resultado.modo_ativacao = "timeout"
+                resultado.erro = f"Timeout na detecção de módulos ({TIMEOUT_AG2_DETECCAO}s)"
+
+            ag2_tempo = time.perf_counter() - ag2_inicio
+            print(f"[AGENTE2] ⏱️ Detecção concluída em {ag2_tempo:.2f}s")
+
             resultado.modulos_ids = modulos_ids
-            
+
             # Captura estatísticas do modo de ativação
-            resultado.modo_ativacao = self.agente2.ultimo_modo_ativacao
+            if not hasattr(resultado, 'erro') or not resultado.erro:
+                resultado.modo_ativacao = self.agente2.ultimo_modo_ativacao
             resultado.modulos_ativados_det = self.agente2.ultimo_modulos_det
             resultado.modulos_ativados_llm = self.agente2.ultimo_modulos_llm
             resultado.ids_det = self.agente2.ultimo_ids_det.copy()
