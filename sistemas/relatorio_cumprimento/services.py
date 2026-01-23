@@ -91,7 +91,7 @@ class RelatorioCumprimentoService:
         self.logger = logger
 
         # Carrega configurações do banco
-        self.modelo = _get_config(db, "modelo_analise", "gemini-2.5-flash-preview-05-20")
+        self.modelo = _get_config(db, "modelo_analise", "gemini-3-flash-preview")
         self.temperatura = float(_get_config(db, "temperatura_analise", "0.2"))
         self.thinking_level = _get_config(db, "thinking_level", "low")
 
