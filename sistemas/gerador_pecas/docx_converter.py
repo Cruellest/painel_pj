@@ -846,30 +846,160 @@ class DocxConverter:
             # SEM itálico
     
     def _add_list(self, doc: Document, items: List[str], ordered: bool = False, style: str = 'number'):
-        """Adiciona lista ordenada ou não ordenada com recuo de 3cm."""
-        for i, item in enumerate(items):
+        """
+        Adiciona lista ordenada ou não ordenada usando numeração nativa do Word.
+
+        Para listas alfabéticas (a, b, c...), usa numbering.xml do Word para garantir
+        que a numeração seja gerenciada pelo Word e não como texto literal.
+
+        Args:
+            doc: Documento Word
+            items: Lista de textos dos itens
+            ordered: Se True, lista ordenada; se False, lista com bullets
+            style: 'number' para 1, 2, 3... ou 'letter' para a), b), c)...
+        """
+        if ordered and style == 'letter':
+            # Usa lista nativa do Word para letras (a, b, c...)
+            self._add_letter_list_native(doc, items)
+        else:
+            # Para listas numéricas e bullets, usa método tradicional
+            for i, item in enumerate(items):
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                p.paragraph_format.left_indent = self.list_indent  # Recuo de 3cm
+                p.paragraph_format.first_line_indent = Cm(0)
+                p.paragraph_format.space_after = Pt(3)
+                p.paragraph_format.line_spacing = self.line_spacing
+                p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+
+                # Marcador
+                if ordered:
+                    marker = f"{i + 1}. "
+                else:
+                    marker = "• "
+
+                # Adiciona marcador
+                run = p.add_run(marker)
+                run.font.name = self.font_name
+                run.font.size = Pt(self.font_size)
+
+                # Adiciona texto do item com formatação
+                self._add_formatted_text(p, item)
+
+    def _add_letter_list_native(self, doc: Document, items: List[str]):
+        """
+        Adiciona lista alfabética usando numeração NATIVA do Word (numbering.xml).
+
+        Isso garante que a numeração a), b), c), d)... seja gerenciada pelo Word,
+        evitando problemas de renderização onde todos os itens aparecem como a).
+
+        A solução cria uma definição de numeração única para toda a lista,
+        garantindo que todos os itens compartilhem o mesmo numId e a sequência
+        seja mantida corretamente.
+        """
+        # Acessa ou cria a parte de numeração do documento
+        numbering_part = doc.part.numbering_part
+        if numbering_part is None:
+            # Cria numbering part se não existir
+            from docx.opc.constants import RELATIONSHIP_TYPE as RT
+            from docx.parts.numbering import NumberingPart
+            numbering_part = NumberingPart.new()
+            doc.part.relate_to(numbering_part, RT.NUMBERING)
+
+        numbering_elm = numbering_part.numbering_definitions._numbering
+
+        # Gera IDs únicos para esta lista
+        # Encontra o maior abstractNumId e numId existentes
+        existing_abstract_ids = [
+            int(el.get(qn('w:abstractNumId')))
+            for el in numbering_elm.findall(qn('w:abstractNum'))
+        ]
+        existing_num_ids = [
+            int(el.get(qn('w:numId')))
+            for el in numbering_elm.findall(qn('w:num'))
+        ]
+
+        new_abstract_id = max(existing_abstract_ids, default=0) + 1
+        new_num_id = max(existing_num_ids, default=0) + 1
+
+        # Cria abstractNum para lista alfabética com sufixo )
+        abstract_num = OxmlElement('w:abstractNum')
+        abstract_num.set(qn('w:abstractNumId'), str(new_abstract_id))
+
+        # Define o nível 0 (único nível que usamos)
+        lvl = OxmlElement('w:lvl')
+        lvl.set(qn('w:ilvl'), '0')
+
+        # Início em 1 (que corresponde a 'a')
+        start = OxmlElement('w:start')
+        start.set(qn('w:val'), '1')
+        lvl.append(start)
+
+        # Formato: lowerLetter (a, b, c...)
+        num_fmt = OxmlElement('w:numFmt')
+        num_fmt.set(qn('w:val'), 'lowerLetter')
+        lvl.append(num_fmt)
+
+        # Texto do nível: "%1)" para a), b), c)...
+        lvl_text = OxmlElement('w:lvlText')
+        lvl_text.set(qn('w:val'), '%1)')
+        lvl.append(lvl_text)
+
+        # Alinhamento à esquerda
+        lvl_jc = OxmlElement('w:lvlJc')
+        lvl_jc.set(qn('w:val'), 'left')
+        lvl.append(lvl_jc)
+
+        # Propriedades de parágrafo (recuo)
+        pPr = OxmlElement('w:pPr')
+        ind = OxmlElement('w:ind')
+        # Recuo esquerdo de 3cm (1701 twips = 3cm) + hanging para o marcador
+        ind.set(qn('w:left'), str(int(Cm(3).twips)))
+        ind.set(qn('w:hanging'), '360')  # Hanging indent para o marcador
+        pPr.append(ind)
+        lvl.append(pPr)
+
+        # Propriedades de fonte
+        rPr = OxmlElement('w:rPr')
+        rFonts = OxmlElement('w:rFonts')
+        rFonts.set(qn('w:ascii'), self.font_name)
+        rFonts.set(qn('w:hAnsi'), self.font_name)
+        rPr.append(rFonts)
+        sz = OxmlElement('w:sz')
+        sz.set(qn('w:val'), str(self.font_size * 2))  # Tamanho em half-points
+        rPr.append(sz)
+        lvl.append(rPr)
+
+        abstract_num.append(lvl)
+        numbering_elm.append(abstract_num)
+
+        # Cria num que referencia o abstractNum
+        num = OxmlElement('w:num')
+        num.set(qn('w:numId'), str(new_num_id))
+        abstract_num_id = OxmlElement('w:abstractNumId')
+        abstract_num_id.set(qn('w:val'), str(new_abstract_id))
+        num.append(abstract_num_id)
+        numbering_elm.append(num)
+
+        # Adiciona cada item da lista usando o mesmo numId
+        for item in items:
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            p.paragraph_format.left_indent = self.list_indent  # Recuo de 3cm
-            p.paragraph_format.first_line_indent = Cm(0)
             p.paragraph_format.space_after = Pt(3)
             p.paragraph_format.line_spacing = self.line_spacing
             p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
-            
-            # Marcador
-            if ordered:
-                if style == 'letter':
-                    marker = f"{chr(ord('a') + i)}) "
-                else:
-                    marker = f"{i + 1}. "
-            else:
-                marker = "• "
-            
-            # Adiciona marcador
-            run = p.add_run(marker)
-            run.font.name = self.font_name
-            run.font.size = Pt(self.font_size)
-            
+
+            # Aplica a numeração nativa ao parágrafo
+            p_pr = p._p.get_or_add_pPr()
+            num_pr = OxmlElement('w:numPr')
+            ilvl = OxmlElement('w:ilvl')
+            ilvl.set(qn('w:val'), '0')
+            num_pr.append(ilvl)
+            num_id_elm = OxmlElement('w:numId')
+            num_id_elm.set(qn('w:val'), str(new_num_id))
+            num_pr.append(num_id_elm)
+            p_pr.append(num_pr)
+
             # Adiciona texto do item com formatação
             self._add_formatted_text(p, item)
     
