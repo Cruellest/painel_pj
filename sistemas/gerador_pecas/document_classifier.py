@@ -21,6 +21,8 @@ from enum import Enum
 from typing import List, Optional, Dict, Any, Tuple
 
 import fitz  # PyMuPDF
+fitz.TOOLS.mupdf_warnings(False)  # Suprime warnings de imagens JPEG2000 corrompidas
+
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)

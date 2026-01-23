@@ -27,6 +27,7 @@ from pathlib import Path
 
 # PDF
 import fitz  # PyMuPDF
+fitz.TOOLS.mupdf_warnings(False)  # Suprime warnings de imagens JPEG2000 corrompidas
 import pymupdf4llm
 
 from dotenv import load_dotenv

@@ -20,6 +20,10 @@ from datetime import datetime
 import fitz  # PyMuPDF
 import pymupdf4llm
 
+# Suprime warnings do MuPDF (ex: "Failed to read JPX header" em imagens JPEG2000 corrompidas)
+# Esses warnings não afetam a extração de texto, apenas indicam imagens problemáticas
+fitz.TOOLS.mupdf_warnings(False)
+
 from dotenv import load_dotenv
 load_dotenv()
 

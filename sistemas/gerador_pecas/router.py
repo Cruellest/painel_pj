@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, AsyncGenerator
 import fitz  # PyMuPDF para extração de texto de PDFs
+fitz.TOOLS.mupdf_warnings(False)  # Suprime warnings de imagens JPEG2000 corrompidas
 from sqlalchemy.orm import Session
 
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
