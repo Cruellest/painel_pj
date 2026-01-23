@@ -166,7 +166,7 @@ async def criar_prompts_sistema(
     Cria prompts e configurações para um sistema específico.
     Não deleta prompts existentes, apenas adiciona os que não existem.
     """
-    sistemas_validos = ["pedido_calculo", "prestacao_contas", "matriculas", "assistencia_judiciaria", "gerador_pecas"]
+    sistemas_validos = ["pedido_calculo", "prestacao_contas", "matriculas", "assistencia_judiciaria", "gerador_pecas", "relatorio_cumprimento"]
 
     if sistema not in sistemas_validos:
         raise HTTPException(
@@ -227,6 +227,20 @@ async def criar_prompts_sistema(
         seed_default_config_ia(db, sistema)
         # Conta depois
         configs_depois = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        configs_criadas = configs_depois - configs_antes
+
+    elif sistema == "relatorio_cumprimento":
+        from sistemas.relatorio_cumprimento.seed_config import seed_prompts, seed_configuracoes
+        # Conta antes
+        prompts_antes = db.query(PromptConfig).filter(PromptConfig.sistema == sistema).count()
+        configs_antes = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        # Executa seed
+        seed_prompts(db)
+        seed_configuracoes(db)
+        # Conta depois
+        prompts_depois = db.query(PromptConfig).filter(PromptConfig.sistema == sistema).count()
+        configs_depois = db.query(ConfiguracaoIA).filter(ConfiguracaoIA.sistema == sistema).count()
+        prompts_criados = prompts_depois - prompts_antes
         configs_criadas = configs_depois - configs_antes
 
     if prompts_criados == 0 and configs_criadas == 0:

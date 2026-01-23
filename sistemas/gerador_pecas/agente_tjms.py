@@ -507,6 +507,118 @@ async def baixar_documentos_async(
         return await resp.text()
 
 
+async def baixar_documentos_paralelo(
+    session: aiohttp.ClientSession,
+    numero_processo: str,
+    lista_ids: List[str],
+    batch_size: int = 5,
+    max_paralelo: int = 4,
+    timeout: int = 180
+) -> Dict[str, str]:
+    """
+    Baixa documentos em paralelo com fallback individual.
+
+    Estrategia:
+    1. Divide IDs em batches
+    2. Baixa batches em paralelo (limitado por max_paralelo)
+    3. Se um batch falhar, tenta baixar IDs individuais desse batch
+
+    Args:
+        session: Sessao aiohttp
+        numero_processo: Numero CNJ do processo
+        lista_ids: Lista de IDs de documentos para baixar
+        batch_size: Tamanho de cada batch (default: 5)
+        max_paralelo: Maximo de downloads paralelos (default: 4)
+        timeout: Timeout em segundos
+
+    Returns:
+        Dict mapeando ID do documento para conteudo base64
+    """
+    if not lista_ids:
+        return {}
+
+    conteudo_map: Dict[str, str] = {}
+
+    # Divide em batches
+    batches = [lista_ids[i:i + batch_size] for i in range(0, len(lista_ids), batch_size)]
+    total_batches = len(batches)
+
+    print(f"      Baixando {len(lista_ids)} documentos em {total_batches} batches (paralelo={max_paralelo})")
+
+    # Semaforo para limitar paralelismo
+    semaphore = asyncio.Semaphore(max_paralelo)
+    batches_com_falha: List[List[str]] = []
+
+    async def baixar_batch(batch_ids: List[str], batch_num: int) -> Dict[str, str]:
+        """Baixa um batch de documentos"""
+        async with semaphore:
+            try:
+                xml_conteudo = await baixar_documentos_async(
+                    session, numero_processo, batch_ids, timeout
+                )
+                docs_baixados = extrair_documentos_xml(xml_conteudo)
+
+                resultado = {}
+                for doc in docs_baixados:
+                    if doc.conteudo_base64:
+                        resultado[doc.id] = doc.conteudo_base64
+
+                return resultado
+
+            except Exception as e:
+                print(f"      [WARN] Batch {batch_num} falhou: {e}")
+                # Marca batch para retry individual
+                batches_com_falha.append(batch_ids)
+                return {}
+
+    # Fase 1: Download paralelo de batches
+    tasks = [baixar_batch(batch, i + 1) for i, batch in enumerate(batches)]
+    resultados = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Consolida resultados
+    for resultado in resultados:
+        if isinstance(resultado, dict):
+            conteudo_map.update(resultado)
+
+    # Fase 2: Fallback individual para batches que falharam
+    if batches_com_falha:
+        ids_fallback = [id for batch in batches_com_falha for id in batch]
+        print(f"      [FALLBACK] Baixando {len(ids_fallback)} documentos individualmente...")
+
+        async def baixar_individual(doc_id: str) -> tuple:
+            """Baixa um documento individual"""
+            async with semaphore:
+                try:
+                    xml = await baixar_documentos_async(
+                        session, numero_processo, [doc_id], timeout
+                    )
+                    docs = extrair_documentos_xml(xml)
+                    for doc in docs:
+                        if doc.id == doc_id and doc.conteudo_base64:
+                            return (doc_id, doc.conteudo_base64)
+                    return (doc_id, None)
+                except Exception as e:
+                    print(f"      [ERRO] Documento {doc_id}: {e}")
+                    return (doc_id, None)
+
+        fallback_tasks = [baixar_individual(doc_id) for doc_id in ids_fallback]
+        fallback_results = await asyncio.gather(*fallback_tasks, return_exceptions=True)
+
+        for result in fallback_results:
+            if isinstance(result, tuple) and result[1]:
+                conteudo_map[result[0]] = result[1]
+
+    # Estatisticas
+    baixados = len(conteudo_map)
+    falharam = len(lista_ids) - baixados
+    if falharam > 0:
+        print(f"      [OK] {baixados} baixados, {falharam} falharam")
+    else:
+        print(f"      [OK] Todos {baixados} documentos baixados")
+
+    return conteudo_map
+
+
 def extrair_documentos_xml(xml_text: str) -> List[DocumentoTJMS]:
     """Extrai lista de documentos do XML de resposta"""
     root = ET.fromstring(xml_text)
@@ -1364,22 +1476,15 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
 
                 print(f"[3/4] Baixando {len(ids_baixar)} arquivos...")
 
-                # Baixa em batches para evitar timeout
-                conteudo_map = {}
-                BATCH_SIZE = 5
-                for i in range(0, len(ids_baixar), BATCH_SIZE):
-                    batch_ids = ids_baixar[i:i + BATCH_SIZE]
-                    print(f"      Baixando batch {i//BATCH_SIZE + 1}/{(len(ids_baixar) + BATCH_SIZE - 1)//BATCH_SIZE}...")
-
-                    xml_conteudo = await baixar_documentos_async(
-                        session, numero_processo, batch_ids
-                    )
-
-                    # Extrair conteúdos
-                    docs_com_conteudo = extrair_documentos_xml(xml_conteudo)
-                    for d in docs_com_conteudo:
-                        if d.conteudo_base64:
-                            conteudo_map[d.id] = d.conteudo_base64
+                # Baixa em paralelo com fallback individual para falhas
+                conteudo_map = await baixar_documentos_paralelo(
+                    session=session,
+                    numero_processo=numero_processo,
+                    lista_ids=ids_baixar,
+                    batch_size=5,
+                    max_paralelo=4,  # 4 batches simultaneos
+                    timeout=180
+                )
 
                 # Associar conteúdos aos documentos (juntando se agrupados)
                 for doc in resultado.documentos:
@@ -1498,7 +1603,7 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
             if not docs_origem:
                 return
 
-            # 3. Baixar conteúdo (incluindo todos os IDs agrupados)
+            # 3. Baixar conteúdo em paralelo (incluindo todos os IDs agrupados)
             ids_baixar = []
             for doc in docs_origem:
                 if doc.ids_agrupados:
@@ -1506,18 +1611,14 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
                 else:
                     ids_baixar.append(doc.id)
 
-            conteudo_map = {}
-            BATCH_SIZE = 5
-
-            for i in range(0, len(ids_baixar), BATCH_SIZE):
-                batch_ids = ids_baixar[i:i + BATCH_SIZE]
-                xml_conteudo = await baixar_documentos_async(
-                    session, numero_processo_origem, batch_ids
-                )
-                docs_com_conteudo = extrair_documentos_xml(xml_conteudo)
-                for d in docs_com_conteudo:
-                    if d.conteudo_base64:
-                        conteudo_map[d.id] = d.conteudo_base64
+            conteudo_map = await baixar_documentos_paralelo(
+                session=session,
+                numero_processo=numero_processo_origem,
+                lista_ids=ids_baixar,
+                batch_size=5,
+                max_paralelo=4,
+                timeout=180
+            )
 
             # Associar conteúdos (juntando se agrupados)
             for doc in docs_origem:

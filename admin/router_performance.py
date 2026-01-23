@@ -633,3 +633,42 @@ async def receive_frontend_metrics(
         logger.error(f"Erro ao salvar métricas do frontend: {e}")
         # Não falha - métricas são best-effort
         return {"success": False, "message": str(e)}
+
+
+@router.get("/cache-stats")
+async def get_cache_stats(
+    current_user: User = Depends(require_admin)
+):
+    """
+    Retorna estatisticas de cache do sistema.
+
+    Inclui:
+    - Cache de configuracoes (config_cache)
+    - Cache de respostas Gemini (_response_cache)
+    """
+    from services.config_cache import config_cache
+    from services.gemini_service import _response_cache
+
+    return {
+        "config_cache": config_cache.get_stats(),
+        "gemini_response_cache": _response_cache.stats() if _response_cache else {}
+    }
+
+
+@router.post("/cache-invalidate")
+async def invalidate_cache(
+    current_user: User = Depends(require_admin)
+):
+    """
+    Invalida todos os caches do sistema.
+
+    Util apos alteracoes de configuracao que precisam ter efeito imediato.
+    """
+    from services.config_cache import config_cache
+
+    config_cache.invalidate_all()
+
+    return {
+        "success": True,
+        "message": "Caches invalidados com sucesso"
+    }

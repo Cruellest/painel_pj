@@ -80,6 +80,10 @@
                     class="py-4 px-1 font-medium text-gray-500 hover:text-primary-600 transition-colors">
                     <i class="fas fa-robot mr-2"></i>Logs Gemini API
                 </button>
+                <button onclick="switchTab('avancado')" id="tab-avancado"
+                    class="py-4 px-1 font-medium text-gray-500 hover:text-primary-600 transition-colors">
+                    <i class="fas fa-chart-line mr-2"></i>Logs Avancados
+                </button>
             </nav>
         </div>
     </div>
@@ -512,6 +516,186 @@
                 </div>
             </div>
         </div>
+
+        <!-- ================================================== -->
+        <!-- TAB: LOGS AVANCADOS (REQUEST PERFORMANCE) -->
+        <!-- ================================================== -->
+        <div id="content-avancado" class="tab-content">
+
+            <!-- Cards de Summary -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-emerald-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Total Requests</h3>
+                            <p id="adv-total" class="text-2xl font-bold text-emerald-600">-</p>
+                        </div>
+                        <i class="fas fa-list text-2xl text-emerald-300"></i>
+                    </div>
+                    <p class="text-xs mt-1">
+                        <span id="adv-success" class="text-green-600">-</span> ok /
+                        <span id="adv-error" class="text-red-600">-</span> erro
+                    </p>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-blue-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Latencia Media</h3>
+                            <p id="adv-avg-total" class="text-2xl font-bold text-blue-600">-</p>
+                        </div>
+                        <i class="fas fa-clock text-2xl text-blue-300"></i>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">
+                        min: <span id="adv-min-total">-</span> / max: <span id="adv-max-total">-</span>
+                    </p>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-indigo-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">TTFT Medio</h3>
+                            <p id="adv-avg-ttft" class="text-2xl font-bold text-indigo-600">-</p>
+                        </div>
+                        <i class="fas fa-bolt text-2xl text-indigo-300"></i>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Time to First Token</p>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-4 border-l-4 border-pink-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">Geracao Media</h3>
+                            <p id="adv-avg-gen" class="text-2xl font-bold text-pink-600">-</p>
+                        </div>
+                        <i class="fas fa-cog text-2xl text-pink-300"></i>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Tempo gerando tokens</p>
+                </div>
+            </div>
+
+            <!-- Breakdown por Etapa -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4"><i class="fas fa-layer-group mr-2"></i>Breakdown por Etapa (medias em ms)</h3>
+                <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+                    <div class="text-center p-3 bg-orange-50 rounded-lg">
+                        <p class="text-xs text-gray-500">Agente 1 (TJ-MS)</p>
+                        <p id="adv-agente1" class="text-xl font-bold text-orange-600">-</p>
+                    </div>
+                    <div class="text-center p-3 bg-purple-50 rounded-lg">
+                        <p class="text-xs text-gray-500">Agente 2 (Detector)</p>
+                        <p id="adv-agente2" class="text-xl font-bold text-purple-600">-</p>
+                    </div>
+                    <div class="text-center p-3 bg-cyan-50 rounded-lg">
+                        <p class="text-xs text-gray-500">Prompt Build</p>
+                        <p id="adv-prompt" class="text-xl font-bold text-cyan-600">-</p>
+                    </div>
+                    <div class="text-center p-3 bg-teal-50 rounded-lg">
+                        <p class="text-xs text-gray-500">Pos-Processo</p>
+                        <p id="adv-postproc" class="text-xl font-bold text-teal-600">-</p>
+                    </div>
+                    <div class="text-center p-3 bg-yellow-50 rounded-lg">
+                        <p class="text-xs text-gray-500">DB Save</p>
+                        <p id="adv-db" class="text-xl font-bold text-yellow-600">-</p>
+                    </div>
+                    <div class="text-center p-3 bg-gray-100 rounded-lg">
+                        <p class="text-xs text-gray-500">Overhead</p>
+                        <p id="adv-overhead" class="text-xl font-bold text-gray-600">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Streaming Stats -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4"><i class="fas fa-stream mr-2"></i>Estatisticas de Streaming</h3>
+                <div class="grid grid-cols-2 md:grid-cols-2 gap-4">
+                    <div class="text-center p-3 bg-blue-50 rounded-lg">
+                        <p class="text-xs text-gray-500">Chunks Medio</p>
+                        <p id="adv-chunks" class="text-xl font-bold text-blue-600">-</p>
+                    </div>
+                    <div class="text-center p-3 bg-green-50 rounded-lg">
+                        <p class="text-xs text-gray-500">Intervalo Medio entre Chunks</p>
+                        <p id="adv-chunk-interval" class="text-xl font-bold text-green-600">-</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filtros -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Sistema</label>
+                        <select id="advFilterSistema" class="w-full px-3 py-2 border rounded-lg text-sm">
+                            <option value="">Todos</option>
+                            <option value="gerador_pecas">Gerador de Pecas</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Periodo</label>
+                        <select id="advFilterHours" class="w-full px-3 py-2 border rounded-lg text-sm">
+                            <option value="1">1 hora</option>
+                            <option value="6">6 horas</option>
+                            <option value="24" selected>24 horas</option>
+                            <option value="72">3 dias</option>
+                            <option value="168">7 dias</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Latencia minima (ms)</label>
+                        <input type="number" id="advFilterMinMs" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Ex: 5000">
+                    </div>
+                    <div class="flex items-end gap-2">
+                        <button onclick="loadAdvancedLogs()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm">
+                            Filtrar
+                        </button>
+                        <button onclick="clearAdvancedFilters()" class="px-3 py-2 border rounded-lg text-sm hover:bg-gray-100">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Requests Mais Lentos -->
+            <div class="bg-white rounded-lg shadow-md p-4 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4"><i class="fas fa-hourglass-half mr-2"></i>Requests Mais Lentos</h3>
+                <div id="advSlowest" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <p class="text-gray-500 text-sm">Carregando...</p>
+                </div>
+            </div>
+
+            <!-- Tabela de Logs Detalhados -->
+            <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                <div class="p-4 border-b flex justify-between items-center">
+                    <h2 class="text-lg font-semibold text-gray-800">Logs Detalhados de Requests</h2>
+                    <button onclick="cleanupAdvancedLogs()" class="text-sm text-red-600 hover:text-red-800">
+                        <i class="fas fa-trash mr-1"></i>Limpar antigos
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Hora</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Request ID</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">CNJ</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo Peca</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">TTFT</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Ag1</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Ag2</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Geracao</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Chunks</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="advLogsTable" class="bg-white divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="11" class="px-4 py-8 text-center text-gray-500">
+                                    Carregando logs...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -542,9 +726,13 @@
         if (tabName === 'sistema') {
             loadSystemSummary();
             loadSystemLogs();
-        } else {
+        } else if (tabName === 'gemini') {
             loadGeminiSummary();
             loadGeminiLogs();
+        } else if (tabName === 'avancado') {
+            loadAdvancedSummary();
+            loadAdvancedLogs();
+            loadAdvancedSlowest();
         }
     }
 
@@ -1248,6 +1436,189 @@
         } catch (error) {
             showNotification('Erro ao limpar logs', 'error');
         }
+    }
+
+    // ========================================
+    // LOGS AVANCADOS (REQUEST PERFORMANCE)
+    // ========================================
+
+    async function loadAdvancedSummary() {
+        const hours = document.getElementById('advFilterHours').value;
+        const sistema = document.getElementById('advFilterSistema').value;
+
+        try {
+            let url = `/admin/api/gemini-logs/request-perf/summary?hours=${hours}`;
+            if (sistema) url += `&sistema=${sistema}`;
+
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                console.error('Erro ao carregar summary avancado:', response.status);
+                return;
+            }
+
+            const data = await response.json();
+
+            // Cards principais
+            document.getElementById('adv-total').textContent = data.total || 0;
+            document.getElementById('adv-success').textContent = data.success_count || 0;
+            document.getElementById('adv-error').textContent = data.error_count || 0;
+            document.getElementById('adv-avg-total').textContent = formatMs(data.avg_total_ms);
+            document.getElementById('adv-min-total').textContent = formatMs(data.min_total_ms);
+            document.getElementById('adv-max-total').textContent = formatMs(data.max_total_ms);
+            document.getElementById('adv-avg-ttft').textContent = formatMs(data.avg_ttft_ms);
+            document.getElementById('adv-avg-gen').textContent = formatMs(data.avg_generation_ms);
+
+            // Breakdown
+            const bd = data.breakdown || {};
+            document.getElementById('adv-agente1').textContent = formatMs(bd.agente1_ms);
+            document.getElementById('adv-agente2').textContent = formatMs(bd.agente2_ms);
+            document.getElementById('adv-prompt').textContent = formatMs(bd.prompt_build_ms);
+            document.getElementById('adv-postproc').textContent = formatMs(bd.postprocess_ms);
+            document.getElementById('adv-db').textContent = formatMs(bd.db_save_ms);
+            document.getElementById('adv-overhead').textContent = formatMs(bd.overhead_ms);
+
+            // Streaming
+            const st = data.streaming || {};
+            document.getElementById('adv-chunks').textContent = st.avg_chunks || '-';
+            document.getElementById('adv-chunk-interval').textContent = st.avg_chunk_interval_ms ? `${st.avg_chunk_interval_ms}ms` : '-';
+
+        } catch (error) {
+            console.error('Erro ao carregar summary avancado:', error);
+        }
+    }
+
+    async function loadAdvancedLogs() {
+        const hours = document.getElementById('advFilterHours').value;
+        const sistema = document.getElementById('advFilterSistema').value;
+        const minMs = document.getElementById('advFilterMinMs').value;
+
+        try {
+            let url = `/admin/api/gemini-logs/request-perf?hours=${hours}&limit=50`;
+            if (sistema) url += `&sistema=${sistema}`;
+            if (minMs) url += `&min_total_ms=${minMs}`;
+
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) {
+                document.getElementById('advLogsTable').innerHTML =
+                    `<tr><td colspan="11" class="px-4 py-8 text-center text-red-500">Erro ao carregar logs</td></tr>`;
+                return;
+            }
+
+            const data = await response.json();
+            const logs = data.logs || [];
+
+            if (logs.length === 0) {
+                document.getElementById('advLogsTable').innerHTML =
+                    `<tr><td colspan="11" class="px-4 py-8 text-center text-gray-500">Nenhum log encontrado</td></tr>`;
+                return;
+            }
+
+            document.getElementById('advLogsTable').innerHTML = logs.map(log => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 text-xs whitespace-nowrap">${formatTime(log.created_at)}</td>
+                    <td class="px-3 py-2 text-xs font-mono">${log.request_id || '-'}</td>
+                    <td class="px-3 py-2 text-xs">${log.numero_cnj || '-'}</td>
+                    <td class="px-3 py-2 text-xs">${log.tipo_peca || '-'}</td>
+                    <td class="px-3 py-2 text-xs font-medium ${log.total_ms > 15000 ? 'text-red-600' : log.total_ms > 10000 ? 'text-orange-600' : ''}">${formatMs(log.total_ms)}</td>
+                    <td class="px-3 py-2 text-xs">${formatMs(log.ttft_ms)}</td>
+                    <td class="px-3 py-2 text-xs">${formatMs(log.agente1_ms)}</td>
+                    <td class="px-3 py-2 text-xs">${formatMs(log.agente2_ms)}</td>
+                    <td class="px-3 py-2 text-xs">${formatMs(log.generation_ms)}</td>
+                    <td class="px-3 py-2 text-xs">${log.streaming_chunks || '-'}</td>
+                    <td class="px-3 py-2 text-xs">
+                        ${log.success
+                            ? '<span class="text-green-600"><i class="fas fa-check"></i></span>'
+                            : '<span class="text-red-600"><i class="fas fa-times"></i></span>'
+                        }
+                    </td>
+                </tr>
+            `).join('');
+
+        } catch (error) {
+            console.error('Erro ao carregar logs avancados:', error);
+            document.getElementById('advLogsTable').innerHTML =
+                `<tr><td colspan="11" class="px-4 py-8 text-center text-red-500">Erro: ${error.message}</td></tr>`;
+        }
+    }
+
+    async function loadAdvancedSlowest() {
+        const hours = document.getElementById('advFilterHours').value;
+        const sistema = document.getElementById('advFilterSistema').value;
+
+        try {
+            let url = `/admin/api/gemini-logs/request-perf/slowest?hours=${hours}&limit=6`;
+            if (sistema) url += `&sistema=${sistema}`;
+
+            const response = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!response.ok) return;
+
+            const data = await response.json();
+            const slowest = data.slowest || [];
+
+            if (slowest.length === 0) {
+                document.getElementById('advSlowest').innerHTML =
+                    '<p class="text-gray-500 text-sm col-span-full">Nenhum request encontrado</p>';
+                return;
+            }
+
+            document.getElementById('advSlowest').innerHTML = slowest.map(log => `
+                <div class="bg-gray-50 rounded-lg p-3 border-l-4 ${log.success ? 'border-orange-400' : 'border-red-400'}">
+                    <div class="flex justify-between items-start mb-2">
+                        <span class="text-xs font-mono text-gray-500">${log.request_id}</span>
+                        <span class="text-sm font-bold ${log.total_ms > 20000 ? 'text-red-600' : 'text-orange-600'}">${formatMs(log.total_ms)}</span>
+                    </div>
+                    <div class="text-xs text-gray-600 space-y-1">
+                        <p><strong>CNJ:</strong> ${log.numero_cnj || '-'}</p>
+                        <p><strong>Tipo:</strong> ${log.tipo_peca || '-'}</p>
+                        <p><strong>TTFT:</strong> ${formatMs(log.ttft_ms)} | <strong>Gen:</strong> ${formatMs(log.generation_ms)}</p>
+                        <p><strong>Ag1:</strong> ${formatMs(log.agente1_ms)} | <strong>Ag2:</strong> ${formatMs(log.agente2_ms)}</p>
+                    </div>
+                </div>
+            `).join('');
+
+        } catch (error) {
+            console.error('Erro ao carregar slowest:', error);
+        }
+    }
+
+    function clearAdvancedFilters() {
+        document.getElementById('advFilterSistema').value = '';
+        document.getElementById('advFilterMinMs').value = '';
+        loadAdvancedSummary();
+        loadAdvancedLogs();
+        loadAdvancedSlowest();
+    }
+
+    async function cleanupAdvancedLogs() {
+        if (!confirm('Remover logs de performance com mais de 7 dias?')) return;
+        try {
+            const response = await fetch('/admin/api/gemini-logs/request-perf/cleanup?days=7', {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await response.json();
+            showNotification(`${data.deleted_count} logs removidos`, 'success');
+            loadAdvancedSummary();
+            loadAdvancedLogs();
+            loadAdvancedSlowest();
+        } catch (error) {
+            showNotification('Erro ao limpar logs', 'error');
+        }
+    }
+
+    function formatMs(ms) {
+        if (ms === null || ms === undefined) return '-';
+        if (ms >= 1000) return `${(ms/1000).toFixed(1)}s`;
+        return `${Math.round(ms)}ms`;
     }
 
     // ========================================

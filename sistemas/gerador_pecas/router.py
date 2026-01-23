@@ -21,6 +21,11 @@ from auth.models import User
 from database.connection import get_db
 from utils.timezone import to_iso_utc
 from services.text_normalizer import text_normalizer
+from services.performance_tracker import (
+    create_tracker, get_tracker, mark, record_chunk, PerformanceTracker
+)
+from services.config_cache import config_cache
+from admin.services_request_perf import log_request_perf
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
 from sistemas.gerador_pecas.services import GeradorPecasService
 from sistemas.gerador_pecas.orquestrador_agentes import consolidar_dados_extracao
@@ -391,15 +396,8 @@ async def processar_processo_stream(
     """
     from admin.models import ConfiguracaoIA
 
-    # Verifica se detecção automática está habilitada
-    config_auto = db.query(ConfiguracaoIA).filter(
-        ConfiguracaoIA.sistema == "gerador_pecas",
-        ConfiguracaoIA.chave == "enable_auto_piece_detection"
-    ).first()
-
-    permite_auto = False
-    if config_auto and config_auto.valor:
-        permite_auto = config_auto.valor.lower() == "true"
+    # Verifica se detecção automática está habilitada (com cache)
+    permite_auto = config_cache.get_auto_detection_enabled(db)
 
     # Validação: se auto-detecção está desabilitada, tipo_peca é obrigatório
     if not permite_auto and not req.tipo_peca:
@@ -415,20 +413,34 @@ async def processar_processo_stream(
         req.subcategoria_ids
     )
     group_id = grupo.id
+
+    # Cria tracker de performance para esta request
+    tracker = create_tracker(
+        request_id=str(uuid.uuid4())[:8],
+        sistema="gerador_pecas",
+        route="/processar-stream"
+    )
+    tracker.mark("auth_done")
+
     async def event_generator() -> AsyncGenerator[str, None]:
         try:
             cnj_limpo = _limpar_cnj(req.numero_cnj)
-            
+            tracker.set_metadata("numero_cnj", cnj_limpo)
+
             # Evento inicial
-            yield f"data: {json.dumps({'tipo': 'inicio', 'mensagem': 'Iniciando processamento...'})}\n\n"
+            yield f"data: {json.dumps({'tipo': 'inicio', 'mensagem': 'Iniciando processamento...', 'request_id': tracker.request_id})}\n\n"
             
-            # Busca configurações
-            config_modelo = db.query(ConfiguracaoIA).filter(
-                ConfiguracaoIA.sistema == "gerador_pecas",
-                ConfiguracaoIA.chave == "modelo_geracao"
-            ).first()
-            modelo = config_modelo.valor if config_modelo else "google/gemini-2.5-pro-preview-05-06"
-            
+            # Busca configurações (com cache)
+            tracker.mark("load_config_start")
+            modelo = config_cache.get_config(
+                "gerador_pecas",
+                "modelo_geracao",
+                db,
+                default="google/gemini-2.5-pro-preview-05-06"
+            )
+            tracker.mark("load_config_done", modelo=modelo)
+            tracker.set_metadata("modelo", modelo)
+
             # Inicializa o serviço
             service = GeradorPecasService(
                 modelo=modelo,
@@ -464,10 +476,12 @@ async def processar_processo_stream(
                 
                 # Agente 1: Coletor TJ-MS
                 print(f"[ROUTER] >>> Iniciando Agente 1...")
+                tracker.mark("agente1_start")
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': 'Baixando documentos do TJ-MS...'})}\n\n"
 
                 resultado_agente1 = await orq.agente1.coletar_e_resumir(cnj_limpo)
 
+                tracker.mark("agente1_done", docs=resultado_agente1.documentos_analisados)
                 print(f"[ROUTER] <<< Agente 1 finalizado")
                 print(f"[ROUTER] Agente 1 - erro: {resultado_agente1.erro}")
                 print(f"[ROUTER] Agente 1 - total_documentos: {resultado_agente1.total_documentos}")
@@ -523,6 +537,7 @@ async def processar_processo_stream(
                         print(f"Aviso: Erro ao filtrar resumos no modo automático: {e}")
                         # Continua com o resumo completo
                 
+                tracker.mark("agente2_start")
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'ativo', 'mensagem': 'Analisando e ativando prompts...'})}\n\n"
 
                 # Extrai dados das variáveis dos resumos JSON para avaliação determinística
@@ -537,6 +552,8 @@ async def processar_processo_stream(
                     dados_extracao=dados_extracao
                 )
 
+                tracker.mark("agente2_done", modulos=len(resultado_agente2.modulos_ids) if not resultado_agente2.erro else 0)
+
                 if resultado_agente2.erro:
                     yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente2.erro})}\n\n"
@@ -545,6 +562,7 @@ async def processar_processo_stream(
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 2, 'status': 'concluido', 'mensagem': f'{len(resultado_agente2.modulos_ids)} módulos ativados'})}\n\n"
                 
                 # Agente 3: Gerador (COM STREAMING REAL)
+                tracker.mark("prompt_build_start")
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peça jurídica com IA...'})}\n\n"
 
                 # Log se há observação do usuário
@@ -552,7 +570,10 @@ async def processar_processo_stream(
                     yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Observações do usuário serão consideradas na geração'})}\n\n"
 
                 # Usa versão STREAMING do Agente 3 para TTFT rápido
+                tracker.mark("prompt_build_done")
+                tracker.mark("llm_call_start")
                 resultado_agente3 = None
+                first_chunk_received = False
                 async for event in orq._executar_agente3_stream(
                     resumo_consolidado=resumo_para_geracao,
                     prompt_sistema=resultado_agente2.prompt_sistema,
@@ -562,13 +583,23 @@ async def processar_processo_stream(
                     observacao_usuario=req.observacao_usuario
                 ):
                     if event["tipo"] == "chunk":
+                        # Registra primeiro token (TTFT)
+                        if not first_chunk_received:
+                            tracker.mark("first_token")
+                            first_chunk_received = True
+
+                        # Registra chunk para estatisticas de streaming
+                        tracker.record_chunk(event['content'])
+
                         # Envia chunk de texto para o frontend em tempo real
                         yield f"data: {json.dumps({'tipo': 'geracao_chunk', 'content': event['content']})}\n\n"
 
                     elif event["tipo"] == "done":
+                        tracker.mark("last_token")
                         resultado_agente3 = event["resultado"]
 
                     elif event["tipo"] == "error":
+                        tracker.mark("last_token")
                         resultado_agente3 = event["resultado"]
                         yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'erro', 'mensagem': event['error']})}\n\n"
                         yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': event['error']})}\n\n"
@@ -582,6 +613,7 @@ async def processar_processo_stream(
                 yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'concluido', 'mensagem': 'Peça gerada com sucesso!'})}\n\n"
                 
                 # Prepara lista de documentos processados para salvar
+                tracker.mark("postprocess_start")
                 documentos_processados = None
                 if resultado_agente1.dados_brutos and resultado_agente1.dados_brutos.documentos:
                     documentos_processados = []
@@ -597,8 +629,10 @@ async def processar_processo_stream(
                                 "data_formatada": doc.data_formatada,
                                 "processo_origem": doc.processo_origem
                             })
-                
+                tracker.mark("postprocess_done")
+
                 # Salva no banco (usa resumo filtrado se disponível)
+                tracker.mark("db_save_start")
                 geracao = GeracaoPeca(
                     numero_cnj=cnj_limpo,
                     numero_cnj_formatado=cnj_limpo,
@@ -622,6 +656,19 @@ async def processar_processo_stream(
 
                 try:
                     db.add(geracao)
+                    db.flush()  # Flush para obter o ID sem commit
+
+                    # Cria versão inicial na mesma transação (evita commit duplo)
+                    versao = VersaoPeca(
+                        geracao_id=geracao.id,
+                        numero_versao=1,
+                        conteudo=resultado_agente3.conteudo_markdown,
+                        origem='geracao_inicial',
+                        descricao_alteracao='Versão inicial gerada pela IA',
+                        diff_anterior=None
+                    )
+                    db.add(versao)
+
                     db.commit()
                     db.refresh(geracao)
                 except Exception as e:
@@ -637,16 +684,47 @@ async def processar_processo_stream(
                             if attr in state.dict:
                                 del state.dict[attr]
                         db.add(geracao)
+                        db.flush()
+
+                        versao = VersaoPeca(
+                            geracao_id=geracao.id,
+                            numero_versao=1,
+                            conteudo=resultado_agente3.conteudo_markdown,
+                            origem='geracao_inicial',
+                            descricao_alteracao='Versão inicial gerada pela IA',
+                            diff_anterior=None
+                        )
+                        db.add(versao)
+
                         db.commit()
                         db.refresh(geracao)
                     else:
                         raise
 
-                # Cria versão inicial no histórico de versões
-                criar_versao_inicial(db, geracao.id, resultado_agente3.conteudo_markdown)
+                tracker.mark("db_save_done")
 
                 # Resultado final
-                yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao.id, 'tipo_peca': tipo_peca, 'minuta_markdown': resultado_agente3.conteudo_markdown})}\n\n"
+                tracker.mark("response_sent")
+                tracker.set_metadata("tipo_peca", tipo_peca)
+                tracker.set_metadata("modelo", modelo)
+                tracker.log_summary()
+
+                # Inclui metricas de performance no evento final
+                perf_report = tracker.get_report()
+
+                # Salva log de performance detalhado no banco
+                try:
+                    log_request_perf(
+                        report=perf_report,
+                        db=db,
+                        user_id=current_user.id if current_user else None,
+                        username=current_user.username if current_user else None,
+                        success=True
+                    )
+                except Exception as e:
+                    print(f"[PERF] Erro ao salvar log: {e}")
+
+                yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao.id, 'tipo_peca': tipo_peca, 'minuta_markdown': resultado_agente3.conteudo_markdown, 'performance': {'ttft_ms': perf_report['metrics'].get('ttft_ms'), 'total_ms': perf_report['total_ms'], 'request_id': tracker.request_id}})}\n\n"
             else:
                 # Fallback sem orquestrador
                 yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Usando modo simplificado...'})}\n\n"

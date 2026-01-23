@@ -71,6 +71,9 @@ from sistemas.pedido_calculo.router_admin import router as pedido_calculo_admin_
 from sistemas.prestacao_contas.router import router as prestacao_contas_router
 from sistemas.prestacao_contas.router_admin import router as prestacao_contas_admin_router
 
+# Import do sistema de Relatório de Cumprimento
+from sistemas.relatorio_cumprimento.router import router as relatorio_cumprimento_router
+
 # Import do sistema de Performance Logs
 from admin.router_performance import router as performance_router
 from admin.router_gemini_logs import router as gemini_logs_router
@@ -86,6 +89,7 @@ ASSISTENCIA_TEMPLATES = BASE_DIR / "sistemas" / "assistencia_judiciaria" / "temp
 GERADOR_PECAS_TEMPLATES = BASE_DIR / "sistemas" / "gerador_pecas" / "templates"
 PEDIDO_CALCULO_TEMPLATES = BASE_DIR / "sistemas" / "pedido_calculo" / "templates"
 PRESTACAO_CONTAS_TEMPLATES = BASE_DIR / "sistemas" / "prestacao_contas" / "templates"
+RELATORIO_CUMPRIMENTO_TEMPLATES = BASE_DIR / "sistemas" / "relatorio_cumprimento" / "templates"
 
 # IMPORTANTE: Inicializa banco de dados ANTES de criar o app
 # Isso garante que migrações sejam executadas antes de qualquer query
@@ -171,8 +175,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
 
-        # Previne clickjacking - não permite embedding em iframes
-        response.headers["X-Frame-Options"] = "DENY"
+        # Previne clickjacking - permite embedding apenas do próprio domínio (SAMEORIGIN)
+        # DENY bloqueia completamente, SAMEORIGIN permite visualizadores internos (PDF viewer)
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
 
         # Previne MIME type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -198,7 +203,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai",
             "frame-src 'self' blob:",  # Permite iframes com blob URLs (PDFs)
             "object-src 'self' blob:",  # Permite objetos/plugins com blob URLs (PDFs)
-            "frame-ancestors 'none'",
+            "frame-ancestors 'self'",  # Permite embedding apenas do próprio domínio (para visualizador de PDF)
             "form-action 'self'",
             "base-uri 'self'",
         ]
@@ -411,6 +416,9 @@ app.include_router(pedido_calculo_admin_router)  # Admin router - sem prefixo po
 app.include_router(prestacao_contas_router, prefix="/prestacao-contas/api")
 app.include_router(prestacao_contas_admin_router)  # Admin router - sem prefixo pois já tem no router
 
+# Router de Relatório de Cumprimento
+app.include_router(relatorio_cumprimento_router, prefix="/relatorio-cumprimento/api")
+
 # Router de Normalização de Texto
 app.include_router(text_normalizer_router)
 
@@ -547,6 +555,15 @@ async def serve_pedido_calculo_static(filename: str = ""):
 async def serve_prestacao_contas_static(filename: str = ""):
     """Serve arquivos do frontend Prestação de Contas"""
     return safe_serve_static(PRESTACAO_CONTAS_TEMPLATES, filename, no_cache=True)
+
+
+# Relatório de Cumprimento
+@app.get("/relatorio-cumprimento/{filename:path}")
+@app.get("/relatorio-cumprimento/")
+@app.get("/relatorio-cumprimento")
+async def serve_relatorio_cumprimento_static(filename: str = ""):
+    """Serve arquivos do frontend Relatório de Cumprimento"""
+    return safe_serve_static(RELATORIO_CUMPRIMENTO_TEMPLATES, filename, no_cache=True)
 
 
 # ==================================================

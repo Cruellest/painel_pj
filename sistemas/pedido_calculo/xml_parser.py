@@ -40,6 +40,9 @@ TIPOS_DOCUMENTO = {
     "ACORDAO": ["37", "202", "34", "35"],
     "COPIA_ACORDAO": ["9555"],  # Cópia de acórdão (em cumprimentos autônomos)
 
+    # Decisões interlocutórias (para cumprimento de decisão)
+    "DECISAO": ["15", "44", "45", "137", "517", "8506", "9653", "9654", "9817"],
+
     # Certidões
     "CERTIDAO_SISTEMA": ["9508"],
     "CERTIDAO_CARTORIO": ["13"],
@@ -414,6 +417,12 @@ class XMLParser:
                     for doc_id, _, _ in docs_por_tipo[tipo_cod]:
                         resultado.acordaos.append(doc_id)
 
+            # Decisões interlocutórias (para cumprimento de decisão)
+            for tipo_cod in TIPOS_DOCUMENTO["DECISAO"]:
+                if tipo_cod in docs_por_tipo:
+                    for doc_id, _, _ in docs_por_tipo[tipo_cod]:
+                        resultado.decisoes.append(doc_id)
+
             # Certidão de trânsito em julgado
             # 1. Primeiro tenta pelo tipo de documento (9644)
             for tipo_cod in TIPOS_DOCUMENTO["CERTIDAO_TRANSITO"]:
@@ -433,6 +442,7 @@ class XMLParser:
             if forcar_busca_sentencas:
                 print(f"[ORIGEM] Sentenças encontradas: {resultado.sentencas}")
                 print(f"[ORIGEM] Acórdãos encontrados: {resultado.acordaos}")
+                print(f"[ORIGEM] Decisões encontradas: {resultado.decisoes}")
         
         # Identifica certidão de citação (heurística - funciona bem)
         resultado.certidoes_citacao_intimacao = self._identificar_certidoes_citacao_intimacao(docs_por_tipo)

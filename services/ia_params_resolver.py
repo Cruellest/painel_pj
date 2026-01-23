@@ -52,6 +52,10 @@ AGENTES_POR_SISTEMA: Dict[str, Dict[str, str]] = {
     "assistencia_judiciaria": {
         "relatorio": "Agent1 - Gera relatório de assistência judiciária",
     },
+    "relatorio_cumprimento": {
+        "analise": "Agent1 - Analisa documentos e gera relatório de cumprimento de sentença",
+        "edicao": "Agent2 - Edita relatório via chat interativo",
+    },
 }
 
 
@@ -104,6 +108,12 @@ ALIASES_CHAVES: Dict[tuple, str] = {
     ("assistencia_judiciaria", "modelo_relatorio"): "relatorio",
     ("assistencia_judiciaria", "temperatura_relatorio"): "relatorio",
     ("assistencia_judiciaria", "max_tokens_relatorio"): "relatorio",
+
+    # relatorio_cumprimento
+    ("relatorio_cumprimento", "modelo_analise"): "analise",
+    ("relatorio_cumprimento", "modelo_edicao"): "edicao",
+    ("relatorio_cumprimento", "temperatura_analise"): "analise",
+    ("relatorio_cumprimento", "temperatura_edicao"): "edicao",
 }
 
 

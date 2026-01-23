@@ -219,6 +219,7 @@ class DocumentosParaDownload:
     """Documentos identificados pelo Agente 1 para download"""
     sentencas: List[str] = field(default_factory=list)
     acordaos: List[str] = field(default_factory=list)
+    decisoes: List[str] = field(default_factory=list)  # Decisões interlocutórias (cumprimento de decisão)
     certidoes_citacao_intimacao: List[CertidaoCitacaoIntimacao] = field(default_factory=list)
     certidoes_candidatas: List[CertidaoCandidata] = field(default_factory=list)  # Para análise pela IA
     certidao_heuristica: Optional[CertidaoCitacaoIntimacao] = None  # Sugestão da heurística (IA tem prioridade)
@@ -236,6 +237,7 @@ class DocumentosParaDownload:
         return {
             "sentencas": self.sentencas,
             "acordaos": self.acordaos,
+            "decisoes": self.decisoes,
             "certidoes_citacao_intimacao": [
                 {
                     "tipo": c.tipo.value,

@@ -26,11 +26,13 @@ from sistemas.gerador_pecas.models_teste_categorias import TesteDocumento, Teste
 from sistemas.gerador_pecas.models_teste_ativacao import CenarioTesteAtivacao
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
+from sistemas.relatorio_cumprimento.models import GeracaoRelatorioCumprimento, LogChamadaIARelatorioCumprimento, FeedbackRelatorioCumprimento
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca, RegraDeterministicaTipoPeca
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
 from admin.models_performance import AdminSettings, PerformanceLog, RouteSystemMap
 from admin.models_gemini_logs import GeminiApiLog
+from admin.models_request_perf import RequestPerfLog
 
 
 def wait_for_db(max_retries=10, delay=3):
@@ -65,7 +67,9 @@ def create_tables():
     required_tables = {
         'users', 'geracoes_prestacao_contas', 'gemini_api_logs', 'performance_logs',
         'regra_deterministica_tipo_peca',  # Adicionado para regras por tipo de peça
-        'teste_ativacao_cenarios'  # Adicionado para teste de ativação de módulos
+        'teste_ativacao_cenarios',  # Adicionado para teste de ativação de módulos
+        'geracoes_relatorio_cumprimento',  # Sistema de relatório de cumprimento de sentença
+        'request_perf_logs'  # Logs detalhados de performance de requests
     }
 
     # Se todas as tabelas obrigatórias existem, não precisa criar
@@ -2234,8 +2238,8 @@ def init_database():
     print("[*] Inicializando banco de dados...")
 
     # Fast-path com cache em arquivo (evita query ao banco em dev)
-    # IMPORTANTE: Versão do schema - incrementar quando adicionar novas colunas
-    SCHEMA_VERSION = "v3"  # v3: adicionado users.setor e gemini_api_logs.thinking_level
+    # IMPORTANTE: Versão do schema - incrementar quando adicionar novas colunas/tabelas
+    SCHEMA_VERSION = "v4"  # v4: adicionado request_perf_logs para logs de performance detalhados
     import hashlib
     cache_file = Path(__file__).parent / ".db_initialized"
     db_url_hash = hashlib.md5(f"{engine.url}:{SCHEMA_VERSION}".encode()).hexdigest()[:8]
@@ -2246,9 +2250,10 @@ def init_database():
             # Mesmo banco E mesma versão do schema - verifica colunas críticas
             try:
                 db = SessionLocal()
-                # Verifica se as colunas mais recentes existem
+                # Verifica se as colunas/tabelas mais recentes existem
                 db.execute(text("SELECT setor FROM users LIMIT 1"))
                 db.execute(text("SELECT thinking_level FROM gemini_api_logs LIMIT 1"))
+                db.execute(text("SELECT 1 FROM request_perf_logs LIMIT 1"))
                 db.close()
                 print("[OK] Conexao com banco de dados estabelecida!")
                 _DB_INITIALIZED = True
@@ -2270,9 +2275,10 @@ def init_database():
     try:
         db = SessionLocal()
         result = db.execute(text("SELECT 1 FROM users LIMIT 1")).fetchone()
-        # Verifica colunas mais recentes
+        # Verifica colunas/tabelas mais recentes
         db.execute(text("SELECT setor FROM users LIMIT 1"))
         db.execute(text("SELECT thinking_level FROM gemini_api_logs LIMIT 1"))
+        db.execute(text("SELECT 1 FROM request_perf_logs LIMIT 1"))
         db.close()
         if result:
             # Banco ok, salva cache

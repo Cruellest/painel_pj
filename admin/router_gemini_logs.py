@@ -343,7 +343,7 @@ async def get_thinking_level_status(
     from sqlalchemy import func, and_
     from admin.models_gemini_logs import GeminiApiLog
     from admin.models import ConfiguracaoIA
-    from services.ia_params_resolver import AGENTES_POR_SISTEMA, resolve_ia_params
+    from services.ia_params_resolver import AGENTES_POR_SISTEMA, get_ia_params
 
     start_date = datetime.utcnow() - timedelta(hours=hours)
 
@@ -376,7 +376,7 @@ async def get_thinking_level_status(
         config_esperada = {}
 
         for agente_slug in agentes.keys():
-            params = resolve_ia_params(db, sis, agente_slug)
+            params = get_ia_params(db, sis, agente_slug)
             config_esperada[agente_slug] = {
                 "thinking_level": params.thinking_level,
                 "fonte": params.thinking_level_source
@@ -474,3 +474,124 @@ async def get_thinking_level_status(
         }
 
     return resultado
+
+
+# ==================================================
+# LOGS DE PERFORMANCE AVANCADOS (REQUEST-LEVEL)
+# ==================================================
+
+@router.get("/request-perf")
+async def list_request_perf_logs(
+    sistema: Optional[str] = Query(None, description="Filtrar por sistema"),
+    hours: int = Query(24, ge=1, le=168, description="Periodo em horas"),
+    limit: int = Query(50, ge=1, le=200, description="Limite de resultados"),
+    offset: int = Query(0, ge=0, description="Offset para paginacao"),
+    min_total_ms: Optional[float] = Query(None, description="Latencia minima em ms"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista logs de performance detalhados de requests.
+
+    Inclui breakdown completo por etapa:
+    - Tempo de cada agente (1, 2)
+    - Tempo de montagem de prompt
+    - TTFT e tempo de geracao
+    - Pos-processamento e salvamento BD
+    - Estatisticas de streaming
+    """
+    from admin.services_request_perf import get_request_perf_logs
+
+    logs = get_request_perf_logs(
+        db=db,
+        sistema=sistema,
+        hours=hours,
+        limit=limit,
+        offset=offset,
+        min_total_ms=min_total_ms
+    )
+
+    return {
+        "logs": [log.to_dict() for log in logs],
+        "total": len(logs),
+        "limit": limit,
+        "offset": offset
+    }
+
+
+@router.get("/request-perf/summary")
+async def get_request_perf_summary(
+    sistema: Optional[str] = Query(None, description="Filtrar por sistema"),
+    hours: int = Query(24, ge=1, le=168, description="Periodo em horas"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna estatisticas agregadas de performance de requests.
+
+    Inclui:
+    - Medias de latencia total, TTFT, geracao
+    - Breakdown medio por etapa (agentes, prompt, pos-proc, BD)
+    - Estatisticas de streaming
+    """
+    from admin.services_request_perf import get_request_perf_summary
+
+    return get_request_perf_summary(db, sistema, hours)
+
+
+@router.get("/request-perf/slowest")
+async def get_slowest_requests(
+    sistema: Optional[str] = Query(None, description="Filtrar por sistema"),
+    hours: int = Query(24, ge=1, le=168, description="Periodo em horas"),
+    limit: int = Query(10, ge=1, le=50, description="Numero de requests"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna os requests mais lentos com timeline detalhada.
+    """
+    from admin.services_request_perf import get_slowest_requests as get_slowest
+
+    return {
+        "slowest": get_slowest(db, sistema, hours, limit)
+    }
+
+
+@router.get("/request-perf/{request_id}")
+async def get_request_perf_detail(
+    request_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna detalhes completos de um request especifico, incluindo timeline.
+    """
+    from admin.models_request_perf import RequestPerfLog
+
+    log = db.query(RequestPerfLog).filter(
+        RequestPerfLog.request_id == request_id
+    ).first()
+
+    if not log:
+        raise HTTPException(status_code=404, detail="Request nao encontrado")
+
+    return log.to_dict()
+
+
+@router.delete("/request-perf/cleanup")
+async def cleanup_request_perf_logs(
+    days: int = Query(7, ge=1, le=90, description="Manter logs dos ultimos X dias"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Remove logs de performance antigos.
+    """
+    from admin.services_request_perf import cleanup_old_logs
+
+    deleted = cleanup_old_logs(db, days)
+
+    return {
+        "deleted_count": deleted,
+        "message": f"{deleted} logs de performance removidos"
+    }

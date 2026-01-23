@@ -91,10 +91,11 @@
                 class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
                 <option value="">Todos os sistemas</option>
-                <option value="matriculas">Matrículas Confrontantes</option>
-                <option value="assistencia_judiciaria">Assistência Judiciária</option>
-                <option value="pedido_calculo">Pedido de Cálculo</option>
-                <option value="prestacao_contas">Prestação de Contas</option>
+                <option value="matriculas">Matriculas Confrontantes</option>
+                <option value="assistencia_judiciaria">Assistencia Judiciaria</option>
+                <option value="pedido_calculo">Pedido de Calculo</option>
+                <option value="prestacao_contas">Prestacao de Contas</option>
+                <option value="relatorio_cumprimento">Relatorio de Cumprimento</option>
             </select>
         </div>
 
@@ -149,7 +150,10 @@
                         <i class="fas fa-calculator mr-1"></i> Pedido de Cálculo
                     </button>
                     <button onclick="showConfigTab('prestacao_contas')" id="tab-prestacao_contas" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
-                        <i class="fas fa-file-invoice-dollar mr-1"></i> Prestação de Contas
+                        <i class="fas fa-file-invoice-dollar mr-1"></i> Prestacao de Contas
+                    </button>
+                    <button onclick="showConfigTab('relatorio_cumprimento')" id="tab-relatorio_cumprimento" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-file-lines mr-1"></i> Relatorio Cumprimento
                     </button>
                     <button onclick="showConfigTab('sistemas_acessorios')" id="tab-sistemas_acessorios" class="config-tab px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
                         <i class="fas fa-cogs mr-1"></i> Sistemas Acessórios
@@ -277,6 +281,15 @@
 
             <!-- Config Prestação de Contas -->
             <div id="config-prestacao_contas" class="config-panel hidden">
+                <!-- Configuração por agente será carregada dinamicamente -->
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
+                    <p class="text-sm">Carregando configurações...</p>
+                </div>
+            </div>
+
+            <!-- Config Relatório de Cumprimento -->
+            <div id="config-relatorio_cumprimento" class="config-panel hidden">
                 <!-- Configuração por agente será carregada dinamicamente -->
                 <div class="text-center py-8 text-gray-400">
                     <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
@@ -757,7 +770,11 @@
                             </button>
                             <button onclick="criarPromptsSistema('prestacao_contas')" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2">
                                 <i class="fas fa-file-invoice-dollar"></i>
-                                Prestação de Contas
+                                Prestacao de Contas
+                            </button>
+                            <button onclick="criarPromptsSistema('relatorio_cumprimento')" class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2">
+                                <i class="fas fa-file-lines"></i>
+                                Relatorio Cumprimento
                             </button>
                             <button onclick="criarPromptsSistema('matriculas')" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2">
                                 <i class="fas fa-file-alt"></i>
@@ -788,7 +805,8 @@
                 'assistencia_judiciaria': 'Assistência Judiciária',
                 'gerador_pecas': 'Gerador de Peças Jurídicas',
                 'pedido_calculo': 'Pedido de Cálculo',
-                'prestacao_contas': 'Prestação de Contas'
+                'prestacao_contas': 'Prestação de Contas',
+                'relatorio_cumprimento': 'Relatório de Cumprimento'
             };
 
             const tipoLabels = {
@@ -945,6 +963,7 @@
             const nomesSistemas = {
                 'pedido_calculo': 'Pedido de Cálculo',
                 'prestacao_contas': 'Prestação de Contas',
+                'relatorio_cumprimento': 'Relatório de Cumprimento',
                 'matriculas': 'Matrículas',
                 'assistencia_judiciaria': 'Assistência Judiciária'
             };
@@ -1263,7 +1282,7 @@
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
-                if (!response.ok) throw new Error('Erro ao carregar configurações por agente');
+                if (!response.ok) throw new Error(`Erro ao carregar configurações por agente: ${response.status}`);
 
                 const data = await response.json();
 
@@ -1438,6 +1457,32 @@
 
                 html += `</div>`;
 
+                // Para relatorio_cumprimento, adiciona botão para criar prompts se não existirem
+                if (sistema === 'relatorio_cumprimento') {
+                    html += `
+                        <div class="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg" id="criar-prompts-relatorio">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <h5 class="font-medium text-amber-800 flex items-center gap-2">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                        Prompts não configurados
+                                    </h5>
+                                    <p class="text-sm text-amber-700 mt-1">
+                                        Os prompts de geração e edição ainda não foram criados para este sistema.
+                                    </p>
+                                </div>
+                                <button
+                                    onclick="criarPromptsSistema('relatorio_cumprimento')"
+                                    class="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2"
+                                >
+                                    <i class="fas fa-plus"></i>
+                                    Criar Prompts
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+
                 // Insere no container do sistema correspondente (NO TOPO)
                 const prefix = sistema === 'assistencia_judiciaria' ? 'assistencia' : sistema;
                 const container = document.getElementById(`config-${prefix}`);
@@ -1458,6 +1503,36 @@
 
             } catch (error) {
                 console.error('Erro ao carregar config por agente:', error);
+
+                // Mostra mensagem de erro com botão para criar prompts
+                const prefix = sistema === 'assistencia_judiciaria' ? 'assistencia' : sistema;
+                const container = document.getElementById(`config-${prefix}`);
+                if (container) {
+                    const nomesSistemas = {
+                        'gerador_pecas': 'Gerador de Peças',
+                        'pedido_calculo': 'Pedido de Cálculo',
+                        'prestacao_contas': 'Prestação de Contas',
+                        'relatorio_cumprimento': 'Relatório de Cumprimento',
+                        'matriculas': 'Matrículas',
+                        'assistencia_judiciaria': 'Assistência Judiciária'
+                    };
+                    const nomeSistema = nomesSistemas[sistema] || sistema;
+
+                    container.innerHTML = `
+                        <div class="text-center py-8">
+                            <i class="fas fa-exclamation-triangle text-amber-500 text-3xl mb-4"></i>
+                            <p class="text-gray-600 mb-4">Nenhuma configuração encontrada para <strong>${nomeSistema}</strong>.</p>
+                            <p class="text-sm text-gray-500 mb-4">Clique abaixo para criar os prompts e configurações iniciais.</p>
+                            <button
+                                onclick="criarPromptsSistema('${sistema}')"
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 mx-auto"
+                            >
+                                <i class="fas fa-plus"></i>
+                                Criar Prompts para ${nomeSistema}
+                            </button>
+                        </div>
+                    `;
+                }
             }
         }
 
@@ -1588,7 +1663,7 @@
 
         // Carrega configurações por agente para todos os sistemas
         async function loadAllConfigPerAgent() {
-            const sistemas = ['gerador_pecas', 'pedido_calculo', 'prestacao_contas', 'matriculas', 'assistencia_judiciaria'];
+            const sistemas = ['gerador_pecas', 'pedido_calculo', 'prestacao_contas', 'relatorio_cumprimento', 'matriculas', 'assistencia_judiciaria'];
             for (const sistema of sistemas) {
                 try {
                     await loadConfigPerAgent(sistema);
