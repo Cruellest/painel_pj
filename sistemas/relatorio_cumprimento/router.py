@@ -253,8 +253,8 @@ async def processar_stream(
             if documentos_info.is_cumprimento_autonomo and numero_principal:
                 yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Verificando Agravo de Instrumento no processo de origem...'})}\n\n"
 
-                # Gera request_id para logs estruturados
-                request_id = str(uuid.uuid4())[:8]
+                # NOTA: Usa request_id do escopo externo (linha 120)
+                # NÃO redefinir aqui para evitar shadowing/UnboundLocalError
 
                 try:
                     # Obtém XML do processo principal para análise (com retry para erros de proxy)
