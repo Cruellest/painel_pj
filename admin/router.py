@@ -1753,7 +1753,7 @@ async def listar_feedbacks(
                     "sistema": "relatorio_cumprimento",
                     "identificador": numero_cnj_fmt or numero_cnj,
                     "cnj": numero_cnj,
-                    "modelo": modelo_usado or "gemini-2.0-flash",
+                    "modelo": modelo_usado or "gemini-3-flash-preview",
                     "usuario": full_name or username,
                     "username": username,
                     "avaliacao": fb.avaliacao,
