@@ -29,7 +29,14 @@ from .models import (
     ResultadoColeta,
     ResultadoRelatorio,
     GeracaoRelatorioCumprimento,
-    LogChamadaIARelatorioCumprimento
+    LogChamadaIARelatorioCumprimento,
+    ResultadoDeteccaoAgravo
+)
+
+# Detector de Agravo de Instrumento
+from .agravo_detector import (
+    detect_and_validate_agravos,
+    fetch_all_agravo_documents
 )
 
 # Reutiliza componentes existentes do pedido_calculo
@@ -322,6 +329,93 @@ class RelatorioCumprimentoService:
         info.observacao = "Não foi possível identificar informação de trânsito em julgado"
         return info
 
+    async def detectar_agravos_processo_origem(
+        self,
+        xml_processo_origem: str,
+        request_id: Optional[str] = None
+    ) -> Tuple[ResultadoDeteccaoAgravo, List[DocumentoClassificado]]:
+        """
+        Detecta e baixa documentos de Agravos de Instrumento do processo de origem.
+
+        Esta verificação é realizada apenas quando:
+        - O cumprimento de sentença é autônomo
+        - O processo de origem foi corretamente identificado
+
+        O fluxo:
+        1. Extrai candidatos a agravo do XML do processo de origem
+        2. Para cada candidato, baixa o XML e valida comparando partes
+        3. Para agravos validados, baixa decisões e acórdãos
+
+        Args:
+            xml_processo_origem: XML completo do processo de origem (conhecimento)
+            request_id: ID da requisição para logs estruturados
+
+        Returns:
+            Tupla (ResultadoDeteccaoAgravo, Lista de DocumentoClassificado dos agravos)
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        log_prefix = f"[{request_id}] " if request_id else ""
+
+        documentos_agravos = []
+
+        try:
+            # 1. Detecta e valida agravos
+            logger.info(f"{log_prefix}Iniciando detecção de Agravo de Instrumento no processo de origem")
+
+            resultado_deteccao = await detect_and_validate_agravos(
+                xml_processo_origem,
+                request_id
+            )
+
+            if resultado_deteccao.erro:
+                logger.error(f"{log_prefix}Erro na detecção de agravos: {resultado_deteccao.erro}")
+                return resultado_deteccao, []
+
+            # Log estruturado
+            logger.info(
+                f"{log_prefix}AGRAVO_SUMMARY | "
+                f"processo_origem=true | "
+                f"candidatos={len(resultado_deteccao.candidatos_detectados)} | "
+                f"validados={len(resultado_deteccao.agravos_validados)} | "
+                f"rejeitados={len(resultado_deteccao.agravos_rejeitados)}"
+            )
+
+            # 2. Se não há agravos validados, retorna
+            if not resultado_deteccao.agravos_validados:
+                logger.info(f"{log_prefix}Nenhum agravo validado - prosseguindo sem documentos de agravo")
+                return resultado_deteccao, []
+
+            # 3. Baixa documentos dos agravos validados
+            logger.info(
+                f"{log_prefix}Baixando documentos de {len(resultado_deteccao.agravos_validados)} agravo(s) validado(s)"
+            )
+
+            documentos_agravos = await fetch_all_agravo_documents(
+                resultado_deteccao.agravos_validados,
+                request_id
+            )
+
+            # Log final
+            qtd_decisoes = sum(1 for d in documentos_agravos if d.categoria == CategoriaDocumento.DECISAO_AGRAVO)
+            qtd_acordaos = sum(1 for d in documentos_agravos if d.categoria == CategoriaDocumento.ACORDAO_AGRAVO)
+
+            logger.info(
+                f"{log_prefix}AGRAVO_DOCUMENTS | "
+                f"total={len(documentos_agravos)} | "
+                f"decisoes={qtd_decisoes} | "
+                f"acordaos={qtd_acordaos}"
+            )
+
+            return resultado_deteccao, documentos_agravos
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            logger.error(f"{log_prefix}Erro ao detectar agravos: {e}")
+            resultado_deteccao = ResultadoDeteccaoAgravo(erro=str(e))
+            return resultado_deteccao, []
+
     async def gerar_relatorio(
         self,
         dados_cumprimento: DadosProcesso,
@@ -425,19 +519,43 @@ class RelatorioCumprimentoService:
         dados_principal: Optional[DadosProcesso],
         documentos: List[DocumentoClassificado],
         transito_julgado: InfoTransitoJulgado,
-        geracao_id: Optional[int] = None
+        geracao_id: Optional[int] = None,
+        request_id: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Versão streaming da geração de relatório.
 
+        Args:
+            dados_cumprimento: Dados do processo de cumprimento
+            dados_principal: Dados do processo principal (se diferente)
+            documentos: Documentos baixados e classificados
+            transito_julgado: Info sobre trânsito em julgado
+            geracao_id: ID da geração para logging
+            request_id: ID da requisição para correlação de logs
+
         Yields:
             dict com tipo='chunk'|'done'|'error'
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        log_prefix = f"[{request_id}] " if request_id else ""
+        inicio = time.time()
+        log = None
+
         try:
+            logger.info(
+                f"{log_prefix}RELATORIO_STREAM_START | "
+                f"geracao_id={geracao_id} | "
+                f"processo={dados_cumprimento.numero_processo} | "
+                f"modelo={self.modelo} | "
+                f"docs={len(documentos)}"
+            )
+
             # Busca prompt do banco
             prompt_template = _get_prompt(self.db, "geracao_relatorio")
             if not prompt_template:
-                yield {"tipo": "error", "error": "Prompt de geração não configurado"}
+                logger.error(f"{log_prefix}Prompt de geração não configurado")
+                yield {"tipo": "error", "error": "Prompt de geração não configurado. Configure em /admin/prompts-config"}
                 return
 
             # Monta contexto dos documentos
@@ -462,20 +580,90 @@ class RelatorioCumprimentoService:
                 data_atual=date.today().strftime("%d/%m/%Y")
             )
 
-            # Streaming
+            # Cria log de chamada IA no banco (CRÍTICO para /admin/performance)
+            if geracao_id:
+                log = LogChamadaIARelatorioCumprimento(
+                    geracao_id=geracao_id,
+                    etapa="geracao_relatorio_stream",
+                    descricao="Geração do relatório via streaming SSE",
+                    prompt_enviado=prompt[:5000],  # Trunca para log
+                    documentos_enviados=[d.to_dict() for d in documentos],
+                    modelo_usado=self.modelo,
+                    temperatura_usada=str(self.temperatura),
+                    thinking_level_usado=self.thinking_level
+                )
+                self.db.add(log)
+                self.db.commit()
+                logger.info(f"{log_prefix}Log de chamada IA criado: id={log.id}")
+
+            # Streaming com contexto para logging correto
             conteudo_completo = ""
+            context = {
+                "sistema": SISTEMA,
+                "modulo": "geracao_relatorio_stream",
+                "request_id": request_id
+            }
+
             async for chunk in self.gemini.generate_stream(
                 prompt=prompt,
                 model=self.modelo,
                 temperature=self.temperatura,
-                thinking_level=self.thinking_level
+                thinking_level=self.thinking_level,
+                context=context
             ):
                 conteudo_completo += chunk
                 yield {"tipo": "chunk", "chunk": chunk}
 
+            tempo_ms = int((time.time() - inicio) * 1000)
+
+            # Valida que conteúdo não está vazio
+            conteudo_limpo = (conteudo_completo or "").strip()
+            if not conteudo_limpo:
+                logger.error(
+                    f"{log_prefix}RELATORIO_STREAM_EMPTY | "
+                    f"geracao_id={geracao_id} | "
+                    f"tempo_ms={tempo_ms} | "
+                    f"conteudo_raw_len={len(conteudo_completo or '')}"
+                )
+                if log:
+                    log.sucesso = False
+                    log.erro = "Conteúdo gerado vazio"
+                    log.tempo_ms = tempo_ms
+                    self.db.commit()
+                yield {"tipo": "error", "error": "A IA retornou conteúdo vazio. Tente novamente ou verifique os documentos do processo."}
+                return
+
+            # Atualiza log com sucesso
+            if log:
+                log.resposta_ia = conteudo_completo[:10000] if conteudo_completo else None
+                log.tempo_ms = tempo_ms
+                log.sucesso = True
+                self.db.commit()
+
+            logger.info(
+                f"{log_prefix}RELATORIO_STREAM_DONE | "
+                f"geracao_id={geracao_id} | "
+                f"tempo_ms={tempo_ms} | "
+                f"conteudo_len={len(conteudo_completo)}"
+            )
+
             yield {"tipo": "done", "conteudo": conteudo_completo}
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
+            tempo_ms = int((time.time() - inicio) * 1000)
+            logger.error(
+                f"{log_prefix}RELATORIO_STREAM_ERROR | "
+                f"geracao_id={geracao_id} | "
+                f"tempo_ms={tempo_ms} | "
+                f"error={str(e)}"
+            )
+            if log:
+                log.sucesso = False
+                log.erro = str(e)
+                log.tempo_ms = tempo_ms
+                self.db.commit()
             yield {"tipo": "error", "error": str(e)}
 
     async def processar_completo(

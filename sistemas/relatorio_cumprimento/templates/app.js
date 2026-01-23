@@ -200,7 +200,12 @@ class RelatorioCumprimentoApp {
     }
 
     processarEventoStream(data) {
-        console.log('Evento SSE:', data);
+        // Log detalhado para diagnóstico
+        const logData = { ...data };
+        if (logData.relatorio_markdown) {
+            logData.relatorio_markdown = `[${logData.relatorio_markdown.length} chars]`;
+        }
+        console.log('[RelatorioCumprimento] Evento SSE:', logData);
 
         switch (data.tipo) {
             case 'inicio':
@@ -221,7 +226,31 @@ class RelatorioCumprimentoApp {
                 document.getElementById('progresso-barra').style.width = '100%';
                 this.atualizarStatusEtapa(5, 'concluido');
 
+                // Salva request_id para diagnóstico
+                this.lastRequestId = data.request_id;
+
                 const conteudoFinal = this.isStreaming ? this.streamingContent : data.relatorio_markdown;
+
+                // Valida que conteudo nao esta vazio
+                const conteudoLimpo = (conteudoFinal || '').trim();
+                if (!conteudoLimpo) {
+                    console.error('[RelatorioCumprimento] ERRO: Conteudo vazio recebido!', {
+                        request_id: data.request_id,
+                        geracao_id: data.geracao_id,
+                        streaming_len: this.streamingContent?.length,
+                        markdown_len: data.relatorio_markdown?.length
+                    });
+                    this.finalizarStreaming();
+                    this.esconderLoading();
+                    this.mostrarErro(`Relatorio gerado esta vazio. Por favor, tente novamente. (request_id: ${data.request_id || 'N/A'})`);
+                    return;
+                }
+
+                console.log('[RelatorioCumprimento] Sucesso:', {
+                    request_id: data.request_id,
+                    geracao_id: data.geracao_id,
+                    conteudo_len: conteudoLimpo.length
+                });
 
                 if (this.isStreaming) {
                     this.finalizarEditorStreaming(data.geracao_id, data.dados_cumprimento, data.dados_principal, data.documentos_baixados, data.transito_julgado, conteudoFinal);
@@ -238,6 +267,7 @@ class RelatorioCumprimentoApp {
                 break;
 
             case 'erro':
+                console.error('[RelatorioCumprimento] Erro recebido:', data.mensagem);
                 this.finalizarStreaming();
                 this.esconderLoading();
                 this.mostrarErro(data.mensagem);
@@ -253,11 +283,12 @@ class RelatorioCumprimentoApp {
                         this.isStreaming = true;
                         this.streamingContent = '';
                         this.abrirEditorStreaming();
+                        console.log('[RelatorioCumprimento] Iniciando streaming...');
                     }
                     this.streamingContent += data.content;
                     this.atualizarEditorStreaming();
                 } catch (err) {
-                    console.error('Erro no streaming:', err);
+                    console.error('[RelatorioCumprimento] Erro no streaming:', err);
                 }
                 break;
         }
@@ -374,8 +405,30 @@ class RelatorioCumprimentoApp {
 
     renderizarMinuta() {
         const content = document.getElementById('minuta-content');
-        content.innerHTML = marked.parse(this.relatorioMarkdown || '');
+        const conteudo = (this.relatorioMarkdown || '').trim();
+
+        if (!conteudo) {
+            // Mostra placeholder de erro se conteudo vazio
+            content.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-64 text-gray-400">
+                    <i class="fas fa-exclamation-triangle text-4xl mb-4 text-yellow-500"></i>
+                    <p class="text-lg font-medium text-gray-600">Relatorio vazio</p>
+                    <p class="text-sm mt-2">O conteudo do relatorio nao foi gerado corretamente.</p>
+                    <p class="text-xs mt-1 text-gray-400">request_id: ${this.lastRequestId || 'N/A'}</p>
+                    <button onclick="app.fecharModal('modal-editor'); app.iniciarProcessamento(true);"
+                            class="mt-4 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+                        <i class="fas fa-redo mr-2"></i>Gerar novamente
+                    </button>
+                </div>
+            `;
+            document.getElementById('minuta-status').textContent = 'Erro na geracao';
+            console.error('[RelatorioCumprimento] renderizarMinuta: conteudo vazio!');
+            return;
+        }
+
+        content.innerHTML = marked.parse(conteudo);
         document.getElementById('minuta-status').textContent = 'Atualizado agora';
+        console.log('[RelatorioCumprimento] renderizarMinuta: OK, len=' + conteudo.length);
     }
 
     resetarChat() {

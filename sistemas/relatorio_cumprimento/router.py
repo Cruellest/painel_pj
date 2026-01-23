@@ -41,6 +41,9 @@ from .models import (
 )
 from .services import RelatorioCumprimentoService
 
+# Detector de Agravo de Instrumento
+from sistemas.pedido_calculo.document_downloader import DocumentDownloader
+
 # Reutiliza o conversor DOCX do gerador de peças
 from sistemas.gerador_pecas.docx_converter import DocxConverter
 
@@ -106,9 +109,25 @@ async def processar_stream(
     4. Localiza trânsito em julgado
     5. Gera relatório com IA
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     user_id = current_user.id
     numero_cnj = req.numero_cnj
     sobrescrever_existente = req.sobrescrever_existente
+
+    # Gera request_id único para correlação de logs
+    request_id = str(uuid.uuid4())[:8]
+    log_prefix = f"[{request_id}]"
+
+    # Log de início da requisição (CRÍTICO para diagnóstico)
+    logger.info(
+        f"{log_prefix} PROCESSAR_STREAM_START | "
+        f"user_id={user_id} | "
+        f"username={current_user.username} | "
+        f"numero_cnj={numero_cnj} | "
+        f"sobrescrever={sobrescrever_existente}"
+    )
 
     async def event_generator() -> AsyncGenerator[str, None]:
         geracao_id = None
@@ -226,6 +245,71 @@ async def processar_stream(
             yield f"data: {json.dumps({'tipo': 'etapa', 'etapa': 3, 'status': 'concluido', 'mensagem': 'Download de documentos concluído'})}\n\n"
 
             # ============================================================
+            # ETAPA 3.5: DETECTAR AGRAVO DE INSTRUMENTO (se aplicável)
+            # ============================================================
+            # Só executa se:
+            # 1. É cumprimento autônomo
+            # 2. O processo de origem foi identificado
+            if documentos_info.is_cumprimento_autonomo and numero_principal:
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Verificando Agravo de Instrumento no processo de origem...'})}\n\n"
+
+                # Gera request_id para logs estruturados
+                request_id = str(uuid.uuid4())[:8]
+
+                try:
+                    # Obtém XML do processo principal para análise (com retry para erros de proxy)
+                    xml_processo_principal = None
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            async with DocumentDownloader() as downloader:
+                                xml_processo_principal = await downloader.consultar_processo(numero_principal)
+                            break
+                        except Exception as e:
+                            error_msg = str(e)
+                            is_recoverable = any(code in error_msg for code in ['502', '503', '504', 'timeout', 'Proxy'])
+                            if not is_recoverable or attempt >= max_retries - 1:
+                                raise
+                            delay = 2 * (2 ** attempt)  # 2, 4, 8 segundos
+                            logger.warning(f"{log_prefix} Tentativa {attempt + 1}/{max_retries} de baixar XML do processo principal falhou. Retry em {delay}s...")
+                            import asyncio
+                            await asyncio.sleep(delay)
+
+                    # Detecta e valida agravos
+                    resultado_agravo, docs_agravo = await service.detectar_agravos_processo_origem(
+                        xml_processo_principal,
+                        request_id
+                    )
+
+                    # Informa resultado
+                    if resultado_agravo.candidatos_detectados:
+                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Agravos candidatos detectados: {len(resultado_agravo.candidatos_detectados)}'})}\n\n"
+
+                        if resultado_agravo.agravos_validados:
+                            for agravo in resultado_agravo.agravos_validados:
+                                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'  - Agravo validado: {agravo.numero_formatado} (score: {agravo.score_similaridade:.0%})'})}\n\n"
+
+                            # Adiciona documentos do agravo à lista
+                            documentos.extend(docs_agravo)
+
+                            qtd_decisoes_agravo = len([d for d in docs_agravo if d.categoria == CategoriaDocumento.DECISAO_AGRAVO])
+                            qtd_acordaos_agravo = len([d for d in docs_agravo if d.categoria == CategoriaDocumento.ACORDAO_AGRAVO])
+
+                            if qtd_decisoes_agravo:
+                                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'  - Decisões do agravo: {qtd_decisoes_agravo}'})}\n\n"
+                            if qtd_acordaos_agravo:
+                                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'  - Acórdãos do agravo: {qtd_acordaos_agravo}'})}\n\n"
+
+                        if resultado_agravo.agravos_rejeitados:
+                            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'  - Agravos rejeitados (partes incompatíveis): {len(resultado_agravo.agravos_rejeitados)}'})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Nenhum Agravo de Instrumento detectado no processo de origem'})}\n\n"
+
+                except Exception as e:
+                    # Erro na detecção de agravo não interrompe o fluxo
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Aviso: não foi possível verificar agravos ({str(e)[:100]})'})}\n\n"
+
+            # ============================================================
             # ETAPA 4: LOCALIZAR TRÂNSITO EM JULGADO
             # ============================================================
             yield f"data: {json.dumps({'tipo': 'etapa', 'etapa': 4, 'status': 'ativo', 'mensagem': 'Localizando trânsito em julgado...'})}\n\n"
@@ -273,7 +357,8 @@ async def processar_stream(
                 dados_principal,
                 documentos,
                 transito_julgado,
-                geracao_id=geracao_id
+                geracao_id=geracao_id,
+                request_id=request_id
             ):
                 if event["tipo"] == "chunk":
                     relatorio_completo += event["chunk"]
@@ -281,11 +366,25 @@ async def processar_stream(
                 elif event["tipo"] == "done":
                     relatorio_completo = event["conteudo"]
                 elif event["tipo"] == "error":
+                    logger.error(f"{log_prefix} GERACAO_ERROR | geracao_id={geracao_id} | error={event['error']}")
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': event['error']})}\n\n"
                     geracao.status = StatusProcessamento.ERRO.value
                     geracao.erro_mensagem = event["error"]
                     db.commit()
                     return
+
+            # Valida que conteúdo não está vazio (proteção extra)
+            conteudo_limpo = (relatorio_completo or "").strip()
+            if not conteudo_limpo:
+                logger.error(
+                    f"{log_prefix} RELATORIO_VAZIO | geracao_id={geracao_id} | "
+                    f"raw_len={len(relatorio_completo or '')}"
+                )
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Relatório gerado está vazio. Por favor, tente novamente.'})}\n\n"
+                geracao.status = StatusProcessamento.ERRO.value
+                geracao.erro_mensagem = "Conteúdo gerado vazio"
+                db.commit()
+                return
 
             # Atualiza registro
             tempo_total = int(time.time() - tempo_inicio)
@@ -298,14 +397,28 @@ async def processar_stream(
             }
             db.commit()
 
+            logger.info(
+                f"{log_prefix} PROCESSAR_STREAM_DONE | "
+                f"geracao_id={geracao_id} | "
+                f"tempo_total={tempo_total}s | "
+                f"conteudo_len={len(relatorio_completo)}"
+            )
+
             yield f"data: {json.dumps({'tipo': 'etapa', 'etapa': 5, 'status': 'concluido', 'mensagem': f'Relatório gerado em {tempo_total}s'})}\n\n"
 
-            # Resultado final
-            yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao_id, 'dados_cumprimento': dados_cumprimento.to_dict(), 'dados_principal': dados_principal.to_dict() if dados_principal else None, 'relatorio_markdown': relatorio_completo, 'documentos_baixados': [d.to_dict() for d in documentos], 'transito_julgado': transito_julgado.to_dict()})}\n\n"
+            # Resultado final - inclui request_id para diagnóstico
+            yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao_id, 'request_id': request_id, 'dados_cumprimento': dados_cumprimento.to_dict(), 'dados_principal': dados_principal.to_dict() if dados_principal else None, 'relatorio_markdown': relatorio_completo, 'documentos_baixados': [d.to_dict() for d in documentos], 'transito_julgado': transito_julgado.to_dict()})}\n\n"
 
         except Exception as e:
             import traceback
             traceback.print_exc()
+            tempo_total = int(time.time() - tempo_inicio)
+            logger.error(
+                f"{log_prefix} PROCESSAR_STREAM_EXCEPTION | "
+                f"geracao_id={geracao_id} | "
+                f"tempo_total={tempo_total}s | "
+                f"error={str(e)}"
+            )
             yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro inesperado: {str(e)}'})}\n\n"
 
             if geracao_id:
@@ -328,6 +441,20 @@ async def processar_stream(
     )
 
 
+def _is_relatorio_cumprimento(markdown: str) -> bool:
+    """
+    Detecta se o markdown é um Relatório Inicial de Cumprimento de Decisão/Sentença.
+    Usado para aplicar formatação específica (sem recuo de parágrafo).
+    """
+    # Verifica se o conteúdo contém o título característico
+    texto_lower = markdown.lower()
+    return (
+        "relatório inicial" in texto_lower and "cumprimento" in texto_lower
+    ) or (
+        "relatorio inicial" in texto_lower and "cumprimento" in texto_lower
+    )
+
+
 @router.post("/exportar-docx")
 async def exportar_docx(
     req: ExportarDocxRequest,
@@ -336,6 +463,9 @@ async def exportar_docx(
     """
     Exporta relatório para DOCX.
     Usa o mesmo conversor do gerador de peças.
+
+    Para "RELATÓRIO INICIAL – CUMPRIMENTO DE DECISÃO/SENTENÇA":
+    - Remove recuo de primeira linha dos parágrafos (first_line_indent_cm=0)
     """
     try:
         # Gera nome do arquivo
@@ -348,8 +478,13 @@ async def exportar_docx(
 
         filepath = os.path.join(TEMP_DIR, filename)
 
-        # Converte usando o conversor do gerador de peças
-        converter = DocxConverter()
+        # Detecta se é relatório de cumprimento para aplicar formatação específica
+        # Relatório de cumprimento: SEM recuo de primeira linha e SEM recuo de listas
+        if _is_relatorio_cumprimento(req.markdown):
+            converter = DocxConverter(first_line_indent_cm=0.0, list_indent_cm=0.0)
+        else:
+            converter = DocxConverter()
+
         success = converter.convert(req.markdown, filepath)
 
         if not success:
@@ -375,7 +510,18 @@ async def exportar_pdf(
     """
     Exporta relatório para PDF.
     Fluxo: Markdown -> DOCX -> PDF
+
+    Métodos de conversão DOCX->PDF (em ordem de tentativa):
+    1. docx2pdf (Windows com MS Word instalado) - preserva formatação completa
+    2. LibreOffice (headless) - preserva formatação
+    3. Fallback básico com PyMuPDF - perde formatação avançada
+
+    Para "RELATÓRIO INICIAL – CUMPRIMENTO DE DECISÃO/SENTENÇA":
+    - Remove recuo de primeira linha dos parágrafos
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     try:
         import subprocess
 
@@ -390,24 +536,60 @@ async def exportar_pdf(
         docx_path = os.path.join(TEMP_DIR, f"{base_name}.docx")
         pdf_path = os.path.join(TEMP_DIR, f"{base_name}.pdf")
 
-        # Converte para DOCX
-        converter = DocxConverter()
+        # Detecta se é relatório de cumprimento para aplicar formatação específica
+        # Relatório de cumprimento: SEM recuo de primeira linha e SEM recuo de listas
+        if _is_relatorio_cumprimento(req.markdown):
+            converter = DocxConverter(first_line_indent_cm=0.0, list_indent_cm=0.0)
+        else:
+            converter = DocxConverter()
+
         success = converter.convert(req.markdown, docx_path)
 
         if not success:
             raise HTTPException(status_code=500, detail="Erro ao gerar DOCX intermediário")
 
-        # Converte DOCX para PDF usando LibreOffice (se disponível)
+        # =============================================
+        # MÉTODO 1: docx2pdf (Windows com MS Word)
+        # Preserva formatação completa, cabeçalho, rodapé
+        # =============================================
+        pdf_gerado = False
         try:
-            result = subprocess.run(
-                ["soffice", "--headless", "--convert-to", "pdf", "--outdir", TEMP_DIR, docx_path],
-                capture_output=True,
-                timeout=60
-            )
-            if result.returncode != 0 or not os.path.exists(pdf_path):
-                raise Exception("LibreOffice não conseguiu converter")
-        except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
-            # Fallback: usa PyMuPDF para converter DOCX para PDF
+            from docx2pdf import convert as docx2pdf_convert
+            docx2pdf_convert(docx_path, pdf_path)
+            if os.path.exists(pdf_path):
+                pdf_gerado = True
+                logger.info(f"PDF gerado via docx2pdf: {pdf_path}")
+        except ImportError:
+            logger.debug("docx2pdf não disponível")
+        except Exception as e:
+            logger.warning(f"docx2pdf falhou: {e}")
+
+        # =============================================
+        # MÉTODO 2: LibreOffice (headless)
+        # =============================================
+        if not pdf_gerado:
+            try:
+                result = subprocess.run(
+                    ["soffice", "--headless", "--convert-to", "pdf", "--outdir", TEMP_DIR, docx_path],
+                    capture_output=True,
+                    timeout=60
+                )
+                if result.returncode == 0 and os.path.exists(pdf_path):
+                    pdf_gerado = True
+                    logger.info(f"PDF gerado via LibreOffice: {pdf_path}")
+            except FileNotFoundError:
+                logger.debug("LibreOffice (soffice) não encontrado")
+            except subprocess.TimeoutExpired:
+                logger.warning("LibreOffice timeout ao converter PDF")
+            except Exception as e:
+                logger.warning(f"LibreOffice falhou: {e}")
+
+        # =============================================
+        # MÉTODO 3: Fallback com PyMuPDF
+        # Perde formatação avançada (cabeçalho, rodapé, negrito, etc.)
+        # =============================================
+        if not pdf_gerado:
+            logger.warning("Usando fallback PyMuPDF para gerar PDF (formatação limitada)")
             try:
                 import fitz
                 from docx import Document
@@ -415,33 +597,27 @@ async def exportar_pdf(
                 doc_word = Document(docx_path)
                 pdf_doc = fitz.open()
 
-                # Configurações da página
-                page_width = 595  # A4 width in points
-                page_height = 842  # A4 height in points
-                margin_left = 72  # 1 inch = 72 points
-                margin_right = 72
-                margin_top = 72
-                margin_bottom = 72
-                line_height = 16  # Espaçamento entre linhas
-                font_size = 11
+                # Configurações da página A4
+                page_width = 595
+                page_height = 842
+                margin_left = 85  # ~3cm
+                margin_right = 57  # ~2cm
+                margin_top = 85  # ~3cm
+                margin_bottom = 57  # ~2cm
+                line_height = 18
+                font_size = 12
 
-                # Largura útil para texto
-                text_width = page_width - margin_left - margin_right
-
-                # Cria primeira página
                 page = pdf_doc.new_page(width=page_width, height=page_height)
                 y_position = margin_top
 
                 for para in doc_word.paragraphs:
                     text = para.text.strip()
                     if not text:
-                        # Linha em branco - adiciona espaço
-                        y_position += line_height
+                        y_position += line_height * 0.5
                         continue
 
-                    # Quebra texto longo em múltiplas linhas
-                    # Estimativa: ~80 caracteres por linha com fonte 11pt
-                    chars_per_line = 85
+                    # Quebra texto em múltiplas linhas
+                    chars_per_line = 80
                     lines = []
 
                     while text:
@@ -449,7 +625,6 @@ async def exportar_pdf(
                             lines.append(text)
                             break
 
-                        # Encontra último espaço antes do limite
                         split_pos = text.rfind(' ', 0, chars_per_line)
                         if split_pos == -1:
                             split_pos = chars_per_line
@@ -457,9 +632,7 @@ async def exportar_pdf(
                         lines.append(text[:split_pos])
                         text = text[split_pos:].lstrip()
 
-                    # Adiciona cada linha ao PDF
                     for line in lines:
-                        # Verifica se precisa de nova página
                         if y_position + line_height > page_height - margin_bottom:
                             page = pdf_doc.new_page(width=page_width, height=page_height)
                             y_position = margin_top
@@ -467,16 +640,22 @@ async def exportar_pdf(
                         page.insert_text((margin_left, y_position), line, fontsize=font_size)
                         y_position += line_height
 
-                    # Espaço extra após parágrafo
-                    y_position += line_height * 0.5
+                    y_position += line_height * 0.3
 
                 pdf_doc.save(pdf_path)
                 pdf_doc.close()
+                pdf_gerado = True
             except Exception as e:
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Não foi possível converter para PDF: {str(e)}"
+                    detail=f"Não foi possível converter para PDF. Erro: {str(e)}"
                 )
+
+        if not pdf_gerado or not os.path.exists(pdf_path):
+            raise HTTPException(
+                status_code=500,
+                detail="Não foi possível gerar o PDF. Verifique se MS Word ou LibreOffice está instalado."
+            )
 
         return {
             "status": "sucesso",

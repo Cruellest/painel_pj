@@ -33,6 +33,9 @@ class CategoriaDocumento(str, Enum):
     ACORDAO = "acordao"
     DECISAO = "decisao"  # Decisões interlocutórias (cumprimento de decisão)
     CERTIDAO_TRANSITO = "certidao_transito"
+    # Documentos de Agravo de Instrumento
+    DECISAO_AGRAVO = "decisao_agravo"  # Decisões do agravo (monocráticas, liminares, etc.)
+    ACORDAO_AGRAVO = "acordao_agravo"  # Acórdãos do agravo
     OUTRO = "outro"
 
 
@@ -326,5 +329,102 @@ class ResultadoRelatorio:
             "transito_julgado": self.transito_julgado.to_dict() if self.transito_julgado else None,
             "tempo_processamento_segundos": self.tempo_processamento_segundos,
             "modelo_usado": self.modelo_usado,
+            "erro": self.erro
+        }
+
+
+# ============================================
+# Dataclasses para Agravo de Instrumento
+# ============================================
+
+@dataclass
+class AgravoCandidato:
+    """
+    Candidato a Agravo de Instrumento detectado no XML do processo de origem.
+
+    Representa uma menção potencial a agravo que precisa ser validada
+    comparando as partes do processo.
+    """
+    numero_cnj: str  # Número CNJ extraído (ex: 1400494-59.2026.8.12.0000)
+    texto_original: str  # Texto completo onde foi encontrado
+    fonte: str  # "movimento" ou "documento"
+    data_movimento: Optional[date] = None  # Data do movimento onde foi encontrado
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário"""
+        return {
+            "numero_cnj": self.numero_cnj,
+            "texto_original": self.texto_original,
+            "fonte": self.fonte,
+            "data_movimento": self.data_movimento.strftime("%d/%m/%Y") if self.data_movimento else None
+        }
+
+
+@dataclass
+class ParteProcesso:
+    """Representa uma parte do processo (autor ou réu)"""
+    nome: str
+    nome_normalizado: str  # Nome após normalização
+    polo: str  # "AT" (ativo) ou "PA" (passivo)
+    documento: Optional[str] = None  # CPF/CNPJ
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário"""
+        return {
+            "nome": self.nome,
+            "nome_normalizado": self.nome_normalizado,
+            "polo": self.polo,
+            "documento": self.documento
+        }
+
+
+@dataclass
+class AgravoValidado:
+    """
+    Agravo de Instrumento validado (confirmado por comparação de partes).
+
+    Contém informações do agravo e seus documentos relevantes.
+    """
+    numero_cnj: str
+    numero_formatado: str
+    partes_polo_ativo: List[ParteProcesso] = field(default_factory=list)
+    partes_polo_passivo: List[ParteProcesso] = field(default_factory=list)
+    ids_decisoes: List[str] = field(default_factory=list)  # IDs de decisões
+    ids_acordaos: List[str] = field(default_factory=list)  # IDs de acórdãos
+    data_validacao: Optional[date] = None
+    score_similaridade: float = 0.0  # Score da comparação de partes (0 a 1)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário"""
+        return {
+            "numero_cnj": self.numero_cnj,
+            "numero_formatado": self.numero_formatado,
+            "partes_polo_ativo": [p.to_dict() for p in self.partes_polo_ativo],
+            "partes_polo_passivo": [p.to_dict() for p in self.partes_polo_passivo],
+            "ids_decisoes": self.ids_decisoes,
+            "ids_acordaos": self.ids_acordaos,
+            "data_validacao": self.data_validacao.strftime("%d/%m/%Y") if self.data_validacao else None,
+            "score_similaridade": self.score_similaridade
+        }
+
+
+@dataclass
+class ResultadoDeteccaoAgravo:
+    """
+    Resultado completo da detecção de Agravo de Instrumento.
+
+    Contém tanto os candidatos detectados quanto os validados.
+    """
+    candidatos_detectados: List[AgravoCandidato] = field(default_factory=list)
+    agravos_validados: List[AgravoValidado] = field(default_factory=list)
+    agravos_rejeitados: List[Dict[str, Any]] = field(default_factory=list)  # {candidato, motivo}
+    erro: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Converte para dicionário"""
+        return {
+            "candidatos_detectados": [c.to_dict() for c in self.candidatos_detectados],
+            "agravos_validados": [a.to_dict() for a in self.agravos_validados],
+            "agravos_rejeitados": self.agravos_rejeitados,
             "erro": self.erro
         }

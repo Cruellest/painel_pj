@@ -38,6 +38,7 @@ defusedxml>=0.7.1  # SECURITY: Proteção contra XXE
 
 # Geração de documentos
 python-docx>=1.1.0
+docx2pdf>=0.1.8  # Conversão DOCX->PDF via MS Word (Windows)
 
 # PDF e imagens (Matrículas Confrontantes e Agente TJ-MS)
 PyMuPDF>=1.23.0
