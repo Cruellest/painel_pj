@@ -93,6 +93,7 @@
                         <option value="gerador_pecas">Gerador de Peças</option>
                         <option value="pedido_calculo">Pedido de Cálculo</option>
                         <option value="prestacao_contas">Prestação de Contas</option>
+                        <option value="relatorio_cumprimento">Relatório de Cumprimento</option>
                     </select>
                 </div>
                 <button onclick="limparFiltros()" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
@@ -533,7 +534,8 @@
                     'matriculas': 'Matrículas',
                     'gerador_pecas': 'Gerador de Peças',
                     'pedido_calculo': 'Pedido de Cálculo',
-                    'prestacao_contas': 'Prestação de Contas'
+                    'prestacao_contas': 'Prestação de Contas',
+                    'relatorio_cumprimento': 'Rel. Cumprimento'
                 };
                 partes.push(sistemaNomes[sistema] || sistema);
             }
@@ -638,7 +640,8 @@
                     'matriculas': '<span class="text-green-600"><i class="fas fa-file-contract mr-1"></i>Matrículas</span>',
                     'gerador_pecas': '<span class="text-purple-600"><i class="fas fa-file-alt mr-1"></i>Ger. Peças</span>',
                     'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>',
-                    'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>'
+                    'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>',
+                    'relatorio_cumprimento': '<span class="text-indigo-600"><i class="fas fa-file-invoice mr-1"></i>Rel. Cumpr.</span>'
                 };
                 tabelaPendentes.innerHTML = (data.pendentes_feedback || []).map(p => {
                     const dataFormatada = p.data ? formatarData(p.data) : '-';
@@ -712,7 +715,8 @@
                         'matriculas': '<span class="text-green-600"><i class="fas fa-file-contract mr-1"></i>Matrículas</span>',
                         'gerador_pecas': '<span class="text-purple-600"><i class="fas fa-file-alt mr-1"></i>Ger. Peças</span>',
                         'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>',
-                        'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>'
+                        'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>',
+                        'relatorio_cumprimento': '<span class="text-indigo-600"><i class="fas fa-file-invoice mr-1"></i>Rel. Cumpr.</span>'
                     };
                     const dataFormatada = fb.criado_em ? formatarData(fb.criado_em) : '-';
                     const horaFormatada = fb.criado_em ? formatarHora(fb.criado_em) : '';
@@ -828,8 +832,8 @@
             conteudo.classList.add('hidden');
             erro.classList.add('hidden');
 
-            // Mostrar tabs apenas para gerador_pecas
-            if (sistema === 'gerador_pecas') {
+            // Mostrar tabs para sistemas com histórico de chat
+            if (sistema === 'gerador_pecas' || sistema === 'relatorio_cumprimento') {
                 tabs.classList.remove('hidden');
             } else {
                 tabs.classList.add('hidden');
@@ -848,7 +852,8 @@
                     'matriculas': 'Matrículas Confrontantes',
                     'gerador_pecas': 'Gerador de Peças',
                     'pedido_calculo': 'Pedido de Cálculo',
-                    'prestacao_contas': 'Prestação de Contas'
+                    'prestacao_contas': 'Prestação de Contas',
+                    'relatorio_cumprimento': 'Relatório de Cumprimento'
                 };
                 const sistemaLabel = sistemaNomes[sistema] || sistema;
                 document.getElementById('modal-titulo').textContent = `Relatório - ${sistemaLabel}`;
@@ -889,10 +894,16 @@
                 loading.classList.add('hidden');
                 conteudo.classList.remove('hidden');
 
-                // Se for gerador_pecas, carrega chat e versões
-                if (sistema === 'gerador_pecas') {
+                // Se for sistema com chat, carrega histórico e versões
+                if (sistema === 'gerador_pecas' || sistema === 'relatorio_cumprimento') {
                     renderizarHistoricoChat(data.historico_chat || []);
-                    carregarVersoes(consultaId);
+                    if (sistema === 'gerador_pecas') {
+                        carregarVersoes(consultaId);
+                    } else {
+                        // Para relatorio_cumprimento, esconde a tab de versões
+                        document.getElementById('tab-versoes').classList.add('hidden');
+                        document.getElementById('versoes-badge').classList.add('hidden');
+                    }
                 }
 
             } catch (error) {

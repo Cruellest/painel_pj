@@ -28,6 +28,7 @@ from sistemas.matriculas_confrontantes.models import Analise, FeedbackMatricula
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo
 from sistemas.prestacao_contas.models import GeracaoAnalise, FeedbackPrestacao
+from sistemas.relatorio_cumprimento.models import GeracaoRelatorioCumprimento, FeedbackRelatorioCumprimento
 
 
 router = APIRouter(prefix="/admin", tags=["Administração"])
@@ -657,6 +658,7 @@ async def dashboard_feedbacks(
         incluir_gp = sistema is None or sistema == 'gerador_pecas'
         incluir_pc = sistema is None or sistema == 'pedido_calculo'
         incluir_prest = sistema is None or sistema == 'prestacao_contas'
+        incluir_rc = sistema is None or sistema == 'relatorio_cumprimento'
 
         total_consultas_aj = 0
         total_feedbacks_aj = 0
@@ -677,6 +679,10 @@ async def dashboard_feedbacks(
         total_geracoes_prest = 0
         total_feedbacks_prest = 0
         feedbacks_por_avaliacao_prest = []
+
+        total_geracoes_rc = 0
+        total_feedbacks_rc = 0
+        feedbacks_por_avaliacao_rc = []
         
         # === Sistema Assistência Judiciária ===
         if incluir_aj:
@@ -853,9 +859,46 @@ async def dashboard_feedbacks(
                 )
             feedbacks_por_avaliacao_prest = query_avaliacoes_prest.group_by(FeedbackPrestacao.avaliacao).all()
 
+        # === Sistema Relatório de Cumprimento ===
+        if incluir_rc:
+            query_total_rc = db.query(GeracaoRelatorioCumprimento).filter(
+                GeracaoRelatorioCumprimento.status == 'concluido'
+            )
+            if ids_excluir:
+                query_total_rc = query_total_rc.filter(~GeracaoRelatorioCumprimento.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_total_rc = query_total_rc.filter(
+                    GeracaoRelatorioCumprimento.criado_em >= data_inicio,
+                    GeracaoRelatorioCumprimento.criado_em < data_fim
+                )
+            total_geracoes_rc = query_total_rc.count()
+
+            query_feedbacks_rc = db.query(FeedbackRelatorioCumprimento)
+            if ids_excluir:
+                query_feedbacks_rc = query_feedbacks_rc.filter(~FeedbackRelatorioCumprimento.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_feedbacks_rc = query_feedbacks_rc.filter(
+                    FeedbackRelatorioCumprimento.criado_em >= data_inicio,
+                    FeedbackRelatorioCumprimento.criado_em < data_fim
+                )
+            total_feedbacks_rc = query_feedbacks_rc.count()
+
+            query_avaliacoes_rc = db.query(
+                FeedbackRelatorioCumprimento.avaliacao,
+                func.count(FeedbackRelatorioCumprimento.id).label('count')
+            )
+            if ids_excluir:
+                query_avaliacoes_rc = query_avaliacoes_rc.filter(~FeedbackRelatorioCumprimento.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_avaliacoes_rc = query_avaliacoes_rc.filter(
+                    FeedbackRelatorioCumprimento.criado_em >= data_inicio,
+                    FeedbackRelatorioCumprimento.criado_em < data_fim
+                )
+            feedbacks_por_avaliacao_rc = query_avaliacoes_rc.group_by(FeedbackRelatorioCumprimento.avaliacao).all()
+
         # === Totais combinados ===
-        total_consultas = total_consultas_aj + total_analises_mat + total_geracoes_gp + total_geracoes_pc + total_geracoes_prest
-        total_feedbacks = total_feedbacks_aj + total_feedbacks_mat + total_feedbacks_gp + total_feedbacks_pc + total_feedbacks_prest
+        total_consultas = total_consultas_aj + total_analises_mat + total_geracoes_gp + total_geracoes_pc + total_geracoes_prest + total_geracoes_rc
+        total_feedbacks = total_feedbacks_aj + total_feedbacks_mat + total_feedbacks_gp + total_feedbacks_pc + total_feedbacks_prest + total_feedbacks_rc
 
         # Combinar avaliações
         avaliacoes = {
@@ -879,6 +922,9 @@ async def dashboard_feedbacks(
         for avaliacao, count in feedbacks_por_avaliacao_prest:
             if avaliacao in avaliacoes:
                 avaliacoes[avaliacao] += count
+        for avaliacao, count in feedbacks_por_avaliacao_rc:
+            if avaliacao in avaliacoes:
+                avaliacoes[avaliacao] += count
 
         # Taxa de acerto (correto / total feedbacks)
         taxa_acerto = 0
@@ -898,6 +944,7 @@ async def dashboard_feedbacks(
         feedbacks_recentes_gp = []
         feedbacks_recentes_pc = []
         feedbacks_recentes_prest = []
+        feedbacks_recentes_rc = []
 
         if incluir_aj:
             query_recentes_aj = db.query(
@@ -959,6 +1006,18 @@ async def dashboard_feedbacks(
                 query_recentes_prest = query_recentes_prest.filter(~FeedbackPrestacao.usuario_id.in_(ids_excluir))
             feedbacks_recentes_prest = query_recentes_prest.group_by(func.date(FeedbackPrestacao.criado_em)).all()
 
+        if incluir_rc:
+            query_recentes_rc = db.query(
+                func.date(FeedbackRelatorioCumprimento.criado_em).label('data'),
+                func.count(FeedbackRelatorioCumprimento.id).label('count')
+            ).filter(
+                FeedbackRelatorioCumprimento.criado_em >= data_limite_recentes,
+                FeedbackRelatorioCumprimento.criado_em < data_fim_recentes
+            )
+            if ids_excluir:
+                query_recentes_rc = query_recentes_rc.filter(~FeedbackRelatorioCumprimento.usuario_id.in_(ids_excluir))
+            feedbacks_recentes_rc = query_recentes_rc.group_by(func.date(FeedbackRelatorioCumprimento.criado_em)).all()
+
         # Combina feedbacks recentes por data
         feedbacks_por_data = {}
         for data, count in feedbacks_recentes_aj:
@@ -971,6 +1030,8 @@ async def dashboard_feedbacks(
             feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
         for data, count in feedbacks_recentes_prest:
             feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
+        for data, count in feedbacks_recentes_rc:
+            feedbacks_por_data[str(data)] = feedbacks_por_data.get(str(data), 0) + count
 
         feedbacks_recentes = [{"data": data, "count": count} for data, count in sorted(feedbacks_por_data.items())]
         
@@ -980,6 +1041,7 @@ async def dashboard_feedbacks(
         feedbacks_por_usuario_gp = []
         feedbacks_por_usuario_pc = []
         feedbacks_por_usuario_prest = []
+        feedbacks_por_usuario_rc = []
         
         if incluir_aj:
             query_usuarios_aj = db.query(
@@ -1061,6 +1123,22 @@ async def dashboard_feedbacks(
                 )
             feedbacks_por_usuario_prest = query_usuarios_prest.group_by(User.id, User.username, User.full_name).all()
 
+        if incluir_rc:
+            query_usuarios_rc = db.query(
+                User.username,
+                User.full_name,
+                func.count(FeedbackRelatorioCumprimento.id).label('total'),
+                func.sum(case((FeedbackRelatorioCumprimento.avaliacao == 'correto', 1), else_=0)).label('corretos')
+            ).join(FeedbackRelatorioCumprimento, FeedbackRelatorioCumprimento.usuario_id == User.id)
+            if ids_excluir:
+                query_usuarios_rc = query_usuarios_rc.filter(~User.id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_usuarios_rc = query_usuarios_rc.filter(
+                    FeedbackRelatorioCumprimento.criado_em >= data_inicio,
+                    FeedbackRelatorioCumprimento.criado_em < data_fim
+                )
+            feedbacks_por_usuario_rc = query_usuarios_rc.group_by(User.id, User.username, User.full_name).all()
+
         # Combina por usuário
         usuarios_stats = {}
         for username, full_name, total, corretos in feedbacks_por_usuario_aj:
@@ -1088,6 +1166,11 @@ async def dashboard_feedbacks(
                 usuarios_stats[username] = {"nome": full_name or username, "total": 0, "corretos": 0}
             usuarios_stats[username]["total"] += total
             usuarios_stats[username]["corretos"] += corretos or 0
+        for username, full_name, total, corretos in feedbacks_por_usuario_rc:
+            if username not in usuarios_stats:
+                usuarios_stats[username] = {"nome": full_name or username, "total": 0, "corretos": 0}
+            usuarios_stats[username]["total"] += total
+            usuarios_stats[username]["corretos"] += corretos or 0
 
         feedbacks_por_usuario = sorted(
             [{"username": k, **v} for k, v in usuarios_stats.items()],
@@ -1101,6 +1184,7 @@ async def dashboard_feedbacks(
         geracoes_sem_feedback_gp = []
         geracoes_sem_feedback_pc = []
         geracoes_sem_feedback_prest = []
+        geracoes_sem_feedback_rc = []
         
         # Assistência Judiciária
         if incluir_aj:
@@ -1232,6 +1316,33 @@ async def dashboard_feedbacks(
                 )
             geracoes_sem_feedback_prest = query_pendentes_prest.order_by(GeracaoAnalise.criado_em.desc()).limit(20).all()
 
+        # Relatório de Cumprimento
+        if incluir_rc:
+            query_pendentes_rc = db.query(
+                GeracaoRelatorioCumprimento.id,
+                GeracaoRelatorioCumprimento.numero_cumprimento_formatado,
+                GeracaoRelatorioCumprimento.numero_cumprimento,
+                GeracaoRelatorioCumprimento.criado_em,
+                User.username,
+                User.full_name
+            ).outerjoin(
+                FeedbackRelatorioCumprimento, FeedbackRelatorioCumprimento.geracao_id == GeracaoRelatorioCumprimento.id
+            ).join(
+                User, GeracaoRelatorioCumprimento.usuario_id == User.id
+            ).filter(
+                FeedbackRelatorioCumprimento.id == None,
+                GeracaoRelatorioCumprimento.conteudo_gerado.isnot(None),
+                GeracaoRelatorioCumprimento.status == 'concluido'
+            )
+            if ids_excluir:
+                query_pendentes_rc = query_pendentes_rc.filter(~GeracaoRelatorioCumprimento.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_pendentes_rc = query_pendentes_rc.filter(
+                    GeracaoRelatorioCumprimento.criado_em >= data_inicio,
+                    GeracaoRelatorioCumprimento.criado_em < data_fim
+                )
+            geracoes_sem_feedback_rc = query_pendentes_rc.order_by(GeracaoRelatorioCumprimento.criado_em.desc()).limit(20).all()
+
         # Combina e formata
         pendentes_feedback = []
         for id, cnj_fmt, cnj, consultado_em, username, full_name in consultas_sem_feedback_aj:
@@ -1270,6 +1381,14 @@ async def dashboard_feedbacks(
             pendentes_feedback.append({
                 "id": id,
                 "sistema": "prestacao_contas",
+                "identificador": numero_cnj_fmt or numero_cnj,
+                "usuario": full_name or username,
+                "data": to_iso_utc(criado_em)
+            })
+        for id, numero_cnj_fmt, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_rc:
+            pendentes_feedback.append({
+                "id": id,
+                "sistema": "relatorio_cumprimento",
                 "identificador": numero_cnj_fmt or numero_cnj,
                 "usuario": full_name or username,
                 "data": to_iso_utc(criado_em)
@@ -1313,6 +1432,10 @@ async def dashboard_feedbacks(
                 "prestacao_contas": {
                     "total": total_geracoes_prest,
                     "feedbacks": total_feedbacks_prest
+                },
+                "relatorio_cumprimento": {
+                    "total": total_geracoes_rc,
+                    "feedbacks": total_feedbacks_rc
                 }
             }
         }
@@ -1596,6 +1719,50 @@ async def listar_feedbacks(
                     "criado_em_dt": fb.criado_em
                 })
 
+        # Feedbacks de Relatório de Cumprimento
+        if sistema is None or sistema == 'relatorio_cumprimento':
+            query_rc = db.query(
+                FeedbackRelatorioCumprimento,
+                GeracaoRelatorioCumprimento.numero_cumprimento_formatado,
+                GeracaoRelatorioCumprimento.numero_cumprimento,
+                GeracaoRelatorioCumprimento.modelo_usado,
+                User.username,
+                User.full_name
+            ).join(
+                GeracaoRelatorioCumprimento, FeedbackRelatorioCumprimento.geracao_id == GeracaoRelatorioCumprimento.id
+            ).join(
+                User, FeedbackRelatorioCumprimento.usuario_id == User.id
+            )
+
+            if ids_excluir:
+                query_rc = query_rc.filter(~FeedbackRelatorioCumprimento.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query_rc = query_rc.filter(
+                    FeedbackRelatorioCumprimento.criado_em >= data_inicio,
+                    FeedbackRelatorioCumprimento.criado_em < data_fim
+                )
+            if avaliacao:
+                query_rc = query_rc.filter(FeedbackRelatorioCumprimento.avaliacao == avaliacao)
+            if usuario_id:
+                query_rc = query_rc.filter(FeedbackRelatorioCumprimento.usuario_id == usuario_id)
+
+            for fb, numero_cnj_fmt, numero_cnj, modelo_usado, username, full_name in query_rc.all():
+                feedbacks_combinados.append({
+                    "id": fb.id,
+                    "consulta_id": fb.geracao_id,
+                    "sistema": "relatorio_cumprimento",
+                    "identificador": numero_cnj_fmt or numero_cnj,
+                    "cnj": numero_cnj,
+                    "modelo": modelo_usado or "gemini-2.0-flash",
+                    "usuario": full_name or username,
+                    "username": username,
+                    "avaliacao": fb.avaliacao,
+                    "comentario": fb.comentario,
+                    "campos_incorretos": fb.campos_incorretos,
+                    "criado_em": to_iso_utc(fb.criado_em),
+                    "criado_em_dt": fb.criado_em
+                })
+
         # Ordena por data (mais recentes primeiro)
         feedbacks_combinados.sort(key=lambda x: x.get('criado_em_dt') or datetime.min, reverse=True)
         
@@ -1828,6 +1995,50 @@ async def obter_consulta_detalhes(
                     "avaliacao": feedback.avaliacao if feedback else None,
                     "comentario": feedback.comentario if feedback else None,
                     "campos_incorretos": None,
+                    "criado_em": to_iso_utc(feedback.criado_em) if feedback else None
+                } if feedback else None
+            }
+
+        elif sistema == "relatorio_cumprimento":
+            geracao = db.query(
+                GeracaoRelatorioCumprimento,
+                User.username,
+                User.full_name
+            ).join(
+                User, GeracaoRelatorioCumprimento.usuario_id == User.id
+            ).filter(
+                GeracaoRelatorioCumprimento.id == consulta_id
+            ).first()
+
+            if not geracao:
+                raise HTTPException(status_code=404, detail="Relatório não encontrado")
+
+            g, username, full_name = geracao
+
+            # Busca feedback se existir
+            feedback = db.query(FeedbackRelatorioCumprimento).filter(
+                FeedbackRelatorioCumprimento.geracao_id == consulta_id
+            ).first()
+
+            return {
+                "id": g.id,
+                "sistema": "relatorio_cumprimento",
+                "identificador": g.numero_cumprimento_formatado or g.numero_cumprimento,
+                "numero_processo": g.numero_cumprimento,
+                "numero_principal": g.numero_principal_formatado or g.numero_principal,
+                "dados": g.dados_basicos,
+                "relatorio": g.conteudo_gerado,
+                "modelo": g.modelo_usado,
+                "usuario": full_name or username,
+                "criado_em": to_iso_utc(g.criado_em),
+                "documentos_baixados": g.documentos_baixados,
+                "transito_julgado_localizado": g.transito_julgado_localizado,
+                "data_transito_julgado": g.data_transito_julgado,
+                "historico_chat": g.historico_chat,
+                "feedback": {
+                    "avaliacao": feedback.avaliacao if feedback else None,
+                    "comentario": feedback.comentario if feedback else None,
+                    "campos_incorretos": feedback.campos_incorretos if feedback else None,
                     "criado_em": to_iso_utc(feedback.criado_em) if feedback else None
                 } if feedback else None
             }
