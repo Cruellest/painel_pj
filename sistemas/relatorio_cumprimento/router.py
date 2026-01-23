@@ -136,8 +136,11 @@ async def processar_stream(
             documentos_info = dados_consulta["documentos_info"]
 
             yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Processo identificado: {dados_basicos.numero_processo}'})}\n\n"
-            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Autor: {dados_basicos.autor or "[não identificado]"}'})}\n\n"
-            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Comarca/Vara: {dados_basicos.comarca or "N/I"} - {dados_basicos.vara or "N/I"}'})}\n\n"
+            autor_info = dados_basicos.autor or "(não identificado)"
+            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Autor: {autor_info}'})}\n\n"
+            comarca_info = dados_basicos.comarca or "N/I"
+            vara_info = dados_basicos.vara or "N/I"
+            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Comarca/Vara: {comarca_info} - {vara_info}'})}\n\n"
 
             yield f"data: {json.dumps({'tipo': 'etapa', 'etapa': 1, 'status': 'concluido', 'mensagem': 'Consulta ao TJ-MS concluída'})}\n\n"
 
