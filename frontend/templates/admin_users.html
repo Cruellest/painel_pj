@@ -209,6 +209,10 @@
                             <input type="checkbox" id="sistema-prestacao-contas" value="prestacao_contas" class="rounded border-gray-300 text-primary-600">
                             <span class="text-sm text-gray-700">Prestacao de Contas</span>
                         </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="sistema-relatorio-cumprimento" value="relatorio_cumprimento" class="rounded border-gray-300 text-primary-600">
+                            <span class="text-sm text-gray-700">Relatorio de Cumprimento</span>
+                        </label>
                     </div>
                 </div>
 
@@ -673,6 +677,7 @@
             document.getElementById('sistema-gerador').checked = false;
             document.getElementById('sistema-pedido-calculo').checked = false;
             document.getElementById('sistema-prestacao-contas').checked = false;
+            document.getElementById('sistema-relatorio-cumprimento').checked = false;
             document.getElementById('perm-editar-prompts').checked = false;
             document.getElementById('perm-criar-prompts').checked = false;
             document.getElementById('perm-excluir-prompts').checked = false;
@@ -712,6 +717,7 @@
             document.getElementById('sistema-gerador').checked = sistemas.includes('gerador_pecas');
             document.getElementById('sistema-pedido-calculo').checked = sistemas.includes('pedido_calculo');
             document.getElementById('sistema-prestacao-contas').checked = sistemas.includes('prestacao_contas');
+            document.getElementById('sistema-relatorio-cumprimento').checked = sistemas.includes('relatorio_cumprimento');
 
             // Permissoes especiais
             const permissoes = user.permissoes_especiais || [];
@@ -746,6 +752,7 @@
             if (document.getElementById('sistema-gerador').checked) sistemas.push('gerador_pecas');
             if (document.getElementById('sistema-pedido-calculo').checked) sistemas.push('pedido_calculo');
             if (document.getElementById('sistema-prestacao-contas').checked) sistemas.push('prestacao_contas');
+            if (document.getElementById('sistema-relatorio-cumprimento').checked) sistemas.push('relatorio_cumprimento');
             return sistemas.length > 0 ? sistemas : null;
         }
 
