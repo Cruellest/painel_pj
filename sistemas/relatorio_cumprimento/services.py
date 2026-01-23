@@ -604,6 +604,15 @@ class RelatorioCumprimentoService:
                 "request_id": request_id
             }
 
+            logger.info(
+                f"{log_prefix}GEMINI_STREAM_CALL | "
+                f"modelo={self.modelo} | "
+                f"prompt_len={len(prompt)} | "
+                f"temperatura={self.temperatura} | "
+                f"thinking_level={self.thinking_level}"
+            )
+
+            chunks_recebidos = 0
             async for chunk in self.gemini.generate_stream(
                 prompt=prompt,
                 model=self.modelo,
@@ -611,8 +620,19 @@ class RelatorioCumprimentoService:
                 thinking_level=self.thinking_level,
                 context=context
             ):
+                chunks_recebidos += 1
                 conteudo_completo += chunk
                 yield {"tipo": "chunk", "chunk": chunk}
+
+                # Log a cada 10 chunks para não poluir
+                if chunks_recebidos % 10 == 0:
+                    logger.info(f"{log_prefix}GEMINI_CHUNKS | count={chunks_recebidos} | total_len={len(conteudo_completo)}")
+
+            logger.info(
+                f"{log_prefix}GEMINI_STREAM_DONE | "
+                f"chunks_total={chunks_recebidos} | "
+                f"conteudo_len={len(conteudo_completo)}"
+            )
 
             tempo_ms = int((time.time() - inicio) * 1000)
 
