@@ -74,6 +74,12 @@ from sistemas.prestacao_contas.router_admin import router as prestacao_contas_ad
 # Import do sistema de Relatório de Cumprimento
 from sistemas.relatorio_cumprimento.router import router as relatorio_cumprimento_router
 
+# Import do sistema de Classificador de Documentos
+from sistemas.classificador_documentos.router import router as classificador_documentos_router
+
+# Import do sistema BERT Training
+from sistemas.bert_training.router import router as bert_training_router
+
 # Import do sistema de Performance Logs
 from admin.router_performance import router as performance_router
 from admin.router_gemini_logs import router as gemini_logs_router
@@ -90,6 +96,8 @@ GERADOR_PECAS_TEMPLATES = BASE_DIR / "sistemas" / "gerador_pecas" / "templates"
 PEDIDO_CALCULO_TEMPLATES = BASE_DIR / "sistemas" / "pedido_calculo" / "templates"
 PRESTACAO_CONTAS_TEMPLATES = BASE_DIR / "sistemas" / "prestacao_contas" / "templates"
 RELATORIO_CUMPRIMENTO_TEMPLATES = BASE_DIR / "sistemas" / "relatorio_cumprimento" / "templates"
+CLASSIFICADOR_DOCUMENTOS_TEMPLATES = BASE_DIR / "sistemas" / "classificador_documentos" / "templates"
+BERT_TRAINING_TEMPLATES = BASE_DIR / "sistemas" / "bert_training" / "templates"
 
 # IMPORTANTE: Inicializa banco de dados ANTES de criar o app
 # Isso garante que migrações sejam executadas antes de qualquer query
@@ -419,6 +427,12 @@ app.include_router(prestacao_contas_admin_router)  # Admin router - sem prefixo 
 # Router de Relatório de Cumprimento
 app.include_router(relatorio_cumprimento_router, prefix="/relatorio-cumprimento/api")
 
+# Router de Classificador de Documentos
+app.include_router(classificador_documentos_router, prefix="/classificador/api")
+
+# Router de BERT Training
+app.include_router(bert_training_router)  # prefixo /bert-training já está no router
+
 # Router de Normalização de Texto
 app.include_router(text_normalizer_router)
 
@@ -564,6 +578,24 @@ async def serve_prestacao_contas_static(filename: str = ""):
 async def serve_relatorio_cumprimento_static(filename: str = ""):
     """Serve arquivos do frontend Relatório de Cumprimento"""
     return safe_serve_static(RELATORIO_CUMPRIMENTO_TEMPLATES, filename, no_cache=True)
+
+
+# Classificador de Documentos
+@app.get("/classificador/{filename:path}")
+@app.get("/classificador/")
+@app.get("/classificador")
+async def serve_classificador_static(filename: str = ""):
+    """Serve arquivos do frontend Classificador de Documentos"""
+    return safe_serve_static(CLASSIFICADOR_DOCUMENTOS_TEMPLATES, filename, no_cache=True)
+
+
+# BERT Training
+@app.get("/bert-training/templates/{filename:path}")
+@app.get("/bert-training/")
+@app.get("/bert-training")
+async def serve_bert_training_static(filename: str = ""):
+    """Serve arquivos do frontend BERT Training"""
+    return safe_serve_static(BERT_TRAINING_TEMPLATES, filename, no_cache=True)
 
 
 # ==================================================

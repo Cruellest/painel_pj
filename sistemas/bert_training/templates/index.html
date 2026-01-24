@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BERT Training - Portal PGE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="icon" type="image/png" href="/logo/favicon.png">
+    <style>
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
+        .status-pending { background-color: #fef3c7; color: #92400e; }
+        .status-training { background-color: #dbeafe; color: #1e40af; }
+        .status-completed { background-color: #d1fae5; color: #065f46; }
+        .status-failed { background-color: #fee2e2; color: #991b1b; }
+        .log-DEBUG { color: #6b7280; }
+        .log-INFO { color: #059669; }
+        .log-WARNING { color: #d97706; }
+        .log-ERROR { color: #dc2626; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <a href="/dashboard" class="text-gray-600 hover:text-gray-900">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                    </svg>
+                </a>
+                <h1 class="text-xl font-bold text-gray-900">BERT Training</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span id="queue-status" class="text-sm text-gray-500"></span>
+                <span id="user-name" class="text-sm text-gray-600"></span>
+                <button onclick="logout()" class="text-sm text-red-600 hover:text-red-800">Sair</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="max-w-7xl mx-auto px-4 mt-4">
+        <div class="border-b border-gray-200">
+            <nav class="-mb-px flex space-x-8">
+                <button onclick="showTab('datasets')" id="tab-datasets" class="tab-btn tab-active py-2 px-1 text-sm font-medium">
+                    Datasets
+                </button>
+                <button onclick="showTab('runs')" id="tab-runs" class="tab-btn py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    Runs
+                </button>
+                <button onclick="showTab('new-run')" id="tab-new-run" class="tab-btn py-2 px-1 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    Novo Run
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Datasets Tab -->
+        <div id="panel-datasets" class="tab-panel">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-lg font-semibold">Datasets</h2>
+                    <button onclick="showUploadModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                        Upload Dataset
+                    </button>
+                </div>
+                <div id="datasets-list" class="space-y-4">
+                    <p class="text-gray-500">Carregando...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Runs Tab -->
+        <div id="panel-runs" class="tab-panel hidden">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-lg font-semibold">Runs de Treinamento</h2>
+                    <button onclick="loadRuns()" class="text-blue-600 hover:text-blue-800">
+                        Atualizar
+                    </button>
+                </div>
+                <div id="runs-list" class="space-y-4">
+                    <p class="text-gray-500">Carregando...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- New Run Tab -->
+        <div id="panel-new-run" class="tab-panel hidden">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-2">Criar Novo Treinamento</h2>
+                <p class="text-gray-500 text-sm mb-6">Ensine o computador a classificar documentos automaticamente.</p>
+
+                <form id="new-run-form" class="space-y-6">
+                    <!-- Input hidden para preset selecionado -->
+                    <input type="hidden" id="selected-preset" value="equilibrado">
+
+                    <!-- Secao 1: Informacoes Basicas -->
+                    <div class="border-b pb-6">
+                        <h3 class="font-medium text-gray-800 mb-4">1. Informacoes Basicas</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Nome do treinamento</label>
+                                <input type="text" id="run-name" required class="w-full border rounded-lg px-3 py-2" placeholder="Ex: Classificador de Peticoes v1">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Dataset (planilha)</label>
+                                <select id="run-dataset" required class="w-full border rounded-lg px-3 py-2">
+                                    <option value="">Selecione um dataset...</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Descricao (opcional)</label>
+                            <textarea id="run-description" rows="2" class="w-full border rounded-lg px-3 py-2" placeholder="Descreva o objetivo deste treinamento"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Secao 2: Modo de Treinamento (Presets) -->
+                    <div class="border-b pb-6">
+                        <h3 class="font-medium text-gray-800 mb-4">2. Modo de Treinamento</h3>
+                        <p class="text-sm text-gray-500 mb-4">Escolha o modo que melhor se adequa as suas necessidades:</p>
+
+                        <div id="presets-container" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <!-- Presets serao carregados via JS -->
+                            <div class="text-center py-8 text-gray-400">Carregando presets...</div>
+                        </div>
+
+                        <!-- Aviso do preset selecionado -->
+                        <div id="preset-warning" class="mt-4 hidden"></div>
+                    </div>
+
+                    <!-- Secao 3: Modelo -->
+                    <div class="border-b pb-6">
+                        <h3 class="font-medium text-gray-800 mb-4">3. Modelo Base</h3>
+                        <div class="max-w-md">
+                            <select id="run-model" class="w-full border rounded-lg px-3 py-2">
+                                <option value="neuralmind/bert-base-portuguese-cased">BERT Portugues (Recomendado)</option>
+                                <option value="neuralmind/bert-large-portuguese-cased">BERT Portugues (Grande - mais lento)</option>
+                                <option value="bert-base-multilingual-cased">BERT Multilingue</option>
+                                <option value="xlm-roberta-base">XLM-RoBERTa</option>
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">O modelo BERT Portugues e otimizado para textos em portugues.</p>
+                        </div>
+                    </div>
+
+                    <!-- Secao 4: Opcoes Avancadas (colapsado por padrao) -->
+                    <div class="pb-4">
+                        <button type="button" id="toggle-advanced-btn" onclick="toggleAdvancedMode()" class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                            Configurar manualmente (avancado)
+                        </button>
+
+                        <div id="advanced-params" class="hidden mt-4 border rounded-lg p-4 bg-gray-50">
+                            <p class="text-sm text-gray-500 mb-4">Estas configuracoes sobrescrevem o preset selecionado.</p>
+                            <div class="space-y-4">
+                                <!-- Linha 1: Básicos -->
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Rodadas (Epochs)</label>
+                                        <input type="number" id="run-epochs" value="10" min="1" max="100" class="w-full border rounded px-2 py-1 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Learning Rate</label>
+                                        <input type="number" id="run-lr" value="0.00005" step="0.00001" class="w-full border rounded px-2 py-1 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Batch Size</label>
+                                        <input type="number" id="run-batch" value="16" min="1" max="128" class="w-full border rounded px-2 py-1 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Max Length</label>
+                                        <input type="number" id="run-maxlen" value="512" min="64" max="1024" class="w-full border rounded px-2 py-1 text-sm">
+                                    </div>
+                                </div>
+
+                                <!-- Linha 2 -->
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Train Split</label>
+                                        <input type="number" id="run-split" value="0.8" step="0.05" min="0.5" max="0.95" class="w-full border rounded px-2 py-1 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Early Stopping</label>
+                                        <input type="number" id="run-patience" value="3" min="1" max="20" class="w-full border rounded px-2 py-1 text-sm">
+                                        <p class="text-xs text-gray-400">Paciencia (rodadas)</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Weight Decay</label>
+                                        <input type="number" id="run-weight-decay" value="0.01" step="0.001" min="0" max="1" class="w-full border rounded px-2 py-1 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Warmup Steps</label>
+                                        <input type="number" id="run-warmup" value="0" min="0" class="w-full border rounded px-2 py-1 text-sm">
+                                    </div>
+                                </div>
+
+                                <!-- Linha 3 -->
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Seed</label>
+                                        <input type="number" id="run-seed" value="42" min="0" class="w-full border rounded px-2 py-1 text-sm">
+                                        <p class="text-xs text-gray-400">Para reproducibilidade</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Grad. Accumulation</label>
+                                        <input type="number" id="run-grad-accum" value="1" min="1" max="32" class="w-full border rounded px-2 py-1 text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm text-gray-600 mb-1">Truncation Side</label>
+                                        <select id="run-truncation" class="w-full border rounded px-2 py-1 text-sm">
+                                            <option value="right">Direita</option>
+                                            <option value="left">Esquerda</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex items-center pt-4">
+                                        <label class="flex items-center space-x-2 cursor-pointer">
+                                            <input type="checkbox" id="run-class-weights" checked class="rounded border-gray-300">
+                                            <span class="text-sm text-gray-600">Balancear classes</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botao de Submit -->
+                    <div class="flex justify-end pt-4">
+                        <button type="submit" class="bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700 font-medium">
+                            Iniciar Treinamento
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Run Detail Modal -->
+        <div id="run-detail-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+            <div class="flex items-center justify-center min-h-screen p-4">
+                <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                    <div class="p-4 border-b flex justify-between items-center">
+                        <h3 id="run-detail-title" class="text-lg font-semibold">Detalhes do Run</h3>
+                        <button onclick="closeRunDetail()" class="text-gray-500 hover:text-gray-700">&times;</button>
+                    </div>
+                    <div class="p-4 overflow-y-auto max-h-[calc(90vh-60px)]">
+                        <div id="run-detail-content"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Modal -->
+        <div id="upload-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+            <div class="flex items-center justify-center min-h-screen p-4">
+                <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+                    <div class="p-4 border-b flex justify-between items-center">
+                        <h3 class="text-lg font-semibold">Upload de Dataset</h3>
+                        <button onclick="closeUploadModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                    </div>
+                    <form id="upload-form" class="p-4 space-y-4 overflow-y-auto max-h-[calc(90vh-80px)]">
+                        <!-- Step 1: Arquivo -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">1. Selecione o arquivo Excel</label>
+                            <input type="file" id="upload-file" accept=".xlsx,.xls" required class="w-full border rounded-lg px-3 py-2">
+                            <p class="text-xs text-gray-500 mt-1">Formatos: .xlsx, .xls</p>
+                        </div>
+
+                        <!-- Preview (aparece após selecionar arquivo) -->
+                        <div id="upload-preview" class="hidden">
+                            <div id="upload-preview-loading" class="text-center py-4">
+                                <span class="text-gray-500">Analisando arquivo...</span>
+                            </div>
+                            <div id="upload-preview-content" class="hidden space-y-4">
+                                <!-- Info básica -->
+                                <div class="bg-gray-50 rounded-lg p-3 text-sm">
+                                    <span id="preview-info"></span>
+                                </div>
+
+                                <!-- Step 2: Tipo de Tarefa -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">2. Tipo de Tarefa</label>
+                                    <select id="upload-task-type" required class="w-full border rounded-lg px-3 py-2">
+                                        <option value="text_classification">Classificação de Texto</option>
+                                        <option value="token_classification">Classificação de Tokens (NER/BIO)</option>
+                                    </select>
+                                </div>
+
+                                <!-- Step 3: Seleção de Colunas -->
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">3. Coluna de Texto</label>
+                                        <select id="upload-text-col" required class="w-full border rounded-lg px-3 py-2">
+                                            <option value="">Selecione...</option>
+                                        </select>
+                                        <p id="text-col-hint" class="text-xs text-green-600 mt-1 hidden"></p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">4. Coluna de Labels</label>
+                                        <select id="upload-label-col" required class="w-full border rounded-lg px-3 py-2">
+                                            <option value="">Selecione...</option>
+                                        </select>
+                                        <p id="label-col-hint" class="text-xs text-green-600 mt-1 hidden"></p>
+                                    </div>
+                                </div>
+
+                                <!-- Estatísticas das colunas -->
+                                <details class="border rounded-lg">
+                                    <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-t-lg">
+                                        Ver estatísticas das colunas
+                                    </summary>
+                                    <div id="column-stats" class="p-3 text-sm max-h-48 overflow-y-auto"></div>
+                                </details>
+
+                                <!-- Preview dos dados -->
+                                <details class="border rounded-lg">
+                                    <summary class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-t-lg">
+                                        Ver preview dos dados
+                                    </summary>
+                                    <div id="data-preview" class="p-3 overflow-x-auto"></div>
+                                </details>
+                            </div>
+                        </div>
+
+                        <div id="upload-validation" class="hidden"></div>
+
+                        <div class="flex justify-end space-x-2 pt-4 border-t">
+                            <button type="button" onclick="closeUploadModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">
+                                Cancelar
+                            </button>
+                            <button type="button" onclick="validateDataset()" id="btn-validate" class="px-4 py-2 border rounded-lg hover:bg-gray-50 hidden">
+                                Validar
+                            </button>
+                            <button type="submit" id="btn-upload" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 hidden">
+                                Upload
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Onboarding Modal -->
+    <div id="onboarding-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-lg w-full">
+                <div class="p-6">
+                    <div class="text-center mb-6">
+                        <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                        </div>
+                        <h2 class="text-2xl font-bold text-gray-900">Bem-vindo ao BERT Training</h2>
+                    </div>
+
+                    <p class="text-gray-600 text-center mb-6">
+                        Aqui voce pode ensinar o computador a classificar documentos automaticamente.
+                    </p>
+
+                    <div class="space-y-4 mb-6">
+                        <div class="flex items-start space-x-3">
+                            <div class="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                <span class="text-green-600 font-bold">1</span>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-gray-900">Envie uma planilha com exemplos</h3>
+                                <p class="text-sm text-gray-500">Textos + categorias que voce quer classificar</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start space-x-3">
+                            <div class="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                <span class="text-green-600 font-bold">2</span>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-gray-900">O sistema aprende com esses exemplos</h3>
+                                <p class="text-sm text-gray-500">Pode demorar alguns minutos ate algumas horas</p>
+                            </div>
+                        </div>
+                        <div class="flex items-start space-x-3">
+                            <div class="flex-shrink-0 w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                <span class="text-green-600 font-bold">3</span>
+                            </div>
+                            <div>
+                                <h3 class="font-medium text-gray-900">Depois, ele classifica novos textos sozinho</h3>
+                                <p class="text-sm text-gray-500">Use o modelo treinado para automatizar seu trabalho</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-4 border-t">
+                        <label class="flex items-center text-sm text-gray-500 cursor-pointer">
+                            <input type="checkbox" id="dont-show-again" class="rounded border-gray-300 mr-2">
+                            Nao mostrar novamente
+                        </label>
+                        <button onclick="closeOnboarding()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-medium">
+                            Comecar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/bert-training/templates/app.js"></script>
+</body>
+</html>

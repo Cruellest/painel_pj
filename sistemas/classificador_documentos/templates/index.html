@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classificador de Documentos - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            200: '#bfdbfe',
+                            300: '#93c5fd',
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        },
+                        pge: {
+                            blue: '#1e3a5f',
+                            orange: '#e67e22'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .tab-active {
+            border-bottom: 2px solid #3b82f6;
+            color: #3b82f6;
+        }
+
+        .confianca-alta {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+
+        .confianca-media {
+            background-color: #fef9c3;
+            color: #854d0e;
+        }
+
+        .confianca-baixa {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-pendente {
+            background-color: #f3f4f6;
+            color: #4b5563;
+        }
+
+        .status-processando {
+            background-color: #dbeafe;
+            color: #1e40af;
+        }
+
+        .status-concluido {
+            background-color: #dcfce7;
+            color: #166534;
+        }
+
+        .status-erro {
+            background-color: #fee2e2;
+            color: #991b1b;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
+
+    <!-- Header -->
+    <header class="glass-effect shadow-sm border-b border-gray-200/50 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-4">
+                    <a href="/dashboard" class="text-gray-500 hover:text-gray-700 transition-colors">
+                        <i class="fas fa-arrow-left"></i>
+                    </a>
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <i class="fas fa-tags text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-lg font-bold text-gray-900">Classificador de Documentos</h1>
+                            <p class="text-xs text-gray-500">Classificacao automatica com IA</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div id="apiStatus" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm">
+                        <i class="fas fa-circle text-gray-400 text-xs"></i>
+                        <span class="text-gray-500">Verificando API...</span>
+                    </div>
+                    <button onclick="logout()" class="text-gray-500 hover:text-gray-700 transition-colors">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+        <div class="border-b border-gray-200">
+            <nav class="flex gap-8">
+                <button onclick="showTab('projetos')" id="tab-projetos" class="py-3 px-1 text-sm font-medium tab-active">
+                    <i class="fas fa-folder-open mr-2"></i>Projetos
+                </button>
+                <button onclick="showTab('prompts')" id="tab-prompts" class="py-3 px-1 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-comment-dots mr-2"></i>Prompts
+                </button>
+                <button onclick="showTab('avulso')" id="tab-avulso" class="py-3 px-1 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-upload mr-2"></i>Classificacao Avulsa
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- Tab: Projetos -->
+        <div id="content-projetos" class="tab-content">
+            <!-- Header da lista de projetos -->
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-semibold text-gray-900">Meus Projetos</h2>
+                <button onclick="showModalCriarProjeto()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    <i class="fas fa-plus mr-2"></i>Novo Projeto
+                </button>
+            </div>
+
+            <!-- Lista de Projetos -->
+            <div id="listaProjetos" class="grid gap-4">
+                <div class="text-center py-12 text-gray-500">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-4"></i>
+                    <p>Carregando projetos...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Prompts -->
+        <div id="content-prompts" class="tab-content hidden">
+            <!-- Header -->
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-semibold text-gray-900">Prompts de Classificacao</h2>
+                <button onclick="showModalCriarPrompt()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                    <i class="fas fa-plus mr-2"></i>Novo Prompt
+                </button>
+            </div>
+
+            <!-- Lista de Prompts -->
+            <div id="listaPrompts" class="grid gap-4">
+                <div class="text-center py-12 text-gray-500">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-4"></i>
+                    <p>Carregando prompts...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Classificacao Avulsa -->
+        <div id="content-avulso" class="tab-content hidden">
+            <div class="max-w-3xl mx-auto">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                        <i class="fas fa-upload mr-2 text-blue-500"></i>Classificacao Avulsa
+                    </h2>
+                    <p class="text-gray-600 mb-6">Envie um documento PDF para classificacao rapida sem criar um projeto.</p>
+
+                    <form id="formAvulso" class="space-y-6">
+                        <!-- Upload -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Arquivo PDF</label>
+                            <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
+                                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                                <p class="text-gray-600">Arraste um arquivo ou clique para selecionar</p>
+                                <p class="text-sm text-gray-400 mt-1">PDF ate 50MB</p>
+                                <input type="file" id="arquivoAvulso" accept=".pdf" class="hidden">
+                            </div>
+                            <p id="nomeArquivoAvulso" class="text-sm text-blue-600 mt-2 hidden"></p>
+                        </div>
+
+                        <!-- Prompt -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Prompt</label>
+                            <select id="promptAvulso" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Selecione um prompt...</option>
+                            </select>
+                        </div>
+
+                        <!-- Modelo -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Modelo OpenRouter</label>
+                            <input type="text" id="modeloAvulso" value="google/gemini-2.5-flash-lite" placeholder="Ex: google/gemini-2.5-flash-lite" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">Formato: provedor/modelo (ex: google/gemini-2.5-flash-lite, anthropic/claude-sonnet-4)</p>
+                        </div>
+
+                        <!-- Configuracoes -->
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Modo</label>
+                                <select id="modoAvulso" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="chunk">Chunk</option>
+                                    <option value="completo">Completo</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Posicao</label>
+                                <select id="posicaoAvulso" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="fim">Fim</option>
+                                    <option value="inicio">Inicio</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Tokens</label>
+                                <input type="number" id="tokensAvulso" value="512" min="100" max="4000" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+
+                        <!-- Botao -->
+                        <button type="submit" id="btnClassificarAvulso" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="fas fa-magic mr-2"></i>Classificar Documento
+                        </button>
+                    </form>
+
+                    <!-- Resultado -->
+                    <div id="resultadoAvulso" class="mt-6 hidden">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Resultado</h3>
+                        <div id="resultadoAvulsoContent" class="bg-gray-50 rounded-lg p-4"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal: Criar/Editar Projeto -->
+    <div id="modalProjeto" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200">
+                <h3 id="modalProjetoTitulo" class="text-lg font-semibold text-gray-900">Novo Projeto</h3>
+            </div>
+            <form id="formProjeto" class="p-6 space-y-4">
+                <input type="hidden" id="projetoId">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Nome</label>
+                    <input type="text" id="projetoNome" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Descricao</label>
+                    <textarea id="projetoDescricao" rows="2" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Prompt</label>
+                    <select id="projetoPrompt" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Selecione um prompt...</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Modelo OpenRouter</label>
+                    <input type="text" id="projetoModelo" value="google/gemini-2.5-flash-lite" placeholder="Ex: google/gemini-2.5-flash-lite" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <p class="text-xs text-gray-500 mt-1">Formato: provedor/modelo (ex: minimax/minimax-m2-her, google/gemini-3-flash-preview)</p>
+                </div>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Modo</label>
+                        <select id="projetoModo" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="chunk">Chunk</option>
+                            <option value="completo">Completo</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Posicao</label>
+                        <select id="projetoPosicao" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="fim">Fim</option>
+                            <option value="inicio">Inicio</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Tokens</label>
+                        <input type="number" id="projetoTokens" value="512" min="100" max="4000" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="hideModalProjeto()" class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Criar/Editar Prompt -->
+    <div id="modalPrompt" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200">
+                <h3 id="modalPromptTitulo" class="text-lg font-semibold text-gray-900">Novo Prompt</h3>
+            </div>
+            <form id="formPrompt" class="p-6 space-y-4">
+                <input type="hidden" id="promptId">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Nome</label>
+                    <input type="text" id="promptNome" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Descricao</label>
+                    <input type="text" id="promptDescricao" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Conteudo do Prompt</label>
+                    <textarea id="promptConteudo" rows="12" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"></textarea>
+                </div>
+                <div class="flex justify-end gap-3 pt-4">
+                    <button type="button" onclick="hideModalPrompt()" class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Detalhe do Projeto -->
+    <div id="modalDetalheProjeto" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                <h3 id="detalheTitulo" class="text-lg font-semibold text-gray-900">Projeto</h3>
+                <button onclick="hideModalDetalheProjeto()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div id="detalheContent" class="p-6">
+                <!-- Conteudo carregado dinamicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Adicionar Codigos do TJ-MS -->
+    <div id="modalAdicionarCodigos" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
+        <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-900">Adicionar Documentos</h3>
+                <button onclick="hideModalAdicionarCodigos()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-6">
+                <!-- Busca no TJ-MS -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-search mr-2"></i>Buscar no TJ-MS
+                    </label>
+                    <div class="flex gap-2">
+                        <input type="text" id="buscaTJMS" placeholder="Numero do processo CNJ (ex: 0800123-45.2024.8.12.0001)"
+                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <button type="button" onclick="buscarDocumentosTJMS()"
+                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                    <div id="resultadosBuscaTJMS" class="mt-3">
+                        <!-- Resultados da busca aparecem aqui -->
+                    </div>
+                </div>
+
+                <div class="border-t pt-4">
+                    <p class="text-sm text-gray-500 mb-3">Ou adicione codigos manualmente:</p>
+                </div>
+
+                <!-- Codigos manuais -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-keyboard mr-2"></i>Codigos manuais
+                    </label>
+                    <textarea id="codigosManuais" rows="3" placeholder="Cole codigos separados por virgula, ponto-e-virgula ou quebra de linha"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Numero do processo (para codigos manuais)</label>
+                    <input type="text" id="processoManual" placeholder="Deixe vazio se nao aplicavel"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4 border-t">
+                    <button type="button" onclick="hideModalAdicionarCodigos()" class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                        Cancelar
+                    </button>
+                    <button type="button" onclick="adicionarCodigosSelecionados()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                        <i class="fas fa-plus mr-2"></i>Adicionar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/security.js"></script>
+    <script>
+        // ====================================
+        // Estado Global
+        // ====================================
+        let token = localStorage.getItem('access_token');
+        let projetos = [];
+        let prompts = [];
+        let projetoAtual = null;
+
+        // ====================================
+        // Autenticacao
+        // ====================================
+        if (!token) {
+            window.location.href = '/login';
+        }
+
+        function logout() {
+            localStorage.removeItem('access_token');
+            window.location.href = '/login';
+        }
+
+        async function fetchAPI(url, options = {}) {
+            const defaultOptions = {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+            const response = await fetch(url, { ...defaultOptions, ...options });
+            if (response.status === 401) {
+                logout();
+                throw new Error('Nao autorizado');
+            }
+            return response;
+        }
+
+        // ====================================
+        // Tabs
+        // ====================================
+        function showTab(tabName) {
+            // Esconde todos os conteudos
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            // Remove active de todas as tabs
+            document.querySelectorAll('[id^="tab-"]').forEach(el => {
+                el.classList.remove('tab-active');
+                el.classList.add('text-gray-500');
+            });
+            // Mostra conteudo selecionado
+            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            // Ativa tab selecionada
+            const tab = document.getElementById(`tab-${tabName}`);
+            tab.classList.add('tab-active');
+            tab.classList.remove('text-gray-500');
+        }
+
+        // ====================================
+        // API Status
+        // ====================================
+        async function verificarStatusAPI() {
+            try {
+                const response = await fetchAPI('/classificador/api/status');
+                const data = await response.json();
+                const statusEl = document.getElementById('apiStatus');
+                if (data.disponivel) {
+                    statusEl.innerHTML = `
+                        <i class="fas fa-circle text-green-500 text-xs"></i>
+                        <span class="text-green-600">API Online</span>
+                    `;
+                    statusEl.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm bg-green-50';
+                } else {
+                    statusEl.innerHTML = `
+                        <i class="fas fa-circle text-red-500 text-xs"></i>
+                        <span class="text-red-600">API Offline</span>
+                    `;
+                    statusEl.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full text-sm bg-red-50';
+                }
+            } catch (e) {
+                console.error('Erro ao verificar status:', e);
+            }
+        }
+
+        // ====================================
+        // Prompts
+        // ====================================
+        async function carregarPrompts() {
+            try {
+                const response = await fetchAPI('/classificador/api/prompts');
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP ${response.status}`);
+                }
+                prompts = await response.json();
+                renderizarPrompts();
+                atualizarSelectsPrompt();
+            } catch (e) {
+                console.error('Erro ao carregar prompts:', e);
+                const container = document.getElementById('listaPrompts');
+                container.innerHTML = `
+                    <div class="text-center py-12 text-red-500">
+                        <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                        <p>Erro ao carregar prompts</p>
+                        <p class="text-sm mt-2">${SecurityUtils.escapeHtml(e.message)}</p>
+                        <button onclick="carregarPrompts()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            Tentar novamente
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderizarPrompts() {
+            const container = document.getElementById('listaPrompts');
+            if (prompts.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-comment-slash text-4xl mb-4"></i>
+                        <p>Nenhum prompt cadastrado</p>
+                        <p class="text-sm mt-2">Crie seu primeiro prompt para comecar a classificar documentos.</p>
+                    </div>
+                `;
+                return;
+            }
+            container.innerHTML = prompts.map(p => `
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-gray-900">${SecurityUtils.escapeHtml(p.nome)}</h3>
+                            ${p.descricao ? `<p class="text-sm text-gray-500 mt-1">${SecurityUtils.escapeHtml(p.descricao)}</p>` : ''}
+                            <p class="text-xs text-gray-400 mt-2">
+                                <i class="fas fa-clock mr-1"></i>
+                                ${new Date(p.criado_em).toLocaleDateString('pt-BR')}
+                            </p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="editarPrompt(${p.id})" class="text-blue-600 hover:text-blue-800 px-2 py-1">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="deletarPrompt(${p.id})" class="text-red-600 hover:text-red-800 px-2 py-1">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function atualizarSelectsPrompt() {
+            const options = prompts.map(p => `<option value="${p.id}">${SecurityUtils.escapeHtml(p.nome)}</option>`).join('');
+            document.getElementById('projetoPrompt').innerHTML = `<option value="">Selecione um prompt...</option>${options}`;
+            document.getElementById('promptAvulso').innerHTML = `<option value="">Selecione um prompt...</option>${options}`;
+        }
+
+        function showModalCriarPrompt() {
+            document.getElementById('modalPromptTitulo').textContent = 'Novo Prompt';
+            document.getElementById('promptId').value = '';
+            document.getElementById('promptNome').value = '';
+            document.getElementById('promptDescricao').value = '';
+            document.getElementById('promptConteudo').value = '';
+            document.getElementById('modalPrompt').classList.remove('hidden');
+        }
+
+        function hideModalPrompt() {
+            document.getElementById('modalPrompt').classList.add('hidden');
+        }
+
+        async function editarPrompt(id) {
+            const prompt = prompts.find(p => p.id === id);
+            if (!prompt) return;
+            document.getElementById('modalPromptTitulo').textContent = 'Editar Prompt';
+            document.getElementById('promptId').value = prompt.id;
+            document.getElementById('promptNome').value = prompt.nome;
+            document.getElementById('promptDescricao').value = prompt.descricao || '';
+            document.getElementById('promptConteudo').value = prompt.conteudo;
+            document.getElementById('modalPrompt').classList.remove('hidden');
+        }
+
+        async function salvarPrompt(e) {
+            e.preventDefault();
+            const id = document.getElementById('promptId').value;
+            const data = {
+                nome: document.getElementById('promptNome').value,
+                descricao: document.getElementById('promptDescricao').value,
+                conteudo: document.getElementById('promptConteudo').value
+            };
+            try {
+                if (id) {
+                    await fetchAPI(`/classificador/api/prompts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+                } else {
+                    await fetchAPI('/classificador/api/prompts', { method: 'POST', body: JSON.stringify(data) });
+                }
+                hideModalPrompt();
+                carregarPrompts();
+            } catch (e) {
+                alert('Erro ao salvar prompt');
+            }
+        }
+
+        async function deletarPrompt(id) {
+            if (!confirm('Deseja realmente excluir este prompt?')) return;
+            try {
+                await fetchAPI(`/classificador/api/prompts/${id}`, { method: 'DELETE' });
+                carregarPrompts();
+            } catch (e) {
+                alert('Erro ao excluir prompt');
+            }
+        }
+
+        // ====================================
+        // Projetos
+        // ====================================
+        async function carregarProjetos() {
+            try {
+                const response = await fetchAPI('/classificador/api/projetos');
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP ${response.status}`);
+                }
+                projetos = await response.json();
+                renderizarProjetos();
+            } catch (e) {
+                console.error('Erro ao carregar projetos:', e);
+                const container = document.getElementById('listaProjetos');
+                container.innerHTML = `
+                    <div class="text-center py-12 text-red-500">
+                        <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                        <p>Erro ao carregar projetos</p>
+                        <p class="text-sm mt-2">${SecurityUtils.escapeHtml(e.message)}</p>
+                        <button onclick="carregarProjetos()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                            Tentar novamente
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        function renderizarProjetos() {
+            const container = document.getElementById('listaProjetos');
+            if (projetos.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-folder-open text-4xl mb-4"></i>
+                        <p>Nenhum projeto cadastrado</p>
+                        <p class="text-sm mt-2">Crie seu primeiro projeto para organizar suas classificacoes.</p>
+                    </div>
+                `;
+                return;
+            }
+            container.innerHTML = projetos.map(p => `
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-5 hover:shadow-md transition-shadow cursor-pointer" onclick="abrirProjeto(${p.id})">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-gray-900 text-lg">${SecurityUtils.escapeHtml(p.nome)}</h3>
+                            ${p.descricao ? `<p class="text-sm text-gray-500 mt-1">${SecurityUtils.escapeHtml(p.descricao)}</p>` : ''}
+                            <div class="flex gap-4 mt-3 text-sm text-gray-500">
+                                <span><i class="fas fa-file-alt mr-1"></i>${p.total_codigos} documentos</span>
+                                <span><i class="fas fa-play mr-1"></i>${p.total_execucoes} execucoes</span>
+                                <span><i class="fas fa-robot mr-1"></i>${p.modelo.includes('/') ? p.modelo.split('/')[1] : p.modelo}</span>
+                            </div>
+                        </div>
+                        <div class="flex gap-2" onclick="event.stopPropagation()">
+                            <button onclick="editarProjeto(${p.id})" class="text-blue-600 hover:text-blue-800 px-2 py-1">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button onclick="deletarProjeto(${p.id})" class="text-red-600 hover:text-red-800 px-2 py-1">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function showModalCriarProjeto() {
+            document.getElementById('modalProjetoTitulo').textContent = 'Novo Projeto';
+            document.getElementById('projetoId').value = '';
+            document.getElementById('projetoNome').value = '';
+            document.getElementById('projetoDescricao').value = '';
+            document.getElementById('projetoPrompt').value = '';
+            document.getElementById('projetoModelo').value = 'google/gemini-2.5-flash-lite';
+            document.getElementById('projetoModo').value = 'chunk';
+            document.getElementById('projetoPosicao').value = 'fim';
+            document.getElementById('projetoTokens').value = '512';
+            document.getElementById('modalProjeto').classList.remove('hidden');
+        }
+
+        function hideModalProjeto() {
+            document.getElementById('modalProjeto').classList.add('hidden');
+        }
+
+        async function editarProjeto(id) {
+            const projeto = projetos.find(p => p.id === id);
+            if (!projeto) return;
+            document.getElementById('modalProjetoTitulo').textContent = 'Editar Projeto';
+            document.getElementById('projetoId').value = projeto.id;
+            document.getElementById('projetoNome').value = projeto.nome;
+            document.getElementById('projetoDescricao').value = projeto.descricao || '';
+            document.getElementById('projetoPrompt').value = projeto.prompt_id || '';
+            document.getElementById('projetoModelo').value = projeto.modelo;
+            document.getElementById('projetoModo').value = projeto.modo_processamento;
+            document.getElementById('projetoPosicao').value = projeto.posicao_chunk;
+            document.getElementById('projetoTokens').value = projeto.tamanho_chunk;
+            document.getElementById('modalProjeto').classList.remove('hidden');
+        }
+
+        async function salvarProjeto(e) {
+            e.preventDefault();
+            const id = document.getElementById('projetoId').value;
+            const data = {
+                nome: document.getElementById('projetoNome').value,
+                descricao: document.getElementById('projetoDescricao').value,
+                prompt_id: document.getElementById('projetoPrompt').value || null,
+                modelo: document.getElementById('projetoModelo').value,
+                modo_processamento: document.getElementById('projetoModo').value,
+                posicao_chunk: document.getElementById('projetoPosicao').value,
+                tamanho_chunk: parseInt(document.getElementById('projetoTokens').value)
+            };
+            try {
+                if (id) {
+                    await fetchAPI(`/classificador/api/projetos/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+                } else {
+                    await fetchAPI('/classificador/api/projetos', { method: 'POST', body: JSON.stringify(data) });
+                }
+                hideModalProjeto();
+                carregarProjetos();
+            } catch (e) {
+                alert('Erro ao salvar projeto');
+            }
+        }
+
+        async function deletarProjeto(id) {
+            if (!confirm('Deseja realmente excluir este projeto?')) return;
+            try {
+                await fetchAPI(`/classificador/api/projetos/${id}`, { method: 'DELETE' });
+                carregarProjetos();
+            } catch (e) {
+                alert('Erro ao excluir projeto');
+            }
+        }
+
+        async function abrirProjeto(id) {
+            try {
+                const response = await fetchAPI(`/classificador/api/projetos/${id}`);
+                projetoAtual = await response.json();
+                document.getElementById('detalheTitulo').textContent = projetoAtual.nome;
+                renderizarDetalheProjeto();
+                document.getElementById('modalDetalheProjeto').classList.remove('hidden');
+            } catch (e) {
+                alert('Erro ao carregar projeto');
+            }
+        }
+
+        function hideModalDetalheProjeto() {
+            document.getElementById('modalDetalheProjeto').classList.add('hidden');
+            projetoAtual = null;
+        }
+
+        function renderizarDetalheProjeto() {
+            const container = document.getElementById('detalheContent');
+            const p = projetoAtual;
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <!-- Info do Projeto -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-gray-50 p-3 rounded-lg">
+                            <p class="text-xs text-gray-500">Modelo</p>
+                            <p class="font-medium">${SecurityUtils.escapeHtml(p.modelo.includes('/') ? p.modelo.split('/')[1] : p.modelo)}</p>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded-lg">
+                            <p class="text-xs text-gray-500">Modo</p>
+                            <p class="font-medium">${p.modo_processamento}</p>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded-lg">
+                            <p class="text-xs text-gray-500">Tokens</p>
+                            <p class="font-medium">${p.tamanho_chunk}</p>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded-lg">
+                            <p class="text-xs text-gray-500">Posicao</p>
+                            <p class="font-medium">${p.posicao_chunk}</p>
+                        </div>
+                    </div>
+
+                    <!-- Codigos -->
+                    <div>
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-semibold text-gray-900">Codigos de Documentos (${p.codigos.length})</h4>
+                            <button onclick="showModalAdicionarCodigos()" class="text-blue-600 hover:text-blue-800 text-sm">
+                                <i class="fas fa-plus mr-1"></i>Adicionar
+                            </button>
+                        </div>
+                        <div class="border border-gray-200 rounded-lg overflow-hidden">
+                            ${p.codigos.length > 0 ? `
+                                <table class="w-full text-sm">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="text-left px-4 py-2">Codigo</th>
+                                            <th class="text-left px-4 py-2">Processo</th>
+                                            <th class="text-left px-4 py-2">Fonte</th>
+                                            <th class="px-4 py-2"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${p.codigos.map(c => `
+                                            <tr class="border-t border-gray-100">
+                                                <td class="px-4 py-2 font-mono">${SecurityUtils.escapeHtml(c.codigo)}</td>
+                                                <td class="px-4 py-2">${c.numero_processo || '-'}</td>
+                                                <td class="px-4 py-2">${c.fonte}</td>
+                                                <td class="px-4 py-2 text-right">
+                                                    <button onclick="removerCodigo(${c.id})" class="text-red-600 hover:text-red-800">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            ` : `
+                                <p class="text-center py-8 text-gray-500">Nenhum codigo adicionado</p>
+                            `}
+                        </div>
+                    </div>
+
+                    <!-- Acoes -->
+                    <div class="flex gap-3">
+                        <button onclick="executarProjeto()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium transition-colors disabled:opacity-50" ${p.codigos.length === 0 || !p.prompt_id ? 'disabled' : ''}>
+                            <i class="fas fa-play mr-2"></i>Executar Classificacao
+                        </button>
+                        <button onclick="verExecucoes()" class="px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors">
+                            <i class="fas fa-history mr-2"></i>Historico
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function removerCodigo(id) {
+            if (!confirm('Remover este codigo?')) return;
+            try {
+                await fetchAPI(`/classificador/api/codigos/${id}`, { method: 'DELETE' });
+                abrirProjeto(projetoAtual.id);
+            } catch (e) {
+                alert('Erro ao remover codigo');
+            }
+        }
+
+        function showModalAdicionarCodigos() {
+            document.getElementById('modalAdicionarCodigos').classList.remove('hidden');
+            document.getElementById('buscaTJMS').value = '';
+            document.getElementById('resultadosBuscaTJMS').innerHTML = '';
+            document.getElementById('codigosManuais').value = '';
+            document.getElementById('processoManual').value = '';
+        }
+
+        function hideModalAdicionarCodigos() {
+            document.getElementById('modalAdicionarCodigos').classList.add('hidden');
+        }
+
+        async function buscarDocumentosTJMS() {
+            const numeroCNJ = document.getElementById('buscaTJMS').value.trim();
+            if (!numeroCNJ) {
+                alert('Digite o numero do processo CNJ');
+                return;
+            }
+
+            const container = document.getElementById('resultadosBuscaTJMS');
+            container.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-blue-600"></i> Consultando TJ-MS...</div>';
+
+            try {
+                const response = await fetchAPI('/classificador/api/tjms/consultar-processo', {
+                    method: 'POST',
+                    body: JSON.stringify({ numero_cnj: numeroCNJ })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || 'Erro ao consultar');
+                }
+
+                const data = await response.json();
+
+                if (data.documentos.length === 0) {
+                    container.innerHTML = '<div class="text-center py-4 text-gray-500">Nenhum documento encontrado neste processo</div>';
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div class="text-sm text-gray-600 mb-2">${data.total_documentos} documento(s) encontrado(s)</div>
+                    <div class="max-h-48 overflow-y-auto border rounded-lg">
+                        ${data.documentos.map(doc => `
+                            <label class="flex items-center gap-3 p-2 hover:bg-gray-50 border-b last:border-b-0 cursor-pointer">
+                                <input type="checkbox" value="${doc.id}" data-processo="${numeroCNJ}" class="docTJMS rounded">
+                                <div class="flex-1 min-w-0">
+                                    <div class="font-medium text-sm truncate">${SecurityUtils.escapeHtml(doc.tipo || 'Documento')}</div>
+                                    <div class="text-xs text-gray-500 truncate">${SecurityUtils.escapeHtml(doc.descricao || doc.id)}</div>
+                                </div>
+                            </label>
+                        `).join('')}
+                    </div>
+                    <div class="flex gap-2 mt-2">
+                        <button type="button" onclick="selecionarTodosTJMS(true)" class="text-xs text-blue-600 hover:underline">Selecionar todos</button>
+                        <button type="button" onclick="selecionarTodosTJMS(false)" class="text-xs text-gray-600 hover:underline">Desmarcar todos</button>
+                    </div>
+                `;
+            } catch (e) {
+                container.innerHTML = `<div class="text-center py-4 text-red-500"><i class="fas fa-exclamation-triangle mr-2"></i>${SecurityUtils.escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function selecionarTodosTJMS(selecionar) {
+            document.querySelectorAll('.docTJMS').forEach(cb => cb.checked = selecionar);
+        }
+
+        async function adicionarCodigosSelecionados() {
+            // Coleta documentos selecionados do TJ-MS
+            const selecionados = [];
+            let processoCNJ = null;
+            document.querySelectorAll('.docTJMS:checked').forEach(cb => {
+                selecionados.push(cb.value);
+                processoCNJ = cb.dataset.processo;
+            });
+
+            // Coleta codigos manuais
+            const manuais = document.getElementById('codigosManuais').value;
+            const processoManual = document.getElementById('processoManual').value.trim();
+            const codigosManuais = manuais.split(/[,;\n]/).map(c => c.trim()).filter(c => c);
+
+            if (selecionados.length === 0 && codigosManuais.length === 0) {
+                alert('Selecione documentos do TJ-MS ou digite codigos manualmente');
+                return;
+            }
+
+            try {
+                // Adiciona selecionados do TJ-MS
+                if (selecionados.length > 0 && processoCNJ) {
+                    await fetchAPI(`/classificador/api/projetos/${projetoAtual.id}/codigos-tjms`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            numero_cnj: processoCNJ,
+                            ids_documentos: selecionados
+                        })
+                    });
+                }
+
+                // Adiciona manuais
+                if (codigosManuais.length > 0) {
+                    await fetchAPI(`/classificador/api/projetos/${projetoAtual.id}/codigos`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            codigos: codigosManuais,
+                            numero_processo: processoManual || null,
+                            fonte: 'tjms'
+                        })
+                    });
+                }
+
+                hideModalAdicionarCodigos();
+                abrirProjeto(projetoAtual.id);
+            } catch (e) {
+                alert('Erro ao adicionar codigos: ' + e.message);
+            }
+        }
+
+        async function adicionarCodigos(codigosTexto, processo) {
+            const codigos = codigosTexto.split(/[,;\n]/).map(c => c.trim()).filter(c => c);
+            if (codigos.length === 0) return;
+            try {
+                await fetchAPI(`/classificador/api/projetos/${projetoAtual.id}/codigos`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        codigos: codigos,
+                        numero_processo: processo || null,
+                        fonte: 'tjms'
+                    })
+                });
+                abrirProjeto(projetoAtual.id);
+            } catch (e) {
+                alert('Erro ao adicionar codigos');
+            }
+        }
+
+        async function executarProjeto() {
+            alert('Funcionalidade de execucao sera implementada na proxima fase. Por enquanto, use a classificacao avulsa.');
+        }
+
+        async function verExecucoes() {
+            alert('Funcionalidade de historico sera implementada na proxima fase.');
+        }
+
+        // ====================================
+        // Classificacao Avulsa
+        // ====================================
+        function setupDropZone() {
+            const dropZone = document.getElementById('dropZone');
+            const input = document.getElementById('arquivoAvulso');
+            const nomeEl = document.getElementById('nomeArquivoAvulso');
+
+            dropZone.addEventListener('click', () => input.click());
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-blue-400', 'bg-blue-50');
+            });
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+            });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+                if (e.dataTransfer.files.length > 0) {
+                    input.files = e.dataTransfer.files;
+                    atualizarNomeArquivo();
+                }
+            });
+            input.addEventListener('change', atualizarNomeArquivo);
+
+            function atualizarNomeArquivo() {
+                if (input.files.length > 0) {
+                    nomeEl.textContent = `Arquivo: ${input.files[0].name}`;
+                    nomeEl.classList.remove('hidden');
+                } else {
+                    nomeEl.classList.add('hidden');
+                }
+            }
+        }
+
+        async function classificarAvulso(e) {
+            e.preventDefault();
+            const arquivo = document.getElementById('arquivoAvulso').files[0];
+            const promptId = document.getElementById('promptAvulso').value;
+            const modelo = document.getElementById('modeloAvulso').value;
+            const modo = document.getElementById('modoAvulso').value;
+            const posicao = document.getElementById('posicaoAvulso').value;
+            const tokens = document.getElementById('tokensAvulso').value;
+
+            if (!arquivo) {
+                alert('Selecione um arquivo PDF');
+                return;
+            }
+            if (!promptId) {
+                alert('Selecione um prompt');
+                return;
+            }
+
+            const btn = document.getElementById('btnClassificarAvulso');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Classificando...';
+
+            try {
+                const formData = new FormData();
+                formData.append('arquivo', arquivo);
+                formData.append('prompt_id', promptId);
+                formData.append('modelo', modelo);
+                formData.append('modo_processamento', modo);
+                formData.append('posicao_chunk', posicao);
+                formData.append('tamanho_chunk', tokens);
+
+                const response = await fetch('/classificador/api/classificar-avulso', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    body: formData
+                });
+
+                const resultado = await response.json();
+                mostrarResultadoAvulso(resultado);
+
+            } catch (e) {
+                alert('Erro ao classificar documento');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-magic mr-2"></i>Classificar Documento';
+            }
+        }
+
+        function mostrarResultadoAvulso(resultado) {
+            const container = document.getElementById('resultadoAvulso');
+            const content = document.getElementById('resultadoAvulsoContent');
+
+            if (resultado.sucesso) {
+                content.innerHTML = `
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Categoria:</span>
+                            <span class="font-semibold">${SecurityUtils.escapeHtml(resultado.categoria || '-')}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Subcategoria:</span>
+                            <span class="font-semibold">${SecurityUtils.escapeHtml(resultado.subcategoria || '-')}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Confianca:</span>
+                            <span class="px-2 py-1 rounded text-sm font-medium confianca-${resultado.confianca}">${resultado.confianca}</span>
+                        </div>
+                        <div class="border-t pt-3 mt-3">
+                            <p class="text-gray-600 text-sm mb-1">Justificativa:</p>
+                            <p class="text-gray-900">${SecurityUtils.escapeHtml(resultado.justificativa || '-')}</p>
+                        </div>
+                        <div class="border-t pt-3 mt-3 text-xs text-gray-500">
+                            <span>Extracao: ${resultado.texto_via || 'pdf'}</span>
+                            <span class="ml-4">Tokens: ${resultado.tokens_usados || '-'}</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                content.innerHTML = `
+                    <div class="text-red-600">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        ${SecurityUtils.escapeHtml(resultado.erro || 'Erro desconhecido')}
+                    </div>
+                `;
+            }
+
+            container.classList.remove('hidden');
+        }
+
+        // ====================================
+        // Event Listeners
+        // ====================================
+        document.getElementById('formPrompt').addEventListener('submit', salvarPrompt);
+        document.getElementById('formProjeto').addEventListener('submit', salvarProjeto);
+        document.getElementById('formAvulso').addEventListener('submit', classificarAvulso);
+
+        // ====================================
+        // Inicializacao
+        // ====================================
+        document.addEventListener('DOMContentLoaded', async () => {
+            setupDropZone();
+            await Promise.all([
+                verificarStatusAPI(),
+                carregarPrompts(),
+                carregarProjetos()
+            ]);
+        });
+    </script>
+</body>
+</html>

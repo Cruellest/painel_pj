@@ -1,6 +1,6 @@
 # AGENTS.md - Guia para Agentes de IA
 
-> Ultima atualizacao: 20 Janeiro 2026
+> Ultima atualizacao: 24 Janeiro 2026
 
 ---
 
@@ -86,7 +86,8 @@ portal-pge/
 │   ├── pedido_calculo/       # Cálculo de danos
 │   ├── prestacao_contas/     # Análise de prestação de contas
 │   ├── matriculas_confrontantes/
-│   └── assistencia_judiciaria/
+│   ├── assistencia_judiciaria/
+│   └── bert_training/        # Treinamento de classificadores BERT
 │
 ├── main.py                   # Entry point FastAPI
 ├── config.py                 # Configurações centralizadas
@@ -426,6 +427,173 @@ PARECER: [FAVORAVEL ou DESFAVORAVEL ou DUVIDA]
 
 ---
 
+### 4. BERT TRAINING (`/bert-training`)
+
+**Objetivo:** Treinar classificadores de texto usando modelos BERT com arquitetura híbrida cloud + GPU local.
+
+**Arquitetura Híbrida:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ARQUITETURA BERT TRAINING                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   [Browser] ──────► [Railway/Cloud]                              │
+│       │             ┌──────────────────┐                         │
+│       │             │ FastAPI Server   │                         │
+│       │             │ - Upload Excel   │                         │
+│       │             │ - Criar Runs     │                         │
+│       │             │ - Fila de Jobs   │                         │
+│       │             │ - Metricas/Logs  │                         │
+│       │             └────────┬─────────┘                         │
+│       │                      │ API                               │
+│       │                      ▼                                   │
+│       │             ┌──────────────────┐                         │
+│       │             │ PostgreSQL       │                         │
+│       │             │ - Datasets       │                         │
+│       │             │ - Runs           │                         │
+│       │             │ - Jobs           │                         │
+│       │             │ - Metricas       │                         │
+│       │             │ - Workers        │                         │
+│       │             └──────────────────┘                         │
+│       │                                                          │
+│       └─────────────────────────────────────────────┐            │
+│                                                      │            │
+│   [Worker Local]                                     │ Pull Jobs  │
+│   ┌──────────────────────────────────────────┐      │            │
+│   │ PC com GPU (RTX 4080, etc)               │◄─────┘            │
+│   │ - Faz pull de jobs pendentes             │                   │
+│   │ - Baixa Excel do dataset                 │                   │
+│   │ - Treina modelo com PyTorch/CUDA         │                   │
+│   │ - Envia metricas/logs para cloud         │                   │
+│   │ - Salva modelo LOCAL (nao envia pesos)   │                   │
+│   └──────────────────────────────────────────┘                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Tipos de Tarefa Suportados:**
+1. **Text Classification** - Classifica textos em categorias (ex: tipo de documento jurídico)
+2. **Token Classification (NER/BIO)** - Identifica entidades em textos (pessoas, locais, etc.)
+
+**O que é armazenado no cloud:**
+- Excel original (para reproducibilidade)
+- SHA256 do dataset
+- Configurações e hiperparâmetros
+- Commit hash do código
+- Fingerprint do ambiente
+- Métricas e logs de treinamento
+- Fingerprint do modelo (hash, SEM pesos)
+
+**O que fica LOCAL (nunca sobe para cloud):**
+- Pesos do modelo treinado
+- Dados sensíveis além do hash
+
+**Estrutura de Arquivos:**
+```
+sistemas/bert_training/
+├── __init__.py
+├── router.py           # Endpoints FastAPI (~600 LOC)
+├── models.py           # SQLAlchemy models
+├── schemas.py          # Pydantic schemas
+├── services.py         # Lógica de negócio
+├── ml/
+│   ├── __init__.py
+│   ├── classifier.py   # BertClassifier (PyTorch nn.Module)
+│   ├── dataset.py      # TextClassificationDataset
+│   ├── training.py     # Trainer com early stopping
+│   └── evaluation.py   # Evaluator (precision, recall, f1)
+├── worker/
+│   ├── __init__.py
+│   └── bert_worker.py  # Worker local GPU (~400 LOC)
+└── templates/
+    ├── index.html      # Frontend TailwindCSS
+    └── app.js          # JavaScript SPA
+```
+
+**Endpoints Principais:**
+
+| Grupo | Endpoint | Descrição |
+|-------|----------|-----------|
+| **Datasets** | `POST /bert-training/api/datasets/validate` | Validar Excel |
+| | `POST /bert-training/api/datasets/upload` | Upload dataset |
+| | `GET /bert-training/api/datasets` | Listar datasets |
+| | `GET /bert-training/api/datasets/{id}/download` | Download Excel |
+| **Runs** | `POST /bert-training/api/runs` | Criar run (enfileira job) |
+| | `GET /bert-training/api/runs` | Listar runs |
+| | `GET /bert-training/api/runs/{id}/metrics` | Métricas por época |
+| | `GET /bert-training/api/runs/{id}/logs` | Logs em tempo real (SSE) |
+| **Jobs (Worker)** | `POST /bert-training/api/jobs/claim` | Worker pega job |
+| | `POST /bert-training/api/jobs/{id}/progress` | Atualiza progresso |
+| | `POST /bert-training/api/jobs/{id}/complete` | Marca completo |
+| **Workers** | `POST /bert-training/api/workers/register` | Registrar worker |
+| | `POST /bert-training/api/workers/heartbeat` | Heartbeat |
+
+**Tabelas do Banco:**
+
+| Tabela | Propósito |
+|--------|-----------|
+| `bert_datasets` | Datasets Excel com SHA256 |
+| `bert_runs` | Experimentos de treinamento |
+| `bert_jobs` | Fila de jobs pendentes/em execução |
+| `bert_metrics` | Métricas por época (loss, accuracy, f1) |
+| `bert_logs` | Logs estruturados do treinamento |
+| `bert_workers` | Workers registrados com token_hash |
+
+**Índices importantes:**
+- `ix_bert_datasets_sha256_hash` - Idempotência de datasets
+- `ix_bert_jobs_status` - Busca rápida de jobs pendentes
+- `ix_bert_metrics_run_id` - Métricas por run
+- `ix_bert_logs_timestamp` - Logs ordenados
+
+**Worker Local (GPU):**
+
+```bash
+# Requisitos: Python 3.10+, CUDA 12.x, GPU NVIDIA 16GB+ VRAM
+
+# Instalar dependências
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+pip install transformers pandas openpyxl requests loguru scikit-learn
+
+# Executar worker
+python -m sistemas.bert_training.worker.bert_worker \
+    --api-url https://portal-pge.up.railway.app \
+    --token SEU_TOKEN_AQUI \
+    --models-dir ./bert_models
+```
+
+**Hiperparâmetros Configuráveis:**
+
+| Parâmetro | Default | Descrição |
+|-----------|---------|-----------|
+| `learning_rate` | 5e-5 | Taxa de aprendizado |
+| `batch_size` | 16 | Tamanho do batch |
+| `epochs` | 10 | Número de épocas |
+| `max_length` | 512 | Tamanho máximo da sequência |
+| `train_split` | 0.7 | Proporção treino/validação |
+| `early_stopping_patience` | 3 | Épocas sem melhoria para parar |
+| `use_class_weights` | true | Balanceamento de classes |
+| `seed` | 42 | Seed para reproducibilidade |
+
+**Modelos Base Suportados:**
+- `neuralmind/bert-base-portuguese-cased` (recomendado para PT-BR)
+- `neuralmind/bert-large-portuguese-cased`
+- `bert-base-multilingual-cased`
+- `xlm-roberta-base`
+
+**Troubleshooting:**
+
+| Problema | Solução |
+|----------|---------|
+| Worker não conecta | Verificar URL da API e token |
+| GPU não detectada | `nvidia-smi` e reinstalar PyTorch com CUDA |
+| Out of Memory | Reduzir `batch_size` e/ou `max_length` |
+| Treinamento lento | Verificar se GPU está sendo usada nos logs |
+
+**Documentação completa:** `docs/bert_training.md`
+
+---
+
 ## PADRÕES DE CÓDIGO
 
 ### Estrutura de Módulos
@@ -515,6 +683,12 @@ except Exception as e:
 | `geracoes_pedido_calculo` | Histórico de pedidos de cálculo |
 | `geracoes_prestacao_contas` | Histórico de análises de prestação |
 | `configuracoes_ia` | Configurações de modelos por sistema |
+| `bert_datasets` | Datasets Excel para treinamento BERT |
+| `bert_runs` | Experimentos de treinamento BERT |
+| `bert_jobs` | Fila de jobs de treinamento |
+| `bert_metrics` | Métricas por época de treinamento |
+| `bert_logs` | Logs de treinamento BERT |
+| `bert_workers` | Workers GPU registrados |
 
 ### Migrações
 As migrações são automáticas em `database/init_db.py`. Para adicionar coluna:
@@ -946,8 +1120,11 @@ ADMIN_PASSWORD=senha-inicial
 | `services/gemini_service.py` | Wrapper IA | ~552 |
 | `admin/router.py` | API admin completa | ~1600 |
 | `admin/router_prompts.py` | CRUD prompts | ~1016 |
+| `sistemas/bert_training/router.py` | API BERT Training | ~600 |
+| `sistemas/bert_training/worker/bert_worker.py` | Worker local GPU | ~400 |
 | `docs/README.md` | Indice da documentacao tecnica | ~100 |
 | `docs/ARCHITECTURE.md` | Arquitetura atual em docs | ~110 |
+| `docs/bert_training.md` | Documentacao BERT Training | ~280 |
 
 ---
 

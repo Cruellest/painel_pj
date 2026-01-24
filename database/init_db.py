@@ -27,6 +27,13 @@ from sistemas.gerador_pecas.models_teste_ativacao import CenarioTesteAtivacao
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from sistemas.relatorio_cumprimento.models import GeracaoRelatorioCumprimento, LogChamadaIARelatorioCumprimento, FeedbackRelatorioCumprimento
+from sistemas.classificador_documentos.models import (
+    ProjetoClassificacao, CodigoDocumentoProjeto, ExecucaoClassificacao,
+    ResultadoClassificacao, PromptClassificacao, LogClassificacaoIA
+)
+from sistemas.bert_training.models import (
+    BertDataset, BertRun, BertJob, BertMetric, BertLog, BertWorker
+)
 from admin.models import PromptConfig, ConfiguracaoIA
 from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca, RegraDeterministicaTipoPeca
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
@@ -69,7 +76,9 @@ def create_tables():
         'regra_deterministica_tipo_peca',  # Adicionado para regras por tipo de peça
         'teste_ativacao_cenarios',  # Adicionado para teste de ativação de módulos
         'geracoes_relatorio_cumprimento',  # Sistema de relatório de cumprimento de sentença
-        'request_perf_logs'  # Logs detalhados de performance de requests
+        'request_perf_logs',  # Logs detalhados de performance de requests
+        'projetos_classificacao',  # Sistema de classificação de documentos
+        'bert_datasets'  # Sistema BERT Training
     }
 
     # Se todas as tabelas obrigatórias existem, não precisa criar
@@ -2239,7 +2248,7 @@ def init_database():
 
     # Fast-path com cache em arquivo (evita query ao banco em dev)
     # IMPORTANTE: Versão do schema - incrementar quando adicionar novas colunas/tabelas
-    SCHEMA_VERSION = "v4"  # v4: adicionado request_perf_logs para logs de performance detalhados
+    SCHEMA_VERSION = "v5"  # v5: adicionado sistema BERT Training
     import hashlib
     cache_file = Path(__file__).parent / ".db_initialized"
     db_url_hash = hashlib.md5(f"{engine.url}:{SCHEMA_VERSION}".encode()).hexdigest()[:8]
