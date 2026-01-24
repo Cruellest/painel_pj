@@ -782,3 +782,219 @@ async def adicionar_codigos_tjms(
         "adicionados": len(novos),
         "numero_cnj": req.numero_cnj
     }
+
+
+# ============================================
+# Endpoints para Novo Lote (conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 8.3)
+# ============================================
+
+class UploadLoteRequest(BaseModel):
+    """Request para upload em lote de arquivos"""
+    # Arquivos sao enviados via multipart/form-data
+    pass
+
+
+class TJMSLoteRequest(BaseModel):
+    """Request para importar documentos do TJ-MS em lote"""
+    processos: List[str]  # Lista de numeros CNJ
+    tipos_documento: List[str]  # Codigos de tipos: ["8", "15", "34", "500"]
+    filtro_ano: Optional[List[str]] = None
+    filtro_mes: Optional[int] = None
+
+
+class ExecutarLoteSincronoRequest(BaseModel):
+    """Request para executar lote com baixar+classificar sincrono"""
+    pass
+
+
+@router.post("/lotes/{lote_id}/upload")
+async def upload_arquivos_lote(
+    lote_id: int,
+    arquivos: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Adiciona multiplos arquivos a um lote (projeto).
+
+    Conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 3:
+    - Aceita PDF, TXT ou ZIP
+    - Max 500 arquivos por vez
+    - Max 50MB por arquivo
+    """
+    import hashlib
+    from .models import CodigoDocumentoProjeto, FonteDocumento
+
+    service = ClassificadorService(db)
+    projeto = service.obter_projeto(lote_id)
+    if not projeto:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    # Limites
+    MAX_FILES = 500
+    MAX_SIZE = 50 * 1024 * 1024  # 50MB
+    VALID_EXTENSIONS = {'.pdf', '.txt', '.zip'}
+
+    if len(arquivos) > MAX_FILES:
+        raise HTTPException(status_code=400, detail=f"Limite de {MAX_FILES} arquivos excedido")
+
+    adicionados = []
+    erros = []
+
+    for arquivo in arquivos:
+        try:
+            # Valida extensao
+            ext = '.' + arquivo.filename.split('.')[-1].lower() if '.' in arquivo.filename else ''
+            if ext not in VALID_EXTENSIONS:
+                erros.append({"arquivo": arquivo.filename, "erro": "Extensao invalida"})
+                continue
+
+            # Le conteudo
+            conteudo = await arquivo.read()
+            if len(conteudo) > MAX_SIZE:
+                erros.append({"arquivo": arquivo.filename, "erro": "Arquivo muito grande"})
+                continue
+
+            # Calcula hash
+            arquivo_hash = hashlib.sha256(conteudo).hexdigest()
+
+            # TODO: Se ZIP, extrair arquivos internos
+
+            # Extrai texto (para cache)
+            texto_extraido = None
+            if ext == '.txt':
+                texto_extraido = conteudo.decode('utf-8', errors='ignore')
+            elif ext == '.pdf':
+                # Extrai texto do PDF
+                try:
+                    from .services_extraction import get_text_extractor
+                    extractor = get_text_extractor()
+                    resultado = extractor.extrair_texto(conteudo)
+                    texto_extraido = resultado.texto
+                except Exception as e:
+                    logger.warning(f"Erro ao extrair texto de {arquivo.filename}: {e}")
+
+            # Cria codigo do documento
+            codigo = CodigoDocumentoProjeto(
+                projeto_id=lote_id,
+                codigo=arquivo_hash[:12],  # Usa parte do hash como codigo
+                arquivo_nome=arquivo.filename,
+                arquivo_hash=arquivo_hash,
+                texto_extraido=texto_extraido,
+                fonte=FonteDocumento.UPLOAD.value
+            )
+            db.add(codigo)
+            adicionados.append(arquivo.filename)
+
+        except Exception as e:
+            erros.append({"arquivo": arquivo.filename, "erro": str(e)})
+
+    db.commit()
+
+    return {
+        "mensagem": f"{len(adicionados)} arquivos adicionados ao lote",
+        "adicionados": len(adicionados),
+        "erros": len(erros),
+        "detalhes_erros": erros if erros else None
+    }
+
+
+@router.post("/lotes/{lote_id}/tjms-lote")
+async def importar_tjms_lote(
+    lote_id: int,
+    req: TJMSLoteRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Importa documentos de multiplos processos do TJ-MS.
+
+    Conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 4:
+    - Recebe lista de processos CNJ
+    - Filtra por tipos de documento (tipoDocumento)
+    - NAO baixa todos os documentos, apenas os tipos selecionados
+    """
+    from .models import CodigoDocumentoProjeto, FonteDocumento
+
+    service = ClassificadorService(db)
+    projeto = service.obter_projeto(lote_id)
+    if not projeto:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    if not req.processos:
+        raise HTTPException(status_code=400, detail="Lista de processos vazia")
+    if not req.tipos_documento:
+        raise HTTPException(status_code=400, detail="Nenhum tipo de documento selecionado")
+
+    # Adiciona cada processo com os tipos selecionados
+    total_adicionados = 0
+    for processo in req.processos:
+        processo = processo.strip()
+        if not processo:
+            continue
+
+        # Para cada tipo de documento, cria um codigo
+        # O download real sera feito durante a execucao
+        for tipo in req.tipos_documento:
+            codigo = CodigoDocumentoProjeto(
+                projeto_id=lote_id,
+                codigo=f"{processo}_{tipo}",  # Codigo composto
+                numero_processo=processo,
+                tipo_documento=tipo,
+                fonte=FonteDocumento.TJMS.value
+            )
+            db.add(codigo)
+            total_adicionados += 1
+
+    db.commit()
+
+    return {
+        "mensagem": f"{total_adicionados} itens adicionados ao lote",
+        "processos": len(req.processos),
+        "tipos_documento": req.tipos_documento,
+        "total_codigos": total_adicionados
+    }
+
+
+@router.post("/lotes/{lote_id}/executar-sincrono")
+async def executar_lote_sincrono(
+    lote_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Executa lote com download e classificacao em streaming (SSE).
+
+    Conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 4.4:
+    - Para TJ-MS: consulta XML -> filtra por tipo -> baixa -> classifica
+    - Para uploads: usa texto extraido cached -> classifica
+    - Retorna eventos SSE em tempo real
+    """
+    service = ClassificadorService(db)
+    projeto = service.obter_projeto(lote_id)
+    if not projeto:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    async def gerar_eventos():
+        """Gerador de eventos SSE"""
+        async for evento in service.executar_projeto(
+            projeto_id=lote_id,
+            usuario_id=current_user.id
+        ):
+            yield f"data: {json.dumps(evento)}\n\n"
+
+    return StreamingResponse(
+        gerar_eventos(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )

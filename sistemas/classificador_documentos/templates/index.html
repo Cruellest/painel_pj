@@ -8,6 +8,11 @@
     <link rel="icon" type="image/png" href="/logo/logo-pge.png">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <!-- PDF.js para renderizacao de PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
     <script>
         tailwind.config = {
             theme: {
@@ -103,30 +108,24 @@
 
 <body class="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50">
 
-    <!-- Header -->
-    <header class="glass-effect shadow-sm border-b border-gray-200/50 sticky top-0 z-40">
+    <!-- Header (Padrao PGE conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 7) -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
-                <div class="flex items-center gap-4">
-                    <a href="/dashboard" class="text-gray-500 hover:text-gray-700 transition-colors">
-                        <i class="fas fa-arrow-left"></i>
+                <!-- Logo OFICIAL PGE -->
+                <div class="flex items-center gap-3">
+                    <a href="/dashboard">
+                        <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-12 w-auto">
                     </a>
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                            <i class="fas fa-tags text-white text-lg"></i>
-                        </div>
-                        <div>
-                            <h1 class="text-lg font-bold text-gray-900">Classificador de Documentos</h1>
-                            <p class="text-xs text-gray-500">Classificacao automatica com IA</p>
-                        </div>
-                    </div>
+                    <span class="text-lg font-semibold text-gray-700">Classificador de Documentos</span>
                 </div>
+                <!-- Menu usuario -->
                 <div class="flex items-center gap-4">
                     <div id="apiStatus" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm">
                         <i class="fas fa-circle text-gray-400 text-xs"></i>
                         <span class="text-gray-500">Verificando API...</span>
                     </div>
-                    <button onclick="logout()" class="text-gray-500 hover:text-gray-700 transition-colors">
+                    <button onclick="logout()" class="text-gray-500 hover:text-gray-700 transition-colors" title="Sair">
                         <i class="fas fa-sign-out-alt"></i>
                     </button>
                 </div>
@@ -134,18 +133,21 @@
         </div>
     </header>
 
-    <!-- Tabs -->
+    <!-- Tabs (Renomeado conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 2.2) -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
         <div class="border-b border-gray-200">
             <nav class="flex gap-8">
-                <button onclick="showTab('projetos')" id="tab-projetos" class="py-3 px-1 text-sm font-medium tab-active">
-                    <i class="fas fa-folder-open mr-2"></i>Projetos
+                <button onclick="showTab('novoLote')" id="tab-novoLote" class="py-3 px-1 text-sm font-medium tab-active">
+                    <i class="fas fa-plus-circle mr-2"></i>Novo Lote
+                </button>
+                <button onclick="showTab('meusLotes')" id="tab-meusLotes" class="py-3 px-1 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-folder-open mr-2"></i>Meus Lotes
                 </button>
                 <button onclick="showTab('prompts')" id="tab-prompts" class="py-3 px-1 text-sm font-medium text-gray-500 hover:text-gray-700">
                     <i class="fas fa-comment-dots mr-2"></i>Prompts
                 </button>
-                <button onclick="showTab('avulso')" id="tab-avulso" class="py-3 px-1 text-sm font-medium text-gray-500 hover:text-gray-700">
-                    <i class="fas fa-upload mr-2"></i>Classificacao Avulsa
+                <button onclick="showTab('testeRapido')" id="tab-testeRapido" class="py-3 px-1 text-sm font-medium text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-bolt mr-2"></i>Teste Rapido
                 </button>
             </nav>
         </div>
@@ -154,21 +156,270 @@
     <!-- Content -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
-        <!-- Tab: Projetos -->
-        <div id="content-projetos" class="tab-content">
-            <!-- Header da lista de projetos -->
+        <!-- Tab: Novo Lote (conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 5) -->
+        <div id="content-novoLote" class="tab-content">
+            <div class="max-w-4xl mx-auto">
+                <h2 class="text-xl font-semibold text-gray-900 mb-6">
+                    <i class="fas fa-plus-circle mr-2 text-blue-500"></i>Criar Novo Lote de Classificacao
+                </h2>
+
+                <!-- Nome do Lote -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Nome do Lote (opcional)</label>
+                    <input type="text" id="nomeLote" placeholder="Ex: Classificacao Decisoes Janeiro 2026" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+
+                <!-- Adicionar Documentos -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">
+                        <i class="fas fa-file-alt mr-2 text-gray-400"></i>Adicionar Documentos
+                    </h3>
+
+                    <!-- Sub-tabs: Upload / TJ-MS -->
+                    <div class="border-b border-gray-200 mb-4">
+                        <nav class="flex gap-4">
+                            <button onclick="showSubTab('upload')" id="subtab-upload" class="py-2 px-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600">
+                                <i class="fas fa-upload mr-2"></i>Upload de Arquivos
+                            </button>
+                            <button onclick="showSubTab('tjms')" id="subtab-tjms" class="py-2 px-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent">
+                                <i class="fas fa-gavel mr-2"></i>Importar do TJ-MS
+                            </button>
+                        </nav>
+                    </div>
+
+                    <!-- Sub-content: Upload -->
+                    <div id="subcontent-upload" class="subtab-content">
+                        <div id="dropZoneLote" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
+                            <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-600 font-medium">Arraste arquivos aqui</p>
+                            <p class="text-gray-500 mt-1">ou clique para selecionar</p>
+                            <p class="text-sm text-gray-400 mt-2">PDF, TXT ou ZIP (max 500 arquivos, 50MB cada)</p>
+                            <input type="file" id="arquivosLote" accept=".pdf,.txt,.zip" multiple class="hidden">
+                        </div>
+                        <div id="listaArquivosLote" class="mt-4 hidden">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-sm font-medium text-gray-700">Arquivos selecionados: <span id="contadorArquivos">0</span></span>
+                                <button onclick="limparArquivosLote()" class="text-sm text-red-600 hover:text-red-700">
+                                    <i class="fas fa-trash mr-1"></i>Limpar
+                                </button>
+                            </div>
+                            <div id="previewArquivos" class="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100"></div>
+                        </div>
+                    </div>
+
+                    <!-- Sub-content: TJ-MS -->
+                    <div id="subcontent-tjms" class="subtab-content hidden">
+                        <div class="space-y-4">
+                            <!-- Lista de processos -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Cole a lista de processos (1 por linha)</label>
+                                <textarea id="processosLote" rows="5" placeholder="0800123-45.2024.8.12.0001&#10;0800456-78.2024.8.12.0002&#10;0800789-01.2024.8.12.0003" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"></textarea>
+                                <p id="contadorProcessos" class="text-sm text-gray-500 mt-1">Total: 0 processos</p>
+                            </div>
+
+                            <!-- Tipos de documentos -->
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Tipos de documentos a baixar</label>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <!-- Disponiveis -->
+                                    <div>
+                                        <p class="text-xs text-gray-500 mb-2">Disponiveis</p>
+                                        <div id="tiposDisponiveis" class="h-48 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
+                                            <!-- Populado via JS -->
+                                        </div>
+                                    </div>
+                                    <!-- Selecionados -->
+                                    <div>
+                                        <p class="text-xs text-gray-500 mb-2">Selecionados</p>
+                                        <div id="tiposSelecionados" class="h-48 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-blue-50">
+                                            <!-- Populado via JS -->
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 mt-2">
+                                    <button onclick="adicionarTipoSelecionado()" class="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">Adicionar &rarr;</button>
+                                    <button onclick="removerTipoSelecionado()" class="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">&larr; Remover</button>
+                                    <button onclick="adicionarTodosTipos()" class="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 rounded">Adicionar Todos</button>
+                                </div>
+                                <!-- Codigos em lote -->
+                                <div class="mt-3">
+                                    <label class="block text-xs text-gray-500 mb-1">Codigos em lote (opcional)</label>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="codigosTiposLote" placeholder="8, 15, 34, 500, 9500" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <button onclick="adicionarCodigosLote()" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm">Adicionar</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Filtros opcionais -->
+                            <div class="flex items-center gap-4">
+                                <label class="flex items-center gap-2 text-sm">
+                                    <input type="checkbox" id="filtrarPorAno" class="rounded border-gray-300">
+                                    <span class="text-gray-700">Filtrar por ano:</span>
+                                </label>
+                                <input type="text" id="anosFiltro" placeholder="2024, 2025" class="px-3 py-2 border border-gray-300 rounded-lg text-sm w-32" disabled>
+                                <select id="mesFiltro" class="px-3 py-2 border border-gray-300 rounded-lg text-sm" disabled>
+                                    <option value="">Todos os meses</option>
+                                    <option value="1">Janeiro</option>
+                                    <option value="2">Fevereiro</option>
+                                    <option value="3">Marco</option>
+                                    <option value="4">Abril</option>
+                                    <option value="5">Maio</option>
+                                    <option value="6">Junho</option>
+                                    <option value="7">Julho</option>
+                                    <option value="8">Agosto</option>
+                                    <option value="9">Setembro</option>
+                                    <option value="10">Outubro</option>
+                                    <option value="11">Novembro</option>
+                                    <option value="12">Dezembro</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configuracao -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">
+                        <i class="fas fa-cog mr-2 text-gray-400"></i>Configuracao
+                    </h3>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        <!-- Prompt -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Prompt</label>
+                            <div class="flex gap-2">
+                                <select id="promptLote" class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">Selecione um prompt...</option>
+                                </select>
+                                <button onclick="showTab('prompts')" class="px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50" title="Criar novo prompt">
+                                    <i class="fas fa-plus text-gray-500"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Modelo -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Modelo</label>
+                            <select id="modeloLote" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="google/gemini-2.5-flash-lite">google/gemini-2.5-flash-lite (Recomendado)</option>
+                                <option value="google/gemini-2.0-flash-001">google/gemini-2.0-flash-001</option>
+                                <option value="anthropic/claude-sonnet-4">anthropic/claude-sonnet-4</option>
+                                <option value="openai/gpt-4o-mini">openai/gpt-4o-mini</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Modo de processamento -->
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Modo de Processamento</label>
+                        <div class="flex items-center gap-6">
+                            <label class="flex items-center gap-2">
+                                <input type="radio" name="modoLote" value="chunk" checked class="text-blue-600">
+                                <span class="text-sm text-gray-700">Chunk (mais rapido)</span>
+                            </label>
+                            <label class="flex items-center gap-2">
+                                <input type="radio" name="modoLote" value="completo" class="text-blue-600">
+                                <span class="text-sm text-gray-700">Documento completo</span>
+                            </label>
+                            <div class="flex items-center gap-2 ml-4">
+                                <label class="text-sm text-gray-600">Tamanho chunk:</label>
+                                <input type="number" id="tamanhoChunkLote" value="512" min="100" max="4000" class="w-20 px-2 py-1 border border-gray-300 rounded text-sm">
+                                <span class="text-sm text-gray-500">tokens</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-sm text-gray-600">Posicao:</label>
+                                <select id="posicaoChunkLote" class="px-2 py-1 border border-gray-300 rounded text-sm">
+                                    <option value="fim">Fim</option>
+                                    <option value="inicio">Inicio</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Botao Iniciar -->
+                <div class="flex justify-center">
+                    <button id="btnIniciarLote" onclick="iniciarClassificacaoLote()" disabled class="px-8 py-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium rounded-xl text-lg transition-colors">
+                        <i class="fas fa-play mr-2"></i>Iniciar Classificacao
+                    </button>
+                </div>
+
+                <!-- Area de Progresso (inicialmente oculta) -->
+                <div id="areaProgressoLote" class="mt-6 hidden">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">Progresso</h3>
+                            <div class="flex gap-2">
+                                <button onclick="pausarLote()" id="btnPausarLote" class="px-3 py-1 text-sm bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200">
+                                    <i class="fas fa-pause mr-1"></i>Pausar
+                                </button>
+                                <button onclick="cancelarLote()" id="btnCancelarLote" class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">
+                                    <i class="fas fa-times mr-1"></i>Cancelar
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <div class="flex justify-between text-sm mb-1">
+                                <span id="statusProgressoLote">Processando...</span>
+                                <span id="contadorProgressoLote">0 / 0</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div id="barraProgressoLote" class="bg-blue-600 h-3 rounded-full transition-all" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div id="logProgressoLote" class="max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-gray-50 font-mono text-xs">
+                            <!-- Logs em tempo real -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Area de Resultados (inicialmente oculta) -->
+                <div id="areaResultadosLote" class="mt-6 hidden">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">Resultados</h3>
+                            <div class="flex gap-2">
+                                <button onclick="exportarResultadosLote('excel')" class="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                                    <i class="fas fa-file-excel mr-1"></i>Exportar Excel
+                                </button>
+                                <button onclick="exportarResultadosLote('csv')" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">
+                                    <i class="fas fa-file-csv mr-1"></i>CSV
+                                </button>
+                                <button onclick="exportarResultadosLote('json')" class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">
+                                    <i class="fas fa-file-code mr-1"></i>JSON
+                                </button>
+                            </div>
+                        </div>
+                        <div id="resumoResultadosLote" class="mb-4 p-4 bg-gray-50 rounded-lg">
+                            <!-- Resumo: X sucesso, Y erros -->
+                        </div>
+                        <div id="tabelaResultadosLote" class="overflow-x-auto">
+                            <!-- Tabela de resultados -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Meus Lotes (antigo Projetos) -->
+        <div id="content-meusLotes" class="tab-content hidden">
+            <!-- Header da lista de lotes -->
             <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-semibold text-gray-900">Meus Projetos</h2>
-                <button onclick="showModalCriarProjeto()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
-                    <i class="fas fa-plus mr-2"></i>Novo Projeto
-                </button>
+                <h2 class="text-xl font-semibold text-gray-900">Meus Lotes</h2>
+                <div class="flex items-center gap-4">
+                    <input type="text" id="buscaLotes" placeholder="Buscar lotes..." class="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <button onclick="showTab('novoLote')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+                        <i class="fas fa-plus mr-2"></i>Novo Lote
+                    </button>
+                </div>
             </div>
 
-            <!-- Lista de Projetos -->
+            <!-- Lista de Lotes -->
             <div id="listaProjetos" class="grid gap-4">
                 <div class="text-center py-12 text-gray-500">
                     <i class="fas fa-spinner fa-spin text-2xl mb-4"></i>
-                    <p>Carregando projetos...</p>
+                    <p>Carregando lotes...</p>
                 </div>
             </div>
         </div>
@@ -192,75 +443,201 @@
             </div>
         </div>
 
-        <!-- Tab: Classificacao Avulsa -->
-        <div id="content-avulso" class="tab-content hidden">
-            <div class="max-w-3xl mx-auto">
-                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h2 class="text-xl font-semibold text-gray-900 mb-4">
-                        <i class="fas fa-upload mr-2 text-blue-500"></i>Classificacao Avulsa
-                    </h2>
-                    <p class="text-gray-600 mb-6">Envie um documento PDF para classificacao rapida sem criar um projeto.</p>
+        <!-- Tab: Teste Rapido (redesenhado com TJ-MS + visualizacao PDF) -->
+        <div id="content-testeRapido" class="tab-content hidden">
+            <div class="max-w-6xl mx-auto">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                    <i class="fas fa-bolt mr-2 text-yellow-500"></i>Teste Rapido
+                </h2>
+                <p class="text-gray-600 mb-6">Teste um prompt com um documento e visualize o resultado antes de criar um lote.</p>
 
-                    <form id="formAvulso" class="space-y-6">
-                        <!-- Upload -->
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Arquivo PDF</label>
-                            <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer">
-                                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
-                                <p class="text-gray-600">Arraste um arquivo ou clique para selecionar</p>
-                                <p class="text-sm text-gray-400 mt-1">PDF ate 50MB</p>
-                                <input type="file" id="arquivoAvulso" accept=".pdf" class="hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Coluna Esquerda: Entrada -->
+                    <div class="space-y-4">
+                        <!-- Card: Origem do Documento -->
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                            <h3 class="text-sm font-medium text-gray-900 mb-3">Origem do Documento</h3>
+
+                            <!-- Sub-tabs: Upload / TJ-MS -->
+                            <div class="border-b border-gray-200 mb-4">
+                                <nav class="flex gap-4">
+                                    <button onclick="showTesteSubTab('upload')" id="teste-subtab-upload" class="py-2 px-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600">
+                                        <i class="fas fa-upload mr-2"></i>Upload
+                                    </button>
+                                    <button onclick="showTesteSubTab('tjms')" id="teste-subtab-tjms" class="py-2 px-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent">
+                                        <i class="fas fa-gavel mr-2"></i>TJ-MS
+                                    </button>
+                                </nav>
                             </div>
-                            <p id="nomeArquivoAvulso" class="text-sm text-blue-600 mt-2 hidden"></p>
+
+                            <!-- Sub-content: Upload -->
+                            <div id="teste-subcontent-upload" class="teste-subtab-content">
+                                <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors cursor-pointer">
+                                    <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                                    <p class="text-gray-600 text-sm">Arraste um arquivo ou clique</p>
+                                    <p class="text-xs text-gray-400 mt-1">PDF ate 50MB</p>
+                                    <input type="file" id="arquivoAvulso" accept=".pdf" class="hidden">
+                                </div>
+                                <p id="nomeArquivoAvulso" class="text-sm text-blue-600 mt-2 hidden"></p>
+                            </div>
+
+                            <!-- Sub-content: TJ-MS -->
+                            <div id="teste-subcontent-tjms" class="teste-subtab-content hidden">
+                                <div class="space-y-3">
+                                    <!-- Numero do processo -->
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Numero do Processo (CNJ)</label>
+                                        <input type="text" id="testeProcessoCNJ" placeholder="0800001-00.2024.8.12.0001" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono">
+                                    </div>
+
+                                    <!-- Tipos de documentos -->
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Tipos de Documentos</label>
+                                        <div class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
+                                            <label class="flex items-center gap-2 text-xs">
+                                                <input type="checkbox" class="teste-tipo-doc rounded" value="8" checked>
+                                                <span>8 - Sentenca</span>
+                                            </label>
+                                            <label class="flex items-center gap-2 text-xs">
+                                                <input type="checkbox" class="teste-tipo-doc rounded" value="15" checked>
+                                                <span>15 - Decisao Interl.</span>
+                                            </label>
+                                            <label class="flex items-center gap-2 text-xs">
+                                                <input type="checkbox" class="teste-tipo-doc rounded" value="34">
+                                                <span>34 - Acordao</span>
+                                            </label>
+                                            <label class="flex items-center gap-2 text-xs">
+                                                <input type="checkbox" class="teste-tipo-doc rounded" value="44">
+                                                <span>44 - Decisao Mono.</span>
+                                            </label>
+                                            <label class="flex items-center gap-2 text-xs">
+                                                <input type="checkbox" class="teste-tipo-doc rounded" value="500">
+                                                <span>500 - Peticao Inicial</span>
+                                            </label>
+                                            <label class="flex items-center gap-2 text-xs">
+                                                <input type="checkbox" class="teste-tipo-doc rounded" value="9500">
+                                                <span>9500 - Peticao</span>
+                                            </label>
+                                            <label class="flex items-center gap-2 text-xs">
+                                                <input type="checkbox" class="teste-tipo-doc rounded" value="8320">
+                                                <span>8320 - Contestacao</span>
+                                            </label>
+                                            <label class="flex items-center gap-2 text-xs">
+                                                <input type="checkbox" class="teste-tipo-doc rounded" value="8335">
+                                                <span>8335 - Apelacao</span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <!-- Botao Buscar -->
+                                    <button onclick="buscarDocumentosTJMSTeste()" class="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium">
+                                        <i class="fas fa-search mr-2"></i>Buscar Documentos
+                                    </button>
+
+                                    <!-- Lista de documentos encontrados -->
+                                    <div id="testeDocsTJMS" class="hidden">
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Documentos Encontrados</label>
+                                        <div id="testeDocsTJMSLista" class="max-h-40 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                                            <!-- Populado via JS -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Prompt -->
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Prompt</label>
-                            <select id="promptAvulso" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                <option value="">Selecione um prompt...</option>
-                            </select>
+                        <!-- Card: Configuracao -->
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                            <h3 class="text-sm font-medium text-gray-900 mb-3">Configuracao</h3>
+
+                            <div class="space-y-3">
+                                <!-- Prompt -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Prompt</label>
+                                    <select id="promptAvulso" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">Selecione um prompt...</option>
+                                    </select>
+                                </div>
+
+                                <!-- Modelo -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">Modelo</label>
+                                    <select id="modeloAvulso" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="google/gemini-2.5-flash-lite">google/gemini-2.5-flash-lite</option>
+                                        <option value="google/gemini-2.0-flash-001">google/gemini-2.0-flash-001</option>
+                                        <option value="anthropic/claude-sonnet-4">anthropic/claude-sonnet-4</option>
+                                        <option value="openai/gpt-4o-mini">openai/gpt-4o-mini</option>
+                                    </select>
+                                </div>
+
+                                <!-- Modo e Tokens em linha -->
+                                <div class="grid grid-cols-3 gap-2">
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Modo</label>
+                                        <select id="modoAvulso" class="w-full px-2 py-2 border border-gray-300 rounded-lg text-xs">
+                                            <option value="chunk">Chunk</option>
+                                            <option value="completo">Completo</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Posicao</label>
+                                        <select id="posicaoAvulso" class="w-full px-2 py-2 border border-gray-300 rounded-lg text-xs">
+                                            <option value="fim">Fim</option>
+                                            <option value="inicio">Inicio</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-medium text-gray-700 mb-1">Tokens</label>
+                                        <input type="number" id="tokensAvulso" value="512" min="100" max="4000" class="w-full px-2 py-2 border border-gray-300 rounded-lg text-xs">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Botao Classificar -->
+                            <button onclick="classificarTesteRapido()" id="btnClassificarAvulso" class="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                <i class="fas fa-magic mr-2"></i>Classificar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Coluna Direita: Visualizacao PDF + Resultado -->
+                    <div class="space-y-4">
+                        <!-- Card: Visualizacao PDF -->
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="text-sm font-medium text-gray-900">Visualizacao do Documento</h3>
+                                <div id="pdfNavegacao" class="hidden flex items-center gap-2">
+                                    <button onclick="pdfPaginaAnterior()" class="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">
+                                        <i class="fas fa-chevron-left"></i>
+                                    </button>
+                                    <span id="pdfPaginaInfo" class="text-xs text-gray-600">1 / 1</span>
+                                    <button onclick="pdfProximaPagina()" class="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="pdfViewer" class="border border-gray-200 rounded-lg bg-gray-100 flex items-center justify-center" style="height: 400px;">
+                                <div class="text-center text-gray-400">
+                                    <i class="fas fa-file-pdf text-4xl mb-2"></i>
+                                    <p class="text-sm">Nenhum documento carregado</p>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Modelo -->
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Modelo OpenRouter</label>
-                            <input type="text" id="modeloAvulso" value="google/gemini-2.5-flash-lite" placeholder="Ex: google/gemini-2.5-flash-lite" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                            <p class="text-xs text-gray-500 mt-1">Formato: provedor/modelo (ex: google/gemini-2.5-flash-lite, anthropic/claude-sonnet-4)</p>
-                        </div>
-
-                        <!-- Configuracoes -->
-                        <div class="grid grid-cols-3 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Modo</label>
-                                <select id="modoAvulso" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="chunk">Chunk</option>
-                                    <option value="completo">Completo</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Posicao</label>
-                                <select id="posicaoAvulso" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                    <option value="fim">Fim</option>
-                                    <option value="inicio">Inicio</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Tokens</label>
-                                <input type="number" id="tokensAvulso" value="512" min="100" max="4000" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <!-- Card: Resultado da Classificacao -->
+                        <div id="resultadoAvulso" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hidden">
+                            <h3 class="text-sm font-medium text-gray-900 mb-3">Resultado da Classificacao</h3>
+                            <div id="resultadoAvulsoContent" class="space-y-3">
+                                <!-- Populado via JS -->
                             </div>
                         </div>
 
-                        <!-- Botao -->
-                        <button type="submit" id="btnClassificarAvulso" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                            <i class="fas fa-magic mr-2"></i>Classificar Documento
-                        </button>
-                    </form>
-
-                    <!-- Resultado -->
-                    <div id="resultadoAvulso" class="mt-6 hidden">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Resultado</h3>
-                        <div id="resultadoAvulsoContent" class="bg-gray-50 rounded-lg p-4"></div>
+                        <!-- Card: Lista de Documentos Classificados (quando multiplos) -->
+                        <div id="listaResultadosTeste" class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 hidden">
+                            <h3 class="text-sm font-medium text-gray-900 mb-3">Documentos Classificados</h3>
+                            <div id="listaResultadosTesteContent" class="max-h-60 overflow-y-auto divide-y divide-gray-100">
+                                <!-- Populado via JS -->
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1041,9 +1418,42 @@
                 if (input.files.length > 0) {
                     nomeEl.textContent = `Arquivo: ${input.files[0].name}`;
                     nomeEl.classList.remove('hidden');
+                    // Preview o PDF no viewer
+                    previewPdfUpload(input.files[0]);
                 } else {
                     nomeEl.classList.add('hidden');
+                    limparPdfViewer();
                 }
+            }
+        }
+
+        async function previewPdfUpload(file) {
+            if (!file || file.type !== 'application/pdf') return;
+
+            const viewer = document.getElementById('pdfViewer');
+            viewer.innerHTML = `<div class="text-center text-gray-500">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p class="text-sm">Carregando PDF...</p>
+            </div>`;
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdfData = new Uint8Array(arrayBuffer);
+
+                pdfDoc = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                pdfTotalPaginas = pdfDoc.numPages;
+                pdfPaginaAtual = 1;
+
+                document.getElementById('pdfNavegacao').classList.remove('hidden');
+                atualizarInfoPagina();
+                await renderizarPagina(pdfPaginaAtual);
+
+            } catch (e) {
+                console.error('Erro ao carregar PDF:', e);
+                viewer.innerHTML = `<div class="text-center text-red-500">
+                    <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                    <p class="text-sm">Erro ao carregar PDF</p>
+                </div>`;
             }
         }
 
@@ -1100,8 +1510,20 @@
             const content = document.getElementById('resultadoAvulsoContent');
 
             if (resultado.sucesso) {
+                // Info adicional do TJ-MS se disponivel
+                const tjmsInfo = resultado.numero_processo ? `
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-3">
+                        <p class="text-xs text-blue-800">
+                            <i class="fas fa-gavel mr-1"></i>
+                            <strong>Processo:</strong> ${SecurityUtils.escapeHtml(resultado.numero_processo)}
+                            ${resultado.tipo_documento ? ` | <strong>Tipo:</strong> ${SecurityUtils.escapeHtml(resultado.tipo_documento)}` : ''}
+                        </p>
+                    </div>
+                ` : '';
+
                 content.innerHTML = `
                     <div class="space-y-3">
+                        ${tjmsInfo}
                         <div class="flex justify-between items-center">
                             <span class="text-gray-600">Categoria:</span>
                             <span class="font-semibold">${SecurityUtils.escapeHtml(resultado.categoria || '-')}</span>
@@ -1137,22 +1559,815 @@
         }
 
         // ====================================
+        // Sub-Tabs (Novo Lote)
+        // ====================================
+        function showSubTab(subtabName) {
+            // Esconde todos os sub-conteudos
+            document.querySelectorAll('.subtab-content').forEach(el => el.classList.add('hidden'));
+            // Remove active de todas as sub-tabs
+            document.querySelectorAll('[id^="subtab-"]').forEach(el => {
+                el.classList.remove('border-blue-500', 'text-blue-600');
+                el.classList.add('text-gray-500', 'border-transparent');
+            });
+            // Mostra sub-conteudo selecionado
+            document.getElementById(`subcontent-${subtabName}`).classList.remove('hidden');
+            // Ativa sub-tab selecionada
+            const subtab = document.getElementById(`subtab-${subtabName}`);
+            subtab.classList.add('border-blue-500', 'text-blue-600');
+            subtab.classList.remove('text-gray-500', 'border-transparent');
+        }
+
+        // ====================================
+        // Novo Lote - Upload de Arquivos
+        // ====================================
+        let arquivosParaLote = [];
+
+        function setupDropZoneLote() {
+            const dropZone = document.getElementById('dropZoneLote');
+            const input = document.getElementById('arquivosLote');
+
+            if (!dropZone || !input) return;
+
+            dropZone.addEventListener('click', () => input.click());
+
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-blue-500', 'bg-blue-50');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-blue-500', 'bg-blue-50');
+                const files = Array.from(e.dataTransfer.files);
+                adicionarArquivosLote(files);
+            });
+
+            input.addEventListener('change', (e) => {
+                const files = Array.from(e.target.files);
+                adicionarArquivosLote(files);
+            });
+        }
+
+        function adicionarArquivosLote(files) {
+            const validExtensions = ['.pdf', '.txt', '.zip'];
+            const maxFileSize = 50 * 1024 * 1024; // 50MB
+            const maxFiles = 500;
+
+            for (const file of files) {
+                const ext = '.' + file.name.split('.').pop().toLowerCase();
+                if (!validExtensions.includes(ext)) {
+                    console.warn(`Arquivo ignorado (extensao invalida): ${file.name}`);
+                    continue;
+                }
+                if (file.size > maxFileSize) {
+                    console.warn(`Arquivo ignorado (muito grande): ${file.name}`);
+                    continue;
+                }
+                if (arquivosParaLote.length >= maxFiles) {
+                    alert(`Limite de ${maxFiles} arquivos atingido.`);
+                    break;
+                }
+                // Evita duplicatas
+                if (!arquivosParaLote.find(f => f.name === file.name && f.size === file.size)) {
+                    arquivosParaLote.push(file);
+                }
+            }
+
+            atualizarListaArquivosLote();
+            atualizarBotaoIniciar();
+        }
+
+        function atualizarListaArquivosLote() {
+            const container = document.getElementById('listaArquivosLote');
+            const preview = document.getElementById('previewArquivos');
+            const contador = document.getElementById('contadorArquivos');
+
+            if (arquivosParaLote.length === 0) {
+                container.classList.add('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+            contador.textContent = arquivosParaLote.length;
+
+            preview.innerHTML = arquivosParaLote.map((file, idx) => `
+                <div class="flex items-center justify-between p-2 hover:bg-gray-50">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-file-${file.name.endsWith('.pdf') ? 'pdf text-red-500' : 'alt text-gray-400'}"></i>
+                        <span class="text-sm text-gray-700">${SecurityUtils.escapeHtml(file.name)}</span>
+                        <span class="text-xs text-gray-400">(${(file.size / 1024).toFixed(1)} KB)</span>
+                    </div>
+                    <button onclick="removerArquivoLote(${idx})" class="text-gray-400 hover:text-red-500">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function removerArquivoLote(idx) {
+            arquivosParaLote.splice(idx, 1);
+            atualizarListaArquivosLote();
+            atualizarBotaoIniciar();
+        }
+
+        function limparArquivosLote() {
+            arquivosParaLote = [];
+            atualizarListaArquivosLote();
+            atualizarBotaoIniciar();
+        }
+
+        // ====================================
+        // Novo Lote - TJ-MS
+        // ====================================
+        // Mapa de categorias de documentos do TJ-MS (conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 4.2)
+        const CATEGORIAS_TJMS = {
+            "8": "Sentenca",
+            "15": "Decisoes Interlocutorias",
+            "34": "Acordaos",
+            "44": "Decisoes Monocraticas",
+            "137": "Decisao Interlocutoria",
+            "500": "Peticao Inicial",
+            "510": "Peticao Intermediaria",
+            "8305": "Contrarrazoes de Apelacao",
+            "8320": "Contestacao",
+            "8335": "Recurso de Apelacao",
+            "8369": "Laudo Pericial",
+            "9500": "Peticao",
+            "1": "Mandado",
+            "2": "Certidao",
+            "6": "Despacho",
+            "7": "Oficio"
+        };
+
+        let tiposSelecionadosTJMS = new Set(["8", "15", "34", "500", "9500"]); // Default
+
+        function popularTiposDocumentos() {
+            const disponiveis = document.getElementById('tiposDisponiveis');
+            const selecionados = document.getElementById('tiposSelecionados');
+
+            if (!disponiveis || !selecionados) return;
+
+            disponiveis.innerHTML = Object.entries(CATEGORIAS_TJMS)
+                .filter(([cod]) => !tiposSelecionadosTJMS.has(cod))
+                .map(([cod, nome]) => `
+                    <div class="flex items-center gap-2 p-1 hover:bg-gray-100 rounded cursor-pointer" onclick="selecionarTipo('${cod}')">
+                        <span class="text-xs text-gray-500">${cod}</span>
+                        <span class="text-sm">${SecurityUtils.escapeHtml(nome)}</span>
+                    </div>
+                `).join('');
+
+            selecionados.innerHTML = Array.from(tiposSelecionadosTJMS)
+                .map(cod => `
+                    <div class="flex items-center gap-2 p-1 hover:bg-blue-100 rounded cursor-pointer" onclick="desselecionarTipo('${cod}')">
+                        <span class="text-xs text-blue-600">${cod}</span>
+                        <span class="text-sm">${SecurityUtils.escapeHtml(CATEGORIAS_TJMS[cod] || cod)}</span>
+                    </div>
+                `).join('');
+        }
+
+        function selecionarTipo(cod) {
+            tiposSelecionadosTJMS.add(cod);
+            popularTiposDocumentos();
+        }
+
+        function desselecionarTipo(cod) {
+            tiposSelecionadosTJMS.delete(cod);
+            popularTiposDocumentos();
+        }
+
+        function adicionarTipoSelecionado() {
+            // Seleciona o primeiro disponivel
+            const disponiveis = Object.keys(CATEGORIAS_TJMS).filter(cod => !tiposSelecionadosTJMS.has(cod));
+            if (disponiveis.length > 0) {
+                selecionarTipo(disponiveis[0]);
+            }
+        }
+
+        function removerTipoSelecionado() {
+            // Remove o ultimo selecionado
+            const arr = Array.from(tiposSelecionadosTJMS);
+            if (arr.length > 0) {
+                desselecionarTipo(arr[arr.length - 1]);
+            }
+        }
+
+        function adicionarTodosTipos() {
+            Object.keys(CATEGORIAS_TJMS).forEach(cod => tiposSelecionadosTJMS.add(cod));
+            popularTiposDocumentos();
+        }
+
+        function adicionarCodigosLote() {
+            const input = document.getElementById('codigosTiposLote');
+            const codigos = input.value.split(/[,\s;]+/).map(c => c.trim()).filter(c => c);
+            codigos.forEach(cod => {
+                if (CATEGORIAS_TJMS[cod] || cod.match(/^\d+$/)) {
+                    tiposSelecionadosTJMS.add(cod);
+                }
+            });
+            input.value = '';
+            popularTiposDocumentos();
+        }
+
+        function contarProcessos() {
+            const textarea = document.getElementById('processosLote');
+            const contador = document.getElementById('contadorProcessos');
+            if (!textarea || !contador) return 0;
+
+            const processos = textarea.value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            contador.textContent = `Total: ${processos.length} processos`;
+            return processos.length;
+        }
+
+        // ====================================
+        // Novo Lote - Validacao e Inicio
+        // ====================================
+        function atualizarBotaoIniciar() {
+            const btn = document.getElementById('btnIniciarLote');
+            const promptSelect = document.getElementById('promptLote');
+            if (!btn || !promptSelect) return;
+
+            const temArquivos = arquivosParaLote.length > 0;
+            const temProcessos = contarProcessos() > 0;
+            const temPrompt = promptSelect.value !== '';
+
+            btn.disabled = !(temPrompt && (temArquivos || temProcessos));
+        }
+
+        async function iniciarClassificacaoLote() {
+            const btn = document.getElementById('btnIniciarLote');
+            const areaProgresso = document.getElementById('areaProgressoLote');
+            const logProgresso = document.getElementById('logProgressoLote');
+
+            btn.disabled = true;
+            areaProgresso.classList.remove('hidden');
+            logProgresso.innerHTML = '';
+
+            const nomeLote = document.getElementById('nomeLote').value || `Lote ${new Date().toLocaleString()}`;
+            const promptId = document.getElementById('promptLote').value;
+            const modelo = document.getElementById('modeloLote').value;
+            const modo = document.querySelector('input[name="modoLote"]:checked').value;
+            const tamanhoChunk = document.getElementById('tamanhoChunkLote').value;
+            const posicaoChunk = document.getElementById('posicaoChunkLote').value;
+
+            // Log inicio
+            adicionarLogLote(`Iniciando lote: ${nomeLote}`);
+            adicionarLogLote(`Prompt ID: ${promptId} | Modelo: ${modelo}`);
+
+            try {
+                // 1. Criar o lote (projeto)
+                adicionarLogLote('Criando lote...');
+                const response = await fetchAPI('/classificador/api/projetos', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        nome: nomeLote,
+                        prompt_id: parseInt(promptId),
+                        modelo: modelo,
+                        modo_processamento: modo,
+                        tamanho_chunk: parseInt(tamanhoChunk),
+                        posicao_chunk: posicaoChunk
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Erro ao criar lote: ${response.status}`);
+                }
+
+                const lote = await response.json();
+                adicionarLogLote(`Lote criado: ID ${lote.id}`);
+
+                // 2. Adicionar arquivos (se houver upload)
+                if (arquivosParaLote.length > 0) {
+                    adicionarLogLote(`Enviando ${arquivosParaLote.length} arquivos...`);
+                    await uploadArquivosParaLote(lote.id);
+                }
+
+                // 3. Adicionar processos TJ-MS (se houver)
+                const processos = document.getElementById('processosLote').value.split('\n').map(l => l.trim()).filter(l => l);
+                if (processos.length > 0) {
+                    adicionarLogLote(`Adicionando ${processos.length} processos do TJ-MS...`);
+                    await adicionarProcessosTJMS(lote.id, processos);
+                }
+
+                // 4. Executar classificacao
+                adicionarLogLote('Iniciando classificacao...');
+                await executarClassificacaoLote(lote.id);
+
+            } catch (e) {
+                adicionarLogLote(`ERRO: ${e.message}`, 'error');
+                btn.disabled = false;
+            }
+        }
+
+        async function uploadArquivosParaLote(loteId) {
+            // TODO: Implementar upload em lote no backend
+            // Por enquanto, simula sucesso
+            for (const file of arquivosParaLote) {
+                adicionarLogLote(`  - ${file.name}`);
+            }
+            adicionarLogLote(`${arquivosParaLote.length} arquivos enviados.`);
+        }
+
+        async function adicionarProcessosTJMS(loteId, processos) {
+            const tipos = Array.from(tiposSelecionadosTJMS);
+            adicionarLogLote(`Tipos de documentos: ${tipos.join(', ')}`);
+
+            // TODO: Implementar adicao de processos TJ-MS no backend
+            // Por enquanto, adiciona como codigos manuais
+            for (const processo of processos) {
+                try {
+                    await fetchAPI(`/classificador/api/projetos/${loteId}/codigos`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            codigos: [{ codigo: processo, numero_processo: processo, fonte: 'tjms' }]
+                        })
+                    });
+                    adicionarLogLote(`  + ${processo}`);
+                } catch (e) {
+                    adicionarLogLote(`  ! Erro: ${processo}`, 'error');
+                }
+            }
+        }
+
+        async function executarClassificacaoLote(loteId) {
+            // Usa SSE para progresso em tempo real
+            const eventSource = new EventSource(`/classificador/api/projetos/${loteId}/executar?token=${localStorage.getItem('token')}`);
+
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                adicionarLogLote(data.mensagem || JSON.stringify(data));
+
+                if (data.tipo === 'concluido' || data.tipo === 'erro') {
+                    eventSource.close();
+                    mostrarResultadosLote(loteId);
+                }
+
+                if (data.progresso) {
+                    atualizarBarraProgresso(data.progresso.atual, data.progresso.total);
+                }
+            };
+
+            eventSource.onerror = () => {
+                eventSource.close();
+                adicionarLogLote('Conexao encerrada.', 'info');
+                mostrarResultadosLote(loteId);
+            };
+        }
+
+        function adicionarLogLote(msg, tipo = 'info') {
+            const log = document.getElementById('logProgressoLote');
+            const timestamp = new Date().toLocaleTimeString();
+            const cor = tipo === 'error' ? 'text-red-600' : (tipo === 'success' ? 'text-green-600' : 'text-gray-600');
+            log.innerHTML += `<div class="${cor}">[${timestamp}] ${SecurityUtils.escapeHtml(msg)}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function atualizarBarraProgresso(atual, total) {
+            const barra = document.getElementById('barraProgressoLote');
+            const contador = document.getElementById('contadorProgressoLote');
+            const pct = total > 0 ? (atual / total * 100) : 0;
+            barra.style.width = `${pct}%`;
+            contador.textContent = `${atual} / ${total}`;
+        }
+
+        function mostrarResultadosLote(loteId) {
+            const areaResultados = document.getElementById('areaResultadosLote');
+            areaResultados.classList.remove('hidden');
+            // TODO: Carregar e exibir resultados
+            document.getElementById('resumoResultadosLote').innerHTML = `
+                <p class="text-gray-600">Lote #${loteId} concluido. Veja os resultados em "Meus Lotes".</p>
+            `;
+        }
+
+        function pausarLote() {
+            adicionarLogLote('Pausar ainda nao implementado.', 'info');
+        }
+
+        function cancelarLote() {
+            if (confirm('Tem certeza que deseja cancelar?')) {
+                adicionarLogLote('Cancelado pelo usuario.', 'error');
+                document.getElementById('btnIniciarLote').disabled = false;
+            }
+        }
+
+        function exportarResultadosLote(formato) {
+            alert(`Exportar ${formato} - Use a aba "Meus Lotes" para exportar resultados completos.`);
+        }
+
+        // ====================================
+        // Filtro de ano (TJ-MS)
+        // ====================================
+        function setupFiltroAno() {
+            const checkbox = document.getElementById('filtrarPorAno');
+            const inputAnos = document.getElementById('anosFiltro');
+            const selectMes = document.getElementById('mesFiltro');
+
+            if (!checkbox) return;
+
+            checkbox.addEventListener('change', () => {
+                inputAnos.disabled = !checkbox.checked;
+                selectMes.disabled = !checkbox.checked;
+            });
+        }
+
+        // ====================================
+        // Atualizar selects de prompt
+        // ====================================
+        function atualizarSelectsPromptLote() {
+            const selectLote = document.getElementById('promptLote');
+            if (!selectLote) return;
+
+            selectLote.innerHTML = '<option value="">Selecione um prompt...</option>';
+            prompts.forEach(p => {
+                selectLote.innerHTML += `<option value="${p.id}">${SecurityUtils.escapeHtml(p.nome)}</option>`;
+            });
+        }
+
+        // ====================================
+        // Teste Rapido: Sub-tabs e TJ-MS
+        // ====================================
+
+        // Estado do PDF viewer
+        let pdfDoc = null;
+        let pdfPaginaAtual = 1;
+        let pdfTotalPaginas = 0;
+        let testeDocumentoSelecionado = null;  // {id_documento, numero_processo, tipo, base64}
+        let testeDocumentosTJMS = [];  // Lista de documentos encontrados
+
+        function showTesteSubTab(tab) {
+            // Atualiza botoes das sub-tabs
+            document.getElementById('teste-subtab-upload').classList.remove('border-blue-500', 'text-blue-600');
+            document.getElementById('teste-subtab-upload').classList.add('border-transparent', 'text-gray-500');
+            document.getElementById('teste-subtab-tjms').classList.remove('border-blue-500', 'text-blue-600');
+            document.getElementById('teste-subtab-tjms').classList.add('border-transparent', 'text-gray-500');
+
+            // Oculta todos os conteudos
+            document.getElementById('teste-subcontent-upload').classList.add('hidden');
+            document.getElementById('teste-subcontent-tjms').classList.add('hidden');
+
+            // Mostra o selecionado
+            if (tab === 'upload') {
+                document.getElementById('teste-subtab-upload').classList.add('border-blue-500', 'text-blue-600');
+                document.getElementById('teste-subtab-upload').classList.remove('border-transparent', 'text-gray-500');
+                document.getElementById('teste-subcontent-upload').classList.remove('hidden');
+            } else {
+                document.getElementById('teste-subtab-tjms').classList.add('border-blue-500', 'text-blue-600');
+                document.getElementById('teste-subtab-tjms').classList.remove('border-transparent', 'text-gray-500');
+                document.getElementById('teste-subcontent-tjms').classList.remove('hidden');
+            }
+
+            // Limpa visualizacao ao trocar de tab
+            limparPdfViewer();
+        }
+
+        async function buscarDocumentosTJMSTeste() {
+            const numProcesso = document.getElementById('testeProcessoCNJ').value.trim();
+            if (!numProcesso) {
+                alert('Digite o numero do processo');
+                return;
+            }
+
+            // Coleta tipos selecionados
+            const tiposSelecionados = [];
+            document.querySelectorAll('.teste-tipo-doc:checked').forEach(cb => {
+                tiposSelecionados.push(cb.value);
+            });
+
+            if (tiposSelecionados.length === 0) {
+                alert('Selecione pelo menos um tipo de documento');
+                return;
+            }
+
+            try {
+                // Busca documentos do processo
+                const response = await fetch('/classificador/api/tjms/consultar-processo', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ numero_cnj: numProcesso })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    alert(data.detail || 'Erro ao consultar processo');
+                    return;
+                }
+
+                // Filtra por tipos selecionados
+                testeDocumentosTJMS = data.documentos.filter(doc =>
+                    tiposSelecionados.includes(String(doc.tipoDocumento))
+                );
+
+                // Popula lista
+                const container = document.getElementById('testeDocsTJMS');
+                const lista = document.getElementById('testeDocsTJMSLista');
+
+                if (testeDocumentosTJMS.length === 0) {
+                    lista.innerHTML = `<div class="p-3 text-gray-500 text-sm text-center">
+                        Nenhum documento encontrado com os tipos selecionados
+                    </div>`;
+                } else {
+                    lista.innerHTML = testeDocumentosTJMS.map((doc, idx) => `
+                        <div class="p-2 hover:bg-gray-50 cursor-pointer flex items-center gap-2" onclick="selecionarDocumentoTeste(${idx})">
+                            <input type="radio" name="docTesteRadio" id="docTeste${idx}" class="text-blue-600">
+                            <label for="docTeste${idx}" class="flex-1 cursor-pointer">
+                                <span class="text-xs font-medium text-gray-900">${SecurityUtils.escapeHtml(doc.descricaoTipoDocumento || 'Documento')}</span>
+                                <span class="text-xs text-gray-500 ml-2">ID: ${doc.idDocumento}</span>
+                            </label>
+                        </div>
+                    `).join('');
+                }
+
+                container.classList.remove('hidden');
+
+            } catch (e) {
+                console.error('Erro ao buscar documentos:', e);
+                alert('Erro ao buscar documentos do TJ-MS');
+            }
+        }
+
+        async function selecionarDocumentoTeste(idx) {
+            const doc = testeDocumentosTJMS[idx];
+            if (!doc) return;
+
+            // Marca o radio
+            document.getElementById(`docTeste${idx}`).checked = true;
+
+            // Armazena documento selecionado
+            testeDocumentoSelecionado = {
+                id_documento: doc.idDocumento,
+                numero_processo: document.getElementById('testeProcessoCNJ').value.trim(),
+                tipo: doc.tipoDocumento,
+                descricao: doc.descricaoTipoDocumento
+            };
+
+            // Baixa e exibe o PDF
+            await carregarPdfTJMS(testeDocumentoSelecionado.numero_processo, testeDocumentoSelecionado.id_documento);
+        }
+
+        async function carregarPdfTJMS(numProcesso, idDocumento) {
+            const viewer = document.getElementById('pdfViewer');
+            viewer.innerHTML = `<div class="text-center text-gray-500">
+                <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                <p class="text-sm">Baixando documento...</p>
+            </div>`;
+
+            try {
+                const response = await fetch('/classificador/api/tjms/baixar-documento', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        numero_cnj: numProcesso,
+                        id_documento: idDocumento
+                    })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Erro ao baixar documento');
+                }
+
+                // Armazena base64 para classificacao
+                testeDocumentoSelecionado.base64 = data.conteudo_base64;
+
+                // Renderiza o PDF
+                await renderizarPdfBase64(data.conteudo_base64);
+
+            } catch (e) {
+                console.error('Erro ao carregar PDF:', e);
+                viewer.innerHTML = `<div class="text-center text-red-500">
+                    <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                    <p class="text-sm">${SecurityUtils.escapeHtml(e.message)}</p>
+                </div>`;
+            }
+        }
+
+        async function renderizarPdfBase64(base64) {
+            const viewer = document.getElementById('pdfViewer');
+
+            try {
+                // Decodifica base64 para Uint8Array
+                const pdfData = atob(base64);
+                const pdfArray = new Uint8Array(pdfData.length);
+                for (let i = 0; i < pdfData.length; i++) {
+                    pdfArray[i] = pdfData.charCodeAt(i);
+                }
+
+                // Carrega o documento com PDF.js
+                pdfDoc = await pdfjsLib.getDocument({ data: pdfArray }).promise;
+                pdfTotalPaginas = pdfDoc.numPages;
+                pdfPaginaAtual = 1;
+
+                // Mostra navegacao
+                document.getElementById('pdfNavegacao').classList.remove('hidden');
+                atualizarInfoPagina();
+
+                // Renderiza primeira pagina
+                await renderizarPagina(pdfPaginaAtual);
+
+            } catch (e) {
+                console.error('Erro ao renderizar PDF:', e);
+                viewer.innerHTML = `<div class="text-center text-red-500">
+                    <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+                    <p class="text-sm">Erro ao renderizar PDF</p>
+                </div>`;
+            }
+        }
+
+        async function renderizarPagina(numPagina) {
+            const viewer = document.getElementById('pdfViewer');
+
+            if (!pdfDoc) return;
+
+            try {
+                const page = await pdfDoc.getPage(numPagina);
+                const scale = 1.2;
+                const viewport = page.getViewport({ scale });
+
+                // Cria canvas
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                canvas.style.maxWidth = '100%';
+                canvas.style.height = 'auto';
+
+                viewer.innerHTML = '';
+                viewer.appendChild(canvas);
+
+                // Renderiza
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+
+            } catch (e) {
+                console.error('Erro ao renderizar pagina:', e);
+            }
+        }
+
+        function atualizarInfoPagina() {
+            document.getElementById('pdfPaginaInfo').textContent = `${pdfPaginaAtual} / ${pdfTotalPaginas}`;
+        }
+
+        function pdfPaginaAnterior() {
+            if (pdfPaginaAtual > 1) {
+                pdfPaginaAtual--;
+                atualizarInfoPagina();
+                renderizarPagina(pdfPaginaAtual);
+            }
+        }
+
+        function pdfProximaPagina() {
+            if (pdfPaginaAtual < pdfTotalPaginas) {
+                pdfPaginaAtual++;
+                atualizarInfoPagina();
+                renderizarPagina(pdfPaginaAtual);
+            }
+        }
+
+        function limparPdfViewer() {
+            pdfDoc = null;
+            pdfPaginaAtual = 1;
+            pdfTotalPaginas = 0;
+            testeDocumentoSelecionado = null;
+            document.getElementById('pdfNavegacao').classList.add('hidden');
+            document.getElementById('pdfViewer').innerHTML = `
+                <div class="text-center text-gray-400">
+                    <i class="fas fa-file-pdf text-4xl mb-2"></i>
+                    <p class="text-sm">Nenhum documento carregado</p>
+                </div>
+            `;
+        }
+
+        async function classificarTesteRapido() {
+            const promptId = document.getElementById('promptAvulso').value;
+            const modelo = document.getElementById('modeloAvulso').value;
+            const modo = document.getElementById('modoAvulso').value;
+            const posicao = document.getElementById('posicaoAvulso').value;
+            const tokens = document.getElementById('tokensAvulso').value;
+
+            if (!promptId) {
+                alert('Selecione um prompt');
+                return;
+            }
+
+            const btn = document.getElementById('btnClassificarAvulso');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Classificando...';
+
+            try {
+                // Verifica se esta usando upload ou TJ-MS
+                const uploadVisible = !document.getElementById('teste-subcontent-upload').classList.contains('hidden');
+
+                if (uploadVisible) {
+                    // Modo upload - usa o form original
+                    const arquivo = document.getElementById('arquivoAvulso').files[0];
+                    if (!arquivo) {
+                        alert('Selecione um arquivo PDF');
+                        return;
+                    }
+
+                    const formData = new FormData();
+                    formData.append('arquivo', arquivo);
+                    formData.append('prompt_id', promptId);
+                    formData.append('modelo', modelo);
+                    formData.append('modo_processamento', modo);
+                    formData.append('posicao_chunk', posicao);
+                    formData.append('tamanho_chunk', tokens);
+
+                    const response = await fetch('/classificador/api/classificar-avulso', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        body: formData
+                    });
+
+                    const resultado = await response.json();
+                    mostrarResultadoAvulso(resultado);
+
+                } else {
+                    // Modo TJ-MS - envia base64
+                    if (!testeDocumentoSelecionado || !testeDocumentoSelecionado.base64) {
+                        alert('Selecione um documento da lista');
+                        return;
+                    }
+
+                    // Converte base64 para blob e envia como arquivo
+                    const byteCharacters = atob(testeDocumentoSelecionado.base64);
+                    const byteNumbers = new Array(byteCharacters.length);
+                    for (let i = 0; i < byteCharacters.length; i++) {
+                        byteNumbers[i] = byteCharacters.charCodeAt(i);
+                    }
+                    const byteArray = new Uint8Array(byteNumbers);
+                    const blob = new Blob([byteArray], { type: 'application/pdf' });
+                    const file = new File([blob], `${testeDocumentoSelecionado.id_documento}.pdf`, { type: 'application/pdf' });
+
+                    const formData = new FormData();
+                    formData.append('arquivo', file);
+                    formData.append('prompt_id', promptId);
+                    formData.append('modelo', modelo);
+                    formData.append('modo_processamento', modo);
+                    formData.append('posicao_chunk', posicao);
+                    formData.append('tamanho_chunk', tokens);
+
+                    const response = await fetch('/classificador/api/classificar-avulso', {
+                        method: 'POST',
+                        headers: { 'Authorization': `Bearer ${token}` },
+                        body: formData
+                    });
+
+                    const resultado = await response.json();
+                    resultado.numero_processo = testeDocumentoSelecionado.numero_processo;
+                    resultado.id_documento = testeDocumentoSelecionado.id_documento;
+                    resultado.tipo_documento = testeDocumentoSelecionado.descricao;
+                    mostrarResultadoAvulso(resultado);
+                }
+
+            } catch (e) {
+                console.error('Erro ao classificar:', e);
+                alert('Erro ao classificar documento');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-magic mr-2"></i>Classificar';
+            }
+        }
+
+        // ====================================
         // Event Listeners
         // ====================================
         document.getElementById('formPrompt').addEventListener('submit', salvarPrompt);
         document.getElementById('formProjeto').addEventListener('submit', salvarProjeto);
         document.getElementById('formAvulso').addEventListener('submit', classificarAvulso);
 
+        // Novos event listeners para Novo Lote
+        document.getElementById('promptLote')?.addEventListener('change', atualizarBotaoIniciar);
+        document.getElementById('processosLote')?.addEventListener('input', () => {
+            contarProcessos();
+            atualizarBotaoIniciar();
+        });
+
         // ====================================
         // Inicializacao
         // ====================================
         document.addEventListener('DOMContentLoaded', async () => {
             setupDropZone();
+            setupDropZoneLote();
+            setupFiltroAno();
+            popularTiposDocumentos();
             await Promise.all([
                 verificarStatusAPI(),
                 carregarPrompts(),
                 carregarProjetos()
             ]);
+            atualizarSelectsPromptLote();
         });
     </script>
 </body>

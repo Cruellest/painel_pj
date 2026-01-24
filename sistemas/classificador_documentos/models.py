@@ -104,11 +104,15 @@ class ProjetoClassificacao(Base):
 
 class CodigoDocumentoProjeto(Base):
     """
-    Código de documento vinculado a um projeto.
+    Código de documento vinculado a um projeto (Lote).
 
     Pode ser:
     - Código do TJ-MS (para download automático)
+    - Arquivo local (upload pelo usuário)
     - Identificador de documento manualmente associado
+
+    Conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 3.2:
+    - Nao armazena PDF inteiro, apenas referencia e cache de texto
     """
     __tablename__ = "codigos_documento_projeto"
 
@@ -119,6 +123,14 @@ class CodigoDocumentoProjeto(Base):
     codigo = Column(String(100), nullable=False)  # Código do documento no TJ-MS ou identificador
     numero_processo = Column(String(30), nullable=True)  # Número CNJ do processo (se aplicável)
     descricao = Column(String(500), nullable=True)  # Descrição do documento
+
+    # Campos para upload local (conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 3.2)
+    arquivo_nome = Column(String(500), nullable=True)  # Nome original do arquivo
+    arquivo_hash = Column(String(64), nullable=True)   # SHA256 para dedup
+    texto_extraido = Column(Text, nullable=True)       # Cache do texto extraido
+
+    # Tipo de documento TJ-MS (conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 4.2)
+    tipo_documento = Column(String(10), nullable=True)  # tipoDocumento do TJ-MS (8, 15, 34, etc)
 
     # Metadados
     fonte = Column(String(20), default=FonteDocumento.TJMS.value)

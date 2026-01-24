@@ -464,3 +464,143 @@ class TestEndpointsNaoRetornam500:
             )
 
             assert result == []
+
+
+# ============================================
+# Testes dos novos endpoints de Lote
+# (conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 8.3)
+# ============================================
+
+class TestLoteEndpoints:
+    """Testes dos endpoints de lote em massa"""
+
+    @pytest.mark.asyncio
+    async def test_importar_tjms_lote_sucesso(self, mock_auth, mock_db):
+        """Testa importação de processos TJ-MS em lote"""
+        from sistemas.classificador_documentos.router import importar_tjms_lote, TJMSLoteRequest
+        from sistemas.classificador_documentos.services import ClassificadorService
+        from sistemas.classificador_documentos.models import ProjetoClassificacao
+
+        req = TJMSLoteRequest(
+            processos=["0800001-00.2024.8.12.0001", "0800002-00.2024.8.12.0002"],
+            tipos_documento=["8", "15", "34"]  # Sentenca, Decisoes, Acordaos
+        )
+
+        with patch.object(ClassificadorService, 'obter_projeto') as mock_obter:
+            mock_projeto = Mock(spec=ProjetoClassificacao)
+            mock_projeto.usuario_id = 1
+            mock_obter.return_value = mock_projeto
+
+            result = await importar_tjms_lote(
+                lote_id=1,
+                req=req,
+                current_user=mock_auth,
+                db=mock_db
+            )
+
+            assert "mensagem" in result
+            assert result["processos"] == 2
+            assert result["tipos_documento"] == ["8", "15", "34"]
+            # 2 processos x 3 tipos = 6 codigos
+            assert result["total_codigos"] == 6
+
+    @pytest.mark.asyncio
+    async def test_importar_tjms_lote_processos_vazio(self, mock_auth, mock_db):
+        """Testa erro quando lista de processos está vazia"""
+        from sistemas.classificador_documentos.router import importar_tjms_lote, TJMSLoteRequest
+        from sistemas.classificador_documentos.services import ClassificadorService
+        from sistemas.classificador_documentos.models import ProjetoClassificacao
+        from fastapi import HTTPException
+
+        req = TJMSLoteRequest(
+            processos=[],
+            tipos_documento=["8"]
+        )
+
+        with patch.object(ClassificadorService, 'obter_projeto') as mock_obter:
+            mock_projeto = Mock(spec=ProjetoClassificacao)
+            mock_projeto.usuario_id = 1
+            mock_obter.return_value = mock_projeto
+
+            with pytest.raises(HTTPException) as exc_info:
+                await importar_tjms_lote(
+                    lote_id=1,
+                    req=req,
+                    current_user=mock_auth,
+                    db=mock_db
+                )
+
+            assert exc_info.value.status_code == 400
+            assert "processos" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_importar_tjms_lote_tipos_vazio(self, mock_auth, mock_db):
+        """Testa erro quando nenhum tipo de documento selecionado"""
+        from sistemas.classificador_documentos.router import importar_tjms_lote, TJMSLoteRequest
+        from sistemas.classificador_documentos.services import ClassificadorService
+        from sistemas.classificador_documentos.models import ProjetoClassificacao
+        from fastapi import HTTPException
+
+        req = TJMSLoteRequest(
+            processos=["0800001-00.2024.8.12.0001"],
+            tipos_documento=[]
+        )
+
+        with patch.object(ClassificadorService, 'obter_projeto') as mock_obter:
+            mock_projeto = Mock(spec=ProjetoClassificacao)
+            mock_projeto.usuario_id = 1
+            mock_obter.return_value = mock_projeto
+
+            with pytest.raises(HTTPException) as exc_info:
+                await importar_tjms_lote(
+                    lote_id=1,
+                    req=req,
+                    current_user=mock_auth,
+                    db=mock_db
+                )
+
+            assert exc_info.value.status_code == 400
+            assert "tipo" in exc_info.value.detail.lower()
+
+    @pytest.mark.asyncio
+    async def test_executar_lote_sincrono_projeto_nao_encontrado(self, mock_auth, mock_db):
+        """Testa erro quando lote não existe"""
+        from sistemas.classificador_documentos.router import executar_lote_sincrono
+        from sistemas.classificador_documentos.services import ClassificadorService
+        from fastapi import HTTPException
+
+        with patch.object(ClassificadorService, 'obter_projeto') as mock_obter:
+            mock_obter.return_value = None
+
+            with pytest.raises(HTTPException) as exc_info:
+                await executar_lote_sincrono(
+                    lote_id=999,
+                    current_user=mock_auth,
+                    db=mock_db
+                )
+
+            assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_executar_lote_sincrono_acesso_negado(self, mock_auth, mock_db):
+        """Testa erro de acesso negado quando usuário não é dono do lote"""
+        from sistemas.classificador_documentos.router import executar_lote_sincrono
+        from sistemas.classificador_documentos.services import ClassificadorService
+        from sistemas.classificador_documentos.models import ProjetoClassificacao
+        from fastapi import HTTPException
+
+        with patch.object(ClassificadorService, 'obter_projeto') as mock_obter:
+            mock_projeto = Mock(spec=ProjetoClassificacao)
+            mock_projeto.usuario_id = 999  # Outro usuario
+            mock_obter.return_value = mock_projeto
+
+            mock_auth.role = "user"  # Não é admin
+
+            with pytest.raises(HTTPException) as exc_info:
+                await executar_lote_sincrono(
+                    lote_id=1,
+                    current_user=mock_auth,
+                    db=mock_db
+                )
+
+            assert exc_info.value.status_code == 403

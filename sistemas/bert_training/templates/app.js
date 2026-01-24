@@ -1,6 +1,10 @@
 // BERT Training - Frontend Application
 // Portal PGE-MS
 
+// ==================== Config ====================
+
+const WORKER_URL = 'http://127.0.0.1:8765';  // Servidor de inferencia local
+
 // ==================== Auth ====================
 
 function getToken() {
@@ -31,15 +35,13 @@ async function apiCall(endpoint, options = {}) {
     return response;
 }
 
-function logout() {
-    localStorage.removeItem('access_token');
-    sessionStorage.removeItem('access_token');
-    window.location.href = '/login';
-}
-
 // ==================== Tabs ====================
 
+let currentTab = 'novo';
+
 function showTab(tabName) {
+    currentTab = tabName;
+
     // Hide all panels
     document.querySelectorAll('.tab-panel').forEach(panel => {
         panel.classList.add('hidden');
@@ -47,22 +49,29 @@ function showTab(tabName) {
 
     // Deactivate all tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('tab-active');
-        btn.classList.add('text-gray-500');
+        btn.classList.remove('active');
     });
 
     // Show selected panel
     document.getElementById(`panel-${tabName}`).classList.remove('hidden');
 
     // Activate selected tab
-    const activeTab = document.getElementById(`tab-${tabName}`);
-    activeTab.classList.add('tab-active');
-    activeTab.classList.remove('text-gray-500');
+    document.getElementById(`tab-${tabName}`).classList.add('active');
 
     // Load data for tab
-    if (tabName === 'datasets') loadDatasets();
-    if (tabName === 'runs') loadRuns();
-    if (tabName === 'new-run') loadDatasetsForSelect();
+    if (tabName === 'novo') {
+        loadDatasets();
+        loadDatasetsForSelect();
+    }
+    if (tabName === 'acompanhar') {
+        loadRuns();
+        checkActiveTraining();
+    }
+    if (tabName === 'testar') {
+        checkWorkerConnection();
+        loadCompletedModels();
+        loadTestHistory();
+    }
 }
 
 // ==================== Datasets ====================
@@ -75,29 +84,23 @@ async function loadDatasets() {
     const container = document.getElementById('datasets-list');
 
     if (datasets.length === 0) {
-        container.innerHTML = '<p class="text-gray-500">Nenhum dataset encontrado. Faca upload de um dataset Excel.</p>';
+        container.innerHTML = '<p class="text-gray-500 text-center py-4">Nenhuma planilha enviada ainda.</p>';
         return;
     }
 
     container.innerHTML = datasets.map(d => `
-        <div class="border rounded-lg p-4 hover:bg-gray-50">
-            <div class="flex justify-between items-start">
+        <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+            <div class="flex items-center gap-3">
+                <i class="fas fa-file-excel text-green-600"></i>
                 <div>
-                    <h3 class="font-medium">${d.filename}</h3>
-                    <div class="text-sm text-gray-500 mt-1">
-                        <span class="inline-block bg-gray-100 rounded px-2 py-0.5 mr-2">${d.task_type === 'text_classification' ? 'Classificacao' : 'NER'}</span>
-                        <span>${d.total_rows} amostras</span>
-                        <span class="mx-2">|</span>
-                        <span>${d.total_labels || '?'} labels</span>
-                    </div>
-                    <div class="text-xs text-gray-400 mt-1">
-                        Hash: ${d.sha256_hash.substring(0, 16)}... | ${new Date(d.uploaded_at).toLocaleDateString('pt-BR')}
-                    </div>
+                    <p class="font-medium text-gray-800 text-sm">${d.filename}</p>
+                    <p class="text-xs text-gray-500">${d.total_rows} exemplos | ${d.total_labels || '?'} categorias</p>
                 </div>
-                <div class="flex space-x-2">
-                    <button onclick="viewDataset(${d.id})" class="text-blue-600 hover:text-blue-800 text-sm">Ver</button>
-                    <a href="/bert-training/api/datasets/${d.id}/download" class="text-green-600 hover:text-green-800 text-sm">Download</a>
-                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="viewDataset(${d.id})" class="text-blue-600 hover:text-blue-800 text-sm px-2">
+                    <i class="fas fa-eye"></i>
+                </button>
             </div>
         </div>
     `).join('');
@@ -111,17 +114,17 @@ async function viewDataset(id) {
 
     const content = `
         <div class="space-y-4">
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-2 gap-4 text-sm">
                 <div><strong>Arquivo:</strong> ${dataset.filename}</div>
-                <div><strong>Tipo:</strong> ${dataset.task_type}</div>
+                <div><strong>Tipo:</strong> ${dataset.task_type === 'text_classification' ? 'Classificacao de Texto' : 'NER'}</div>
                 <div><strong>Coluna Texto:</strong> ${dataset.text_column}</div>
                 <div><strong>Coluna Label:</strong> ${dataset.label_column}</div>
                 <div><strong>Total Linhas:</strong> ${dataset.total_rows}</div>
-                <div><strong>Total Labels:</strong> ${dataset.total_labels}</div>
+                <div><strong>Total Categorias:</strong> ${dataset.total_labels}</div>
             </div>
 
             <div>
-                <strong>Distribuicao de Labels:</strong>
+                <strong class="text-sm">Distribuicao de Categorias:</strong>
                 <div class="mt-2 max-h-40 overflow-y-auto">
                     ${Object.entries(dataset.label_distribution || {}).map(([label, count]) => `
                         <div class="flex justify-between text-sm py-1 border-b">
@@ -129,28 +132,6 @@ async function viewDataset(id) {
                             <span class="text-gray-500">${count}</span>
                         </div>
                     `).join('')}
-                </div>
-            </div>
-
-            <div>
-                <strong>Preview:</strong>
-                <div class="mt-2 overflow-x-auto">
-                    <table class="min-w-full text-sm">
-                        <thead>
-                            <tr class="bg-gray-100">
-                                <th class="px-2 py-1 text-left">${dataset.text_column}</th>
-                                <th class="px-2 py-1 text-left">${dataset.label_column}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${(dataset.sample_preview || []).map(row => `
-                                <tr class="border-b">
-                                    <td class="px-2 py-1 max-w-md truncate">${String(row[dataset.text_column]).substring(0, 100)}...</td>
-                                    <td class="px-2 py-1">${row[dataset.label_column]}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
                 </div>
             </div>
         </div>
@@ -185,17 +166,14 @@ function resetUploadModal() {
     currentPreviewData = null;
 }
 
-// Listener para quando o arquivo é selecionado
-document.getElementById('upload-file').addEventListener('change', async (e) => {
+document.getElementById('upload-file')?.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Mostra loading
     document.getElementById('upload-preview').classList.remove('hidden');
     document.getElementById('upload-preview-loading').classList.remove('hidden');
     document.getElementById('upload-preview-content').classList.add('hidden');
 
-    // Chama API de preview
     const formData = new FormData();
     formData.append('file', file);
 
@@ -215,27 +193,22 @@ document.getElementById('upload-file').addEventListener('change', async (e) => {
         const data = await response.json();
         currentPreviewData = data;
 
-        // Mostra conteudo do preview
         document.getElementById('upload-preview-loading').classList.add('hidden');
         document.getElementById('upload-preview-content').classList.remove('hidden');
 
-        // Info basica
         document.getElementById('preview-info').innerHTML = `
-            <strong>${data.filename}</strong> -
-            ${data.total_rows} linhas, ${data.total_columns} colunas
+            <strong>${data.filename}</strong> - ${data.total_rows} linhas, ${data.total_columns} colunas
         `;
 
-        // Popula selects de colunas
         const textSelect = document.getElementById('upload-text-col');
         const labelSelect = document.getElementById('upload-label-col');
 
         textSelect.innerHTML = '<option value="">Selecione a coluna de texto...</option>' +
             data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
 
-        labelSelect.innerHTML = '<option value="">Selecione a coluna de labels...</option>' +
+        labelSelect.innerHTML = '<option value="">Selecione a coluna de categorias...</option>' +
             data.columns.map(col => `<option value="${col}">${col}</option>`).join('');
 
-        // Sugere colunas candidatas
         if (data.text_candidates.length > 0) {
             textSelect.value = data.text_candidates[0];
             document.getElementById('text-col-hint').textContent = `Sugestao: ${data.text_candidates.join(', ')}`;
@@ -247,7 +220,6 @@ document.getElementById('upload-file').addEventListener('change', async (e) => {
             document.getElementById('label-col-hint').classList.remove('hidden');
         }
 
-        // Estatisticas das colunas
         document.getElementById('column-stats').innerHTML = data.column_stats.map(col => `
             <div class="border-b py-2">
                 <div class="flex justify-between">
@@ -256,14 +228,11 @@ document.getElementById('upload-file').addEventListener('change', async (e) => {
                 </div>
                 <div class="text-xs text-gray-400 mt-1">
                     ${col.null_count > 0 ? `<span class="text-yellow-600">${col.null_count} nulos</span> | ` : ''}
-                    Exemplos: ${col.sample_values.join(', ')}
+                    Exemplos: ${col.sample_values.slice(0, 3).join(', ')}
                 </div>
-                ${col.is_text_candidate ? '<span class="text-xs bg-blue-100 text-blue-700 px-1 rounded">texto</span>' : ''}
-                ${col.is_label_candidate ? '<span class="text-xs bg-green-100 text-green-700 px-1 rounded">label</span>' : ''}
             </div>
         `).join('');
 
-        // Preview dos dados
         if (data.preview_rows && data.preview_rows.length > 0) {
             const headers = Object.keys(data.preview_rows[0]);
             document.getElementById('data-preview').innerHTML = `
@@ -274,7 +243,7 @@ document.getElementById('upload-file').addEventListener('change', async (e) => {
                         </tr>
                     </thead>
                     <tbody>
-                        ${data.preview_rows.map(row => `
+                        ${data.preview_rows.slice(0, 5).map(row => `
                             <tr class="border-b">
                                 ${headers.map(h => `<td class="px-2 py-1 max-w-xs truncate">${String(row[h] || '').substring(0, 50)}</td>`).join('')}
                             </tr>
@@ -284,31 +253,23 @@ document.getElementById('upload-file').addEventListener('change', async (e) => {
             `;
         }
 
-        // Mostra botoes
         document.getElementById('btn-validate').classList.remove('hidden');
         document.getElementById('btn-upload').classList.remove('hidden');
 
     } catch (error) {
         document.getElementById('upload-preview-loading').innerHTML = `
-            <div class="text-red-600">${error.message}</div>
+            <div class="text-red-600"><i class="fas fa-exclamation-circle mr-2"></i>${error.message}</div>
         `;
     }
 });
 
 async function validateDataset() {
     const file = document.getElementById('upload-file').files[0];
-    if (!file) {
-        alert('Selecione um arquivo');
-        return;
-    }
+    if (!file) return alert('Selecione um arquivo');
 
     const textCol = document.getElementById('upload-text-col').value;
     const labelCol = document.getElementById('upload-label-col').value;
-
-    if (!textCol || !labelCol) {
-        alert('Selecione as colunas de texto e labels');
-        return;
-    }
+    if (!textCol || !labelCol) return alert('Selecione as colunas de texto e categorias');
 
     const formData = new FormData();
     formData.append('file', file);
@@ -330,20 +291,14 @@ async function validateDataset() {
     if (result.is_valid) {
         validationDiv.innerHTML = `
             <div class="bg-green-50 border border-green-200 rounded p-3">
-                <p class="text-green-800 font-medium">Validacao OK!</p>
+                <p class="text-green-800 font-medium"><i class="fas fa-check-circle mr-2"></i>Validacao OK!</p>
                 <p class="text-sm text-green-600">${result.total_rows} linhas validas</p>
-                ${result.warnings.length > 0 ? `
-                    <div class="mt-2 text-sm text-yellow-700">
-                        <strong>Avisos:</strong>
-                        <ul class="list-disc ml-4">${result.warnings.map(w => `<li>${w}</li>`).join('')}</ul>
-                    </div>
-                ` : ''}
             </div>
         `;
     } else {
         validationDiv.innerHTML = `
             <div class="bg-red-50 border border-red-200 rounded p-3">
-                <p class="text-red-800 font-medium">Validacao Falhou</p>
+                <p class="text-red-800 font-medium"><i class="fas fa-times-circle mr-2"></i>Problemas encontrados</p>
                 <ul class="text-sm text-red-600 list-disc ml-4">
                     ${result.errors.map(e => `<li>${e}</li>`).join('')}
                 </ul>
@@ -352,22 +307,15 @@ async function validateDataset() {
     }
 }
 
-document.getElementById('upload-form').addEventListener('submit', async (e) => {
+document.getElementById('upload-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const file = document.getElementById('upload-file').files[0];
-    if (!file) {
-        alert('Selecione um arquivo');
-        return;
-    }
+    if (!file) return alert('Selecione um arquivo');
 
     const textCol = document.getElementById('upload-text-col').value;
     const labelCol = document.getElementById('upload-label-col').value;
-
-    if (!textCol || !labelCol) {
-        alert('Selecione as colunas de texto e labels');
-        return;
-    }
+    if (!textCol || !labelCol) return alert('Selecione as colunas de texto e categorias');
 
     const formData = new FormData();
     formData.append('file', file);
@@ -384,9 +332,10 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
 
     if (response.ok) {
         const result = await response.json();
-        alert(result.is_duplicate ? 'Dataset ja existe!' : 'Dataset enviado com sucesso!');
+        alert(result.is_duplicate ? 'Planilha ja existe!' : 'Planilha enviada com sucesso!');
         closeUploadModal();
         loadDatasets();
+        loadDatasetsForSelect();
     } else {
         const error = await response.json();
         alert('Erro: ' + (error.detail || 'Falha no upload'));
@@ -395,41 +344,92 @@ document.getElementById('upload-form').addEventListener('submit', async (e) => {
 
 // ==================== Runs ====================
 
+let allRuns = [];
+let currentFilter = 'all';
+
 async function loadRuns() {
     const response = await apiCall('/api/runs');
     if (!response) return;
 
     const runs = await response.json();
+    allRuns = runs;
+
+    // Atualiza badge de treinamentos ativos
+    const trainingCount = runs.filter(r => r.status === 'training').length;
+    const badge = document.getElementById('badge-training');
+    if (trainingCount > 0) {
+        badge.textContent = trainingCount;
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+
+    renderRunsList(runs);
+}
+
+function filterRuns(status) {
+    currentFilter = status;
+
+    document.querySelectorAll('[data-filter]').forEach(btn => {
+        btn.classList.remove('bg-blue-100', 'text-blue-700');
+        btn.classList.add('bg-gray-100', 'text-gray-600');
+        if (btn.dataset.filter === status) {
+            btn.classList.remove('bg-gray-100', 'text-gray-600');
+            btn.classList.add('bg-blue-100', 'text-blue-700');
+        }
+    });
+
+    let filteredRuns = allRuns;
+    if (status !== 'all') {
+        filteredRuns = allRuns.filter(r => r.status === status);
+    }
+
+    renderRunsList(filteredRuns);
+}
+
+function renderRunsList(runs) {
     const container = document.getElementById('runs-list');
+    if (!container) return;
 
     if (runs.length === 0) {
-        container.innerHTML = '<p class="text-gray-500">Nenhum run encontrado. Crie um novo run para iniciar.</p>';
+        const emptyMsg = currentFilter === 'all'
+            ? 'Nenhum treinamento encontrado.'
+            : `Nenhum treinamento "${formatStatus(currentFilter)}".`;
+        container.innerHTML = `<p class="text-gray-400 text-center py-8">${emptyMsg}</p>`;
         return;
     }
 
     container.innerHTML = runs.map(r => `
-        <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer" onclick="viewRun(${r.id})">
+        <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors" onclick="viewRun(${r.id})">
             <div class="flex justify-between items-start">
-                <div>
-                    <h3 class="font-medium">${r.name}</h3>
-                    <div class="text-sm text-gray-500 mt-1">
-                        <span class="inline-block status-${r.status} rounded px-2 py-0.5 mr-2">${r.status}</span>
-                        <span>${r.base_model}</span>
+                <div class="flex-1">
+                    <h3 class="font-medium text-gray-900">${r.name}</h3>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span class="inline-block status-${r.status} rounded px-2 py-0.5 text-xs font-medium">${formatStatus(r.status)}</span>
+                        <span class="text-xs text-gray-500">${r.base_model.split('/').pop()}</span>
                     </div>
                     <div class="text-xs text-gray-400 mt-1">
-                        Criado: ${new Date(r.created_at).toLocaleDateString('pt-BR')}
-                        ${r.final_accuracy ? ` | Accuracy: ${(r.final_accuracy * 100).toFixed(1)}%` : ''}
-                        ${r.final_macro_f1 ? ` | F1: ${(r.final_macro_f1 * 100).toFixed(1)}%` : ''}
+                        ${new Date(r.created_at).toLocaleDateString('pt-BR')}
+                        ${r.final_accuracy ? ` | Precisao: ${(r.final_accuracy * 100).toFixed(1)}%` : ''}
                     </div>
                 </div>
-                <div class="text-blue-600">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
+                <div class="text-gray-400 ml-2">
+                    <i class="fas fa-chevron-right"></i>
                 </div>
             </div>
         </div>
     `).join('');
+}
+
+function formatStatus(status) {
+    const statusMap = {
+        'pending': 'Na fila',
+        'training': 'Treinando',
+        'completed': 'Concluido',
+        'failed': 'Falhou',
+        'cancelled': 'Cancelado'
+    };
+    return statusMap[status] || status;
 }
 
 async function viewRun(id) {
@@ -440,12 +440,11 @@ async function viewRun(id) {
 
     const content = `
         <div class="space-y-6">
-            <!-- Info basica -->
             <div class="grid grid-cols-2 gap-4 text-sm">
-                <div><strong>Status:</strong> <span class="status-${run.status} px-2 py-0.5 rounded">${run.status}</span></div>
+                <div><strong>Status:</strong> <span class="status-${run.status} px-2 py-0.5 rounded">${formatStatus(run.status)}</span></div>
                 <div><strong>Modelo:</strong> ${run.base_model}</div>
                 <div><strong>Dataset:</strong> ${run.dataset_filename}</div>
-                <div><strong>Seed:</strong> ${run.config_json.seed}</div>
+                <div><strong>Seed:</strong> ${run.config_json?.seed || 42}</div>
             </div>
 
             ${run.error_message ? `
@@ -454,59 +453,37 @@ async function viewRun(id) {
                 </div>
             ` : ''}
 
-            <!-- Metricas finais -->
             ${run.final_accuracy ? `
                 <div class="bg-green-50 border border-green-200 rounded p-4">
                     <h4 class="font-medium text-green-800 mb-2">Metricas Finais</h4>
                     <div class="grid grid-cols-3 gap-4 text-center">
                         <div>
                             <div class="text-2xl font-bold text-green-600">${(run.final_accuracy * 100).toFixed(1)}%</div>
-                            <div class="text-xs text-gray-500">Accuracy</div>
+                            <div class="text-xs text-gray-500">Precisao</div>
                         </div>
                         <div>
                             <div class="text-2xl font-bold text-green-600">${(run.final_macro_f1 * 100).toFixed(1)}%</div>
-                            <div class="text-xs text-gray-500">Macro F1</div>
+                            <div class="text-xs text-gray-500">F1 Macro</div>
                         </div>
                         <div>
                             <div class="text-2xl font-bold text-green-600">${(run.final_weighted_f1 * 100).toFixed(1)}%</div>
-                            <div class="text-xs text-gray-500">Weighted F1</div>
+                            <div class="text-xs text-gray-500">F1 Ponderado</div>
                         </div>
                     </div>
                 </div>
             ` : ''}
 
-            <!-- Grafico de metricas -->
             ${run.recent_metrics && run.recent_metrics.length > 0 ? `
                 <div>
-                    <h4 class="font-medium mb-2">Progresso do Treinamento</h4>
+                    <h4 class="font-medium mb-2">Progresso</h4>
                     <canvas id="metrics-chart" height="200"></canvas>
                 </div>
             ` : ''}
 
-            <!-- Config -->
             <details class="border rounded-lg p-3">
-                <summary class="cursor-pointer font-medium">Configuracao Completa</summary>
+                <summary class="cursor-pointer font-medium text-sm">Configuracao Completa</summary>
                 <pre class="mt-2 text-xs bg-gray-100 p-2 rounded overflow-x-auto">${JSON.stringify(run.config_json, null, 2)}</pre>
             </details>
-
-            <!-- Reprodutibilidade -->
-            <div class="text-xs text-gray-500 space-y-1">
-                <div><strong>Git Commit:</strong> ${run.git_commit_hash || 'N/A'}</div>
-                <div><strong>Env Fingerprint:</strong> ${run.environment_fingerprint || 'N/A'}</div>
-                <div><strong>Model Fingerprint:</strong> ${run.model_fingerprint || 'N/A'}</div>
-            </div>
-
-            <!-- Acoes -->
-            <div class="flex space-x-2 pt-4 border-t">
-                ${run.status === 'completed' ? `
-                    <button onclick="reproduceRun(${run.id})" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                        Reproduzir
-                    </button>
-                ` : ''}
-                <button onclick="viewRunLogs(${run.id})" class="px-4 py-2 border rounded hover:bg-gray-50">
-                    Ver Logs
-                </button>
-            </div>
         </div>
     `;
 
@@ -514,39 +491,36 @@ async function viewRun(id) {
     document.getElementById('run-detail-content').innerHTML = content;
     document.getElementById('run-detail-modal').classList.remove('hidden');
 
-    // Renderiza grafico se houver metricas
     if (run.recent_metrics && run.recent_metrics.length > 0) {
         renderMetricsChart(run.recent_metrics);
     }
 }
 
 function renderMetricsChart(metrics) {
-    const ctx = document.getElementById('metrics-chart').getContext('2d');
+    const ctx = document.getElementById('metrics-chart')?.getContext('2d');
+    if (!ctx) return;
 
     new Chart(ctx, {
         type: 'line',
         data: {
-            labels: metrics.map(m => `Epoch ${m.epoch}`),
+            labels: metrics.map(m => `Rodada ${m.epoch}`),
             datasets: [
                 {
-                    label: 'Train Loss',
+                    label: 'Loss Treino',
                     data: metrics.map(m => m.train_loss),
                     borderColor: 'rgb(239, 68, 68)',
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
                     tension: 0.1
                 },
                 {
-                    label: 'Val Loss',
+                    label: 'Loss Validacao',
                     data: metrics.map(m => m.val_loss),
                     borderColor: 'rgb(59, 130, 246)',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     tension: 0.1
                 },
                 {
-                    label: 'Val Accuracy',
+                    label: 'Precisao',
                     data: metrics.map(m => m.val_accuracy),
                     borderColor: 'rgb(34, 197, 94)',
-                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
                     tension: 0.1,
                     yAxisID: 'y1'
                 }
@@ -554,42 +528,77 @@ function renderMetricsChart(metrics) {
         },
         options: {
             responsive: true,
-            interaction: { mode: 'index', intersect: false },
             scales: {
                 y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Loss' } },
-                y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Accuracy' }, grid: { drawOnChartArea: false } }
+                y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Precisao' }, grid: { drawOnChartArea: false } }
             }
         }
     });
-}
-
-async function reproduceRun(id) {
-    if (!confirm('Criar novo run com a mesma configuracao?')) return;
-
-    const response = await apiCall(`/api/runs/${id}/reproduce`, { method: 'POST' });
-    if (response && response.ok) {
-        alert('Novo run criado e adicionado a fila!');
-        closeRunDetail();
-        loadRuns();
-    } else {
-        const error = await response.json();
-        alert('Erro: ' + (error.detail || 'Falha ao reproduzir'));
-    }
-}
-
-function viewRunLogs(runId) {
-    alert('Funcionalidade de logs em tempo real sera implementada em breve!');
 }
 
 function closeRunDetail() {
     document.getElementById('run-detail-modal').classList.add('hidden');
 }
 
+// ==================== Active Training ====================
+
+let activeTrainingRunId = null;
+
+async function checkActiveTraining() {
+    const trainingRuns = allRuns.filter(r => r.status === 'training');
+
+    if (trainingRuns.length > 0) {
+        activeTrainingRunId = trainingRuns[0].id;
+        document.getElementById('active-training-card').classList.remove('hidden');
+        updateActiveTrainingStatus();
+    } else {
+        document.getElementById('active-training-card').classList.add('hidden');
+        activeTrainingRunId = null;
+    }
+}
+
+async function updateActiveTrainingStatus() {
+    if (!activeTrainingRunId) return;
+
+    try {
+        const response = await apiCall(`/api/runs/${activeTrainingRunId}/progress`);
+        if (!response || !response.ok) return;
+
+        const progress = await response.json();
+
+        document.getElementById('active-training-name').textContent = progress.run_name || 'Treinamento';
+        document.getElementById('active-training-status').textContent = `Rodada ${progress.current_epoch || 0} de ${progress.total_epochs || '?'}`;
+        document.getElementById('active-training-progress-label').textContent = `${(progress.progress_percent || 0).toFixed(0)}%`;
+        document.getElementById('active-training-progress-bar').style.width = `${progress.progress_percent || 0}%`;
+
+        if (progress.estimated_remaining_label) {
+            document.getElementById('active-training-time-remaining').textContent = progress.estimated_remaining_label;
+        }
+
+        // Metricas
+        if (progress.latest_metrics) {
+            const m = progress.latest_metrics;
+            document.getElementById('metric-loss').textContent = m.val_loss?.toFixed(4) || '-';
+            document.getElementById('metric-accuracy').textContent = m.val_accuracy ? `${(m.val_accuracy * 100).toFixed(1)}%` : '-';
+            document.getElementById('metric-f1').textContent = m.val_macro_f1 ? `${(m.val_macro_f1 * 100).toFixed(1)}%` : '-';
+            document.getElementById('metric-epoch').textContent = `${progress.current_epoch || 0}/${progress.total_epochs || '?'}`;
+        }
+    } catch (e) {
+        console.error('Erro ao atualizar progresso:', e);
+    }
+}
+
+async function cancelTraining() {
+    if (!activeTrainingRunId) return;
+    if (!confirm('Tem certeza que deseja cancelar o treinamento?')) return;
+
+    // TODO: Implementar cancelamento via API
+    alert('Funcionalidade de cancelamento sera implementada em breve.');
+}
+
 // ==================== New Run ====================
 
-// Cache de presets
 let presetsCache = null;
-let advancedModeEnabled = false;
 
 async function loadDatasetsForSelect() {
     const response = await apiCall('/api/datasets');
@@ -597,11 +606,11 @@ async function loadDatasetsForSelect() {
 
     const datasets = await response.json();
     const select = document.getElementById('run-dataset');
+    if (!select) return;
 
-    select.innerHTML = '<option value="">Selecione um dataset...</option>' +
-        datasets.map(d => `<option value="${d.id}">${d.filename} (${d.total_rows} amostras, ${d.total_labels} labels)</option>`).join('');
+    select.innerHTML = '<option value="">Selecione uma planilha...</option>' +
+        datasets.map(d => `<option value="${d.id}">${d.filename} (${d.total_rows} exemplos)</option>`).join('');
 
-    // Carrega presets
     loadPresets();
 }
 
@@ -623,11 +632,10 @@ function renderPresets(presets) {
     const container = document.getElementById('presets-container');
     if (!container) return;
 
-    // Icones para cada preset
     const icons = {
-        'rapido': `<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`,
-        'equilibrado': `<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"/></svg>`,
-        'preciso': `<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`
+        'rapido': 'fa-bolt',
+        'equilibrado': 'fa-balance-scale',
+        'preciso': 'fa-bullseye'
     };
 
     container.innerHTML = presets.map(p => `
@@ -635,31 +643,22 @@ function renderPresets(presets) {
              data-preset="${p.name}"
              onclick="selectPreset('${p.name}')">
             <div class="flex flex-col items-center text-center">
-                <div class="text-blue-600 mb-2">
-                    ${icons[p.name] || icons['equilibrado']}
-                </div>
-                <h3 class="font-bold text-lg">${p.display_name}</h3>
+                <i class="fas ${icons[p.name] || 'fa-cog'} text-2xl text-blue-600 mb-2"></i>
+                <h3 class="font-bold">${p.display_name}</h3>
                 ${p.is_recommended ? '<span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded mt-1">Recomendado</span>' : ''}
-                <p class="text-sm text-gray-600 mt-2">${p.description}</p>
-                <div class="text-xs text-gray-500 mt-3">
-                    ${p.estimated_time_minutes_min ? `~${p.estimated_time_minutes_min}-${p.estimated_time_minutes_max} min` : ''}
-                </div>
-                <div class="text-xs text-gray-400 mt-1">
-                    ${p.config.epochs} rodadas
+                <p class="text-xs text-gray-600 mt-2">${p.description}</p>
+                <div class="text-xs text-gray-400 mt-2">
+                    ~${p.estimated_time_minutes_min}-${p.estimated_time_minutes_max} min
                 </div>
             </div>
         </div>
     `).join('');
 
-    // Seleciona o recomendado por padrao
     const recommended = presets.find(p => p.is_recommended) || presets[1];
-    if (recommended) {
-        selectPreset(recommended.name);
-    }
+    if (recommended) selectPreset(recommended.name);
 }
 
 function selectPreset(presetName) {
-    // Atualiza visual
     document.querySelectorAll('.preset-card').forEach(card => {
         card.classList.remove('border-blue-500', 'bg-blue-100');
         if (card.dataset.preset === presetName) {
@@ -667,23 +666,20 @@ function selectPreset(presetName) {
         }
     });
 
-    // Armazena preset selecionado
     document.getElementById('selected-preset').value = presetName;
 
-    // Se preset rapido, mostra aviso
     const warningDiv = document.getElementById('preset-warning');
     if (presetName === 'rapido') {
         warningDiv.innerHTML = `
             <div class="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-700">
-                <strong>Modo Rapido:</strong> Ideal para testar se o dataset esta correto.
-                Os resultados podem nao ser muito precisos.
+                <i class="fas fa-info-circle mr-2"></i>Modo rapido: ideal para testar se a planilha esta correta.
             </div>
         `;
         warningDiv.classList.remove('hidden');
     } else if (presetName === 'preciso') {
         warningDiv.innerHTML = `
             <div class="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-700">
-                <strong>Modo Preciso:</strong> Pode demorar varias horas, mas oferece os melhores resultados.
+                <i class="fas fa-clock mr-2"></i>Modo preciso: pode demorar varias horas.
             </div>
         `;
         warningDiv.classList.remove('hidden');
@@ -692,26 +688,11 @@ function selectPreset(presetName) {
     }
 }
 
-function toggleAdvancedMode() {
-    advancedModeEnabled = !advancedModeEnabled;
-    const advancedSection = document.getElementById('advanced-params');
-    const toggleBtn = document.getElementById('toggle-advanced-btn');
-
-    if (advancedModeEnabled) {
-        advancedSection.classList.remove('hidden');
-        toggleBtn.textContent = 'Ocultar configuracoes avancadas';
-    } else {
-        advancedSection.classList.add('hidden');
-        toggleBtn.textContent = 'Configurar manualmente (avancado)';
-    }
-}
-
-document.getElementById('new-run-form').addEventListener('submit', async (e) => {
+document.getElementById('new-run-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const presetName = document.getElementById('selected-preset').value;
 
-    // Monta dados baseado no modo
     let data = {
         name: document.getElementById('run-name').value,
         description: document.getElementById('run-description').value || null,
@@ -720,22 +701,36 @@ document.getElementById('new-run-form').addEventListener('submit', async (e) => 
         preset_name: presetName
     };
 
-    // Se modo avancado esta ativo, adiciona hyperparameters
-    if (advancedModeEnabled) {
-        data.hyperparameters = {
-            learning_rate: parseFloat(document.getElementById('run-lr').value),
-            batch_size: parseInt(document.getElementById('run-batch').value),
-            epochs: parseInt(document.getElementById('run-epochs').value),
-            max_length: parseInt(document.getElementById('run-maxlen').value),
-            train_split: parseFloat(document.getElementById('run-split').value),
-            early_stopping_patience: parseInt(document.getElementById('run-patience').value),
-            seed: parseInt(document.getElementById('run-seed').value),
-            warmup_steps: parseInt(document.getElementById('run-warmup').value),
-            weight_decay: parseFloat(document.getElementById('run-weight-decay').value),
-            gradient_accumulation_steps: parseInt(document.getElementById('run-grad-accum').value),
-            truncation_side: document.getElementById('run-truncation').value,
-            use_class_weights: document.getElementById('run-class-weights').checked
-        };
+    // Coleta overrides dos campos avancados
+    const hyperparameters = {};
+    let hasOverrides = false;
+
+    const epochsVal = document.getElementById('run-epochs').value;
+    if (epochsVal) { hyperparameters.epochs = parseInt(epochsVal); hasOverrides = true; }
+
+    const lrVal = document.getElementById('run-lr').value;
+    if (lrVal) { hyperparameters.learning_rate = parseFloat(lrVal); hasOverrides = true; }
+
+    const batchVal = document.getElementById('run-batch').value;
+    if (batchVal) { hyperparameters.batch_size = parseInt(batchVal); hasOverrides = true; }
+
+    const maxlenVal = document.getElementById('run-maxlen').value;
+    if (maxlenVal) { hyperparameters.max_length = parseInt(maxlenVal); hasOverrides = true; }
+
+    const splitVal = document.getElementById('run-split').value;
+    if (splitVal) { hyperparameters.train_split = parseFloat(splitVal); hasOverrides = true; }
+
+    const patienceVal = document.getElementById('run-patience').value;
+    if (patienceVal) { hyperparameters.early_stopping_patience = parseInt(patienceVal); hasOverrides = true; }
+
+    const seedVal = document.getElementById('run-seed').value;
+    if (seedVal && seedVal !== '42') { hyperparameters.seed = parseInt(seedVal); hasOverrides = true; }
+
+    const classWeightsEl = document.getElementById('run-class-weights');
+    if (classWeightsEl && !classWeightsEl.checked) { hyperparameters.use_class_weights = false; hasOverrides = true; }
+
+    if (hasOverrides) {
+        data.hyperparameters = hyperparameters;
     }
 
     const response = await apiCall('/api/runs', {
@@ -745,28 +740,278 @@ document.getElementById('new-run-form').addEventListener('submit', async (e) => 
 
     if (response && response.ok) {
         const result = await response.json();
-        alert(`Treinamento "${result.name}" iniciado!\n\nPreset: ${result.preset_name || 'customizado'}\n\nAcompanhe o progresso na aba "Runs".`);
+        alert(`Treinamento "${result.name}" iniciado!\n\nAcompanhe na aba "Acompanhar".`);
         document.getElementById('new-run-form').reset();
-        showTab('runs');
+        showTab('acompanhar');
     } else {
         const error = await response.json();
-        alert('Erro: ' + (error.detail || 'Falha ao criar run'));
+        alert('Erro: ' + (error.detail || 'Falha ao criar treinamento'));
     }
 });
 
-// ==================== Queue Status ====================
+// ==================== Test Models ====================
 
-async function updateQueueStatus() {
+let workerConnected = false;
+let testMode = 'text';
+let completedModels = [];
+
+async function checkWorkerConnection() {
+    const statusIcon = document.getElementById('worker-status-icon');
+    const statusText = document.getElementById('worker-status-text');
+
     try {
-        const response = await apiCall('/api/queue/status');
-        if (response && response.ok) {
-            const status = await response.json();
-            document.getElementById('queue-status').textContent =
-                `Fila: ${status.pending} pendente(s), ${status.training} treinando`;
+        const response = await fetch(`${WORKER_URL}/health`, { method: 'GET' });
+        if (response.ok) {
+            const data = await response.json();
+            workerConnected = true;
+            statusIcon.classList.remove('bg-gray-300', 'bg-red-500');
+            statusIcon.classList.add('bg-green-500');
+            statusText.textContent = `Conectado ao worker local ${data.cuda_available ? '(GPU disponivel)' : '(somente CPU)'}`;
+            loadLocalModels();
+        } else {
+            throw new Error('Worker nao respondeu');
         }
     } catch (e) {
-        console.error('Erro ao atualizar status da fila:', e);
+        workerConnected = false;
+        statusIcon.classList.remove('bg-gray-300', 'bg-green-500');
+        statusIcon.classList.add('bg-red-500');
+        statusText.textContent = 'Worker local nao conectado. Inicie o servidor de inferencia.';
     }
+}
+
+async function loadCompletedModels() {
+    const response = await apiCall('/api/models/completed');
+    if (!response) return;
+
+    completedModels = await response.json();
+    updateModelSelect();
+}
+
+async function loadLocalModels() {
+    if (!workerConnected) return;
+
+    try {
+        const response = await fetch(`${WORKER_URL}/models`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        // Atualiza info sobre quais modelos estao disponiveis localmente
+        const localModels = data.models || [];
+
+        completedModels.forEach(model => {
+            const local = localModels.find(l => l.run_id === model.id);
+            model.available_locally = !!local;
+            if (local) {
+                model.local_path = local.name;
+            }
+        });
+
+        updateModelSelect();
+    } catch (e) {
+        console.error('Erro ao carregar modelos locais:', e);
+    }
+}
+
+function updateModelSelect() {
+    const select = document.getElementById('test-model-select');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Selecione um modelo...</option>' +
+        completedModels.map(m => {
+            const accuracy = m.accuracy ? ` | ${(m.accuracy * 100).toFixed(1)}%` : '';
+            const local = m.available_locally ? ' [LOCAL]' : ' [nao disponivel localmente]';
+            return `<option value="${m.id}" data-local="${m.local_path || ''}" ${!m.available_locally ? 'disabled' : ''}>
+                ${m.name}${accuracy}${local}
+            </option>`;
+        }).join('');
+}
+
+function setTestMode(mode) {
+    testMode = mode;
+
+    document.getElementById('test-mode-text').classList.toggle('border-purple-500', mode === 'text');
+    document.getElementById('test-mode-text').classList.toggle('text-purple-600', mode === 'text');
+    document.getElementById('test-mode-text').classList.toggle('border-transparent', mode !== 'text');
+    document.getElementById('test-mode-text').classList.toggle('text-gray-500', mode !== 'text');
+
+    document.getElementById('test-mode-pdf').classList.toggle('border-purple-500', mode === 'pdf');
+    document.getElementById('test-mode-pdf').classList.toggle('text-purple-600', mode === 'pdf');
+    document.getElementById('test-mode-pdf').classList.toggle('border-transparent', mode !== 'pdf');
+    document.getElementById('test-mode-pdf').classList.toggle('text-gray-500', mode !== 'pdf');
+
+    document.getElementById('test-input-text').classList.toggle('hidden', mode !== 'text');
+    document.getElementById('test-input-pdf').classList.toggle('hidden', mode !== 'pdf');
+}
+
+document.getElementById('test-pdf-input')?.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        document.getElementById('test-pdf-filename').textContent = file.name;
+    }
+});
+
+async function classifyText() {
+    if (!workerConnected) {
+        return alert('Worker local nao conectado. Inicie o servidor de inferencia primeiro.');
+    }
+
+    const select = document.getElementById('test-model-select');
+    const modelId = select.value;
+    const localPath = select.options[select.selectedIndex]?.dataset?.local;
+
+    if (!modelId || !localPath) {
+        return alert('Selecione um modelo disponivel localmente.');
+    }
+
+    const text = document.getElementById('test-text-input').value.trim();
+    if (!text) {
+        return alert('Digite ou cole um texto para classificar.');
+    }
+
+    const btn = document.getElementById('btn-classify-text');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Classificando...';
+
+    try {
+        const response = await fetch(`${WORKER_URL}/predict`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: localPath, text: text })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Erro na classificacao');
+        }
+
+        const result = await response.json();
+        showTestResult(result);
+        saveTestHistory(modelId, 'text', text, null, result);
+
+    } catch (e) {
+        alert('Erro: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-magic mr-2"></i> Classificar';
+    }
+}
+
+async function classifyPdf() {
+    if (!workerConnected) {
+        return alert('Worker local nao conectado. Inicie o servidor de inferencia primeiro.');
+    }
+
+    const select = document.getElementById('test-model-select');
+    const modelId = select.value;
+    const localPath = select.options[select.selectedIndex]?.dataset?.local;
+
+    if (!modelId || !localPath) {
+        return alert('Selecione um modelo disponivel localmente.');
+    }
+
+    const fileInput = document.getElementById('test-pdf-input');
+    const file = fileInput.files[0];
+    if (!file) {
+        return alert('Selecione um arquivo PDF.');
+    }
+
+    const btn = document.getElementById('btn-classify-pdf');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Classificando...';
+
+    try {
+        const formData = new FormData();
+        formData.append('model', localPath);
+        formData.append('file', file);
+
+        const response = await fetch(`${WORKER_URL}/predict/pdf`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Erro na classificacao');
+        }
+
+        const result = await response.json();
+        showTestResult(result);
+        saveTestHistory(modelId, 'pdf', `[PDF: ${file.name}]`, file.name, result);
+
+    } catch (e) {
+        alert('Erro: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-magic mr-2"></i> Classificar PDF';
+    }
+}
+
+function showTestResult(result) {
+    document.getElementById('test-result').classList.remove('hidden');
+    document.getElementById('test-result-category').textContent = result.predicted_label;
+    document.getElementById('test-result-confidence').textContent = `${(result.confidence * 100).toFixed(1)}%`;
+}
+
+async function saveTestHistory(runId, inputType, inputText, filename, result) {
+    const formData = new FormData();
+    formData.append('run_id', runId);
+    formData.append('input_type', inputType);
+    formData.append('input_text', inputText.substring(0, 5000));  // Limita tamanho
+    formData.append('predicted_label', result.predicted_label);
+    formData.append('confidence', result.confidence);
+    if (filename) formData.append('input_filename', filename);
+
+    const token = getToken();
+    await fetch('/bert-training/api/tests', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+    });
+
+    loadTestHistory();
+}
+
+async function loadTestHistory() {
+    const response = await apiCall('/api/tests?limit=20');
+    if (!response) return;
+
+    const tests = await response.json();
+    const container = document.getElementById('test-history-list');
+
+    if (tests.length === 0) {
+        container.innerHTML = '<p class="text-center py-4 text-gray-400 text-sm">Nenhum teste realizado ainda.</p>';
+        return;
+    }
+
+    container.innerHTML = tests.map(t => `
+        <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg text-sm">
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <i class="fas ${t.input_type === 'pdf' ? 'fa-file-pdf text-red-500' : 'fa-font text-blue-500'}"></i>
+                    <span class="font-medium text-gray-800">${t.predicted_label}</span>
+                    <span class="text-gray-400">${(t.confidence * 100).toFixed(0)}%</span>
+                </div>
+                <p class="text-xs text-gray-500 truncate mt-1">${t.input_filename || t.input_text}</p>
+            </div>
+            <button onclick="deleteTest(${t.id})" class="text-red-500 hover:text-red-700 ml-2">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+async function deleteTest(id) {
+    if (!confirm('Deletar este teste?')) return;
+
+    await apiCall(`/api/tests/${id}`, { method: 'DELETE' });
+    loadTestHistory();
+}
+
+async function clearTestHistory() {
+    if (!confirm('Limpar todo o historico de testes?')) return;
+
+    await apiCall('/api/tests', { method: 'DELETE' });
+    loadTestHistory();
 }
 
 // ==================== Onboarding ====================
@@ -776,7 +1021,7 @@ function showOnboarding() {
 }
 
 function closeOnboarding() {
-    const dontShowAgain = document.getElementById('dont-show-again').checked;
+    const dontShowAgain = document.getElementById('dont-show-again')?.checked;
     if (dontShowAgain) {
         localStorage.setItem('bert_onboarding_done', 'true');
     }
@@ -790,7 +1035,6 @@ function checkOnboarding() {
     }
 }
 
-
 // ==================== Init ====================
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -800,13 +1044,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
     }
 
-    // Verifica se deve mostrar onboarding
     checkOnboarding();
 
-    // Carrega dados iniciais
+    // Carrega dados iniciais da aba ativa
     loadDatasets();
-    updateQueueStatus();
+    loadDatasetsForSelect();
+    loadRuns();
 
-    // Atualiza status da fila periodicamente
-    setInterval(updateQueueStatus, 30000);
+    // Atualiza periodicamente
+    setInterval(() => {
+        if (currentTab === 'acompanhar') {
+            loadRuns();
+            if (activeTrainingRunId) {
+                updateActiveTrainingStatus();
+            }
+        }
+    }, 15000);
 });

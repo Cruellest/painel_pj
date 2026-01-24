@@ -273,6 +273,41 @@ class BertLog(Base):
     )
 
 
+class BertTestHistory(Base):
+    """Historico de testes de inferencia."""
+
+    __tablename__ = "bert_test_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Run/modelo usado
+    run_id = Column(Integer, ForeignKey("bert_runs.id"), nullable=False)
+
+    # Input
+    input_type = Column(String(20), nullable=False)  # "text" ou "pdf"
+    input_text = Column(Text, nullable=False)  # Texto classificado (ou extraido do PDF)
+    input_filename = Column(String(255), nullable=True)  # Nome do PDF (se aplicavel)
+
+    # Resultado
+    predicted_label = Column(String(255), nullable=False)
+    confidence = Column(Float, nullable=False)
+
+    # Usuario
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relacionamentos
+    run = relationship("BertRun", backref="test_history")
+    user = relationship("User", backref="bert_test_history")
+
+    # Indices
+    __table_args__ = (
+        Index("ix_bert_test_history_run_id", "run_id"),
+        Index("ix_bert_test_history_user_id", "user_id"),
+        Index("ix_bert_test_history_created_at", "created_at"),
+    )
+
+
 class BertWorker(Base):
     """Registro de workers GPU."""
 

@@ -27,7 +27,7 @@ from auth.models import User
 from database.connection import get_db
 
 from sistemas.bert_training.models import (
-    BertDataset, BertRun, BertJob, BertMetric, BertLog, BertWorker,
+    BertDataset, BertRun, BertJob, BertMetric, BertLog, BertWorker, BertTestHistory,
     TaskType, JobStatus
 )
 from sistemas.bert_training.schemas import (
@@ -1400,3 +1400,138 @@ async def calculate_optimal_batch(
         "explanation": f"Para {vram_gb}GB de VRAM com max_length={max_length} e modelo {model_size}, "
                       f"recomendamos batch_size={optimal_batch}"
     }
+
+
+# ==================== Modelos para Teste ====================
+
+@router.get("/api/models/completed")
+async def get_completed_models(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Lista modelos treinados com sucesso disponiveis para teste.
+
+    Retorna apenas runs com status 'completed'.
+    """
+    runs = db.query(BertRun).filter(
+        BertRun.status == "completed"
+    ).order_by(desc(BertRun.completed_at)).all()
+
+    return [
+        {
+            "id": run.id,
+            "name": run.name,
+            "description": run.description,
+            "base_model": run.base_model,
+            "accuracy": run.final_accuracy,
+            "f1_score": run.final_macro_f1,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "dataset_name": run.dataset.filename if run.dataset else None,
+            "total_labels": run.dataset.total_labels if run.dataset else None,
+            "labels": list(run.dataset.label_distribution.keys()) if run.dataset and run.dataset.label_distribution else []
+        }
+        for run in runs
+    ]
+
+
+# ==================== Historico de Testes ====================
+
+@router.get("/api/tests")
+async def get_test_history(
+    limit: int = Query(50, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Lista historico de testes do usuario."""
+    tests = db.query(BertTestHistory).filter(
+        BertTestHistory.user_id == current_user.id
+    ).order_by(desc(BertTestHistory.created_at)).limit(limit).all()
+
+    return [
+        {
+            "id": test.id,
+            "run_id": test.run_id,
+            "run_name": test.run.name if test.run else None,
+            "input_type": test.input_type,
+            "input_text": test.input_text[:200] + "..." if len(test.input_text) > 200 else test.input_text,
+            "input_filename": test.input_filename,
+            "predicted_label": test.predicted_label,
+            "confidence": test.confidence,
+            "created_at": test.created_at.isoformat()
+        }
+        for test in tests
+    ]
+
+
+@router.post("/api/tests")
+async def create_test_record(
+    run_id: int = Form(...),
+    input_type: str = Form(...),
+    input_text: str = Form(...),
+    predicted_label: str = Form(...),
+    confidence: float = Form(...),
+    input_filename: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Salva registro de teste no historico."""
+    # Verifica se o run existe
+    run = db.query(BertRun).filter(BertRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run nao encontrado")
+
+    test = BertTestHistory(
+        run_id=run_id,
+        input_type=input_type,
+        input_text=input_text,
+        input_filename=input_filename,
+        predicted_label=predicted_label,
+        confidence=confidence,
+        user_id=current_user.id
+    )
+
+    db.add(test)
+    db.commit()
+    db.refresh(test)
+
+    return {
+        "id": test.id,
+        "message": "Teste salvo com sucesso"
+    }
+
+
+@router.delete("/api/tests/{test_id}")
+async def delete_test_record(
+    test_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Deleta um registro de teste."""
+    test = db.query(BertTestHistory).filter(
+        BertTestHistory.id == test_id,
+        BertTestHistory.user_id == current_user.id
+    ).first()
+
+    if not test:
+        raise HTTPException(status_code=404, detail="Teste nao encontrado")
+
+    db.delete(test)
+    db.commit()
+
+    return {"message": "Teste deletado com sucesso"}
+
+
+@router.delete("/api/tests")
+async def clear_test_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Limpa todo historico de testes do usuario."""
+    deleted = db.query(BertTestHistory).filter(
+        BertTestHistory.user_id == current_user.id
+    ).delete()
+
+    db.commit()
+
+    return {"message": f"{deleted} teste(s) deletado(s)"}
