@@ -55,6 +55,7 @@ from sistemas.gerador_pecas.router_admin import router as gerador_pecas_admin_ro
 from sistemas.gerador_pecas.router_categorias_json import router as categorias_json_router
 from sistemas.gerador_pecas.router_config_pecas import router as config_pecas_router
 from sistemas.gerador_pecas.router_teste_categorias import router as teste_categorias_router
+from sistemas.gerador_pecas.router_teste_ativacao import router as teste_ativacao_router
 
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
@@ -70,6 +71,23 @@ from sistemas.pedido_calculo.router_admin import router as pedido_calculo_admin_
 from sistemas.prestacao_contas.router import router as prestacao_contas_router
 from sistemas.prestacao_contas.router_admin import router as prestacao_contas_admin_router
 
+# Import do sistema de Relatório de Cumprimento
+from sistemas.relatorio_cumprimento.router import router as relatorio_cumprimento_router
+
+# Import do sistema de Classificador de Documentos
+from sistemas.classificador_documentos.router import router as classificador_documentos_router
+
+# Import do sistema BERT Training
+from sistemas.bert_training.router import router as bert_training_router
+
+# Import do sistema de Performance Logs
+from admin.router_performance import router as performance_router
+from admin.router_gemini_logs import router as gemini_logs_router
+from admin.middleware_performance import PerformanceMiddleware
+
+# Import do serviço de normalização de texto
+from services.text_normalizer import text_normalizer_router
+
 # Diretórios base
 BASE_DIR = Path(__file__).resolve().parent
 MATRICULAS_TEMPLATES = BASE_DIR / "sistemas" / "matriculas_confrontantes" / "templates"
@@ -77,6 +95,14 @@ ASSISTENCIA_TEMPLATES = BASE_DIR / "sistemas" / "assistencia_judiciaria" / "temp
 GERADOR_PECAS_TEMPLATES = BASE_DIR / "sistemas" / "gerador_pecas" / "templates"
 PEDIDO_CALCULO_TEMPLATES = BASE_DIR / "sistemas" / "pedido_calculo" / "templates"
 PRESTACAO_CONTAS_TEMPLATES = BASE_DIR / "sistemas" / "prestacao_contas" / "templates"
+RELATORIO_CUMPRIMENTO_TEMPLATES = BASE_DIR / "sistemas" / "relatorio_cumprimento" / "templates"
+CLASSIFICADOR_DOCUMENTOS_TEMPLATES = BASE_DIR / "sistemas" / "classificador_documentos" / "templates"
+BERT_TRAINING_TEMPLATES = BASE_DIR / "sistemas" / "bert_training" / "templates"
+
+# IMPORTANTE: Inicializa banco de dados ANTES de criar o app
+# Isso garante que migrações sejam executadas antes de qualquer query
+print("[*] Pré-inicializando banco de dados...")
+init_database()
 
 
 @asynccontextmanager
@@ -88,6 +114,41 @@ async def lifespan(app: FastAPI):
     # Startup
     print("[+] Iniciando Portal PGE-MS...")
     init_database()
+
+    # ==========================================================================
+    # Inicializa tabela de embeddings vetoriais (com pgvector se disponível)
+    # ==========================================================================
+    try:
+        from sistemas.gerador_pecas.models_embeddings import init_embeddings_table
+        pgvector_ok = init_embeddings_table()
+        print(f"[EMBEDDINGS] Tabela inicializada (pgvector: {'disponível' if pgvector_ok else 'não disponível - usando fallback'})")
+    except Exception as e:
+        print(f"[WARN] Erro ao inicializar tabela de embeddings: {e}")
+
+    # ==========================================================================
+    # REGRA DE OURO: Corrige modos de ativação inconsistentes no startup
+    # Garante que dados legados ou corrompidos sejam corrigidos automaticamente
+    # ==========================================================================
+    try:
+        from database.connection import SessionLocal
+        from sistemas.gerador_pecas.services_deterministic import corrigir_modos_ativacao_inconsistentes
+
+        db = SessionLocal()
+        try:
+            resultado = corrigir_modos_ativacao_inconsistentes(db, commit=True)
+            if resultado["corrigidos"] > 0:
+                print(f"[REGRA-DE-OURO] Corrigidos {resultado['corrigidos']} módulos com modo de ativação inconsistente")
+            else:
+                print("[REGRA-DE-OURO] Todos os módulos estão com modo de ativação correto")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"[WARN] Erro ao verificar modos de ativação: {e}")
+
+    # Configura instrumentação automática de performance
+    from admin.perf_instrumentation import setup_instrumentation
+    setup_instrumentation(app)
+
     yield
     # Shutdown
     print("[-] Encerrando Portal PGE-MS...")
@@ -122,8 +183,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
 
-        # Previne clickjacking - não permite embedding em iframes
-        response.headers["X-Frame-Options"] = "DENY"
+        # Previne clickjacking - permite embedding apenas do próprio domínio (SAMEORIGIN)
+        # DENY bloqueia completamente, SAMEORIGIN permite visualizadores internos (PDF viewer)
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
 
         # Previne MIME type sniffing
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -149,7 +211,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai",
             "frame-src 'self' blob:",  # Permite iframes com blob URLs (PDFs)
             "object-src 'self' blob:",  # Permite objetos/plugins com blob URLs (PDFs)
-            "frame-ancestors 'none'",
+            "frame-ancestors 'self'",  # Permite embedding apenas do próprio domínio (para visualizador de PDF)
             "form-action 'self'",
             "base-uri 'self'",
         ]
@@ -179,15 +241,18 @@ if _allowed_origins_env:
     ALLOWED_ORIGINS = [origin.strip() for origin in _allowed_origins_env.split(",") if origin.strip()]
 else:
     if IS_PRODUCTION:
-        # SECURITY: Em produção sem configuração, usar apenas a própria origem
-        import warnings
-        warnings.warn(
-            "ALLOWED_ORIGINS não configurado em produção! "
-            "Configure a variável de ambiente ALLOWED_ORIGINS com os domínios permitidos.",
-            RuntimeWarning
-        )
-        # Fallback seguro - apenas mesma origem
+        # Em produção, detecta automaticamente o domínio do Railway ou usa padrão
         ALLOWED_ORIGINS = []
+
+        # Railway fornece o domínio público via variável de ambiente
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+        if railway_domain:
+            ALLOWED_ORIGINS.append(f"https://{railway_domain}")
+
+        # Adiciona domínio padrão da PGE se não configurado
+        if not ALLOWED_ORIGINS:
+            # Fallback para o domínio conhecido da aplicação
+            ALLOWED_ORIGINS = ["https://portal-pge-production.up.railway.app"]
     else:
         # Desenvolvimento local - origens permissivas
         ALLOWED_ORIGINS = [
@@ -210,6 +275,9 @@ app.add_middleware(
 # SECURITY: Rate Limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+# PERFORMANCE: Middleware de timing (apenas para admin quando ativado)
+app.add_middleware(PerformanceMiddleware)
 
 
 # ==================================================
@@ -314,6 +382,12 @@ app.include_router(users_router)
 from admin.router import router as admin_router
 app.include_router(admin_router)
 
+# Router de Performance Logs (admin)
+app.include_router(performance_router)
+
+# Router de Logs de Chamadas Gemini (admin)
+app.include_router(gemini_logs_router)
+
 
 # ==================================================
 # ROUTERS DOS SISTEMAS
@@ -333,6 +407,9 @@ app.include_router(categorias_json_router, prefix="/admin/api")
 # Router de Teste de Categorias JSON (admin)
 app.include_router(teste_categorias_router, prefix="/admin/api")
 
+# Router de Teste de Ativacao de Modulos (admin)
+app.include_router(teste_ativacao_router, prefix="/admin/api")
+
 # Router de Extração (perguntas, modelos, variáveis, regras determinísticas)
 app.include_router(extraction_router, prefix="/admin/api/extraction")
 
@@ -346,6 +423,18 @@ app.include_router(pedido_calculo_admin_router)  # Admin router - sem prefixo po
 # Router de Prestação de Contas
 app.include_router(prestacao_contas_router, prefix="/prestacao-contas/api")
 app.include_router(prestacao_contas_admin_router)  # Admin router - sem prefixo pois já tem no router
+
+# Router de Relatório de Cumprimento
+app.include_router(relatorio_cumprimento_router, prefix="/relatorio-cumprimento/api")
+
+# Router de Classificador de Documentos
+app.include_router(classificador_documentos_router, prefix="/classificador/api")
+
+# Router de BERT Training
+app.include_router(bert_training_router)  # prefixo /bert-training já está no router
+
+# Router de Normalização de Texto
+app.include_router(text_normalizer_router)
 
 
 # ==================================================
@@ -482,6 +571,33 @@ async def serve_prestacao_contas_static(filename: str = ""):
     return safe_serve_static(PRESTACAO_CONTAS_TEMPLATES, filename, no_cache=True)
 
 
+# Relatório de Cumprimento
+@app.get("/relatorio-cumprimento/{filename:path}")
+@app.get("/relatorio-cumprimento/")
+@app.get("/relatorio-cumprimento")
+async def serve_relatorio_cumprimento_static(filename: str = ""):
+    """Serve arquivos do frontend Relatório de Cumprimento"""
+    return safe_serve_static(RELATORIO_CUMPRIMENTO_TEMPLATES, filename, no_cache=True)
+
+
+# Classificador de Documentos
+@app.get("/classificador/{filename:path}")
+@app.get("/classificador/")
+@app.get("/classificador")
+async def serve_classificador_static(filename: str = ""):
+    """Serve arquivos do frontend Classificador de Documentos"""
+    return safe_serve_static(CLASSIFICADOR_DOCUMENTOS_TEMPLATES, filename, no_cache=True)
+
+
+# BERT Training
+@app.get("/bert-training/templates/{filename:path}")
+@app.get("/bert-training/")
+@app.get("/bert-training")
+async def serve_bert_training_static(filename: str = ""):
+    """Serve arquivos do frontend BERT Training"""
+    return safe_serve_static(BERT_TRAINING_TEMPLATES, filename, no_cache=True)
+
+
 # ==================================================
 # PÁGINAS DO PORTAL (Jinja2)
 # ==================================================
@@ -599,10 +715,28 @@ async def admin_teste_categorias_json_page(request: Request):
     return templates.TemplateResponse("admin_teste_categorias_json.html", {"request": request})
 
 
+@app.get("/admin/prompts-modulos/teste")
+async def admin_teste_ativacao_modulos_page(request: Request):
+    """Página de teste de ativação de prompts modulares"""
+    return templates.TemplateResponse("admin_teste_ativacao_modulos.html", {"request": request})
+
+
 @app.get("/admin/variaveis")
 async def admin_variaveis_page(request: Request):
     """Página do painel de variáveis de extração"""
     return templates.TemplateResponse("admin_variaveis.html", {"request": request})
+
+
+@app.get("/admin/restaurar-slugs")
+async def admin_restaurar_slugs_page(request: Request):
+    """Página para restaurar slugs de variáveis a partir de backup"""
+    return templates.TemplateResponse("admin_restaurar_slugs.html", {"request": request})
+
+
+@app.get("/admin/performance")
+async def admin_performance_page(request: Request):
+    """Página para gerenciar logs de performance (diagnóstico de latência)"""
+    return templates.TemplateResponse("admin_performance.html", {"request": request})
 
 
 # ==================================================

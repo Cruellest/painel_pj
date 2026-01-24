@@ -1,6 +1,6 @@
 # AGENTS.md - Guia para Agentes de IA
 
-> Ultima atualizacao: 16 Janeiro 2026
+> Ultima atualizacao: 24 Janeiro 2026
 
 ---
 
@@ -77,14 +77,17 @@ portal-pge/
 │   └── admin_*.html          # 10+ páginas admin
 │
 ├── services/
-│   └── gemini_service.py     # Wrapper Gemini API (~552 LOC)
+│   ├── gemini_service.py     # Wrapper Gemini API (~552 LOC)
+│   ├── tjms_client.py        # Cliente centralizado TJ-MS
+│   └── text_normalizer/      # Normalização de texto de PDFs
 │
 ├── sistemas/                 # MÓDULOS DE NEGÓCIO
 │   ├── gerador_pecas/        # Gerador de peças jurídicas
 │   ├── pedido_calculo/       # Cálculo de danos
 │   ├── prestacao_contas/     # Análise de prestação de contas
 │   ├── matriculas_confrontantes/
-│   └── assistencia_judiciaria/
+│   ├── assistencia_judiciaria/
+│   └── bert_training/        # Treinamento de classificadores BERT
 │
 ├── main.py                   # Entry point FastAPI
 ├── config.py                 # Configurações centralizadas
@@ -112,9 +115,10 @@ portal-pge/
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ AGENTE 2: Detector (DetectorModulosIA)                      │
-│ - Analisa resumo com Gemini Flash                           │
-│ - Ativa módulos de CONTEÚDO relevantes                      │
-│ - Retorna: tipo_peca, modulos_ids[], justificativa          │
+│ - Fast Path: avalia regras determinísticas sem LLM          │
+│ - Modo Misto: determinístico + LLM para módulos sem regra   │
+│ - Modo LLM: analisa resumo com Gemini Flash                 │
+│ - Retorna: modulos_ids[], justificativa                     │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -155,6 +159,20 @@ PROMPT_FINAL = BASE_SYSTEM + PROMPT_PEÇA + PROMPT_CONTEÚDO_1 + ... + PROMPT_CO
 O sistema suporta dois modos de ativação de prompts:
 1. **LLM (padrão)**: IA decide se ativa o módulo
 2. **Determinístico**: Regras JSON avaliadas sem LLM
+
+**Fast Path (Determinístico):**
+
+Quando **TODOS** os prompts de conteúdo estão em modo determinístico:
+- O Agente 2 **NÃO chama LLM** para ativação de módulos
+- As regras são avaliadas localmente usando variáveis disponíveis
+- Logs indicam: `[AGENTE2] ⚡ FAST PATH: 100% determinístico, pulando LLM`
+
+**Fontes de Variáveis para Avaliação Determinística:**
+1. **Variáveis de Sistema** (XML do processo): `valor_causa_superior_210sm`, `uniao_polo_passivo`, etc.
+   - Calculadas por `ProcessVariableResolver` em `services_process_variables.py`
+2. **Variáveis de Extração** (resumos JSON dos PDFs): `medicamento_nao_incorporado_sus`, etc.
+   - Consolidadas por `consolidar_dados_extracao()` em `orquestrador_agentes.py`
+   - Regras de consolidação: booleanos usam OR, listas concatenam, outros mantêm primeiro valor
 
 **Geração de Regras via Linguagem Natural:**
 ```
@@ -211,6 +229,72 @@ O sistema suporta dois modos de ativação de prompts:
 - exists, not_exists, is_empty, is_not_empty
 - in_list, not_in_list, matches_regex
 - and, or, not (lógicos com suporte a nesting)
+
+**Normalização de Booleanos (Bug Fix - 19/01/2026):**
+O sistema normaliza automaticamente valores booleanos salvos como `1/0` ou `"1"/"0"` para `true/false`:
+- Backend: `normalizar_booleanos_regra()` em `router_prompts.py` - aplicada ao salvar e ao retornar
+- Frontend: `normalizarValorBooleano()` em `admin_prompts_modulos.html` - aplicada ao carregar regras
+- Avaliador: `DeterministicRuleEvaluator._comparar_igual()` trata 1/0 como booleanos (compatibilidade)
+- Teste: `tests/test_boolean_normalization.py`
+
+**Regras Específicas por Tipo de Peça (Bug Fix - 20/01/2026):**
+Corrigidos dois bugs que impediam a ativação de regras específicas por tipo de peça:
+
+1. **Duplicação de Namespace nas Variáveis** (`router.py`):
+   - Problema: Ao anexar PDFs classificados em categoria "peticao_inicial", as chaves já prefixadas
+     (`peticao_inicial_pedido_consulta`) recebiam o namespace novamente, resultando em
+     `peticao_inicial_peticao_inicial_pedido_consulta`.
+   - Correção: Verificação se a chave já começa com o namespace antes de prefixar.
+   
+2. **Classificação incorreta de módulos determinísticos** (`detector_modulos.py`):
+   - Problema: Módulos em modo determinístico SEM regra global, mas COM regra específica por tipo de peça,
+     eram classificados como "LLM" e nunca avaliados pela lógica determinística.
+   - Correção: Incluir na lista de módulos determinísticos aqueles que têm regra específica ativa
+     para o tipo de peça atual (via `_existe_regra_especifica_ativa()`).
+
+- Teste: `tests/test_regra_especifica_consulta.py`, `tests/test_namespace_e_regras.py`
+
+**Tratamento de Erros em Requisições Grandes (Bug Fix - 20/01/2026):**
+
+Corrigido bug que causava erro genérico "failed to fetch" quando usuários enviavam solicitações grandes.
+
+**Sintomas:**
+- Frontend exibia "failed to fetch" sem explicação
+- Geração falhava silenciosamente com prompts grandes
+- Sem logs adequados para diagnóstico
+
+**Correções aplicadas:**
+1. **Backend (`router.py`):**
+   - Tratamento específico de `asyncio.TimeoutError`
+   - Mensagens de erro amigáveis para timeout, token limit, e conexão
+   - Logging de tamanho do prompt (caracteres e tokens estimados)
+
+2. **Frontend (`app.js`):**
+   - Tratamento de `TypeError: Failed to fetch` com mensagem explicativa
+   - Tratamento de `AbortError` e erros de rede
+   - Mensagens orientando usuário a dividir em partes menores
+
+3. **Gemini Service (`gemini_service.py`):**
+   - `TIMEOUT_READ` aumentado de 120s para 180s
+   - `TIMEOUT_TOTAL` aumentado para 240s
+   - Comentário documentando razão do aumento
+
+4. **Orquestrador (`orquestrador_agentes.py`):**
+   - Logging detalhado de tamanho do prompt (~tokens estimados)
+   - Avisos para prompts grandes (>30k tokens) ou muito grandes (>50k tokens)
+   - Contexto de tamanho adicionado em erros de timeout
+
+5. **UX (`index.html`):**
+   - Toast de erro maior e mais visível
+   - Dica automática sugerindo reduzir tamanho
+   - Suporte a mensagens multi-linha
+
+**Arquivos modificados:**
+- `sistemas/gerador_pecas/router.py`
+- `sistemas/gerador_pecas/templates/app.js`
+- `sistemas/gerador_pecas/templates/index.html`
+- `sistemas/gerador_pecas/orquestrador_agentes.py`
+- `services/gemini_service.py`
 
 **Builder Visual (frontend):**
 - Botão "Adicionar Condição" - adiciona condição simples
@@ -343,6 +427,173 @@ PARECER: [FAVORAVEL ou DESFAVORAVEL ou DUVIDA]
 
 ---
 
+### 4. BERT TRAINING (`/bert-training`)
+
+**Objetivo:** Treinar classificadores de texto usando modelos BERT com arquitetura híbrida cloud + GPU local.
+
+**Arquitetura Híbrida:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ARQUITETURA BERT TRAINING                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   [Browser] ──────► [Railway/Cloud]                              │
+│       │             ┌──────────────────┐                         │
+│       │             │ FastAPI Server   │                         │
+│       │             │ - Upload Excel   │                         │
+│       │             │ - Criar Runs     │                         │
+│       │             │ - Fila de Jobs   │                         │
+│       │             │ - Metricas/Logs  │                         │
+│       │             └────────┬─────────┘                         │
+│       │                      │ API                               │
+│       │                      ▼                                   │
+│       │             ┌──────────────────┐                         │
+│       │             │ PostgreSQL       │                         │
+│       │             │ - Datasets       │                         │
+│       │             │ - Runs           │                         │
+│       │             │ - Jobs           │                         │
+│       │             │ - Metricas       │                         │
+│       │             │ - Workers        │                         │
+│       │             └──────────────────┘                         │
+│       │                                                          │
+│       └─────────────────────────────────────────────┐            │
+│                                                      │            │
+│   [Worker Local]                                     │ Pull Jobs  │
+│   ┌──────────────────────────────────────────┐      │            │
+│   │ PC com GPU (RTX 4080, etc)               │◄─────┘            │
+│   │ - Faz pull de jobs pendentes             │                   │
+│   │ - Baixa Excel do dataset                 │                   │
+│   │ - Treina modelo com PyTorch/CUDA         │                   │
+│   │ - Envia metricas/logs para cloud         │                   │
+│   │ - Salva modelo LOCAL (nao envia pesos)   │                   │
+│   └──────────────────────────────────────────┘                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Tipos de Tarefa Suportados:**
+1. **Text Classification** - Classifica textos em categorias (ex: tipo de documento jurídico)
+2. **Token Classification (NER/BIO)** - Identifica entidades em textos (pessoas, locais, etc.)
+
+**O que é armazenado no cloud:**
+- Excel original (para reproducibilidade)
+- SHA256 do dataset
+- Configurações e hiperparâmetros
+- Commit hash do código
+- Fingerprint do ambiente
+- Métricas e logs de treinamento
+- Fingerprint do modelo (hash, SEM pesos)
+
+**O que fica LOCAL (nunca sobe para cloud):**
+- Pesos do modelo treinado
+- Dados sensíveis além do hash
+
+**Estrutura de Arquivos:**
+```
+sistemas/bert_training/
+├── __init__.py
+├── router.py           # Endpoints FastAPI (~600 LOC)
+├── models.py           # SQLAlchemy models
+├── schemas.py          # Pydantic schemas
+├── services.py         # Lógica de negócio
+├── ml/
+│   ├── __init__.py
+│   ├── classifier.py   # BertClassifier (PyTorch nn.Module)
+│   ├── dataset.py      # TextClassificationDataset
+│   ├── training.py     # Trainer com early stopping
+│   └── evaluation.py   # Evaluator (precision, recall, f1)
+├── worker/
+│   ├── __init__.py
+│   └── bert_worker.py  # Worker local GPU (~400 LOC)
+└── templates/
+    ├── index.html      # Frontend TailwindCSS
+    └── app.js          # JavaScript SPA
+```
+
+**Endpoints Principais:**
+
+| Grupo | Endpoint | Descrição |
+|-------|----------|-----------|
+| **Datasets** | `POST /bert-training/api/datasets/validate` | Validar Excel |
+| | `POST /bert-training/api/datasets/upload` | Upload dataset |
+| | `GET /bert-training/api/datasets` | Listar datasets |
+| | `GET /bert-training/api/datasets/{id}/download` | Download Excel |
+| **Runs** | `POST /bert-training/api/runs` | Criar run (enfileira job) |
+| | `GET /bert-training/api/runs` | Listar runs |
+| | `GET /bert-training/api/runs/{id}/metrics` | Métricas por época |
+| | `GET /bert-training/api/runs/{id}/logs` | Logs em tempo real (SSE) |
+| **Jobs (Worker)** | `POST /bert-training/api/jobs/claim` | Worker pega job |
+| | `POST /bert-training/api/jobs/{id}/progress` | Atualiza progresso |
+| | `POST /bert-training/api/jobs/{id}/complete` | Marca completo |
+| **Workers** | `POST /bert-training/api/workers/register` | Registrar worker |
+| | `POST /bert-training/api/workers/heartbeat` | Heartbeat |
+
+**Tabelas do Banco:**
+
+| Tabela | Propósito |
+|--------|-----------|
+| `bert_datasets` | Datasets Excel com SHA256 |
+| `bert_runs` | Experimentos de treinamento |
+| `bert_jobs` | Fila de jobs pendentes/em execução |
+| `bert_metrics` | Métricas por época (loss, accuracy, f1) |
+| `bert_logs` | Logs estruturados do treinamento |
+| `bert_workers` | Workers registrados com token_hash |
+
+**Índices importantes:**
+- `ix_bert_datasets_sha256_hash` - Idempotência de datasets
+- `ix_bert_jobs_status` - Busca rápida de jobs pendentes
+- `ix_bert_metrics_run_id` - Métricas por run
+- `ix_bert_logs_timestamp` - Logs ordenados
+
+**Worker Local (GPU):**
+
+```bash
+# Requisitos: Python 3.10+, CUDA 12.x, GPU NVIDIA 16GB+ VRAM
+
+# Instalar dependências
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+pip install transformers pandas openpyxl requests loguru scikit-learn
+
+# Executar worker
+python -m sistemas.bert_training.worker.bert_worker \
+    --api-url https://portal-pge.up.railway.app \
+    --token SEU_TOKEN_AQUI \
+    --models-dir ./bert_models
+```
+
+**Hiperparâmetros Configuráveis:**
+
+| Parâmetro | Default | Descrição |
+|-----------|---------|-----------|
+| `learning_rate` | 5e-5 | Taxa de aprendizado |
+| `batch_size` | 16 | Tamanho do batch |
+| `epochs` | 10 | Número de épocas |
+| `max_length` | 512 | Tamanho máximo da sequência |
+| `train_split` | 0.7 | Proporção treino/validação |
+| `early_stopping_patience` | 3 | Épocas sem melhoria para parar |
+| `use_class_weights` | true | Balanceamento de classes |
+| `seed` | 42 | Seed para reproducibilidade |
+
+**Modelos Base Suportados:**
+- `neuralmind/bert-base-portuguese-cased` (recomendado para PT-BR)
+- `neuralmind/bert-large-portuguese-cased`
+- `bert-base-multilingual-cased`
+- `xlm-roberta-base`
+
+**Troubleshooting:**
+
+| Problema | Solução |
+|----------|---------|
+| Worker não conecta | Verificar URL da API e token |
+| GPU não detectada | `nvidia-smi` e reinstalar PyTorch com CUDA |
+| Out of Memory | Reduzir `batch_size` e/ou `max_length` |
+| Treinamento lento | Verificar se GPU está sendo usada nos logs |
+
+**Documentação completa:** `docs/bert_training.md`
+
+---
+
 ## PADRÕES DE CÓDIGO
 
 ### Estrutura de Módulos
@@ -432,6 +683,12 @@ except Exception as e:
 | `geracoes_pedido_calculo` | Histórico de pedidos de cálculo |
 | `geracoes_prestacao_contas` | Histórico de análises de prestação |
 | `configuracoes_ia` | Configurações de modelos por sistema |
+| `bert_datasets` | Datasets Excel para treinamento BERT |
+| `bert_runs` | Experimentos de treinamento BERT |
+| `bert_jobs` | Fila de jobs de treinamento |
+| `bert_metrics` | Métricas por época de treinamento |
+| `bert_logs` | Logs de treinamento BERT |
+| `bert_workers` | Workers GPU registrados |
 
 ### Migrações
 As migrações são automáticas em `database/init_db.py`. Para adicionar coluna:
@@ -636,6 +893,57 @@ resultado = await diagnostico_tjms()
 # }
 ```
 
+### Serviço de Normalização de Texto: `services/text_normalizer/`
+
+**SEMPRE use este módulo para normalizar texto extraído de PDFs antes de enviar para IA.**
+
+```python
+from services.text_normalizer import text_normalizer, NormalizationMode, NormalizationOptions
+
+# Uso básico (modo balanced - padrão)
+result = text_normalizer.normalize(texto_pdf)
+texto_limpo = result.text
+
+# Com modo específico
+options = NormalizationOptions(mode=NormalizationMode.AGGRESSIVE)
+result = text_normalizer.normalize(texto_pdf, options)
+
+# Acessar estatísticas
+print(f"Redução: {result.stats.reduction_percent:.1f}%")
+print(f"Tokens estimados: {result.estimated_tokens}")
+```
+
+**Modos disponíveis:**
+| Modo | Descrição | Quando usar |
+|------|-----------|-------------|
+| `CONSERVATIVE` | Apenas limpezas básicas | Preservar formatação original |
+| `BALANCED` | Limpeza moderada (padrão) | Uso geral, bom equilíbrio |
+| `AGGRESSIVE` | Máxima compressão | Textos muito grandes, reduzir tokens |
+
+**Pipeline de transformações:**
+1. Remover caracteres de controle
+2. Remover unicode invisível
+3. Normalizar unicode (smart quotes, dashes)
+4. Colapsar whitespace
+5. Remover números de página
+6. Detectar/remover headers/footers repetidos
+7. Corrigir hifenização quebrada
+8. Junção inteligente de linhas
+9. Deduplicar blocos (modo aggressive)
+10. Limpeza final
+
+**Endpoints API:**
+- `POST /api/text/normalize` - Normaliza texto
+- `GET /api/text/normalize/modes` - Lista modos disponíveis
+- `POST /api/text/normalize/preview` - Preview sem texto completo
+
+**Arquivos do módulo:**
+- `normalizer.py` - Classe TextNormalizer (core)
+- `models.py` - NormalizationMode, NormalizationOptions, NormalizationStats
+- `patterns.py` - Regex patterns pré-compilados
+- `utils.py` - Helpers (estimate_tokens, normalize_unicode)
+- `router.py` - Endpoints FastAPI
+
 ---
 
 ## FRONTEND
@@ -812,8 +1120,11 @@ ADMIN_PASSWORD=senha-inicial
 | `services/gemini_service.py` | Wrapper IA | ~552 |
 | `admin/router.py` | API admin completa | ~1600 |
 | `admin/router_prompts.py` | CRUD prompts | ~1016 |
+| `sistemas/bert_training/router.py` | API BERT Training | ~600 |
+| `sistemas/bert_training/worker/bert_worker.py` | Worker local GPU | ~400 |
 | `docs/README.md` | Indice da documentacao tecnica | ~100 |
 | `docs/ARCHITECTURE.md` | Arquitetura atual em docs | ~110 |
+| `docs/bert_training.md` | Documentacao BERT Training | ~280 |
 
 ---
 

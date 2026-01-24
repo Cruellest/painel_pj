@@ -23,11 +23,23 @@ from sistemas.gerador_pecas.models_extraction import (
     PromptVariableUsage, PromptActivationLog
 )
 from sistemas.gerador_pecas.models_teste_categorias import TesteDocumento, TesteObservacao
+from sistemas.gerador_pecas.models_teste_ativacao import CenarioTesteAtivacao
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
+from sistemas.relatorio_cumprimento.models import GeracaoRelatorioCumprimento, LogChamadaIARelatorioCumprimento, FeedbackRelatorioCumprimento
+from sistemas.classificador_documentos.models import (
+    ProjetoClassificacao, CodigoDocumentoProjeto, ExecucaoClassificacao,
+    ResultadoClassificacao, PromptClassificacao, LogClassificacaoIA
+)
+from sistemas.bert_training.models import (
+    BertDataset, BertRun, BertJob, BertMetric, BertLog, BertWorker
+)
 from admin.models import PromptConfig, ConfiguracaoIA
-from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca
+from admin.models_prompts import PromptModulo, PromptModuloHistorico, ModuloTipoPeca, RegraDeterministicaTipoPeca
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup, PromptSubcategoria
+from admin.models_performance import AdminSettings, PerformanceLog, RouteSystemMap
+from admin.models_gemini_logs import GeminiApiLog
+from admin.models_request_perf import RequestPerfLog
 
 
 def wait_for_db(max_retries=10, delay=3):
@@ -51,6 +63,31 @@ def wait_for_db(max_retries=10, delay=3):
 
 def create_tables():
     """Cria todas as tabelas no banco de dados"""
+    from sqlalchemy import inspect
+
+    # Fast-path: verifica se já existe uma tabela recente (gemini_api_logs)
+    # Se existir, provavelmente todas as tabelas já foram criadas
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    # Verifica se as tabelas principais existem (incluindo tabelas mais recentes)
+    required_tables = {
+        'users', 'geracoes_prestacao_contas', 'gemini_api_logs', 'performance_logs',
+        'regra_deterministica_tipo_peca',  # Adicionado para regras por tipo de peça
+        'teste_ativacao_cenarios',  # Adicionado para teste de ativação de módulos
+        'geracoes_relatorio_cumprimento',  # Sistema de relatório de cumprimento de sentença
+        'request_perf_logs',  # Logs detalhados de performance de requests
+        'projetos_classificacao',  # Sistema de classificação de documentos
+        'bert_datasets'  # Sistema BERT Training
+    }
+
+    # Se todas as tabelas obrigatórias existem, não precisa criar
+    if required_tables.issubset(existing_tables):
+        print("[OK] Todas as tabelas obrigatórias já existem!")
+        return
+
+    # Cria tabelas faltantes (create_all só cria as que não existem)
+    print(f"[INFO] Tabelas faltantes: {required_tables - existing_tables}")
     Base.metadata.create_all(bind=engine)
     print("[OK] Tabelas criadas com sucesso!")
 
@@ -59,20 +96,46 @@ def run_migrations():
     """Executa migrações manuais para ajustar colunas existentes"""
     from sqlalchemy import text, inspect
     db = SessionLocal()
-    
+
     # Detecta se é SQLite ou PostgreSQL
     is_sqlite = 'sqlite' in str(engine.url)
-    
+
+    # Fast-path: verifica se a última migração já foi aplicada
+    # Se as colunas 'setor' (users) e 'thinking_level' (gemini_api_logs) existem, todas as migrações estão ok
+    try:
+        result_setor = db.execute(text("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'users' AND column_name = 'setor'
+        """)).fetchone()
+        result_thinking = db.execute(text("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'gemini_api_logs' AND column_name = 'thinking_level'
+        """)).fetchone()
+        if result_setor and result_thinking:
+            # Migrações já aplicadas, apenas executa seed_prompt_groups
+            seed_prompt_groups(db)
+            db.close()
+            return
+    except Exception:
+        pass  # Continua com migrações normais
+
+    # Cache do schema para migrações (só carrega se necessário)
+    _inspector = inspect(engine)
+    _tables_cache = set(_inspector.get_table_names())
+    _columns_cache = {}
+
     def column_exists(table_name, column_name):
-        """Verifica se uma coluna existe na tabela"""
-        inspector = inspect(engine)
-        columns = [col['name'] for col in inspector.get_columns(table_name)]
-        return column_name in columns
-    
+        """Verifica se uma coluna existe na tabela (com cache lazy)"""
+        if table_name not in _columns_cache:
+            try:
+                _columns_cache[table_name] = {col['name'] for col in _inspector.get_columns(table_name)}
+            except Exception:
+                _columns_cache[table_name] = set()
+        return column_name in _columns_cache[table_name]
+
     def table_exists(table_name):
-        """Verifica se uma tabela existe"""
-        inspector = inspect(engine)
-        return table_name in inspector.get_table_names()
+        """Verifica se uma tabela existe (com cache)"""
+        return table_name in _tables_cache
     
     # Migração: Criar tabela grupos_analise se não existir
     if not table_exists('grupos_analise'):
@@ -557,6 +620,16 @@ def run_migrations():
             db.rollback()
             print(f"[WARN] Migracao default_group_id users: {e}")
 
+    # Migracao: Adicionar coluna setor na tabela users
+    if table_exists('users') and not column_exists('users', 'setor'):
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN setor VARCHAR(120)"))
+            db.commit()
+            print("[OK] Migracao: coluna setor adicionada em users")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migracao setor users: {e}")
+
     # Migracao: Adicionar colunas group_id e subgroup_id na tabela prompt_modulos
     if table_exists('prompt_modulos') and not column_exists('prompt_modulos', 'group_id'):
         try:
@@ -827,12 +900,24 @@ def run_migrations():
             ('documentos_anexos', 'JSON'),
             ('dados_processo_xml', 'JSON'),
             ('peticoes_relevantes', 'JSON'),
+            # Colunas para estado de aguardando documentos (24h expiration)
+            ('documentos_faltantes', 'JSON'),
+            ('mensagem_erro_usuario', 'TEXT'),
+            ('estado_expira_em', 'DATETIME'),
+            # Colunas de métricas do extrato
+            ('extrato_source', 'TEXT'),
+            ('extrato_metricas', 'JSON'),
+            ('extrato_observacao', 'TEXT'),
         ]
 
         for coluna, tipo in colunas_prestacao:
             if not column_exists('geracoes_prestacao_contas', coluna):
                 try:
-                    db.execute(text(f"ALTER TABLE geracoes_prestacao_contas ADD COLUMN {coluna} {tipo}"))
+                    if is_sqlite:
+                        db.execute(text(f"ALTER TABLE geracoes_prestacao_contas ADD COLUMN {coluna} {tipo}"))
+                    else:
+                        # PostgreSQL: usa IF NOT EXISTS para evitar erros
+                        db.execute(text(f"ALTER TABLE geracoes_prestacao_contas ADD COLUMN IF NOT EXISTS {coluna} {tipo}"))
                     db.commit()
                     print(f"[OK] Migração: coluna {coluna} adicionada em geracoes_prestacao_contas")
                 except Exception as e:
@@ -1021,7 +1106,8 @@ def run_migrations():
                     CREATE TABLE prompt_activation_logs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
-                        modo_ativacao VARCHAR(20) NOT NULL,
+                        modo_ativacao TEXT NOT NULL,
+                        modo_ativacao_detalhe TEXT,
                         resultado BOOLEAN NOT NULL,
                         variaveis_usadas JSON,
                         contexto JSON,
@@ -1036,7 +1122,8 @@ def run_migrations():
                     CREATE TABLE IF NOT EXISTS prompt_activation_logs (
                         id SERIAL PRIMARY KEY,
                         prompt_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
-                        modo_ativacao VARCHAR(20) NOT NULL,
+                        modo_ativacao TEXT NOT NULL,
+                        modo_ativacao_detalhe TEXT,
                         resultado BOOLEAN NOT NULL,
                         variaveis_usadas JSON,
                         contexto JSON,
@@ -1051,11 +1138,38 @@ def run_migrations():
         except Exception as e:
             db.rollback()
             print(f"[WARN] Migração prompt_activation_logs: {e}")
+    
+    # Migração: Converter coluna modo_ativacao para TEXT em prompt_activation_logs
+    # Necessário para suportar valores longos (antes era VARCHAR(30))
+    if table_exists('prompt_activation_logs'):
+        try:
+            if is_sqlite:
+                # SQLite não suporta ALTER COLUMN, mas TEXT funciona sem limite
+                pass
+            else:
+                db.execute(text("ALTER TABLE prompt_activation_logs ALTER COLUMN modo_ativacao TYPE TEXT"))
+                db.commit()
+                print("[OK] Migração: coluna modo_ativacao convertida para TEXT")
+        except Exception as e:
+            db.rollback()
+            # Ignora erro se a coluna já for TEXT
+            if "nothing to alter" not in str(e).lower() and "already" not in str(e).lower():
+                print(f"[WARN] Migração modo_ativacao prompt_activation_logs: {e}")
+
+    # Migração: Adicionar coluna modo_ativacao_detalhe em prompt_activation_logs
+    if table_exists('prompt_activation_logs') and not column_exists('prompt_activation_logs', 'modo_ativacao_detalhe'):
+        try:
+            db.execute(text("ALTER TABLE prompt_activation_logs ADD COLUMN modo_ativacao_detalhe TEXT"))
+            db.commit()
+            print("[OK] Migração: coluna modo_ativacao_detalhe adicionada em prompt_activation_logs")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração modo_ativacao_detalhe prompt_activation_logs: {e}")
 
     # Migração: Adicionar colunas de regra determinística em prompt_modulos
     if table_exists('prompt_modulos'):
         colunas_deterministic = [
-            ('modo_ativacao', "VARCHAR(20) DEFAULT 'llm'"),
+            ('modo_ativacao', "VARCHAR(30) DEFAULT 'llm'"),
             ('regra_deterministica', 'JSON'),
             ('regra_texto_original', 'TEXT'),
         ]
@@ -1073,12 +1187,48 @@ def run_migrations():
     # Migração: Adicionar colunas de regra determinística em prompt_modulos_historico
     if table_exists('prompt_modulos_historico'):
         colunas_deterministic_hist = [
-            ('modo_ativacao', 'VARCHAR(20)'),
+            ('modo_ativacao', 'VARCHAR(30)'),
             ('regra_deterministica', 'JSON'),
             ('regra_texto_original', 'TEXT'),
         ]
 
         for coluna, tipo in colunas_deterministic_hist:
+            if not column_exists('prompt_modulos_historico', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE prompt_modulos_historico ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em prompt_modulos_historico")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} prompt_modulos_historico: {e}")
+
+    # Migração: Adicionar colunas de regra secundária (fallback) em prompt_modulos
+    if table_exists('prompt_modulos'):
+        colunas_secundaria = [
+            ('regra_deterministica_secundaria', 'JSON'),
+            ('regra_secundaria_texto_original', 'TEXT'),
+            ('fallback_habilitado', 'BOOLEAN DEFAULT FALSE'),
+        ]
+
+        for coluna, tipo in colunas_secundaria:
+            if not column_exists('prompt_modulos', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE prompt_modulos ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em prompt_modulos")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} prompt_modulos: {e}")
+
+    # Migração: Adicionar colunas de regra secundária em prompt_modulos_historico
+    if table_exists('prompt_modulos_historico'):
+        colunas_secundaria_hist = [
+            ('regra_deterministica_secundaria', 'JSON'),
+            ('regra_secundaria_texto_original', 'TEXT'),
+            ('fallback_habilitado', 'BOOLEAN'),
+        ]
+
+        for coluna, tipo in colunas_secundaria_hist:
             if not column_exists('prompt_modulos_historico', coluna):
                 try:
                     db.execute(text(f"ALTER TABLE prompt_modulos_historico ADD COLUMN {coluna} {tipo}"))
@@ -1271,6 +1421,172 @@ def run_migrations():
                 db.rollback()
                 print(f"[WARN] Migração source_special_type categorias_resumo_json: {e}")
 
+    # Migração: Atualizar tabela performance_logs para MVP de gargalos
+    if table_exists('performance_logs'):
+        colunas_perf_mvp = [
+            ("user_id", "INTEGER"),
+            ("username", "VARCHAR(100)"),
+            ("action", "VARCHAR(100)"),
+            ("status", "VARCHAR(20) DEFAULT 'ok'"),
+            ("total_ms", "FLOAT"),
+            ("llm_request_ms", "FLOAT"),
+            ("json_parse_ms", "FLOAT"),
+            ("db_total_ms", "FLOAT"),
+            ("db_slowest_query_ms", "FLOAT"),
+            ("prompt_tokens", "INTEGER"),
+            ("response_tokens", "INTEGER"),
+            ("json_size_chars", "INTEGER"),
+            ("error_type", "VARCHAR(50)"),
+            ("error_message_short", "VARCHAR(200)"),
+        ]
+
+        for coluna, tipo in colunas_perf_mvp:
+            if not column_exists('performance_logs', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE performance_logs ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em performance_logs")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} performance_logs: {e}")
+
+        # Criar índices para performance_logs
+        try:
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_perf_logs_action ON performance_logs(action)"))
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_perf_logs_status ON performance_logs(status)"))
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_perf_logs_user ON performance_logs(user_id)"))
+            db.commit()
+            print("[OK] Índices de performance_logs criados/verificados")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Criação de índices performance_logs: {e}")
+
+    # Migração: Adicionar colunas de rastreabilidade em gemini_api_logs
+    if table_exists('gemini_api_logs'):
+        # Adiciona coluna request_id
+        if not column_exists('gemini_api_logs', 'request_id'):
+            try:
+                db.execute(text("ALTER TABLE gemini_api_logs ADD COLUMN request_id VARCHAR(36)"))
+                db.commit()
+                print("[OK] Migração: coluna request_id adicionada em gemini_api_logs")
+            except Exception as e:
+                db.rollback()
+                print(f"[WARN] Migração request_id gemini_api_logs: {e}")
+
+        # Adiciona coluna route
+        if not column_exists('gemini_api_logs', 'route'):
+            try:
+                db.execute(text("ALTER TABLE gemini_api_logs ADD COLUMN route VARCHAR(255)"))
+                db.commit()
+                print("[OK] Migração: coluna route adicionada em gemini_api_logs")
+            except Exception as e:
+                db.rollback()
+                print(f"[WARN] Migração route gemini_api_logs: {e}")
+
+        # Criar índices para rastreabilidade
+        try:
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_gemini_logs_request_id ON gemini_api_logs(request_id)"))
+            db.commit()
+            print("[OK] Índice idx_gemini_logs_request_id criado/verificado")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Criação de índice gemini_api_logs request_id: {e}")
+
+    # Migração: Adicionar colunas de modo de ativação do Agente 2 em geracoes_pecas
+    if table_exists('geracoes_pecas'):
+        colunas_modo_ativacao = [
+            ("modo_ativacao_agente2", "VARCHAR(30)"),
+            ("modulos_ativados_det", "INTEGER"),
+            ("modulos_ativados_llm", "INTEGER"),
+        ]
+
+        for coluna, tipo in colunas_modo_ativacao:
+            if not column_exists('geracoes_pecas', coluna):
+                try:
+                    db.execute(text(f"ALTER TABLE geracoes_pecas ADD COLUMN {coluna} {tipo}"))
+                    db.commit()
+                    print(f"[OK] Migração: coluna {coluna} adicionada em geracoes_pecas")
+                except Exception as e:
+                    db.rollback()
+                    print(f"[WARN] Migração {coluna} geracoes_pecas: {e}")
+
+    # ============================================================
+    # MIGRAÇÃO: Tabela regra_deterministica_tipo_peca
+    # Permite regras determinísticas ESPECÍFICAS por tipo de peça
+    # (complementa as regras GLOBAIS do PromptModulo)
+    # ============================================================
+    if not table_exists('regra_deterministica_tipo_peca'):
+        try:
+            if is_sqlite:
+                db.execute(text("""
+                    CREATE TABLE regra_deterministica_tipo_peca (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        modulo_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
+                        tipo_peca VARCHAR(50) NOT NULL,
+                        regra_deterministica JSON NOT NULL,
+                        regra_texto_original TEXT,
+                        ativo BOOLEAN DEFAULT 1,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        criado_por INTEGER REFERENCES users(id),
+                        atualizado_por INTEGER REFERENCES users(id),
+                        UNIQUE(modulo_id, tipo_peca)
+                    )
+                """))
+            else:
+                db.execute(text("""
+                    CREATE TABLE IF NOT EXISTS regra_deterministica_tipo_peca (
+                        id SERIAL PRIMARY KEY,
+                        modulo_id INTEGER NOT NULL REFERENCES prompt_modulos(id) ON DELETE CASCADE,
+                        tipo_peca VARCHAR(50) NOT NULL,
+                        regra_deterministica JSON NOT NULL,
+                        regra_texto_original TEXT,
+                        ativo BOOLEAN DEFAULT TRUE,
+                        criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        criado_por INTEGER REFERENCES users(id),
+                        atualizado_por INTEGER REFERENCES users(id),
+                        CONSTRAINT uq_regra_modulo_tipo_peca UNIQUE(modulo_id, tipo_peca)
+                    )
+                """))
+            db.commit()
+            print("[OK] Migração: tabela regra_deterministica_tipo_peca criada")
+
+            # Criar índices para performance
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_regra_tipo_peca_modulo ON regra_deterministica_tipo_peca(modulo_id)"))
+            db.execute(text("CREATE INDEX IF NOT EXISTS idx_regra_tipo_peca_tipo ON regra_deterministica_tipo_peca(tipo_peca)"))
+            db.commit()
+            print("[OK] Migração: índices de regra_deterministica_tipo_peca criados")
+        except Exception as e:
+            db.rollback()
+            print(f"[ERRO] Migração regra_deterministica_tipo_peca FALHOU: {e}")
+            import traceback
+            traceback.print_exc()
+
+    # Verificação extra: garante que a tabela existe
+    if not table_exists('regra_deterministica_tipo_peca'):
+        print("[ERRO CRÍTICO] Tabela regra_deterministica_tipo_peca NÃO EXISTE após migração!")
+
+    # Migração: Adicionar coluna setor na tabela users
+    if table_exists('users') and not column_exists('users', 'setor'):
+        try:
+            db.execute(text("ALTER TABLE users ADD COLUMN setor VARCHAR(120)"))
+            db.commit()
+            print("[OK] Migração: coluna setor adicionada em users")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração setor: {e}")
+
+    # Migração: Adicionar coluna thinking_level na tabela gemini_api_logs
+    if table_exists('gemini_api_logs') and not column_exists('gemini_api_logs', 'thinking_level'):
+        try:
+            db.execute(text("ALTER TABLE gemini_api_logs ADD COLUMN thinking_level VARCHAR(20)"))
+            db.commit()
+            print("[OK] Migração: coluna thinking_level adicionada em gemini_api_logs")
+        except Exception as e:
+            db.rollback()
+            print(f"[WARN] Migração thinking_level: {e}")
+
     seed_prompt_groups(db)
 
 
@@ -1326,6 +1642,20 @@ def seed_prompts():
 def seed_prompt_groups(db: Session):
     """Cria grupos padrao e garante vinculacoes basicas."""
     import re
+
+    # Fast-path: se todos os grupos já existem, pula a maior parte do trabalho
+    existing_groups = db.query(PromptGroup).filter(
+        PromptGroup.slug.in_(["ps", "pp", "detran"])
+    ).count()
+    if existing_groups == 3:
+        # Grupos já existem, verifica apenas se há módulos sem grupo
+        modulos_sem_grupo = db.query(PromptModulo).filter(
+            PromptModulo.tipo == "conteudo",
+            PromptModulo.group_id.is_(None)
+        ).count()
+        if modulos_sem_grupo == 0:
+            # Tudo ok, nada a fazer
+            return
 
     def slugify(valor: str) -> str:
         if not valor:
@@ -1591,9 +1921,84 @@ IMPORTANTE: Os seguintes tipos de documento SÃO RELEVANTES e devem ser resumido
             )
             db.add(config_criterios)
             db.commit()
-            print("[OK] Configuração de critérios de relevância criada!")
+            print("[OK] Configuracao de criterios de relevancia criada!")
         else:
-            print("[INFO] Configuração de critérios de relevância já existe.")
+            print("[INFO] Configuracao de criterios de relevancia ja existe.")
+
+        # Verifica/cria configuracoes do modo 2o grau (competencia=999)
+        configs_segundo_grau = [
+            {
+                "chave": "competencia_999_last_peticoes_limit",
+                "valor": "10",
+                "tipo_valor": "number",
+                "descricao": "Limite de peticoes recentes no modo 2o grau (1-50)"
+            },
+            {
+                "chave": "competencia_999_last_recursos_limit",
+                "valor": "10",
+                "tipo_valor": "number",
+                "descricao": "Limite de recursos recentes no modo 2o grau (1-50)"
+            }
+        ]
+
+        for config_data in configs_segundo_grau:
+            existing = db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == config_data["chave"]
+            ).first()
+
+            if not existing:
+                config = ConfiguracaoIA(
+                    sistema="gerador_pecas",
+                    chave=config_data["chave"],
+                    valor=config_data["valor"],
+                    tipo_valor=config_data["tipo_valor"],
+                    descricao=config_data["descricao"]
+                )
+                db.add(config)
+                print(f"[OK] Configuracao {config_data['chave']} criada!")
+
+        # Verifica/cria lista inicial de codigos ignorados na extracao JSON
+        existing_codigos_ignorados = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "codigos_ignorar_extracao_json"
+        ).first()
+
+        if not existing_codigos_ignorados:
+            # Codigos de documento TJ-MS que nao devem ter resumo JSON extraido
+            # (documentos administrativos, internos, sem relevancia processual)
+            import json
+            codigos_iniciais = [2, 5, 7, 10, 13, 53, 192, 8433, 8449, 8450, 8494, 8500, 9508, 9614, 9999]
+            config_codigos = ConfiguracaoIA(
+                sistema="gerador_pecas",
+                chave="codigos_ignorar_extracao_json",
+                valor=json.dumps(codigos_iniciais),
+                tipo_valor="json",
+                descricao="Lista de codigos de documento TJ-MS a ignorar na extracao de JSON"
+            )
+            db.add(config_codigos)
+            print(f"[OK] Configuracao codigos_ignorar_extracao_json criada com {len(codigos_iniciais)} codigos!")
+
+        # Verifica/cria flag de deteccao automatica de tipo de peca
+        existing_auto_detect = db.query(ConfiguracaoIA).filter(
+            ConfiguracaoIA.sistema == "gerador_pecas",
+            ConfiguracaoIA.chave == "enable_auto_piece_detection"
+        ).first()
+
+        if not existing_auto_detect:
+            # Flag desabilitada por padrao - requer selecao manual do tipo de peca
+            config_auto_detect = ConfiguracaoIA(
+                sistema="gerador_pecas",
+                chave="enable_auto_piece_detection",
+                valor="false",
+                tipo_valor="boolean",
+                descricao="Habilita deteccao automatica do tipo de peca pela IA (false = obriga selecao manual)"
+            )
+            db.add(config_auto_detect)
+            print("[OK] Configuracao enable_auto_piece_detection criada (desabilitada por padrao)!")
+
+        db.commit()
+
     finally:
         db.close()
 
@@ -1826,17 +2231,90 @@ O campo "irrelevante" deve ser true apenas se o documento for meramente administ
         db.close()
 
 
+_DB_INITIALIZED = False  # Cache em memória
+
 def init_database():
     """Inicializa o banco de dados completo"""
+    global _DB_INITIALIZED
+    import os
+    from pathlib import Path
+    from sqlalchemy import text
+
+    # Ultra fast-path: já verificado nesta execução
+    if _DB_INITIALIZED:
+        return
+
     print("[*] Inicializando banco de dados...")
-    wait_for_db()  # Aguarda o banco ficar disponível
+
+    # Fast-path com cache em arquivo (evita query ao banco em dev)
+    # IMPORTANTE: Versão do schema - incrementar quando adicionar novas colunas/tabelas
+    SCHEMA_VERSION = "v5"  # v5: adicionado sistema BERT Training
+    import hashlib
+    cache_file = Path(__file__).parent / ".db_initialized"
+    db_url_hash = hashlib.md5(f"{engine.url}:{SCHEMA_VERSION}".encode()).hexdigest()[:8]
+
+    if cache_file.exists():
+        cached_hash = cache_file.read_text().strip()
+        if cached_hash == db_url_hash:
+            # Mesmo banco E mesma versão do schema - verifica colunas críticas
+            try:
+                db = SessionLocal()
+                # Verifica se as colunas/tabelas mais recentes existem
+                db.execute(text("SELECT setor FROM users LIMIT 1"))
+                db.execute(text("SELECT thinking_level FROM gemini_api_logs LIMIT 1"))
+                db.execute(text("SELECT 1 FROM request_perf_logs LIMIT 1"))
+                db.close()
+                print("[OK] Conexao com banco de dados estabelecida!")
+                _DB_INITIALIZED = True
+                return
+            except Exception as e:
+                # Colunas não existem - precisa rodar migrações
+                print(f"[INFO] Novas colunas necessárias, executando migrações... ({e})")
+                try:
+                    db.close()
+                except:
+                    pass
+                # Invalida cache
+                try:
+                    cache_file.unlink()
+                except:
+                    pass
+
+    # Primeira vez ou banco diferente - verifica de verdade
+    try:
+        db = SessionLocal()
+        result = db.execute(text("SELECT 1 FROM users LIMIT 1")).fetchone()
+        # Verifica colunas/tabelas mais recentes
+        db.execute(text("SELECT setor FROM users LIMIT 1"))
+        db.execute(text("SELECT thinking_level FROM gemini_api_logs LIMIT 1"))
+        db.execute(text("SELECT 1 FROM request_perf_logs LIMIT 1"))
+        db.close()
+        if result:
+            # Banco ok, salva cache
+            cache_file.write_text(db_url_hash)
+            print("[OK] Conexao com banco de dados estabelecida!")
+            _DB_INITIALIZED = True
+            return
+    except Exception:
+        pass  # Tabela/coluna não existe ou erro - continua com inicialização
+
+    # Inicialização completa (só roda na primeira vez)
+    wait_for_db()
     create_tables()
-    run_migrations()  # Aplica migrações
+    run_migrations()
     seed_admin()
     seed_prompts()
-    seed_prompt_modulos()  # Cria módulos do gerador de peças
-    seed_categorias_resumo_json()  # Cria categorias de formato JSON
+    seed_prompt_modulos()
+    seed_categorias_resumo_json()
+
+    # Salva cache após inicialização bem-sucedida
+    try:
+        cache_file.write_text(db_url_hash)
+    except Exception:
+        pass
+
     print("[OK] Banco de dados inicializado!")
+    _DB_INITIALIZED = True
 
 
 if __name__ == "__main__":
