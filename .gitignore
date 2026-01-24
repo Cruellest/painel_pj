@@ -34,8 +34,17 @@ dist/
 build/
 *.egg-info/
 
-# Node modules (frontend React)
+# Node modules (frontend TypeScript)
 node_modules/
+npm_install.log
+package-lock.json
+
+# TypeScript build outputs (generated from src/)
+# Arquivos de sistemas são versionados para deploy
+frontend/static/js/api.js
+frontend/static/js/ui.js
+frontend/static/js/index.js
+frontend/static/js/*.js.map
 
 # OS
 .DS_Store
@@ -45,6 +54,10 @@ sistemas/gerador_pecas/temp_docs/
 
 # Temporary document files
 **/temp_docs/*.docx
+**/temp_docs/*.pdf
+
+# Source maps (generated during build)
+sistemas/*/templates/*.js.map
 
 # Claude Code temporary files
 tmpclaude-*

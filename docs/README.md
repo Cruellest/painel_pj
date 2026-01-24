@@ -1,99 +1,140 @@
-# Documentacao - Portal PGE-MS
+# Documentacao do Portal PGE-MS
 
-Esta pasta concentra a documentacao tecnica do Portal PGE-MS. O objetivo e dar
-visao confiavel do que existe no codigo, sem adivinhar comportamento.
+> Indice central da documentacao tecnica do Portal PGE-MS.
 
-## Indice
+## Inicio Rapido
 
-- [Visao geral e quickstart](README.md)
-- [Arquitetura](ARCHITECTURE.md)
-- [Modulos e pastas](MODULES.md)
-- [API](API.md)
-- [Banco de dados](DATABASE.md)
-- [Testes](TESTING.md)
-- [Operacoes e deploy](OPERATIONS.md)
-- [Glossario de conceitos](GLOSSARIO_CONCEITOS.md)
-- [Extracao deterministica](EXTRACTION_DETERMINISTIC.md)
-- [Decisoes arquiteturais](decisions/)
-- [Runbook legado](../RUNBOOK.md)
-- [Arquitetura legado](../ARCHITECTURE.md)
+1. **Novo no projeto?** Comece pelo [CLAUDE.md](../CLAUDE.md) (regras operacionais)
+2. **Entender a arquitetura?** Leia [ARQUITETURA_GERAL.md](ARQUITETURA_GERAL.md)
+3. **Trabalhar em um sistema?** Acesse [docs/sistemas/](sistemas/)
+4. **Fazer deploy?** Siga o [CHECKLIST_RELEASE_EQUIPE.md](CHECKLIST_RELEASE_EQUIPE.md)
 
-## Visao geral
+## Mapa de Documentacao
 
-O Portal PGE-MS e um monolito FastAPI que hospeda varios sistemas juridicos
-(gerador de pecas, pedido de calculo, prestacao de contas, matriculas
-confrontantes e assistencia judiciaria). A autenticacao e centralizada
-(JWT via cookie e header), e os modulos compartilham banco SQLAlchemy
-(SQLite em dev e PostgreSQL em prod) e integracoes com IA.
+### Documentacao Principal
 
-## Mapa de pastas (alto nivel)
+| Documento | Descricao |
+|-----------|-----------|
+| [../CLAUDE.md](../CLAUDE.md) | **LEIA PRIMEIRO** - Regras operacionais para trabalhar no repo |
+| [ARQUITETURA_GERAL.md](ARQUITETURA_GERAL.md) | Visao macro, fluxos principais, onboarding |
+| [PLANO_MELHORIAS_BACKEND.md](PLANO_MELHORIAS_BACKEND.md) | Roadmap de melhorias e dividas tecnicas |
+| [CHECKLIST_RELEASE_EQUIPE.md](CHECKLIST_RELEASE_EQUIPE.md) | Checklist para dev, teste e deploy |
 
-```
-portal-pge/
-|-- admin/                # Admin de prompts e configuracoes de IA
-|-- auth/                 # Autenticacao JWT, dependencias e seguranca
-|-- database/             # Conexao SQLAlchemy e migrations manuais
-|-- docs/                 # Esta documentacao + decisoes
-|-- frontend/             # Templates Jinja2 do portal e admin
-|-- services/             # Clientes compartilhados (Gemini, TJ-MS)
-|-- sistemas/             # Modulos de negocio
-|-- tests/                # Testes unitarios/integracao/e2e
-|-- users/                # CRUD de usuarios (admin)
-|-- utils/                # Rate limit, audit, cache, seguranca
-|-- main.py               # App FastAPI e roteamento
-|-- config.py             # Configuracoes e variaveis de ambiente
-|-- requirements.txt      # Dependencias Python
-```
+### Documentacao por Sistema
+
+| Sistema | Descricao | Link |
+|---------|-----------|------|
+| Gerador de Pecas | Sistema principal - geracao de pecas juridicas | [sistemas/gerador_pecas.md](sistemas/gerador_pecas.md) |
+| Pedido de Calculo | Geracao de pedidos de calculo | [sistemas/pedido_calculo.md](sistemas/pedido_calculo.md) |
+| Prestacao de Contas | Analise de prestacao de contas | [sistemas/prestacao_contas.md](sistemas/prestacao_contas.md) |
+| Relatorio de Cumprimento | Relatorios de cumprimento de sentenca | [sistemas/relatorio_cumprimento.md](sistemas/relatorio_cumprimento.md) |
+| Matriculas Confrontantes | Analise de matriculas imobiliarias | [sistemas/matriculas_confrontantes.md](sistemas/matriculas_confrontantes.md) |
+| Assistencia Judiciaria | Consulta e relatorio de processos | [sistemas/assistencia_judiciaria.md](sistemas/assistencia_judiciaria.md) |
+| BERT Training | Treinamento de classificadores | [sistemas/bert_training.md](sistemas/bert_training.md) |
+| Classificador de Documentos | Classificacao de PDFs com IA | [sistemas/classificador_documentos.md](sistemas/classificador_documentos.md) |
+
+### Documentacao Tecnica
+
+| Documento | Descricao |
+|-----------|-----------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Detalhes tecnicos de arquitetura |
+| [API.md](API.md) | Referencia de API REST |
+| [DATABASE.md](DATABASE.md) | Modelo de dados e tabelas |
+| [MODULES.md](MODULES.md) | Estrutura de modulos Python |
+
+### Documentacao de Operacao
+
+| Documento | Descricao |
+|-----------|-----------|
+| [OPERATIONS.md](OPERATIONS.md) | Guia de operacao em producao |
+| [LOCAL-DEV.md](LOCAL-DEV.md) | Setup de ambiente local |
+| [TESTING.md](TESTING.md) | Guia de testes |
+
+### Documentacao de Dominio
+
+| Documento | Descricao |
+|-----------|-----------|
+| [GLOSSARIO_CONCEITOS.md](GLOSSARIO_CONCEITOS.md) | Glossario de termos juridicos e tecnicos |
+| [agents.md](agents.md) | Documentacao dos agentes TJ-MS |
+| [banco_vetorial.md](banco_vetorial.md) | Documentacao de embeddings e busca vetorial |
+
+### Documentacao Especifica
+
+| Documento | Descricao |
+|-----------|-----------|
+| [EXTRACTION_DETERMINISTIC.md](EXTRACTION_DETERMINISTIC.md) | Sistema de regras deterministicas |
+| [DOCUMENT_CLASSIFIER.md](DOCUMENT_CLASSIFIER.md) | Detalhes do classificador de documentos |
+| [regras_tipo_peca.md](regras_tipo_peca.md) | Regras por tipo de peca juridica |
+| [prompts_conteudo_vetorial.md](prompts_conteudo_vetorial.md) | Documentacao de prompts modulares |
+| [bert_training.md](bert_training.md) | Detalhes tecnicos do BERT Training |
+
+### ADRs (Architecture Decision Records)
+
+| ADR | Decisao |
+|-----|---------|
+| [decisions/ADR-0001-fastapi-framework.md](decisions/ADR-0001-fastapi-framework.md) | Escolha do FastAPI |
+| [decisions/ADR-0001-template.md](decisions/ADR-0001-template.md) | Template para novos ADRs |
+
+### Propostas e Planejamento
+
+| Documento | Descricao |
+|-----------|-----------|
+| [BERT_SISTEMA_PRODUTO_REDESIGN.md](BERT_SISTEMA_PRODUTO_REDESIGN.md) | Proposta de redesign do BERT Training |
+
+### Changelog e Historico
+
+| Documento | Descricao |
+|-----------|-----------|
+| [DOCS_CHANGES.md](DOCS_CHANGES.md) | Historico de alteracoes na documentacao |
+
+### Arquivados
+
+Documentos com valor historico mas nao mais ativos estao em [_archive/](_archive/).
+
+---
 
 ## Quickstart (rodar local)
 
-1) Criar ambiente e instalar dependencias
-
 ```bash
+# 1. Criar ambiente e instalar dependencias
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 pip install -r requirements.txt
-```
 
-2) Configurar ambiente
-
-```bash
+# 2. Configurar ambiente
 copy .env.example .env
 # Edite .env com suas credenciais
-```
 
-3) Subir o servidor
-
-```bash
-python main.py
-# ou
+# 3. Subir o servidor
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
+
+# 4. Acessar
+# Portal: http://localhost:8000
+# Docs OpenAPI: http://localhost:8000/docs
 ```
 
-4) URLs principais
+## Mapa de Pastas
 
-- Portal: http://localhost:8000
-- Dashboard: http://localhost:8000/dashboard
-- Docs OpenAPI: http://localhost:8000/docs
+```
+portal-pge/
+|-- CLAUDE.md             # Regras operacionais (LEIA PRIMEIRO)
+|-- main.py               # Entry point FastAPI
+|-- config.py             # Configuracoes globais
+|-- admin/                # Admin de prompts e configuracoes
+|-- auth/                 # Autenticacao JWT
+|-- database/             # Conexao SQLAlchemy
+|-- docs/                 # Esta documentacao
+|   |-- sistemas/         # Docs por sistema
+|   |-- decisions/        # ADRs
+|-- services/             # Clientes compartilhados (Gemini, TJ-MS)
+|-- sistemas/             # Modulos de negocio (8 sistemas)
+|-- tests/                # Testes automatizados
+|-- frontend/             # Assets frontend
+```
 
-Atalho Windows: `run.bat`
+## Como Contribuir com Documentacao
 
-## Comandos principais
-
-- Dev server: `uvicorn main:app --reload --host 127.0.0.1 --port 8000`
-- Testes (unittest): `python -m unittest`
-- Testes especificos: `python -m unittest tests.test_prompt_groups`
-- Migracoes manuais: `python run_migration.py`
-
-## Onde mexer (tarefas comuns)
-
-- Novo endpoint de API: `main.py` (include_router) + `sistemas/<modulo>/router.py`
-- Prompts e configuracoes de IA: `admin/` + tabelas `prompt_configs` e `configuracoes_ia`
-- Prompts modulares (gerador de pecas): `admin/router_prompts.py` e `admin/models_prompts.py`
-- Extracao de dados e regras deterministicas: `sistemas/gerador_pecas/router_extraction.py`
-- Banco de dados: models em `*/models.py` + migrations em `database/init_db.py`
-- Frontend SPA de cada sistema: `sistemas/<modulo>/templates/`
-- Templates admin/portal: `frontend/templates/`
-
-Se algum comportamento nao estiver claro no codigo, isso e sinalizado nas paginas
-especificas desta documentacao.
+1. **Novo sistema?** Criar `docs/sistemas/<nome>.md` seguindo o padrao existente
+2. **Decisao arquitetural?** Criar ADR em `docs/decisions/`
+3. **Atualizacao de sistema?** Atualizar o `.md` correspondente
+4. **Mudanca significativa?** Registrar em `DOCS_CHANGES.md`

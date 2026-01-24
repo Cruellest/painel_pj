@@ -1,0 +1,17 @@
+{
+  "name": "portal-pge-frontend",
+  "version": "1.0.0",
+  "description": "Frontend TypeScript do Portal PGE-MS",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  }
+}
