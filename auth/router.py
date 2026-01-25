@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from database.connection import get_db
 from auth.models import User
 from auth.schemas import (
-    Token, LoginRequest, ChangePasswordRequest, UserMe
+    Token, LoginRequest, ChangePasswordRequest, UserMe, HTTPError
 )
 from auth.security import verify_password, get_password_hash, create_access_token
 from auth.dependencies import get_current_active_user
@@ -27,6 +27,12 @@ from utils.audit import (
     log_login_success, log_login_failure, log_logout, log_password_change
 )
 
+# SECURITY: Proteção contra brute force
+from utils.brute_force import (
+    check_brute_force, record_login_failure, record_login_success
+)
+from utils.audit import get_client_ip
+
 # SECURITY: Política de senhas
 from utils.password_policy import get_password_requirements, check_password_strength
 
@@ -39,7 +45,18 @@ router = APIRouter(prefix="/auth", tags=["Autenticação"])
 AUTH_COOKIE_NAME = "access_token"
 
 
-@router.post("/login", response_model=Token)
+@router.post(
+    "/login",
+    response_model=Token,
+    summary="Autenticar usuário",
+    response_description="Token JWT para autenticação",
+    responses={
+        200: {"description": "Login bem-sucedido", "model": Token},
+        401: {"description": "Credenciais inválidas", "model": HTTPError},
+        403: {"description": "Usuário desativado", "model": HTTPError},
+        429: {"description": "Muitas tentativas de login", "model": HTTPError},
+    }
+)
 @limiter.limit(LIMITS["login"])  # SECURITY: 5 tentativas/minuto por IP
 async def login(
     request: Request,  # Necessário para rate limiting
@@ -55,13 +72,31 @@ async def login(
 
     SECURITY: O token é retornado no body E também definido como HttpOnly cookie.
     O cookie previne roubo de token via XSS.
+
+    SECURITY: Proteção contra brute force:
+    - Bloqueia IP após 5 tentativas falhas
+    - Bloqueia username após 5 tentativas falhas
+    - Bloqueio dura 5 minutos
     """
+    # SECURITY: Verifica proteção contra brute force
+    client_ip = get_client_ip(request)
+    bf_status = check_brute_force(client_ip, form_data.username)
+
+    if bf_status.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=bf_status.message or "Muitas tentativas de login. Aguarde alguns minutos.",
+            headers={"Retry-After": str(int(bf_status.retry_after or 300))}
+        )
+
     # Busca usuário
     user = db.query(User).filter(User.username == form_data.username).first()
 
     if not user:
         # SECURITY: Audit log de falha de login
         log_login_failure(form_data.username, request, "user_not_found")
+        # SECURITY: Registra falha no brute force protection
+        record_login_failure(client_ip, form_data.username, "user_not_found")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuário ou senha incorretos",
@@ -72,6 +107,8 @@ async def login(
     if not verify_password(form_data.password, user.hashed_password):
         # SECURITY: Audit log de falha de login
         log_login_failure(form_data.username, request, "invalid_password")
+        # SECURITY: Registra falha no brute force protection
+        record_login_failure(client_ip, form_data.username, "invalid_password")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuário ou senha incorretos",
@@ -82,6 +119,8 @@ async def login(
     if not user.is_active:
         # SECURITY: Audit log de falha de login
         log_login_failure(form_data.username, request, "user_inactive")
+        # SECURITY: Registra falha no brute force protection
+        record_login_failure(client_ip, form_data.username, "user_inactive")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Usuário desativado. Contate o administrador."
@@ -112,6 +151,9 @@ async def login(
 
     # SECURITY: Audit log de login bem sucedido
     log_login_success(user.id, user.username, request)
+
+    # SECURITY: Limpa contador de falhas no brute force protection
+    record_login_success(client_ip, user.username)
 
     # SECURITY: Também retorna no body para compatibilidade com clientes que precisam
     return Token(access_token=access_token, token_type="bearer")

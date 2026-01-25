@@ -19,6 +19,7 @@ class PromptCreate(BaseModel):
     nome: str = Field(..., min_length=1, max_length=200)
     descricao: Optional[str] = None
     conteudo: str = Field(..., min_length=10)
+    codigos_documento: Optional[str] = Field(None, max_length=500, description="Códigos de tipos de documento TJ-MS separados por vírgula (ex: 8,15,34)")
 
 
 class PromptUpdate(BaseModel):
@@ -26,6 +27,7 @@ class PromptUpdate(BaseModel):
     nome: Optional[str] = Field(None, min_length=1, max_length=200)
     descricao: Optional[str] = None
     conteudo: Optional[str] = Field(None, min_length=10)
+    codigos_documento: Optional[str] = Field(None, max_length=500)
     ativo: Optional[bool] = None
 
 
@@ -35,6 +37,7 @@ class PromptResponse(BaseModel):
     nome: str
     descricao: Optional[str]
     conteudo: str
+    codigos_documento: Optional[str]
     ativo: bool
     criado_em: datetime
     atualizado_em: datetime

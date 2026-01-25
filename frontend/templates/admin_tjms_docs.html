@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documentacao TJMS - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#f0f9ff', 100: '#e0f2fe', 500: '#0ea5e9', 600: '#0284c7', 700: '#0369a1' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .code-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'Fira Code', monospace;
+            font-size: 13px;
+        }
+        .badge-frontend { background: #3b82f6; color: white; }
+        .badge-backend { background: #10b981; color: white; }
+        .badge-sync { background: #f59e0b; color: white; }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-3">
+                    <a href="/dashboard" class="flex items-center gap-2 text-gray-600 hover:text-primary-600">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Voltar</span>
+                    </a>
+                    <span class="text-gray-300">|</span>
+                    <h1 class="text-lg font-semibold text-gray-800">
+                        <i class="fas fa-server text-primary-600 mr-2"></i>
+                        Documentacao Integracao TJ-MS
+                    </h1>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-500">Atualizado: 24/01/2026</span>
+                    <a href="/docs/PLANO_UNIFICACAO_TJMS.md" target="_blank" class="text-primary-600 hover:underline text-sm">
+                        <i class="fas fa-external-link-alt mr-1"></i>Ver Plano Completo
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Alerta de Sincronizacao -->
+        <div class="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div class="flex items-start gap-3">
+                <i class="fas fa-exclamation-triangle text-amber-500 mt-1"></i>
+                <div>
+                    <h3 class="font-semibold text-amber-800">Importante: Sincronizacao Backend/Frontend</h3>
+                    <p class="text-amber-700 text-sm mt-1">
+                        Quando alterar qualquer arquivo listado abaixo no backend, verifique se ha impacto no frontend correspondente.
+                        Mudancas na estrutura de dados SOAP ou nos parsers XML podem quebrar a UI.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status da Migracao -->
+        <div class="mb-6 bg-green-50 border border-green-200 rounded-xl p-4">
+            <div class="flex items-start gap-3">
+                <i class="fas fa-check-circle text-green-500 mt-1"></i>
+                <div>
+                    <h3 class="font-semibold text-green-800">Migracao Concluida (24/01/2026)</h3>
+                    <p class="text-green-700 text-sm mt-1">
+                        Todos os sistemas foram migrados para usar o cliente TJMS unificado em <code class="bg-green-100 px-1 rounded">services/tjms/</code>.
+                        A configuracao de credenciais e URLs esta centralizada em um unico local.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Visao Geral -->
+        <div class="mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-sitemap text-primary-600 mr-2"></i>
+                Arquitetura Unificada de Integracao
+            </h2>
+            <div class="code-block mb-4">
+<pre>
+CLIENTE UNIFICADO (services/tjms/):
+
+services/tjms/
+  __init__.py         --> Exports publicos (todos os modulos)
+  config.py           --> TJMSConfig, get_config(), reload_config()
+  models.py           --> ProcessoTJMS, DocumentoTJMS, Parte, Movimento, etc
+  client.py           --> TJMSClient (async context manager principal)
+  parsers.py          --> XMLParserTJMS para respostas SOAP
+  adapters.py         --> Wrappers de compatibilidade (DocumentDownloader, etc)
+  constants.py        --> TipoDocumentoTJMS, CodigoMovimento, helpers
+
+TODOS OS SISTEMAS USAM services/tjms:
+- Assistencia Judiciaria --> TJMSClient (async)
+- Classificador Docs     --> TJMSClient via services_tjms.py
+- Relatorio Cumprimento  --> DocumentDownloader adapter
+- Prestacao de Contas    --> consultar_processo_async, baixar_documentos_async
+- Pedido de Calculo      --> DocumentDownloader adapter
+- Gerador de Pecas       --> get_config (configuracao centralizada)
+
+PROXIES:
+- Fly.io (SOAP): tjms-proxy.fly.dev
+- Local (Playwright/Subconta): ngrok
+</pre>
+            </div>
+        </div>
+
+        <!-- Modulos do Servico -->
+        <div class="mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-cubes text-primary-600 mr-2"></i>
+                Modulos do Servico Unificado
+            </h2>
+
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- config.py -->
+                <div class="border border-gray-200 rounded-xl p-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-cog text-blue-500 mr-2"></i>config.py
+                    </h3>
+                    <p class="text-sm text-gray-600 mb-3">Configuracao centralizada de URLs, credenciais e timeouts.</p>
+                    <div class="code-block text-xs">
+<pre>from services.tjms import get_config
+
+config = get_config()
+# config.soap_url
+# config.user
+# config.password
+# config.timeout</pre>
+                    </div>
+                </div>
+
+                <!-- client.py -->
+                <div class="border border-gray-200 rounded-xl p-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-plug text-green-500 mr-2"></i>client.py
+                    </h3>
+                    <p class="text-sm text-gray-600 mb-3">Cliente async principal para consultas SOAP.</p>
+                    <div class="code-block text-xs">
+<pre>from services.tjms import TJMSClient
+
+async with TJMSClient() as client:
+    proc = await client.consultar_processo(cnj)
+    docs = await client.baixar_documentos(cnj, ids)</pre>
+                    </div>
+                </div>
+
+                <!-- models.py -->
+                <div class="border border-gray-200 rounded-xl p-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-database text-purple-500 mr-2"></i>models.py
+                    </h3>
+                    <p class="text-sm text-gray-600 mb-3">Modelos de dados tipados (Pydantic/dataclass).</p>
+                    <div class="code-block text-xs">
+<pre>from services.tjms import (
+    ProcessoTJMS,      # Dados completos do processo
+    DocumentoTJMS,     # Documento baixado (bytes)
+    Parte,             # Partes do processo
+    Movimento,         # Movimentacoes
+    DocumentoMetadata, # Metadados de documento
+    ConsultaOptions,   # Opcoes de consulta
+    DownloadOptions,   # Opcoes de download
+)</pre>
+                    </div>
+                </div>
+
+                <!-- constants.py -->
+                <div class="border border-gray-200 rounded-xl p-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-list-ol text-amber-500 mr-2"></i>constants.py
+                    </h3>
+                    <p class="text-sm text-gray-600 mb-3">Codigos de tipos de documento e movimentos TJ-MS.</p>
+                    <div class="code-block text-xs">
+<pre>from services.tjms import (
+    TipoDocumentoTJMS,  # Enum: SENTENCA=8, DECISAO=15...
+    CodigoMovimento,    # Enum: DISTRIBUICAO=26...
+    is_documento_decisao,
+    is_documento_administrativo,
+    get_nome_tipo_documento,
+)</pre>
+                    </div>
+                </div>
+
+                <!-- adapters.py -->
+                <div class="border border-gray-200 rounded-xl p-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-exchange-alt text-red-500 mr-2"></i>adapters.py
+                    </h3>
+                    <p class="text-sm text-gray-600 mb-3">Wrappers de compatibilidade para sistemas legados.</p>
+                    <div class="code-block text-xs">
+<pre>from services.tjms import (
+    DocumentDownloader,        # Classe compativel
+    consultar_processo_async,  # Funcao direta
+    baixar_documentos_async,   # Funcao direta
+    extrair_texto_pdf,         # Extracao OCR
+)</pre>
+                    </div>
+                </div>
+
+                <!-- parsers.py -->
+                <div class="border border-gray-200 rounded-xl p-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">
+                        <i class="fas fa-code text-teal-500 mr-2"></i>parsers.py
+                    </h3>
+                    <p class="text-sm text-gray-600 mb-3">Parser XML para respostas SOAP do TJ-MS.</p>
+                    <div class="code-block text-xs">
+<pre>from services.tjms import XMLParserTJMS
+
+parser = XMLParserTJMS()
+processo = parser.parse_consulta(xml_response)
+# Extrai partes, movimentos, documentos...</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tipos de Documento TJ-MS -->
+        <div class="mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-file-alt text-primary-600 mr-2"></i>
+                Codigos de Tipos de Documento TJ-MS
+            </h2>
+            <p class="text-sm text-gray-600 mb-4">
+                Codigos mais usados nos sistemas. Usar <code class="bg-gray-100 px-1 rounded">TipoDocumentoTJMS</code> do constants.py.
+            </p>
+            <div class="grid md:grid-cols-3 gap-4">
+                <div class="border border-gray-200 rounded-lg p-3">
+                    <h4 class="font-semibold text-gray-700 mb-2 text-sm">Decisoes</h4>
+                    <ul class="text-xs space-y-1">
+                        <li><code class="bg-blue-50 px-1 rounded">8</code> Sentenca</li>
+                        <li><code class="bg-blue-50 px-1 rounded">15</code> Decisao Interlocutoria</li>
+                        <li><code class="bg-blue-50 px-1 rounded">34</code> Acordao</li>
+                        <li><code class="bg-blue-50 px-1 rounded">44</code> Decisao Monocratica</li>
+                        <li><code class="bg-blue-50 px-1 rounded">95</code> Sentenca Homologatoria</li>
+                    </ul>
+                </div>
+                <div class="border border-gray-200 rounded-lg p-3">
+                    <h4 class="font-semibold text-gray-700 mb-2 text-sm">Peticoes</h4>
+                    <ul class="text-xs space-y-1">
+                        <li><code class="bg-green-50 px-1 rounded">500</code> Peticao Inicial</li>
+                        <li><code class="bg-green-50 px-1 rounded">9500</code> Peticao</li>
+                        <li><code class="bg-green-50 px-1 rounded">8320</code> Contestacao</li>
+                        <li><code class="bg-green-50 px-1 rounded">8335</code> Apelacao</li>
+                        <li><code class="bg-green-50 px-1 rounded">8350</code> Recurso</li>
+                    </ul>
+                </div>
+                <div class="border border-gray-200 rounded-lg p-3">
+                    <h4 class="font-semibold text-gray-700 mb-2 text-sm">Outros</h4>
+                    <ul class="text-xs space-y-1">
+                        <li><code class="bg-amber-50 px-1 rounded">3</code> Alvara</li>
+                        <li><code class="bg-amber-50 px-1 rounded">286</code> Pedido de Cumprimento</li>
+                        <li><code class="bg-amber-50 px-1 rounded">60</code> Procuracao</li>
+                        <li><code class="bg-amber-50 px-1 rounded">9</code> Certidao</li>
+                        <li><code class="bg-amber-50 px-1 rounded">1001</code> Laudo Pericial</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cards por Sistema -->
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Detalhamento por Sistema</h2>
+
+        <div class="grid gap-6">
+
+            <!-- Gerador de Pecas -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="bg-purple-50 border-b border-purple-100 px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-purple-800">
+                            <i class="fas fa-file-alt mr-2"></i>Gerador de Pecas
+                        </h3>
+                        <div class="flex gap-2">
+                            <span class="px-2 py-1 rounded text-xs badge-backend">Backend Complexo</span>
+                            <span class="px-2 py-1 rounded text-xs badge-sync">Sincronizar com cuidado</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">Arquivos Backend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/gerador_pecas/agente_tjms.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/gerador_pecas/agente_tjms_integrado.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/gerador_pecas/orquestrador_agentes.py</code>
+                                </li>
+                            </ul>
+                            <h4 class="font-semibold text-gray-700 mt-4 mb-2">Arquivos Frontend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-blue-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/gerador_pecas/templates/index.html</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-blue-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/gerador_pecas/templates/autos.html</code>
+                                </li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">O que consome do TJMS</h4>
+                            <ul class="text-sm space-y-2">
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>XML Completo:</strong> Dados do processo, partes, movimentos</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Download PDFs:</strong> Batch paralelo (5 docs, 4 conexoes)</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>NAT Origin Search:</strong> Busca em processo de origem</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Filtro Categorias:</strong> CATEGORIAS_EXCLUIDAS + codigos_permitidos</span>
+                                </li>
+                            </ul>
+                            <div class="mt-4 p-3 bg-amber-50 rounded-lg">
+                                <p class="text-xs text-amber-700">
+                                    <i class="fas fa-warning mr-1"></i>
+                                    <strong>Se alterar:</strong> agente_tjms.py muda estrutura de DadosProcesso,
+                                    verificar se orquestrador_agentes.py e templates esperam mesmos campos.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pedido de Calculo -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="bg-amber-50 border-b border-amber-100 px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-amber-800">
+                            <i class="fas fa-calculator mr-2"></i>Pedido de Calculo
+                        </h3>
+                        <div class="flex gap-2">
+                            <span class="px-2 py-1 rounded text-xs bg-green-500 text-white">Usa services/tjms</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">Arquivos Backend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/pedido_calculo/document_downloader.py</code>
+                                    <span class="text-xs text-green-500">(legado - apenas PDF)</span>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/pedido_calculo/xml_parser.py</code>
+                                    <span class="text-xs text-green-500">(legado - apenas PDF)</span>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/pedido_calculo/services.py</code>
+                                </li>
+                            </ul>
+                            <h4 class="font-semibold text-gray-700 mt-4 mb-2">Arquivos Frontend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-blue-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/pedido_calculo/templates/index.html</code>
+                                </li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">O que consome do TJMS</h4>
+                            <ul class="text-sm space-y-2">
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>XML Completo:</strong> Dados basicos, movimentos, documentos</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Download PDFs:</strong> Batch de 3 por vez</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>ID Planilha:</strong> Deteccao de tipo 286 (Pedido de Cumprimento)</span>
+                                </li>
+                            </ul>
+                            <div class="mt-4 p-3 bg-green-50 rounded-lg">
+                                <p class="text-xs text-green-700">
+                                    <i class="fas fa-check-circle mr-1"></i>
+                                    <strong>MIGRADO:</strong> Agora usa services/tjms. O document_downloader.py
+                                    e usado apenas para extrair_texto_pdf() (extracao de texto de PDFs).
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Prestacao de Contas -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="bg-teal-50 border-b border-teal-100 px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-teal-800">
+                            <i class="fas fa-file-invoice-dollar mr-2"></i>Prestacao de Contas
+                        </h3>
+                        <div class="flex gap-2">
+                            <span class="px-2 py-1 rounded text-xs bg-green-500 text-white">Usa services/tjms</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">Arquivos Backend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/prestacao_contas/services.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/prestacao_contas/xml_parser.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/prestacao_contas/scrapper_subconta.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-link text-gray-400"></i>
+                                    <span class="text-green-600"><i class="fas fa-check mr-1"></i>Importa de: services/tjms (unificado)</span>
+                                </li>
+                            </ul>
+                            <h4 class="font-semibold text-gray-700 mt-4 mb-2">Arquivos Frontend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-blue-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/prestacao_contas/templates/index.html</code>
+                                </li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">O que consome do TJMS</h4>
+                            <ul class="text-sm space-y-2">
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>XML Completo:</strong> Via services/tjms (unificado)</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Download PDFs:</strong> Via services/tjms (unificado)</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Subconta:</strong> Via Playwright (proxy local)</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Fallback Alvaras:</strong> Codigo 3 nos ultimos 30 docs</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Relatorio Cumprimento -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="bg-emerald-50 border-b border-emerald-100 px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-emerald-800">
+                            <i class="fas fa-file-lines mr-2"></i>Relatorio de Cumprimento
+                        </h3>
+                        <div class="flex gap-2">
+                            <span class="px-2 py-1 rounded text-xs bg-green-500 text-white">Usa services/tjms</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">Arquivos Backend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/relatorio_cumprimento/services.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/relatorio_cumprimento/agravo_detector.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-link text-gray-400"></i>
+                                    <span class="text-green-600"><i class="fas fa-check mr-1"></i>Importa de: services/tjms (unificado)</span>
+                                </li>
+                            </ul>
+                            <h4 class="font-semibold text-gray-700 mt-4 mb-2">Arquivos Frontend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-blue-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/relatorio_cumprimento/templates/index.html</code>
+                                </li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">O que consome do TJMS</h4>
+                            <ul class="text-sm space-y-2">
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>XML Completo:</strong> Via services/tjms (unificado)</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Download PDFs:</strong> Sentencas, acordaos, decisoes</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Processo Origem:</strong> Busca em cumprimento autonomo</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Deteccao Agravo:</strong> Valida partes e baixa decisoes</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Classificador de Documentos -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="bg-indigo-50 border-b border-indigo-100 px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-indigo-800">
+                            <i class="fas fa-tags mr-2"></i>Classificador de Documentos
+                        </h3>
+                        <div class="flex gap-2">
+                            <span class="px-2 py-1 rounded text-xs bg-green-500 text-white">Usa services/tjms</span>
+                            <span class="px-2 py-1 rounded text-xs bg-indigo-500 text-white">codigos_documento</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">Arquivos Backend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/classificador_documentos/services_tjms.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/classificador_documentos/services.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/classificador_documentos/models.py</code>
+                                </li>
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-link text-gray-400"></i>
+                                    <span class="text-green-600"><i class="fas fa-check mr-1"></i>Importa de: services/tjms (unificado)</span>
+                                </li>
+                            </ul>
+                            <h4 class="font-semibold text-gray-700 mt-4 mb-2">Arquivos Frontend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-blue-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/classificador_documentos/templates/index.html</code>
+                                </li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">O que consome do TJMS</h4>
+                            <ul class="text-sm space-y-2">
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>XML Completo:</strong> Lista de documentos disponiveis</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Download PDFs:</strong> Individual ou em lote</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Conversao RTF:</strong> RTF para PDF quando necessario</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Filtro por Tipo:</strong> Filtra por codigos TJ-MS (8, 15, 34, etc)</span>
+                                </li>
+                            </ul>
+                            <div class="mt-4 p-3 bg-indigo-50 rounded-lg">
+                                <p class="text-xs text-indigo-700">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    <strong>codigos_documento:</strong> Prompts podem ter codigos TJ-MS associados.
+                                    Ao selecionar o prompt, os tipos de documento sao pre-selecionados automaticamente.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Assistencia Judiciaria -->
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="bg-primary-50 border-b border-primary-100 px-6 py-4">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-primary-800">
+                            <i class="fas fa-gavel mr-2"></i>Assistencia Judiciaria
+                        </h3>
+                        <div class="flex gap-2">
+                            <span class="px-2 py-1 rounded text-xs bg-green-500 text-white">Usa services/tjms (async)</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">Arquivos Backend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-green-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/assistencia_judiciaria/core/logic.py</code>
+                                    <span class="text-xs text-green-600">(migrado p/ TJMSClient async)</span>
+                                </li>
+                            </ul>
+                            <h4 class="font-semibold text-gray-700 mt-4 mb-2">Arquivos Frontend</h4>
+                            <ul class="text-sm space-y-1">
+                                <li class="flex items-center gap-2">
+                                    <i class="fas fa-file-code text-blue-600"></i>
+                                    <code class="bg-gray-100 px-2 py-0.5 rounded">sistemas/assistencia_judiciaria/templates/index.html</code>
+                                </li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">O que consome do TJMS</h4>
+                            <ul class="text-sm space-y-2">
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Apenas XML:</strong> Partes, movimentos, complementos</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-times text-red-500 mt-1"></i>
+                                    <span><strong>NAO baixa PDFs:</strong> So analisa metadados</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Gratuidade:</strong> Flag assistenciaJudiciaria das partes</span>
+                                </li>
+                                <li class="flex items-start gap-2">
+                                    <i class="fas fa-check text-green-500 mt-1"></i>
+                                    <span><strong>Deteccao Apenso:</strong> Palavras-chave nos movimentos</span>
+                                </li>
+                            </ul>
+                            <div class="mt-4 p-3 bg-green-50 rounded-lg">
+                                <p class="text-xs text-green-700">
+                                    <i class="fas fa-check-circle mr-1"></i>
+                                    Migrado para TJMSClient async em 24/01/2026.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Boas Praticas -->
+        <div class="mt-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-lightbulb text-primary-600 mr-2"></i>
+                Boas Praticas de Uso
+            </h2>
+
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="border border-green-200 rounded-xl p-4 bg-green-50">
+                    <h3 class="font-semibold text-green-800 mb-3">
+                        <i class="fas fa-check-circle mr-2"></i>Fazer
+                    </h3>
+                    <ul class="text-sm space-y-2 text-green-700">
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-check text-green-500 mt-1"></i>
+                            <span>Usar <code class="bg-green-100 px-1 rounded">async with TJMSClient()</code> para consultas</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-check text-green-500 mt-1"></i>
+                            <span>Importar codigos de <code class="bg-green-100 px-1 rounded">TipoDocumentoTJMS</code></span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-check text-green-500 mt-1"></i>
+                            <span>Usar <code class="bg-green-100 px-1 rounded">get_config()</code> para configuracoes</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-check text-green-500 mt-1"></i>
+                            <span>Tratar TimeoutError e ConnectionError</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-check text-green-500 mt-1"></i>
+                            <span>Usar helpers como <code class="bg-green-100 px-1 rounded">is_documento_decisao()</code></span>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="border border-red-200 rounded-xl p-4 bg-red-50">
+                    <h3 class="font-semibold text-red-800 mb-3">
+                        <i class="fas fa-times-circle mr-2"></i>Evitar
+                    </h3>
+                    <ul class="text-sm space-y-2 text-red-700">
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-times text-red-500 mt-1"></i>
+                            <span>NAO fazer requests diretos ao TJ-MS (usar proxy)</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-times text-red-500 mt-1"></i>
+                            <span>NAO hardcodar credenciais ou URLs</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-times text-red-500 mt-1"></i>
+                            <span>NAO criar novos parsers XML (usar XMLParserTJMS)</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-times text-red-500 mt-1"></i>
+                            <span>NAO aumentar timeout sem justificativa</span>
+                        </li>
+                        <li class="flex items-start gap-2">
+                            <i class="fas fa-times text-red-500 mt-1"></i>
+                            <span>NAO duplicar logica de download de documentos</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                <h4 class="font-semibold text-blue-800 mb-2">
+                    <i class="fas fa-code mr-2"></i>Exemplo de Uso Correto
+                </h4>
+                <div class="code-block text-xs">
+<pre>from services.tjms import TJMSClient, TipoDocumentoTJMS, is_documento_decisao
+
+async def buscar_decisoes(cnj: str):
+    async with TJMSClient() as client:
+        processo = await client.consultar_processo(cnj)
+
+        # Filtrar apenas decisoes
+        decisoes = [
+            doc for doc in processo.documentos
+            if is_documento_decisao(doc.tipo_codigo)
+        ]
+
+        # Baixar documentos filtrados
+        ids = [d.id for d in decisoes]
+        documentos = await client.baixar_documentos(cnj, ids)
+
+        return documentos</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resumo de Dependencias -->
+        <div class="mt-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-project-diagram text-primary-600 mr-2"></i>
+                Matriz de Dependencias (Apos Migracao)
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-gray-50">
+                            <th class="px-4 py-3 text-left font-semibold text-gray-700">Se alterar...</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-700">Verificar impacto em...</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        <tr class="bg-green-50">
+                            <td class="px-4 py-3">
+                                <code class="bg-green-100 text-green-800 px-2 py-0.5 rounded">services/tjms/config.py</code>
+                            </td>
+                            <td class="px-4 py-3 text-green-700">
+                                <strong>TODOS OS SISTEMAS</strong> (configuracao centralizada)
+                            </td>
+                        </tr>
+                        <tr class="bg-green-50">
+                            <td class="px-4 py-3">
+                                <code class="bg-green-100 text-green-800 px-2 py-0.5 rounded">services/tjms/client.py</code>
+                            </td>
+                            <td class="px-4 py-3 text-green-700">
+                                <strong>TODOS OS SISTEMAS</strong> (cliente principal)
+                            </td>
+                        </tr>
+                        <tr class="bg-green-50">
+                            <td class="px-4 py-3">
+                                <code class="bg-green-100 text-green-800 px-2 py-0.5 rounded">services/tjms/models.py</code>
+                            </td>
+                            <td class="px-4 py-3 text-green-700">
+                                <strong>TODOS OS SISTEMAS</strong> (modelos de dados)
+                            </td>
+                        </tr>
+                        <tr class="bg-green-50">
+                            <td class="px-4 py-3">
+                                <code class="bg-green-100 text-green-800 px-2 py-0.5 rounded">services/tjms/constants.py</code>
+                            </td>
+                            <td class="px-4 py-3 text-green-700">
+                                Classificador, Gerador Pecas, Relatorio Cumprimento (codigos de tipos)
+                            </td>
+                        </tr>
+                        <tr class="bg-green-50">
+                            <td class="px-4 py-3">
+                                <code class="bg-green-100 text-green-800 px-2 py-0.5 rounded">services/tjms/adapters.py</code>
+                            </td>
+                            <td class="px-4 py-3 text-green-700">
+                                Pedido Calculo, Prestacao Contas, Relatorio Cumprimento, Classificador
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-3">
+                                <code class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded">pedido_calculo/document_downloader.py</code>
+                            </td>
+                            <td class="px-4 py-3 text-gray-600">
+                                <span class="text-amber-600">Legado - usado apenas para extrair_texto_pdf()</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="px-4 py-3">
+                                <code class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded">gerador_pecas/agente_tjms.py</code>
+                            </td>
+                            <td class="px-4 py-3 text-gray-600">
+                                Gerador de Pecas (usa config centralizada, SOAP proprio)
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Link para o Plano -->
+        <div class="mt-8 bg-gradient-to-r from-primary-50 to-primary-100 rounded-2xl p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-primary-800">Plano de Unificacao TJMS</h3>
+                    <p class="text-primary-700 text-sm mt-1">
+                        Veja o plano completo para unificar todas as implementacoes em um unico servico.
+                    </p>
+                </div>
+                <a
+                    href="/admin/tjms-docs/plano"
+                    class="px-6 py-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors font-medium"
+                >
+                    <i class="fas fa-file-alt mr-2"></i>Ver Plano Completo
+                </a>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // Verificacao de auth
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+            window.location.href = '/login';
+        }
+    </script>
+</body>
+</html>

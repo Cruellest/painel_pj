@@ -79,13 +79,14 @@ class ClassificadorService:
             PromptClassificacao.id == prompt_id
         ).first()
 
-    def criar_prompt(self, nome: str, conteudo: str, descricao: str = None, usuario_id: int = None) -> PromptClassificacao:
+    def criar_prompt(self, nome: str, conteudo: str, descricao: str = None, usuario_id: int = None, codigos_documento: str = None) -> PromptClassificacao:
         """Cria um novo prompt"""
         prompt = PromptClassificacao(
             nome=nome,
             conteudo=conteudo,
             descricao=descricao,
-            usuario_id=usuario_id
+            usuario_id=usuario_id,
+            codigos_documento=codigos_documento
         )
         self.db.add(prompt)
         self.db.commit()

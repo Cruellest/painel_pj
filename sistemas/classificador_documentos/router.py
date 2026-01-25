@@ -95,6 +95,7 @@ async def listar_prompts(
             "nome": p.nome,
             "descricao": p.descricao,
             "conteudo": p.conteudo,
+            "codigos_documento": p.codigos_documento,
             "ativo": p.ativo,
             "criado_em": to_iso_utc(p.criado_em),
             "atualizado_em": to_iso_utc(p.atualizado_em)
@@ -116,7 +117,8 @@ async def criar_prompt(
             nome=req.nome,
             conteudo=req.conteudo,
             descricao=req.descricao,
-            usuario_id=current_user.id
+            usuario_id=current_user.id,
+            codigos_documento=req.codigos_documento
         )
         return {"id": prompt.id, "mensagem": "Prompt criado com sucesso"}
     except Exception as e:
@@ -139,6 +141,7 @@ async def obter_prompt(
         "nome": prompt.nome,
         "descricao": prompt.descricao,
         "conteudo": prompt.conteudo,
+        "codigos_documento": prompt.codigos_documento,
         "ativo": prompt.ativo,
         "criado_em": to_iso_utc(prompt.criado_em),
         "atualizado_em": to_iso_utc(prompt.atualizado_em)

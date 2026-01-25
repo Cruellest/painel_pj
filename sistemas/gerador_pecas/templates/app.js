@@ -2217,6 +2217,7 @@
   var app;
   document.addEventListener("DOMContentLoaded", () => {
     app = new GeradorPecasApp();
+    window.app = app;  // Expor globalmente para handlers onclick
   });
   window.toggleHistorico = toggleHistorico;
   window.fecharModalEditor = fecharModalEditor;

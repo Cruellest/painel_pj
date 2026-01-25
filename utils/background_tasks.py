@@ -30,7 +30,12 @@ from functools import wraps
 from contextlib import contextmanager
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+# Tenta usar logging estruturado se disponível
+try:
+    from utils.logging_config import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    logger = logging.getLogger(__name__)
 
 # Type variable para retorno de função
 T = TypeVar('T')
@@ -286,6 +291,116 @@ def deferred_commit(db):
 
 
 # ============================================
+# PERIODIC SCHEDULER
+# ============================================
+
+# Flag para controlar o scheduler
+_scheduler_running: bool = False
+_scheduler_task: Optional[asyncio.Task] = None
+
+
+async def _run_periodic_task(
+    name: str,
+    interval_seconds: float,
+    func: Callable,
+    db_factory: Callable = None
+) -> None:
+    """
+    Executa uma função periodicamente.
+
+    Args:
+        name: Nome da tarefa (para logs)
+        interval_seconds: Intervalo entre execuções
+        func: Função a executar (recebe db como argumento se db_factory fornecido)
+        db_factory: Factory de sessão do banco (ex: SessionLocal)
+    """
+    global _scheduler_running
+
+    logger.info(f"[Scheduler] Iniciando tarefa '{name}' (intervalo: {interval_seconds}s)")
+
+    while _scheduler_running:
+        try:
+            await asyncio.sleep(interval_seconds)
+
+            if not _scheduler_running:
+                break
+
+            if db_factory:
+                db = db_factory()
+                try:
+                    result = func(db)
+                    if result:
+                        logger.debug(f"[Scheduler] {name}: {result}")
+                finally:
+                    db.close()
+            else:
+                result = func()
+                if result:
+                    logger.debug(f"[Scheduler] {name}: {result}")
+
+        except asyncio.CancelledError:
+            logger.info(f"[Scheduler] Tarefa '{name}' cancelada")
+            break
+        except Exception as e:
+            logger.error(f"[Scheduler] Erro em '{name}': {e}")
+            # Continua rodando mesmo com erro
+
+
+async def start_bert_watchdog_scheduler(
+    interval_minutes: float = 5.0,
+    db_factory: Callable = None
+) -> None:
+    """
+    Inicia o scheduler do BERT Watchdog.
+
+    Args:
+        interval_minutes: Intervalo entre verificações (default: 5 min)
+        db_factory: Factory de sessão do banco (ex: SessionLocal)
+    """
+    global _scheduler_running, _scheduler_task
+
+    if _scheduler_running:
+        logger.warning("[Scheduler] BERT Watchdog já está rodando")
+        return
+
+    _scheduler_running = True
+
+    from sistemas.bert_training.watchdog import run_watchdog_check
+
+    _scheduler_task = asyncio.create_task(
+        _run_periodic_task(
+            name="BERT Watchdog",
+            interval_seconds=interval_minutes * 60,
+            func=run_watchdog_check,
+            db_factory=db_factory
+        )
+    )
+
+    logger.info(f"[Scheduler] BERT Watchdog iniciado (intervalo: {interval_minutes} min)")
+
+
+async def stop_scheduler() -> None:
+    """Para o scheduler de tarefas periódicas."""
+    global _scheduler_running, _scheduler_task
+
+    _scheduler_running = False
+
+    if _scheduler_task and not _scheduler_task.done():
+        _scheduler_task.cancel()
+        try:
+            await _scheduler_task
+        except asyncio.CancelledError:
+            pass
+
+    logger.info("[Scheduler] Scheduler parado")
+
+
+def is_scheduler_running() -> bool:
+    """Retorna True se o scheduler está ativo."""
+    return _scheduler_running
+
+
+# ============================================
 # EXPORTS
 # ============================================
 
@@ -297,4 +412,7 @@ __all__ = [
     "wait_all_background_tasks",
     "background_commit",
     "deferred_commit",
+    "start_bert_watchdog_scheduler",
+    "stop_scheduler",
+    "is_scheduler_running",
 ]

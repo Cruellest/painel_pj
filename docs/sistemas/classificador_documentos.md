@@ -4,158 +4,210 @@
 
 ## A) Visao Geral
 
-O Classificador de Documentos permite classificar automaticamente PDFs em categorias predefinidas usando IA (Google Gemini). E utilizado como componente auxiliar do Gerador de Pecas para processar documentos anexados, mas tambem pode ser usado de forma standalone.
+O Classificador de Documentos permite classificar automaticamente PDFs em categorias predefinidas usando IA (OpenRouter/Gemini). Pode ser usado de forma standalone para classificar documentos juridicos em categorias (peticoes, decisoes, pareceres, etc) ou integrado com TJ-MS para processar documentos de processos.
 
 **Usuarios**: Procuradores e sistemas automatizados
-**Problema resolvido**: Classificar automaticamente documentos juridicos em categorias (peticoes, decisoes, pareceres, etc) para processamento posterior
+**Problema resolvido**: Classificar automaticamente documentos juridicos em lote, com integracao ao TJ-MS
 
-## B) Regras de Negocio
+## B) Funcionalidades Principais
 
-### B.1) Classificacao de PDFs
+### B.1) Prompts de Classificacao
 
-| Regra | Descricao | Fonte no Codigo |
-|-------|-----------|-----------------|
-| Categorias do Banco | Categorias sao carregadas dinamicamente de `categorias_resumo_json` | `sistemas/classificador_documentos/services.py:50-80` |
-| Categoria Residual | Se confianca baixa ou erro, usa categoria com `is_residual=True` | `sistemas/classificador_documentos/services.py:120-140` |
-| Threshold de Confianca | Classificacao aceita se confianca >= 0.5 (configuravel) | `sistemas/classificador_documentos/services.py:90-110` |
+Prompts sao templates de instrucoes para a IA classificar documentos. Cada prompt pode definir:
 
-### B.2) Heuristica de Conteudo
+| Campo | Descricao |
+|-------|-----------|
+| `nome` | Nome identificador do prompt |
+| `descricao` | Descricao do objetivo do prompt |
+| `conteudo` | Texto completo do prompt enviado a IA |
+| `codigos_documento` | Codigos de tipos de documento TJ-MS que o prompt classifica (ex: "8,15,34") |
 
-| Condicao | Acao | Fonte no Codigo |
-|----------|------|-----------------|
-| PDF com texto extraivel de boa qualidade | Envia primeiros 1000 + ultimos 1000 tokens | `sistemas/classificador_documentos/services.py:150-180` |
-| PDF com texto de ma qualidade | Converte para imagens | `sistemas/classificador_documentos/services.py:190-210` |
-| PDF e imagem nativa | Envia imagens das paginas | `sistemas/classificador_documentos/services.py:220-240` |
-| OCR falha | Envia imagens das paginas | `sistemas/classificador_documentos/services.py:250-270` |
+**Codigos de Documento TJ-MS**: Quando um prompt tem codigos configurados, ao seleciona-lo na interface:
+- Os tipos de documento sao pre-selecionados automaticamente
+- Um popup informa os codigos configurados
 
-### B.3) Integracao com Gerador de Pecas
+### B.2) Lotes (Projetos de Classificacao)
 
-| Regra | Descricao | Fonte no Codigo |
-|-------|-----------|-----------------|
-| Selecao de Primarios | Documento principal e selecionado por prioridade do tipo de peca | `sistemas/gerador_pecas/document_selector.py` |
-| Extracao JSON | Apos classificado, JSON e extraido conforme formato da categoria | `sistemas/gerador_pecas/services_extraction.py` |
+Lotes agrupam multiplos documentos para classificacao em batch:
 
-### B.4) Tratamento de Excecoes
+| Funcionalidade | Descricao |
+|----------------|-----------|
+| Upload Manual | Arrastar e soltar PDFs |
+| Importar TJ-MS | Buscar documentos de processos por numero CNJ |
+| Filtro por Tipo | Selecionar apenas tipos especificos (Sentenca, Decisao, etc) |
+| Execucao em Lote | Classificar todos os documentos do lote |
+| Exportacao | Exportar resultados em Excel, CSV ou JSON |
 
-| Situacao | Comportamento | Fonte no Codigo |
-|----------|---------------|-----------------|
-| IA retorna categoria inexistente | Fallback para categoria residual | `sistemas/classificador_documentos/services.py` |
-| IA retorna JSON malformado | Fallback para categoria residual | `sistemas/classificador_documentos/services.py` |
-| Confianca abaixo do threshold | Fallback para categoria residual | `sistemas/classificador_documentos/services.py` |
-| Erro de comunicacao com IA | Fallback para categoria residual | `sistemas/classificador_documentos/services.py` |
+### B.3) Teste Rapido
 
-## C) Fluxo Funcional
+Permite testar um prompt com um documento antes de criar um lote:
 
-### Fluxo de Classificacao Standalone
+| Modo | Descricao |
+|------|-----------|
+| Upload | Arrasta um PDF local |
+| TJ-MS | Busca documento de um processo e visualiza o PDF |
+
+O visualizador PDF permite navegar pelas paginas do documento ao lado do resultado da classificacao.
+
+## C) Regras de Negocio
+
+### C.1) Classificacao
+
+| Regra | Descricao |
+|-------|-----------|
+| Modo Chunk | Envia apenas parte do texto (inicio ou fim) para economizar tokens |
+| Modo Completo | Envia o texto completo do documento |
+| Fallback OCR | Se extracao de texto falhar, usa OCR via PyMuPDF |
+| Confianca | IA retorna nivel de confianca (alta, media, baixa) |
+
+### C.2) Integracao TJ-MS
+
+| Regra | Descricao |
+|-------|-----------|
+| Tipos de Documento | Filtra por codigo de tipo (8=Sentenca, 15=Decisao Interlocutoria, etc) |
+| Pre-selecao | Prompts com `codigos_documento` pre-selecionam os tipos automaticamente |
+
+## D) Fluxo Funcional
+
+### Fluxo de Classificacao em Lote
 
 ```
-[Usuario] Upload de PDF(s)
+[Usuario] Cria Lote com nome e prompt
     |
     v
-[API] POST /classificador/api/classificar
+[Usuario] Adiciona documentos (upload ou TJ-MS)
     |
     v
-[Service] Extrai texto ou converte para imagem
+[Sistema] Para cada documento:
+    |-- Extrai texto do PDF
+    |-- Aplica modo chunk se configurado
+    |-- Envia para IA via OpenRouter
+    |-- Salva resultado (categoria, confianca, justificativa)
     |
     v
-[Gemini] Classifica em uma das categorias
-    |
-    v
-[Response] Retorna categoria_id, confianca, justificativa
+[Usuario] Visualiza resultados e exporta
 ```
 
-### Fluxo Integrado (Gerador de Pecas)
+### Fluxo de Teste Rapido
 
 ```
-[Usuario] Upload PDFs no Gerador de Pecas
+[Usuario] Seleciona prompt
     |
     v
-[Classificador] Classifica cada PDF individualmente
+[Sistema] Pre-seleciona tipos de documento do prompt (se configurados)
     |
     v
-[Selector] Seleciona documentos primarios/secundarios por tipo de peca
+[Usuario] Upload PDF ou busca no TJ-MS
     |
     v
-[Extractor] Extrai JSON de cada documento classificado
+[Sistema] Exibe PDF no visualizador
     |
     v
-[Agente 2/3] Usa dados extraidos para gerar peca
+[Usuario] Clica "Classificar"
+    |
+    v
+[Sistema] Retorna resultado ao lado do PDF
 ```
 
-## D) API/Rotas
+## E) API/Rotas
 
-### Endpoints
+### Endpoints de Prompts
 
 | Metodo | Rota | Descricao |
 |--------|------|-----------|
-| POST | `/classificador/api/classificar` | Classificar um ou mais PDFs |
-| GET | `/classificador/api/categorias` | Listar categorias disponiveis |
-| POST | `/classificador/api/classificar-batch` | Classificar em lote |
+| GET | `/classificador/api/prompts` | Listar prompts |
+| POST | `/classificador/api/prompts` | Criar prompt |
+| GET | `/classificador/api/prompts/{id}` | Obter prompt |
+| PUT | `/classificador/api/prompts/{id}` | Atualizar prompt |
+| DELETE | `/classificador/api/prompts/{id}` | Deletar prompt |
 
-### Payload de Classificacao
+### Endpoints de Projetos (Lotes)
 
-```json
-{
-  "files": [
-    {
-      "filename": "peticao.pdf",
-      "content_base64": "JVBERi0xLjQK..."
-    }
-  ]
-}
-```
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| GET | `/classificador/api/projetos` | Listar projetos do usuario |
+| POST | `/classificador/api/projetos` | Criar projeto |
+| GET | `/classificador/api/projetos/{id}` | Obter projeto |
+| POST | `/classificador/api/lotes/{id}/upload` | Upload de arquivos |
+| POST | `/classificador/api/lotes/{id}/tjms-lote` | Importar do TJ-MS |
+| POST | `/classificador/api/lotes/{id}/executar-sincrono` | Executar classificacao |
 
-### Resposta de Classificacao
+### Endpoints TJ-MS
 
-```json
-{
-  "results": [
-    {
-      "filename": "peticao.pdf",
-      "categoria_id": 1,
-      "categoria_nome": "peticoes",
-      "confianca": 0.95,
-      "justificativa": "Documento com DOS FATOS e DOS PEDIDOS",
-      "source": "text",
-      "fallback_aplicado": false
-    }
-  ]
-}
-```
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| POST | `/classificador/api/tjms/consultar-processo` | Listar documentos de um processo |
+| POST | `/classificador/api/tjms/baixar-documento` | Baixar documento em base64 |
 
-## E) Dados e Persistencia
+### Endpoints de Classificacao
 
-### Tabelas Utilizadas
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| POST | `/classificador/api/classificar-avulso` | Classificar documento (upload) |
+
+### Endpoints de Exportacao
+
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| GET | `/classificador/api/execucoes/{id}/exportar/excel` | Exportar Excel |
+| GET | `/classificador/api/execucoes/{id}/exportar/csv` | Exportar CSV |
+| GET | `/classificador/api/execucoes/{id}/exportar/json` | Exportar JSON |
+
+## F) Dados e Persistencia
+
+### Tabelas
 
 | Tabela | Descricao |
 |--------|-----------|
-| `categorias_resumo_json` | Categorias de classificacao (origem do gerador_pecas) |
+| `prompts_classificacao` | Prompts de classificacao |
+| `projetos_classificacao` | Projetos/Lotes de classificacao |
+| `codigos_documento_projeto` | Documentos vinculados a um projeto |
+| `execucoes_classificacao` | Execucoes de classificacao |
+| `resultados_classificacao` | Resultados individuais por documento |
+| `logs_classificacao_ia` | Logs de chamadas a IA |
 
-### O que NAO e persistido
+### Modelo de Dados Principal
 
-- PDFs enviados para classificacao (processados em memoria)
-- Resultados de classificacao (retornados apenas na resposta)
+```
+ProjetoClassificacao (Lote)
+  |-- prompt_id -> PromptClassificacao
+  |-- usuario_id -> User
+  |-- codigos[] -> CodigoDocumentoProjeto
+  |-- execucoes[] -> ExecucaoClassificacao
+        |-- resultados[] -> ResultadoClassificacao
+```
 
-**Nota**: O classificador e stateless - nao persiste dados proprios. Usa categorias definidas no sistema de Categorias JSON do Gerador de Pecas.
+## G) Integracoes Externas
 
-## F) Integracoes Externas
+### OpenRouter (IA)
 
-### Google Gemini
+| Configuracao | Descricao |
+|--------------|-----------|
+| API Key | `OPENROUTER_API_KEY` |
+| Modelo padrao | `google/gemini-2.5-flash-lite` |
+| Modelos disponiveis | Configuravel por projeto |
 
-| Configuracao | Variavel de Ambiente | Descricao |
-|--------------|---------------------|-----------|
-| API Key | `GEMINI_KEY` | Chave de acesso |
-| Modelo | Configuravel em `/admin/prompts-config` | Default: gemini-2.5-flash-lite |
-| Temperatura | Configuravel | Default: 0.1 |
-| Threshold | Configuravel | Default: 0.5 |
+### TJ-MS
 
-### Pontos Frageis
+| Configuracao | Descricao |
+|--------------|-----------|
+| Endpoint | Via `services/tjms/` |
+| Tipos de documento | Filtrados por codigo (8, 15, 34, etc) |
 
-- PDFs muito grandes podem exceder limite de tokens da IA
-- Imagens de baixa qualidade podem gerar classificacoes erradas
-- Latencia variavel dependendo do tamanho do documento
+### Tipos de Documento TJ-MS Comuns
 
-## G) Operacao e Validacao
+| Codigo | Descricao |
+|--------|-----------|
+| 8 | Sentenca |
+| 15 | Decisao Interlocutoria |
+| 34 | Acordao |
+| 44 | Decisao Monocratica |
+| 500 | Peticao Inicial |
+| 9500 | Peticao |
+| 8320 | Contestacao |
+| 8335 | Apelacao |
+
+## H) Operacao e Validacao
 
 ### Como Rodar
 
@@ -167,51 +219,30 @@ uvicorn main:app --reload
 http://localhost:8000/classificador
 ```
 
-### Como Testar
+### Testes
 
 ```bash
-# Classificar PDF
-curl -X POST http://localhost:8000/classificador/api/classificar \
-  -H "Authorization: Bearer TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"files": [{"filename": "doc.pdf", "content_base64": "..."}]}'
+# Rodar testes do classificador
+pytest tests/classificador_documentos/ -v
 ```
 
-### Configuracao no Admin
-
-Acesse `/admin/prompts-config` > Aba "Sistemas Acessorios":
-
-| Campo | Descricao | Padrao |
-|-------|-----------|--------|
-| Modelo | Modelo de IA para classificacao | gemini-2.5-flash-lite |
-| Temperatura | Temperatura de geracao | 0.1 |
-| Threshold | Confianca minima para aceitar | 0.5 |
-
-## H) Riscos e Dividas Tecnicas
-
-### Riscos
-
-| Risco | Impacto | Mitigacao Sugerida |
-|-------|---------|-------------------|
-| Classificacao incorreta | Medio - documento vai para categoria errada | Melhorar prompts, ajustar threshold |
-| PDFs escaneados de baixa qualidade | Alto - OCR falha | Implementar pre-processamento de imagem |
-| Custo de API | Baixo - por documento | Cachear classificacoes similares |
-
-### Dividas Tecnicas
-
-| Item | Descricao | Prioridade |
-|------|-----------|------------|
-| Testes automatizados | Poucos testes para edge cases | P1 |
-| Cache de classificacao | Documentos identicos nao sao cacheados | P2 |
-| Metricas de qualidade | Nao ha metricas de acuracia em producao | P2 |
-| Limite de paginas | Nao ha limite de paginas por PDF | P3 |
-
-## Arquivos Principais
+## I) Arquivos Principais
 
 | Arquivo | Descricao |
 |---------|-----------|
 | `sistemas/classificador_documentos/router.py` | Endpoints FastAPI |
 | `sistemas/classificador_documentos/services.py` | Logica de classificacao |
 | `sistemas/classificador_documentos/services_tjms.py` | Integracao com TJ-MS |
-| `sistemas/classificador_documentos/templates/` | Frontend SPA |
-| `docs/DOCUMENT_CLASSIFIER.md` | Documentacao adicional do classificador |
+| `sistemas/classificador_documentos/services_openrouter.py` | Cliente OpenRouter |
+| `sistemas/classificador_documentos/services_extraction.py` | Extracao de texto |
+| `sistemas/classificador_documentos/services_export.py` | Exportacao de resultados |
+| `sistemas/classificador_documentos/models.py` | Modelos SQLAlchemy |
+| `sistemas/classificador_documentos/schemas.py` | Schemas Pydantic |
+| `sistemas/classificador_documentos/templates/index.html` | Frontend SPA |
+
+## J) Historico de Alteracoes
+
+| Data | Alteracao |
+|------|-----------|
+| 2025-01 | Redesign completo: Lotes, TJ-MS, Teste Rapido com visualizador PDF |
+| 2025-01 | Campo `codigos_documento` nos prompts para pre-selecao de tipos |

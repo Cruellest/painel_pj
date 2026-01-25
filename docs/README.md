@@ -4,92 +4,168 @@
 
 ## Inicio Rapido
 
-1. **Novo no projeto?** Comece pelo [CLAUDE.md](../CLAUDE.md) (regras operacionais)
-2. **Entender a arquitetura?** Leia [ARQUITETURA_GERAL.md](ARQUITETURA_GERAL.md)
-3. **Trabalhar em um sistema?** Acesse [docs/sistemas/](sistemas/)
-4. **Fazer deploy?** Siga o [CHECKLIST_RELEASE_EQUIPE.md](CHECKLIST_RELEASE_EQUIPE.md)
+1. **Novo no projeto?** Comece pelo [CLAUDE.md](../.claude/CLAUDE.md) (regras operacionais)
+2. **Entender a arquitetura?** Leia [arquitetura/ARQUITETURA_GERAL.md](arquitetura/ARQUITETURA_GERAL.md)
+3. **Trabalhar em um sistema?** Acesse [sistemas/](sistemas/)
+4. **Fazer deploy?** Siga o [operacoes/CHECKLIST_RELEASE_EQUIPE.md](operacoes/CHECKLIST_RELEASE_EQUIPE.md)
 
-## Mapa de Documentacao
+---
 
-### Documentacao Principal
+## Estrutura da Documentacao
 
-| Documento | Descricao |
-|-----------|-----------|
-| [../CLAUDE.md](../CLAUDE.md) | **LEIA PRIMEIRO** - Regras operacionais para trabalhar no repo |
-| [ARQUITETURA_GERAL.md](ARQUITETURA_GERAL.md) | Visao macro, fluxos principais, onboarding |
-| [PLANO_MELHORIAS_BACKEND.md](PLANO_MELHORIAS_BACKEND.md) | Roadmap de melhorias e dividas tecnicas |
-| [CHECKLIST_RELEASE_EQUIPE.md](CHECKLIST_RELEASE_EQUIPE.md) | Checklist para dev, teste e deploy |
+```
+docs/
+├── README.md                 # Este arquivo (indice central)
+├── arquitetura/              # Arquitetura e decisoes tecnicas
+├── sistemas/                 # Documentacao por sistema
+├── integracoes/              # Integracoes externas (TJ-MS, etc)
+├── api/                      # Documentacao de API REST
+├── operacoes/                # Deploy, testes, ambiente local
+├── seguranca/                # Documentacao de seguranca
+├── features/                 # Features especificas
+├── dominio/                  # Glossario e conceitos juridicos
+├── planejamento/             # Roadmaps e planos de melhoria
+├── _archive/                 # Documentos arquivados
+└── _outros/                  # Documentos sem classificacao
+```
 
-### Documentacao por Sistema
+---
 
-| Sistema | Descricao | Link |
-|---------|-----------|------|
-| Gerador de Pecas | Sistema principal - geracao de pecas juridicas | [sistemas/gerador_pecas.md](sistemas/gerador_pecas.md) |
-| Pedido de Calculo | Geracao de pedidos de calculo | [sistemas/pedido_calculo.md](sistemas/pedido_calculo.md) |
-| Prestacao de Contas | Analise de prestacao de contas | [sistemas/prestacao_contas.md](sistemas/prestacao_contas.md) |
-| Relatorio de Cumprimento | Relatorios de cumprimento de sentenca | [sistemas/relatorio_cumprimento.md](sistemas/relatorio_cumprimento.md) |
-| Matriculas Confrontantes | Analise de matriculas imobiliarias | [sistemas/matriculas_confrontantes.md](sistemas/matriculas_confrontantes.md) |
-| Assistencia Judiciaria | Consulta e relatorio de processos | [sistemas/assistencia_judiciaria.md](sistemas/assistencia_judiciaria.md) |
-| BERT Training | Treinamento de classificadores | [sistemas/bert_training.md](sistemas/bert_training.md) |
-| Classificador de Documentos | Classificacao de PDFs com IA | [sistemas/classificador_documentos.md](sistemas/classificador_documentos.md) |
+## Arquitetura (`arquitetura/`)
 
-### Documentacao Tecnica
-
-| Documento | Descricao |
-|-----------|-----------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Detalhes tecnicos de arquitetura |
-| [API.md](API.md) | Referencia de API REST |
-| [DATABASE.md](DATABASE.md) | Modelo de dados e tabelas |
-| [MODULES.md](MODULES.md) | Estrutura de modulos Python |
-
-### Documentacao de Operacao
+Visao macro do sistema, decisoes tecnicas e estrutura de modulos.
 
 | Documento | Descricao |
 |-----------|-----------|
-| [OPERATIONS.md](OPERATIONS.md) | Guia de operacao em producao |
-| [LOCAL-DEV.md](LOCAL-DEV.md) | Setup de ambiente local |
-| [TESTING.md](TESTING.md) | Guia de testes |
+| [ARQUITETURA_GERAL.md](arquitetura/ARQUITETURA_GERAL.md) | **Comece aqui** - Visao macro, fluxos, onboarding |
+| [ARCHITECTURE.md](arquitetura/ARCHITECTURE.md) | Detalhes tecnicos de arquitetura |
+| [MODULES.md](arquitetura/MODULES.md) | Estrutura de modulos Python |
+| [decisions/](arquitetura/decisions/) | ADRs (Architecture Decision Records) |
 
-### Documentacao de Dominio
-
-| Documento | Descricao |
-|-----------|-----------|
-| [GLOSSARIO_CONCEITOS.md](GLOSSARIO_CONCEITOS.md) | Glossario de termos juridicos e tecnicos |
-| [agents.md](agents.md) | Documentacao dos agentes TJ-MS |
-| [banco_vetorial.md](banco_vetorial.md) | Documentacao de embeddings e busca vetorial |
-
-### Documentacao Especifica
-
-| Documento | Descricao |
-|-----------|-----------|
-| [EXTRACTION_DETERMINISTIC.md](EXTRACTION_DETERMINISTIC.md) | Sistema de regras deterministicas |
-| [DOCUMENT_CLASSIFIER.md](DOCUMENT_CLASSIFIER.md) | Detalhes do classificador de documentos |
-| [regras_tipo_peca.md](regras_tipo_peca.md) | Regras por tipo de peca juridica |
-| [prompts_conteudo_vetorial.md](prompts_conteudo_vetorial.md) | Documentacao de prompts modulares |
-| [bert_training.md](bert_training.md) | Detalhes tecnicos do BERT Training |
-
-### ADRs (Architecture Decision Records)
+### ADRs (Decisoes Arquiteturais)
 
 | ADR | Decisao |
 |-----|---------|
-| [decisions/ADR-0001-fastapi-framework.md](decisions/ADR-0001-fastapi-framework.md) | Escolha do FastAPI |
-| [decisions/ADR-0001-template.md](decisions/ADR-0001-template.md) | Template para novos ADRs |
+| [ADR-0001-fastapi-framework.md](arquitetura/decisions/ADR-0001-fastapi-framework.md) | Escolha do FastAPI |
+| [ADR-0001-template.md](arquitetura/decisions/ADR-0001-template.md) | Template para novos ADRs |
 
-### Propostas e Planejamento
+---
+
+## Sistemas (`sistemas/`)
+
+Documentacao detalhada de cada sistema do portal.
+
+| Sistema | Descricao |
+|---------|-----------|
+| [gerador_pecas.md](sistemas/gerador_pecas.md) | Sistema principal - geracao de pecas juridicas |
+| [pedido_calculo.md](sistemas/pedido_calculo.md) | Geracao de pedidos de calculo |
+| [prestacao_contas.md](sistemas/prestacao_contas.md) | Analise de prestacao de contas |
+| [relatorio_cumprimento.md](sistemas/relatorio_cumprimento.md) | Relatorios de cumprimento de sentenca |
+| [matriculas_confrontantes.md](sistemas/matriculas_confrontantes.md) | Analise de matriculas imobiliarias |
+| [assistencia_judiciaria.md](sistemas/assistencia_judiciaria.md) | Consulta e relatorio de processos |
+| [bert_training.md](sistemas/bert_training.md) | Treinamento de classificadores |
+| [classificador_documentos.md](sistemas/classificador_documentos.md) | Classificacao de PDFs com IA |
+
+---
+
+## Integracoes Externas (`integracoes/`)
+
+Documentacao de integracoes com sistemas externos.
 
 | Documento | Descricao |
 |-----------|-----------|
-| [BERT_SISTEMA_PRODUTO_REDESIGN.md](BERT_SISTEMA_PRODUTO_REDESIGN.md) | Proposta de redesign do BERT Training |
+| [PLANO_UNIFICACAO_TJMS.md](integracoes/PLANO_UNIFICACAO_TJMS.md) | **TJ-MS Unificado** - Servico centralizado (services/tjms/) |
+| [banco_vetorial.md](integracoes/banco_vetorial.md) | Embeddings e busca vetorial |
 
-### Changelog e Historico
+> **IMPORTANTE**: Ao alterar `services/tjms/`, atualize `/admin/tjms-docs` e notifique frontend.
+
+---
+
+## API (`api/`)
+
+Documentacao da API REST.
 
 | Documento | Descricao |
 |-----------|-----------|
-| [DOCS_CHANGES.md](DOCS_CHANGES.md) | Historico de alteracoes na documentacao |
+| [API.md](api/API.md) | Referencia completa de endpoints |
 
-### Arquivados
+---
 
-Documentos com valor historico mas nao mais ativos estao em [_archive/](_archive/).
+## Operacoes (`operacoes/`)
+
+Guias de deploy, testes e ambiente de desenvolvimento.
+
+| Documento | Descricao |
+|-----------|-----------|
+| [CHECKLIST_RELEASE_EQUIPE.md](operacoes/CHECKLIST_RELEASE_EQUIPE.md) | Checklist para dev, teste e deploy |
+| [LOCAL-DEV.md](operacoes/LOCAL-DEV.md) | Setup de ambiente local |
+| [OPERATIONS.md](operacoes/OPERATIONS.md) | Guia de operacao em producao |
+| [TESTING.md](operacoes/TESTING.md) | Guia de testes |
+| [ROTACAO_SECRETS.md](operacoes/ROTACAO_SECRETS.md) | Procedimento de rotacao de secrets |
+
+---
+
+## Seguranca (`seguranca/`)
+
+Documentacao de seguranca e boas praticas.
+
+| Documento | Descricao |
+|-----------|-----------|
+| [PREVENCAO_XSS.md](seguranca/PREVENCAO_XSS.md) | Medidas de protecao contra XSS |
+
+---
+
+## Features (`features/`)
+
+Documentacao de funcionalidades especificas.
+
+| Documento | Descricao |
+|-----------|-----------|
+| [DOCUMENT_CLASSIFIER.md](features/DOCUMENT_CLASSIFIER.md) | Detalhes do classificador de documentos |
+| [EXTRACTION_DETERMINISTIC.md](features/EXTRACTION_DETERMINISTIC.md) | Sistema de regras deterministicas |
+| [prompts_conteudo_vetorial.md](features/prompts_conteudo_vetorial.md) | Documentacao de prompts modulares |
+| [regras_tipo_peca.md](features/regras_tipo_peca.md) | Regras por tipo de peca juridica |
+
+---
+
+## Dominio (`dominio/`)
+
+Glossarios e conceitos do dominio juridico.
+
+| Documento | Descricao |
+|-----------|-----------|
+| [GLOSSARIO_CONCEITOS.md](dominio/GLOSSARIO_CONCEITOS.md) | Glossario de termos juridicos e tecnicos |
+
+---
+
+## Planejamento (`planejamento/`)
+
+Roadmaps e planos de evolucao.
+
+| Documento | Descricao |
+|-----------|-----------|
+| [PLANO_MELHORIAS_BACKEND.md](planejamento/PLANO_MELHORIAS_BACKEND.md) | Roadmap de melhorias e dividas tecnicas |
+
+---
+
+## Arquivados (`_archive/`)
+
+Documentos com valor historico mas nao mais ativos.
+
+| Documento | Motivo |
+|-----------|--------|
+| [REDESIGN_CLASSIFICADOR_v2.md](_archive/REDESIGN_CLASSIFICADOR_v2.md) | Proposta antiga |
+| [skills_frontend_typescript.md](_archive/skills_frontend_typescript.md) | Nao implementado |
+
+---
+
+## Outros (`_outros/`)
+
+Documentos sem classificacao clara ou duplicados.
+
+| Documento | Nota |
+|-----------|------|
+| [bert_training.md](_outros/bert_training.md) | Duplicado - versao principal em sistemas/ |
 
 ---
 
@@ -113,28 +189,50 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 # Docs OpenAPI: http://localhost:8000/docs
 ```
 
-## Mapa de Pastas
+---
+
+## Mapa de Pastas do Projeto
 
 ```
 portal-pge/
-|-- CLAUDE.md             # Regras operacionais (LEIA PRIMEIRO)
-|-- main.py               # Entry point FastAPI
-|-- config.py             # Configuracoes globais
-|-- admin/                # Admin de prompts e configuracoes
-|-- auth/                 # Autenticacao JWT
-|-- database/             # Conexao SQLAlchemy
-|-- docs/                 # Esta documentacao
-|   |-- sistemas/         # Docs por sistema
-|   |-- decisions/        # ADRs
-|-- services/             # Clientes compartilhados (Gemini, TJ-MS)
-|-- sistemas/             # Modulos de negocio (8 sistemas)
-|-- tests/                # Testes automatizados
-|-- frontend/             # Assets frontend
+├── .claude/
+│   └── CLAUDE.md             # Regras operacionais (LEIA PRIMEIRO)
+├── main.py                   # Entry point FastAPI
+├── config.py                 # Configuracoes globais
+├── admin/                    # Admin de prompts e configuracoes
+├── auth/                     # Autenticacao JWT
+├── database/                 # Conexao SQLAlchemy
+├── docs/                     # Esta documentacao
+│   ├── arquitetura/          # Arquitetura e ADRs
+│   ├── sistemas/             # Docs por sistema
+│   ├── integracoes/          # Integracoes externas
+│   ├── api/                  # Docs de API
+│   ├── operacoes/            # Deploy, testes
+│   ├── features/             # Features especificas
+│   ├── dominio/              # Glossario
+│   └── planejamento/         # Roadmaps
+├── services/                 # Clientes compartilhados
+│   ├── tjms/                 # Cliente TJMS Unificado
+│   └── gemini_service.py     # Cliente Gemini
+├── sistemas/                 # Modulos de negocio (8 sistemas)
+├── tests/                    # Testes automatizados
+│   ├── e2e/                  # Testes end-to-end
+│   ├── services/             # Testes de servicos
+│   └── load/                 # Testes de carga (k6)
+├── utils/                    # Utilitarios compartilhados
+│   ├── metrics.py            # Metricas Prometheus
+│   ├── alerting.py           # Sistema de alertas
+│   ├── circuit_breaker.py    # Circuit breaker pattern
+│   └── ...                   # Outros utilitarios
+└── frontend/                 # Assets frontend
 ```
+
+---
 
 ## Como Contribuir com Documentacao
 
 1. **Novo sistema?** Criar `docs/sistemas/<nome>.md` seguindo o padrao existente
-2. **Decisao arquitetural?** Criar ADR em `docs/decisions/`
-3. **Atualizacao de sistema?** Atualizar o `.md` correspondente
-4. **Mudanca significativa?** Registrar em `DOCS_CHANGES.md`
+2. **Decisao arquitetural?** Criar ADR em `docs/arquitetura/decisions/`
+3. **Feature especifica?** Documentar em `docs/features/`
+4. **Integracao externa?** Documentar em `docs/integracoes/`
+5. **Mudanca significativa?** Atualizar este README

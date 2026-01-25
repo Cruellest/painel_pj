@@ -32,8 +32,10 @@ from .models import (
     DocumentoClassificado
 )
 
-# Reutiliza componentes existentes
-from sistemas.pedido_calculo.document_downloader import DocumentDownloader
+# Cliente TJMS unificado (adaptador compativel)
+from services.tjms import DocumentDownloader
+
+# Parser de XML do pedido_calculo (reutilizado para tipos de documento)
 from sistemas.pedido_calculo.xml_parser import XMLParser, TIPOS_DOCUMENTO
 
 

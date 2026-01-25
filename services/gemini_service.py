@@ -38,7 +38,20 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from services.ia_params_resolver import IAParams
 
-logger = logging.getLogger(__name__)
+# Tenta usar logging estruturado se disponível
+try:
+    from utils.logging_config import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    logger = logging.getLogger(__name__)
+
+# Circuit Breaker para resiliência
+try:
+    from utils.circuit_breaker import get_gemini_circuit_breaker, CircuitOpenError
+    CIRCUIT_BREAKER_ENABLED = True
+except ImportError:
+    CIRCUIT_BREAKER_ENABLED = False
+    CircuitOpenError = Exception  # Fallback
 
 
 # ============================================
@@ -418,6 +431,17 @@ class GeminiService:
             metrics.log()
             return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
+        # Circuit Breaker - fail-fast se API está indisponível
+        if CIRCUIT_BREAKER_ENABLED:
+            cb = get_gemini_circuit_breaker()
+            if not cb.allow_request():
+                retry_after = cb.time_until_retry()
+                metrics.success = False
+                metrics.error = f"Circuit breaker aberto - retry em {retry_after:.0f}s" if retry_after else "Circuit breaker aberto"
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.log()
+                return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
+
         # Determina o modelo
         t_prepare = time.perf_counter()
         if model:
@@ -528,6 +552,10 @@ class GeminiService:
                 if use_cache and temperature <= 0.3:
                     _response_cache.set(prompt, system_prompt, model, temperature, result)
 
+                # Circuit Breaker - registra sucesso
+                if CIRCUIT_BREAKER_ENABLED:
+                    cb.record_success()
+
                 # Log assíncrono para BD (não bloqueia)
                 asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
 
@@ -565,6 +593,11 @@ class GeminiService:
         metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
         metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
         metrics.log()
+
+        # Circuit Breaker - registra falha
+        if CIRCUIT_BREAKER_ENABLED:
+            cb.record_failure(last_error)
+
         asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
         return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 

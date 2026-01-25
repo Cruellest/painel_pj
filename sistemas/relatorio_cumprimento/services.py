@@ -39,9 +39,11 @@ from .agravo_detector import (
     fetch_all_agravo_documents
 )
 
-# Reutiliza componentes existentes do pedido_calculo
+# Parser de XML do pedido_calculo (reutilizado para compatibilidade)
 from sistemas.pedido_calculo.xml_parser import XMLParser
-from sistemas.pedido_calculo.document_downloader import DocumentDownloader
+
+# Cliente TJMS unificado (adaptador compativel)
+from services.tjms import DocumentDownloader
 
 # Serviço de IA centralizado
 from services.gemini_service import GeminiService

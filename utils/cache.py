@@ -296,3 +296,112 @@ def invalidate_prompt_cache(sistema: Optional[str] = None) -> int:
     if sistema:
         return prompt_cache.invalidate_prefix(sistema)
     return prompt_cache.invalidate_all()
+
+
+# ==================================================
+# CACHE DE RESUMOS JSON
+# ==================================================
+
+# Cache para resumos JSON extraídos pela IA (TTL: 24 horas)
+# Evita reprocessamento de documentos que já foram analisados
+resumo_cache = TTLCache(default_ttl=86400, max_size=5000)
+
+
+def _hash_documento(texto: str, categoria_id: int) -> str:
+    """
+    Gera hash único para um documento + categoria.
+
+    Usa MD5 por ser rápido e suficiente para este caso (não é segurança).
+    """
+    import hashlib
+    conteudo = f"{categoria_id}:{texto}"
+    return hashlib.md5(conteudo.encode('utf-8')).hexdigest()
+
+
+def get_cached_resumo(
+    texto_documento: str,
+    categoria_id: int,
+    numero_processo: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Obtém resumo JSON do cache se existir.
+
+    Args:
+        texto_documento: Texto do documento (usado para gerar hash)
+        categoria_id: ID da categoria de resumo
+        numero_processo: Número do processo (para chave do cache)
+
+    Returns:
+        Dicionário JSON do resumo ou None se não estiver em cache
+    """
+    doc_hash = _hash_documento(texto_documento, categoria_id)
+
+    # Chave: processo:categoria:hash (ou apenas categoria:hash se sem processo)
+    if numero_processo:
+        cached = resumo_cache.get(numero_processo, str(categoria_id), doc_hash)
+    else:
+        cached = resumo_cache.get("geral", str(categoria_id), doc_hash)
+
+    if cached is not None:
+        logger.debug(f"Cache hit para resumo: categoria={categoria_id}")
+
+    return cached
+
+
+def set_cached_resumo(
+    texto_documento: str,
+    categoria_id: int,
+    resumo_json: Dict[str, Any],
+    numero_processo: Optional[str] = None,
+    ttl: Optional[int] = None
+) -> None:
+    """
+    Armazena resumo JSON no cache.
+
+    Args:
+        texto_documento: Texto do documento (usado para gerar hash)
+        categoria_id: ID da categoria de resumo
+        resumo_json: Dicionário JSON do resumo extraído
+        numero_processo: Número do processo (para chave do cache)
+        ttl: TTL específico em segundos (opcional)
+    """
+    doc_hash = _hash_documento(texto_documento, categoria_id)
+
+    # Chave: processo:categoria:hash (ou apenas categoria:hash se sem processo)
+    if numero_processo:
+        resumo_cache.set(
+            numero_processo, str(categoria_id), doc_hash,
+            value=resumo_json, ttl=ttl
+        )
+    else:
+        resumo_cache.set(
+            "geral", str(categoria_id), doc_hash,
+            value=resumo_json, ttl=ttl
+        )
+
+    logger.debug(f"Resumo cacheado: categoria={categoria_id}, hash={doc_hash[:8]}...")
+
+
+def invalidate_resumo_cache(numero_processo: Optional[str] = None) -> int:
+    """
+    Invalida cache de resumos.
+
+    Args:
+        numero_processo: Se especificado, invalida apenas deste processo
+
+    Returns:
+        Número de entradas removidas
+    """
+    if numero_processo:
+        return resumo_cache.invalidate_prefix(numero_processo)
+    return resumo_cache.invalidate_all()
+
+
+def get_resumo_cache_stats() -> Dict[str, Any]:
+    """
+    Retorna estatísticas do cache de resumos.
+
+    Returns:
+        Dicionário com estatísticas
+    """
+    return resumo_cache.stats()

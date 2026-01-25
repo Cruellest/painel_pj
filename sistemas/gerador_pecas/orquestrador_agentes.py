@@ -277,6 +277,134 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
 MODELO_AGENTE2_PADRAO = "gemini-3-flash-preview"
 MODELO_AGENTE3_PADRAO = "gemini-3-pro-preview"
 
+
+def _limpar_resposta_markdown(content: str) -> str:
+    """
+    Remove blocos de código markdown que a IA pode ter adicionado na resposta.
+
+    Args:
+        content: Texto retornado pelo modelo
+
+    Returns:
+        Texto limpo sem marcadores de código
+    """
+    content_limpo = content.strip()
+    if content_limpo.startswith('```markdown'):
+        content_limpo = content_limpo[11:]
+    elif content_limpo.startswith('```'):
+        content_limpo = content_limpo[3:]
+    if content_limpo.endswith('```'):
+        content_limpo = content_limpo[:-3]
+    return content_limpo.strip()
+
+
+def _montar_secao_observacao(observacao_usuario: Optional[str]) -> str:
+    """
+    Monta a seção de observação do usuário para o prompt.
+
+    Args:
+        observacao_usuario: Texto de observação (opcional)
+
+    Returns:
+        Seção formatada ou string vazia
+    """
+    if not observacao_usuario:
+        return ""
+
+    print(f" Observação do usuário incluída: {len(observacao_usuario)} caracteres")
+    return f"""
+---
+
+## OBSERVAÇÕES DO USUÁRIO:
+
+O usuário responsável pela peça forneceu as seguintes observações importantes que DEVEM ser consideradas na elaboração:
+
+> {observacao_usuario}
+
+**ATENÇÃO:** As observações acima são instruções específicas do usuário e devem ser incorporadas na peça conforme solicitado.
+
+"""
+
+
+def _montar_secao_dados_processo(dados_processo: Optional[Dict[str, Any]]) -> str:
+    """
+    Monta a seção de dados estruturados do processo para o prompt.
+
+    Args:
+        dados_processo: Dicionário com dados do processo (opcional)
+
+    Returns:
+        Seção formatada ou string vazia
+    """
+    if not dados_processo:
+        return ""
+
+    dados_json = json.dumps(dados_processo, indent=2, ensure_ascii=False)
+    print(f" Dados do processo incluídos: {len(dados_json)} caracteres")
+
+    return f"""
+---
+
+## DADOS ESTRUTURADOS DO PROCESSO
+
+Os dados abaixo foram extraídos automaticamente do sistema judicial e são confiáveis:
+
+```json
+{dados_json}
+```
+
+**IMPORTANTE:** Utilize estes dados para:
+- Identificar corretamente as partes (polo ativo e polo passivo)
+- Verificar a data de ajuizamento da demanda
+- Consultar o valor da causa
+- Identificar o órgão julgador
+- Verificar representação processual (advogados, defensoria, etc.)
+
+"""
+
+
+def _montar_prompt_agente3(
+    prompt_sistema: str,
+    prompt_peca: str,
+    prompt_conteudo: str,
+    resumo_consolidado: str,
+    secao_observacao: str = "",
+    secao_dados_processo: str = ""
+) -> str:
+    """
+    Monta o prompt completo para o Agente 3.
+
+    Combina todos os componentes em um único prompt formatado.
+    """
+    return f"""{prompt_sistema}
+
+{prompt_peca}
+
+{prompt_conteudo}
+{secao_observacao}{secao_dados_processo}
+---
+
+## DOCUMENTOS DO PROCESSO PARA ANÁLISE:
+
+{resumo_consolidado}
+
+---
+
+## INSTRUÇÕES FINAIS:
+
+Com base nos documentos acima e nas instruções do sistema, gere a peça jurídica completa.
+
+**REGRAS OBRIGATÓRIAS sobre os Argumentos e Teses:**
+
+1. **Seções vazias**: Se uma categoria (ex: PRELIMINARES) não tiver NENHUM argumento listado acima, NÃO crie essa seção na peça. Só inclua seções que tenham argumentos ativados.
+
+2. **Ordem**: Respeite a ordem das categorias e argumentos como apresentada em "ARGUMENTOS E TESES APLICÁVEIS".
+
+Retorne a peça formatada em **Markdown**, seguindo a estrutura indicada no prompt de peça acima.
+Use formatação adequada: ## para títulos de seção, **negrito** para ênfase, > para citações.
+"""
+
+
 # Ordem padrão das categorias jurídicas (fallback quando não há configuração no banco)
 # Ordem lógica para peças de defesa: Preliminar → Mérito → Eventualidade → Honorários
 ORDEM_CATEGORIAS_PADRAO = {
@@ -673,7 +801,197 @@ class OrquestradorAgentes:
                 return resultado_agente1.resumo_consolidado
         
         return resultado_agente1.resumo_consolidado
-    
+
+    def _carregar_modulos_base(self) -> str:
+        """
+        Carrega módulos BASE (sempre ativos) e monta o prompt do sistema.
+
+        Returns:
+            Prompt do sistema montado a partir dos módulos base
+        """
+        modulos_base = self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "base",
+            PromptModulo.ativo == True
+        ).order_by(PromptModulo.ordem).all()
+
+        partes = [f"## {m.titulo}\n\n{m.conteudo}" for m in modulos_base]
+        return "\n\n".join(partes)
+
+    def _carregar_modulo_peca(self, tipo_peca: Optional[str]) -> str:
+        """
+        Carrega o módulo de PEÇA específico (se tipo especificado).
+
+        Args:
+            tipo_peca: Tipo de peça (ex: 'contestacao')
+
+        Returns:
+            Prompt da peça ou string vazia
+        """
+        if not tipo_peca:
+            return ""
+
+        modulo_peca = self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "peca",
+            PromptModulo.nome == tipo_peca,
+            PromptModulo.ativo == True
+        ).first()
+
+        if modulo_peca:
+            return f"## ESTRUTURA DA PECA: {modulo_peca.titulo}\n\n{modulo_peca.conteudo}"
+        return ""
+
+    def _carregar_modulos_conteudo(self, modulos_ids: List[int]) -> List:
+        """
+        Carrega módulos de CONTEÚDO filtrados por IDs, grupo e subcategorias.
+
+        Args:
+            modulos_ids: Lista de IDs dos módulos detectados
+
+        Returns:
+            Lista de módulos de conteúdo carregados
+        """
+        if not modulos_ids:
+            return []
+
+        modulos_query = self.db.query(PromptModulo).filter(
+            PromptModulo.tipo == "conteudo",
+            PromptModulo.ativo == True,
+            PromptModulo.id.in_(modulos_ids)
+        )
+
+        if self.group_id is not None:
+            modulos_query = modulos_query.filter(PromptModulo.group_id == self.group_id)
+
+        if self.subcategoria_ids:
+            from admin.models_prompt_groups import PromptSubcategoria
+            from sqlalchemy import or_
+            modulos_query = modulos_query.filter(
+                or_(
+                    PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(self.subcategoria_ids)),
+                    ~PromptModulo.subcategorias.any()
+                )
+            )
+
+        return modulos_query.order_by(PromptModulo.categoria, PromptModulo.ordem).all()
+
+    def _obter_ordem_categorias(self, modulos_conteudo: List) -> Dict[str, int]:
+        """
+        Obtém a ordem das categorias configurada no banco ou usa padrão.
+
+        Args:
+            modulos_conteudo: Lista de módulos para inferir group_id se necessário
+
+        Returns:
+            Dicionário {nome_categoria: ordem}
+        """
+        from admin.models_prompt_groups import CategoriaOrdem
+
+        group_id_ordem = self.group_id
+        if group_id_ordem is None:
+            group_ids = {m.group_id for m in modulos_conteudo if m.group_id is not None}
+            if len(group_ids) == 1:
+                group_id_ordem = next(iter(group_ids))
+
+        if group_id_ordem is None:
+            return {}
+
+        configs_ordem = self.db.query(CategoriaOrdem).filter(
+            CategoriaOrdem.group_id == group_id_ordem,
+            CategoriaOrdem.ativo == True
+        ).all()
+        return {c.nome: c.ordem for c in configs_ordem}
+
+    def _montar_prompt_conteudo(
+        self,
+        modulos_conteudo: List,
+        ids_det: List[int]
+    ) -> str:
+        """
+        Monta o prompt de conteúdo agrupando módulos por categoria.
+
+        Args:
+            modulos_conteudo: Lista de módulos de conteúdo
+            ids_det: IDs dos módulos ativados deterministicamente
+
+        Returns:
+            Prompt de conteúdo formatado
+        """
+        if not modulos_conteudo:
+            return ""
+
+        ordem_categorias = self._obter_ordem_categorias(modulos_conteudo)
+
+        # Agrupa módulos por categoria
+        modulos_por_categoria = {}
+        for modulo in modulos_conteudo:
+            cat = modulo.categoria or "Outros"
+            if cat not in modulos_por_categoria:
+                modulos_por_categoria[cat] = []
+            modulos_por_categoria[cat].append(modulo)
+
+        # Ordena categorias
+        def get_categoria_ordem(cat_nome):
+            if cat_nome in ordem_categorias:
+                return (0, ordem_categorias[cat_nome], cat_nome)
+            if cat_nome in ORDEM_CATEGORIAS_PADRAO:
+                return (1, ORDEM_CATEGORIAS_PADRAO[cat_nome], cat_nome)
+            return (2, 0, cat_nome)
+
+        categorias_ordenadas = sorted(modulos_por_categoria.keys(), key=get_categoria_ordem)
+
+        # Log
+        print(f"   [ORDEM] Categorias ordenadas: {categorias_ordenadas}")
+        if ordem_categorias:
+            print(f"   [ORDEM] Usando configuracao do banco: {ordem_categorias}")
+        else:
+            print(f"   [ORDEM] Usando ordem padrao (fallback): ORDEM_CATEGORIAS_PADRAO")
+
+        # Monta prompt
+        partes = ["## ARGUMENTOS E TESES APLICAVEIS\n"]
+
+        for categoria in categorias_ordenadas:
+            modulos_cat = sorted(
+                modulos_por_categoria[categoria],
+                key=lambda m: (m.ordem or 0, m.id)
+            )
+            partes.append(f"\n### === {categoria.upper()} ===\n")
+
+            for modulo in modulos_cat:
+                parte_modulo = self._formatar_modulo_conteudo(modulo, categoria, ids_det)
+                partes.append(parte_modulo)
+
+        return "\n".join(partes)
+
+    def _formatar_modulo_conteudo(
+        self,
+        modulo,
+        categoria: str,
+        ids_det: List[int]
+    ) -> str:
+        """
+        Formata um módulo de conteúdo para o prompt.
+
+        Args:
+            modulo: Módulo a formatar
+            categoria: Categoria do módulo (para log)
+            ids_det: IDs dos módulos ativados deterministicamente
+
+        Returns:
+            Módulo formatado como string
+        """
+        subcategoria_info = f" ({modulo.subcategoria})" if modulo.subcategoria else ""
+        is_deterministico = modulo.id in ids_det
+
+        if is_deterministico:
+            print(f"   [+] Modulo ativado: [{categoria}] {modulo.titulo} [DET-VALIDADO]")
+            return f"#### {modulo.titulo}{subcategoria_info} [VALIDADO]\n\n{modulo.conteudo}\n"
+        else:
+            print(f"   [+] Modulo ativado: [{categoria}] {modulo.titulo} [LLM]")
+            condicao = modulo.condicao_ativacao or ""
+            if condicao:
+                return f"#### {modulo.titulo}{subcategoria_info}\n\n**Condicao de ativacao:** {condicao}\n\n{modulo.conteudo}\n"
+            return f"#### {modulo.titulo}{subcategoria_info}\n\n{modulo.conteudo}\n"
+
     async def _executar_agente2(
         self,
         resumo_consolidado: str,
@@ -698,186 +1016,91 @@ class OrquestradorAgentes:
         ag2_inicio = time.perf_counter()
 
         try:
-            # Detecta módulos de conteúdo relevantes
-            # Passa dados_processo para resolução de variáveis derivadas
-            # Passa dados_extracao para avaliação determinística
-            # Permite fast path se todos os módulos são determinísticos
-            # TIMEOUT: Usa TIMEOUT_AG2_DETECCAO para evitar travamentos infinitos
-            try:
-                modulos_ids = await asyncio.wait_for(
-                    self.agente2.detectar_modulos_relevantes(
-                        documentos_resumo=resumo_consolidado,
-                        tipo_peca=tipo_peca,
-                        group_id=self.group_id,
-                        subcategoria_ids=self.subcategoria_ids,
-                        dados_processo=dados_processo,
-                        dados_extracao=dados_extracao
-                    ),
-                    timeout=TIMEOUT_AG2_DETECCAO
-                )
-            except asyncio.TimeoutError:
-                ag2_tempo = time.perf_counter() - ag2_inicio
-                print(f"[AGENTE2] ⚠️ TIMEOUT após {ag2_tempo:.2f}s (limite: {TIMEOUT_AG2_DETECCAO}s)")
-                print(f"[AGENTE2] Continuando com módulos vazios para não travar o fluxo")
-                modulos_ids = []
-                resultado.modo_ativacao = "timeout"
-                resultado.erro = f"Timeout na detecção de módulos ({TIMEOUT_AG2_DETECCAO}s)"
+            # Detecta módulos com timeout
+            modulos_ids = await self._detectar_modulos_com_timeout(
+                resumo_consolidado, tipo_peca, dados_processo, dados_extracao, resultado
+            )
 
             ag2_tempo = time.perf_counter() - ag2_inicio
-            print(f"[AGENTE2] ⏱️ Detecção concluída em {ag2_tempo:.2f}s")
+            print(f"[AGENTE2] Deteccao concluida em {ag2_tempo:.2f}s")
 
             resultado.modulos_ids = modulos_ids
 
             # Captura estatísticas do modo de ativação
-            if not hasattr(resultado, 'erro') or not resultado.erro:
+            if not resultado.erro:
                 resultado.modo_ativacao = self.agente2.ultimo_modo_ativacao
             resultado.modulos_ativados_det = self.agente2.ultimo_modulos_det
             resultado.modulos_ativados_llm = self.agente2.ultimo_modulos_llm
             resultado.ids_det = self.agente2.ultimo_ids_det.copy()
             resultado.ids_llm = self.agente2.ultimo_ids_llm.copy()
 
-            # Carrega módulos BASE (sempre ativos)
-            modulos_base = self.db.query(PromptModulo).filter(
-                PromptModulo.tipo == "base",
-                PromptModulo.ativo == True
-            ).order_by(PromptModulo.ordem).all()
-            
-            # Monta prompt do sistema
-            partes_sistema = []
-            for modulo in modulos_base:
-                partes_sistema.append(f"## {modulo.titulo}\n\n{modulo.conteudo}")
-            resultado.prompt_sistema = "\n\n".join(partes_sistema)
-            
-            # Carrega módulo de PEÇA (se tipo especificado)
-            if tipo_peca:
-                modulo_peca = self.db.query(PromptModulo).filter(
-                    PromptModulo.tipo == "peca",
-                    PromptModulo.nome == tipo_peca,  # Busca por nome (identificador único)
-                    PromptModulo.ativo == True
-                ).first()
+            # Monta prompts usando helpers
+            resultado.prompt_sistema = self._carregar_modulos_base()
+            resultado.prompt_peca = self._carregar_modulo_peca(tipo_peca)
 
-                if modulo_peca:
-                    resultado.prompt_peca = f"## ESTRUTURA DA PEÇA: {modulo_peca.titulo}\n\n{modulo_peca.conteudo}"
-            
-            # Carrega módulos de CONTEÚDO detectados
-            if modulos_ids:
-                modulos_query = self.db.query(PromptModulo).filter(
-                    PromptModulo.tipo == "conteudo",
-                    PromptModulo.ativo == True,
-                    PromptModulo.id.in_(modulos_ids)
-                )
+            # Carrega e monta prompt de conteúdo
+            modulos_conteudo = self._carregar_modulos_conteudo(modulos_ids)
+            resultado.prompt_conteudo = self._montar_prompt_conteudo(
+                modulos_conteudo, resultado.ids_det
+            )
 
-                if self.group_id is not None:
-                    modulos_query = modulos_query.filter(PromptModulo.group_id == self.group_id)
-
-                if self.subcategoria_ids:
-                    # Filtra módulos que:
-                    # 1. Pertencem a pelo menos uma das subcategorias selecionadas, OU
-                    # 2. Não têm nenhuma subcategoria associada (são "universais" - sempre elegíveis)
-                    from admin.models_prompt_groups import PromptSubcategoria
-                    from sqlalchemy import or_
-                    modulos_query = modulos_query.filter(
-                        or_(
-                            PromptModulo.subcategorias.any(PromptSubcategoria.id.in_(self.subcategoria_ids)),
-                            ~PromptModulo.subcategorias.any()
-                        )
-                    )
-
-                modulos_conteudo = modulos_query.order_by(PromptModulo.categoria, PromptModulo.ordem).all()
-
-                if modulos_conteudo:
-                    # Busca ordem das categorias configurada
-                    from admin.models_prompt_groups import CategoriaOrdem
-                    ordem_categorias = {}
-                    group_id_ordem = self.group_id
-                    if group_id_ordem is None:
-                        group_ids = {m.group_id for m in modulos_conteudo if m.group_id is not None}
-                        if len(group_ids) == 1:
-                            group_id_ordem = next(iter(group_ids))
-
-                    if group_id_ordem is not None:
-                        configs_ordem = self.db.query(CategoriaOrdem).filter(
-                            CategoriaOrdem.group_id == group_id_ordem,
-                            CategoriaOrdem.ativo == True
-                        ).all()
-                        ordem_categorias = {c.nome: c.ordem for c in configs_ordem}
-
-# Agrupa módulos por categoria
-                    modulos_por_categoria = {}
-                    for modulo in modulos_conteudo:
-                        cat = modulo.categoria or "Outros"
-                        if cat not in modulos_por_categoria:
-                            modulos_por_categoria[cat] = []
-                        modulos_por_categoria[cat].append(modulo)
-
-                    # Ordena categorias usando:
-                    # 1. Configuração do banco (se existir)
-                    # 2. Ordem padrão jurídica (Preliminar > Mérito > Eventualidade > Honorários)
-                    # 3. Alfabético como último fallback
-                    def get_categoria_ordem(cat_nome):
-                        # Prioridade 1: Configuração explícita do banco
-                        if cat_nome in ordem_categorias:
-                            return (0, ordem_categorias[cat_nome], cat_nome)
-                        # Prioridade 2: Ordem padrão jurídica (fallback)
-                        if cat_nome in ORDEM_CATEGORIAS_PADRAO:
-                            return (1, ORDEM_CATEGORIAS_PADRAO[cat_nome], cat_nome)
-                        # Prioridade 3: Categorias desconhecidas vão para o final, ordenadas alfabeticamente
-                        return (2, 0, cat_nome)
-
-                    categorias_ordenadas = sorted(modulos_por_categoria.keys(), key=get_categoria_ordem)
-
-                    # Log para debug da ordem das categorias
-                    print(f"   [ORDEM] Categorias ordenadas: {categorias_ordenadas}")
-                    if ordem_categorias:
-                        print(f"   [ORDEM] Usando configuração do banco: {ordem_categorias}")
-                    else:
-                        print(f"   [ORDEM] Usando ordem padrão (fallback): ORDEM_CATEGORIAS_PADRAO")
-
-                    # Monta prompt agrupado por categoria com headers
-                    partes_conteudo = ["## ARGUMENTOS E TESES APLICÁVEIS\n"]
-
-                    for categoria in categorias_ordenadas:
-                        modulos_cat = sorted(modulos_por_categoria[categoria], key=lambda m: (m.ordem or 0, m.id))
-
-                        # Header da seção de categoria
-                        partes_conteudo.append(f"\n### === {categoria.upper()} ===\n")
-
-                        # Módulos desta categoria
-                        for modulo in modulos_cat:
-                            # Inclui subcategoria se houver
-                            subcategoria_info = ""
-                            if modulo.subcategoria:
-                                subcategoria_info = f" ({modulo.subcategoria})"
-
-                            # Verifica se foi ativado deterministicamente ou por LLM
-                            is_deterministico = modulo.id in resultado.ids_det
-
-                            if is_deterministico:
-                                # Módulos determinísticos: NÃO inclui condição (já foi validado)
-                                # Marca como [VALIDADO] para a IA saber que DEVE usar
-                                partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info} [VALIDADO]\n\n{modulo.conteudo}\n")
-                                print(f"   [+] Modulo ativado: [{categoria}] {modulo.titulo} [DET-VALIDADO]")
-                            else:
-                                # Módulos LLM: inclui condição para avaliação crítica
-                                condicao = modulo.condicao_ativacao or ""
-                                if condicao:
-                                    partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n**Condição de ativação:** {condicao}\n\n{modulo.conteudo}\n")
-                                else:
-                                    partes_conteudo.append(f"#### {modulo.titulo}{subcategoria_info}\n\n{modulo.conteudo}\n")
-                                print(f"   [+] Modulo ativado: [{categoria}] {modulo.titulo} [LLM]")
-
-                    resultado.prompt_conteudo = "\n".join(partes_conteudo)
-
+            # Log final
             print(f"   Modulos detectados: {len(modulos_ids)}")
             print(f"   Prompt sistema: {len(resultado.prompt_sistema)} chars")
             print(f"   Prompt peca: {len(resultado.prompt_peca)} chars")
             print(f"   Prompt conteudo: {len(resultado.prompt_conteudo)} chars")
-            
+
             return resultado
-            
+
         except Exception as e:
             resultado.erro = f"Erro no Agente 2: {str(e)}"
             return resultado
+
+    async def _detectar_modulos_com_timeout(
+        self,
+        resumo_consolidado: str,
+        tipo_peca: Optional[str],
+        dados_processo: Optional[Any],
+        dados_extracao: Optional[Dict[str, Any]],
+        resultado: ResultadoAgente2
+    ) -> List[int]:
+        """
+        Detecta módulos relevantes com proteção de timeout.
+
+        Args:
+            resumo_consolidado: Resumo dos documentos
+            tipo_peca: Tipo de peça
+            dados_processo: Dados do processo
+            dados_extracao: Variáveis extraídas
+            resultado: Objeto resultado para registrar erro de timeout
+
+        Returns:
+            Lista de IDs dos módulos detectados
+        """
+        import time
+        inicio = time.perf_counter()
+
+        try:
+            modulos_ids = await asyncio.wait_for(
+                self.agente2.detectar_modulos_relevantes(
+                    documentos_resumo=resumo_consolidado,
+                    tipo_peca=tipo_peca,
+                    group_id=self.group_id,
+                    subcategoria_ids=self.subcategoria_ids,
+                    dados_processo=dados_processo,
+                    dados_extracao=dados_extracao
+                ),
+                timeout=TIMEOUT_AG2_DETECCAO
+            )
+            return modulos_ids
+
+        except asyncio.TimeoutError:
+            tempo = time.perf_counter() - inicio
+            print(f"[AGENTE2] TIMEOUT apos {tempo:.2f}s (limite: {TIMEOUT_AG2_DETECCAO}s)")
+            print(f"[AGENTE2] Continuando com modulos vazios para nao travar o fluxo")
+            resultado.modo_ativacao = "timeout"
+            resultado.erro = f"Timeout na deteccao de modulos ({TIMEOUT_AG2_DETECCAO}s)"
+            return []
     
     async def _executar_agente3(
         self,
@@ -900,136 +1123,71 @@ class OrquestradorAgentes:
         Gera a peça jurídica final.
         """
         resultado = ResultadoAgente3(tipo_peca=tipo_peca)
-        
+        prompt_completo = ""
+
         try:
-            # NOTA: Templates de Formatação (TemplateFormatacao) NÃO são mais enviados para a IA.
-            # A peça é gerada diretamente em Markdown, usando o prompt_peca como guia de estrutura.
-            # Os templates serão usados futuramente para conversão MD -> DOCX.
-            
-            # Monta seção de observação do usuário (se houver)
-            secao_observacao = ""
-            if observacao_usuario:
-                secao_observacao = f"""
----
+            # Monta seções auxiliares usando helpers
+            secao_observacao = _montar_secao_observacao(observacao_usuario)
+            secao_dados_processo = _montar_secao_dados_processo(dados_processo)
 
-## OBSERVAÇÕES DO USUÁRIO:
+            # Monta o prompt completo
+            prompt_completo = _montar_prompt_agente3(
+                prompt_sistema=prompt_sistema,
+                prompt_peca=prompt_peca,
+                prompt_conteudo=prompt_conteudo,
+                resumo_consolidado=resumo_consolidado,
+                secao_observacao=secao_observacao,
+                secao_dados_processo=secao_dados_processo
+            )
 
-O usuário responsável pela peça forneceu as seguintes observações importantes que DEVEM ser consideradas na elaboração:
-
-> {observacao_usuario}
-
-**ATENÇÃO:** As observações acima são instruções específicas do usuário e devem ser incorporadas na peça conforme solicitado.
-
-"""
-                print(f" Observação do usuário incluída: {len(observacao_usuario)} caracteres")
-
-            # Monta seção de dados estruturados do processo (se disponíveis)
-            secao_dados_processo = ""
-            if dados_processo:
-                dados_json = json.dumps(dados_processo, indent=2, ensure_ascii=False)
-                secao_dados_processo = f"""
----
-
-## DADOS ESTRUTURADOS DO PROCESSO
-
-Os dados abaixo foram extraídos automaticamente do sistema judicial e são confiáveis:
-
-```json
-{dados_json}
-```
-
-**IMPORTANTE:** Utilize estes dados para:
-- Identificar corretamente as partes (polo ativo e polo passivo)
-- Verificar a data de ajuizamento da demanda
-- Consultar o valor da causa
-- Identificar o órgão julgador
-- Verificar representação processual (advogados, defensoria, etc.)
-
-"""
-                print(f" Dados do processo incluídos: {len(dados_json)} caracteres")
-
-            # Monta o prompt final combinando tudo (SEM template JSON)
-            prompt_completo = f"""{prompt_sistema}
-
-{prompt_peca}
-
-{prompt_conteudo}
-{secao_observacao}{secao_dados_processo}
----
-
-## DOCUMENTOS DO PROCESSO PARA ANÁLISE:
-
-{resumo_consolidado}
-
----
-
-## INSTRUÇÕES FINAIS:
-
-Com base nos documentos acima e nas instruções do sistema, gere a peça jurídica completa.
-
-**REGRAS OBRIGATÓRIAS sobre os Argumentos e Teses:**
-
-1. **Seções vazias**: Se uma categoria (ex: PRELIMINARES) não tiver NENHUM argumento listado acima, NÃO crie essa seção na peça. Só inclua seções que tenham argumentos ativados.
-
-2. **Ordem**: Respeite a ordem das categorias e argumentos como apresentada em "ARGUMENTOS E TESES APLICÁVEIS".
-
-Retorne a peça formatada em **Markdown**, seguindo a estrutura indicada no prompt de peça acima.
-Use formatação adequada: ## para títulos de seção, **negrito** para ênfase, > para citações.
-"""
-            
-            # Salva o prompt para auditoria
             resultado.prompt_enviado = prompt_completo
-            
-            # Logging detalhado para diagnóstico de timeout/erros
-            prompt_len = len(prompt_completo)
-            prompt_tokens_est = prompt_len // 4  # Estimativa ~4 chars/token
-            max_tokens_efetivo = self.params_agente3.max_tokens or 50000  # Default alto para peças
 
-            print(f"[AGENTE3] Prompt montado:")
-            print(f"[AGENTE3]    - Tamanho: {prompt_len:,} caracteres (~{prompt_tokens_est:,} tokens estimados)")
-            print(f"[AGENTE3]    - Modelo: {self.params_agente3.modelo} (fonte: {self.params_agente3.modelo_source})")
-            print(f"[AGENTE3]    - Temperatura: {self.params_agente3.temperatura} (fonte: {self.params_agente3.temperatura_source})")
-            print(f"[AGENTE3]    - Max tokens: {max_tokens_efetivo} (fonte: {self.params_agente3.max_tokens_source})")
+            # Log de diagnóstico
+            self._log_prompt_agente3(prompt_completo, "[AGENTE3]")
 
-            # Aviso se o prompt for muito grande
-            if prompt_tokens_est > 50000:
-                print(f"[AGENTE3] AVISO: Prompt muito grande ({prompt_tokens_est:,} tokens). Risco de timeout!")
-            elif prompt_tokens_est > 30000:
-                print(f"[AGENTE3] AVISO: Prompt grande ({prompt_tokens_est:,} tokens). Pode demorar mais.")
-
-            # Chama a API do Gemini com parâmetros resolvidos
+            # Chama a API do Gemini
+            max_tokens_efetivo = self.params_agente3.max_tokens or 50000
             content = await chamar_gemini_async(
                 prompt=prompt_completo,
                 modelo=self.params_agente3.modelo,
                 max_tokens=max_tokens_efetivo,
                 temperature=self.params_agente3.temperatura
             )
-            
-            # Remove possíveis blocos de código markdown que a IA pode ter adicionado
-            content_limpo = content.strip()
-            if content_limpo.startswith('```markdown'):
-                content_limpo = content_limpo[11:]
-            elif content_limpo.startswith('```'):
-                content_limpo = content_limpo[3:]
-            if content_limpo.endswith('```'):
-                content_limpo = content_limpo[:-3]
-            
-            resultado.conteudo_markdown = content_limpo.strip()
 
-            print(f"[AGENTE3] ✅ Peça gerada com sucesso!")
+            # Limpa e armazena resultado
+            resultado.conteudo_markdown = _limpar_resposta_markdown(content)
+
+            print(f"[AGENTE3] Peca gerada com sucesso!")
             print(f"[AGENTE3]    - Tamanho da resposta: {len(resultado.conteudo_markdown):,} caracteres")
-            
+
             return resultado
-                
+
         except Exception as e:
             import traceback
             traceback.print_exc()
             erro_str = str(e)
-            # Adiciona contexto de tamanho ao erro
             if 'timeout' in erro_str.lower() or 'timed out' in erro_str.lower():
-                print(f"[AGENTE3] ❌ TIMEOUT! Prompt tinha ~{len(prompt_completo)//4:,} tokens estimados")
+                tokens_est = len(prompt_completo) // 4 if prompt_completo else 0
+                print(f"[AGENTE3] TIMEOUT! Prompt tinha ~{tokens_est:,} tokens estimados")
             resultado.erro = f"Erro no Agente 3: {erro_str}"
             return resultado
+
+    def _log_prompt_agente3(self, prompt_completo: str, prefix: str = "[AGENTE3]") -> None:
+        """Log de diagnóstico para o prompt do Agente 3."""
+        prompt_len = len(prompt_completo)
+        prompt_tokens_est = prompt_len // 4
+        max_tokens_efetivo = self.params_agente3.max_tokens or 50000
+
+        print(f"{prefix} Prompt montado:")
+        print(f"{prefix}    - Tamanho: {prompt_len:,} caracteres (~{prompt_tokens_est:,} tokens estimados)")
+        print(f"{prefix}    - Modelo: {self.params_agente3.modelo} (fonte: {self.params_agente3.modelo_source})")
+        print(f"{prefix}    - Temperatura: {self.params_agente3.temperatura} (fonte: {self.params_agente3.temperatura_source})")
+        print(f"{prefix}    - Max tokens: {max_tokens_efetivo} (fonte: {self.params_agente3.max_tokens_source})")
+
+        if prompt_tokens_est > 50000:
+            print(f"{prefix} AVISO: Prompt muito grande ({prompt_tokens_est:,} tokens). Risco de timeout!")
+        elif prompt_tokens_est > 30000:
+            print(f"{prefix} AVISO: Prompt grande ({prompt_tokens_est:,} tokens). Pode demorar mais.")
 
     async def _executar_agente3_stream(
         self,
@@ -1057,97 +1215,33 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
                 - resultado: ResultadoAgente3 completo (quando tipo='done')
                 - error: mensagem de erro (quando tipo='error')
         """
-        from typing import AsyncGenerator
-
         resultado = ResultadoAgente3(tipo_peca=tipo_peca)
         content_accumulated = []
 
         try:
-            # === Monta seções auxiliares (igual ao método não-streaming) ===
-            secao_observacao = ""
-            if observacao_usuario:
-                secao_observacao = f"""
----
+            # Monta seções auxiliares usando helpers compartilhados
+            secao_observacao = _montar_secao_observacao(observacao_usuario)
+            secao_dados_processo = _montar_secao_dados_processo(dados_processo)
 
-## OBSERVAÇÕES DO USUÁRIO:
-
-O usuário responsável pela peça forneceu as seguintes observações importantes que DEVEM ser consideradas na elaboração:
-
-> {observacao_usuario}
-
-**ATENÇÃO:** As observações acima são instruções específicas do usuário e devem ser incorporadas na peça conforme solicitado.
-
-"""
-                print(f" Observação do usuário incluída: {len(observacao_usuario)} caracteres")
-
-            secao_dados_processo = ""
-            if dados_processo:
-                dados_json = json.dumps(dados_processo, indent=2, ensure_ascii=False)
-                secao_dados_processo = f"""
----
-
-## DADOS ESTRUTURADOS DO PROCESSO
-
-Os dados abaixo foram extraídos automaticamente do sistema judicial e são confiáveis:
-
-```json
-{dados_json}
-```
-
-**IMPORTANTE:** Utilize estes dados para:
-- Identificar corretamente as partes (polo ativo e polo passivo)
-- Verificar a data de ajuizamento da demanda
-- Consultar o valor da causa
-- Identificar o órgão julgador
-- Verificar representação processual (advogados, defensoria, etc.)
-
-"""
-                print(f" Dados do processo incluídos: {len(dados_json)} caracteres")
-
-            # === Monta prompt completo ===
-            prompt_completo = f"""{prompt_sistema}
-
-{prompt_peca}
-
-{prompt_conteudo}
-{secao_observacao}{secao_dados_processo}
----
-
-## DOCUMENTOS DO PROCESSO PARA ANÁLISE:
-
-{resumo_consolidado}
-
----
-
-## INSTRUÇÕES FINAIS:
-
-Com base nos documentos acima e nas instruções do sistema, gere a peça jurídica completa.
-
-**REGRAS OBRIGATÓRIAS sobre os Argumentos e Teses:**
-
-1. **Seções vazias**: Se uma categoria (ex: PRELIMINARES) não tiver NENHUM argumento listado acima, NÃO crie essa seção na peça. Só inclua seções que tenham argumentos ativados.
-
-2. **Ordem**: Respeite a ordem das categorias e argumentos como apresentada em "ARGUMENTOS E TESES APLICÁVEIS".
-
-Retorne a peça formatada em **Markdown**, seguindo a estrutura indicada no prompt de peça acima.
-Use formatação adequada: ## para títulos de seção, **negrito** para ênfase, > para citações.
-"""
+            # Monta o prompt completo
+            prompt_completo = _montar_prompt_agente3(
+                prompt_sistema=prompt_sistema,
+                prompt_peca=prompt_peca,
+                prompt_conteudo=prompt_conteudo,
+                resumo_consolidado=resumo_consolidado,
+                secao_observacao=secao_observacao,
+                secao_dados_processo=secao_dados_processo
+            )
 
             resultado.prompt_enviado = prompt_completo
 
-            # Logging
-            prompt_len = len(prompt_completo)
-            prompt_tokens_est = prompt_len // 4
+            # Log com parâmetros de streaming
+            self._log_prompt_agente3_stream(prompt_completo)
+
+            # STREAMING: Itera sobre chunks do Gemini
             max_tokens_efetivo = self.params_agente3.max_tokens or 50000
-
-            print(f"[AGENTE3-STREAM] Prompt montado:")
-            print(f"[AGENTE3-STREAM]    - Tamanho: {prompt_len:,} caracteres (~{prompt_tokens_est:,} tokens estimados)")
-            print(f"[AGENTE3-STREAM]    - Modelo: {self.params_agente3.modelo}")
-            print(f"[AGENTE3-STREAM]    - Temperatura: {self.params_agente3.temperatura}")
-            print(f"[AGENTE3-STREAM]    - Thinking Level: {self.params_agente3.thinking_level or 'None (modelo usa default)'}")
-
-            # === STREAMING: Itera sobre chunks do Gemini ===
             chunk_count = 0
+
             async for chunk in gemini_service.generate_stream(
                 prompt=prompt_completo,
                 model=self.params_agente3.modelo,
@@ -1162,48 +1256,36 @@ Use formatação adequada: ## para títulos de seção, **negrito** para ênfase
             ):
                 chunk_count += 1
                 content_accumulated.append(chunk)
+                yield {"tipo": "chunk", "content": chunk}
 
-                # Yield cada chunk para o caller
-                yield {
-                    "tipo": "chunk",
-                    "content": chunk
-                }
-
-            # === Finalização: monta resultado completo ===
+            # Finalização: monta resultado completo
             content_final = "".join(content_accumulated)
+            resultado.conteudo_markdown = _limpar_resposta_markdown(content_final)
 
-            # Remove possíveis blocos de código markdown
-            content_limpo = content_final.strip()
-            if content_limpo.startswith('```markdown'):
-                content_limpo = content_limpo[11:]
-            elif content_limpo.startswith('```'):
-                content_limpo = content_limpo[3:]
-            if content_limpo.endswith('```'):
-                content_limpo = content_limpo[:-3]
-
-            resultado.conteudo_markdown = content_limpo.strip()
-
-            print(f"[AGENTE3-STREAM] Geração concluída!")
+            print(f"[AGENTE3-STREAM] Geracao concluida!")
             print(f"[AGENTE3-STREAM]    - Chunks recebidos: {chunk_count}")
             print(f"[AGENTE3-STREAM]    - Tamanho final: {len(resultado.conteudo_markdown):,} caracteres")
 
-            yield {
-                "tipo": "done",
-                "resultado": resultado
-            }
+            yield {"tipo": "done", "resultado": resultado}
 
         except Exception as e:
             import traceback
             traceback.print_exc()
             erro_str = str(e)
             print(f"[AGENTE3-STREAM] ERRO: {erro_str}")
-
             resultado.erro = f"Erro no Agente 3: {erro_str}"
-            yield {
-                "tipo": "error",
-                "error": erro_str,
-                "resultado": resultado
-            }
+            yield {"tipo": "error", "error": erro_str, "resultado": resultado}
+
+    def _log_prompt_agente3_stream(self, prompt_completo: str) -> None:
+        """Log de diagnóstico para o prompt do Agente 3 (versão streaming)."""
+        prompt_len = len(prompt_completo)
+        prompt_tokens_est = prompt_len // 4
+
+        print(f"[AGENTE3-STREAM] Prompt montado:")
+        print(f"[AGENTE3-STREAM]    - Tamanho: {prompt_len:,} caracteres (~{prompt_tokens_est:,} tokens estimados)")
+        print(f"[AGENTE3-STREAM]    - Modelo: {self.params_agente3.modelo}")
+        print(f"[AGENTE3-STREAM]    - Temperatura: {self.params_agente3.temperatura}")
+        print(f"[AGENTE3-STREAM]    - Thinking Level: {self.params_agente3.thinking_level or 'None (modelo usa default)'}")
 
 
 async def processar_com_agentes(

@@ -22,6 +22,12 @@ import os
 
 from config import IS_PRODUCTION
 
+# Middleware de Request ID para rastreamento
+from middleware.request_id import RequestIDMiddleware, get_request_id
+
+# Logging estruturado
+from utils.logging_config import setup_logging, get_logger
+
 # Configura logging para silenciar requests de polling repetitivos
 class StatusPollingFilter(logging.Filter):
     """Filtra logs de polling de status que são muito frequentes"""
@@ -85,6 +91,10 @@ from admin.router_performance import router as performance_router
 from admin.router_gemini_logs import router as gemini_logs_router
 from admin.middleware_performance import PerformanceMiddleware
 
+# Métricas de request (Prometheus-style)
+from middleware.metrics import MetricsMiddleware
+from utils.metrics import get_metrics_text, get_metrics_summary
+
 # Import do serviço de normalização de texto
 from services.text_normalizer import text_normalizer_router
 
@@ -113,6 +123,12 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     print("[+] Iniciando Portal PGE-MS...")
+
+    # Configura logging estruturado
+    setup_logging()
+    logger = get_logger("portal-pge")
+    logger.info(f"Iniciando aplicação (environment={'production' if IS_PRODUCTION else 'development'})")
+
     init_database()
 
     # ==========================================================================
@@ -149,9 +165,32 @@ async def lifespan(app: FastAPI):
     from admin.perf_instrumentation import setup_instrumentation
     setup_instrumentation(app)
 
+    # ==========================================================================
+    # Inicia BERT Watchdog Scheduler
+    # Monitora jobs travados e toma ações automáticas (retry, cleanup)
+    # ==========================================================================
+    try:
+        from utils.background_tasks import start_bert_watchdog_scheduler
+        from database.connection import SessionLocal
+        await start_bert_watchdog_scheduler(
+            interval_minutes=5.0,  # Verifica a cada 5 minutos
+            db_factory=SessionLocal
+        )
+        print("[WATCHDOG] BERT Watchdog scheduler iniciado (intervalo: 5 min)")
+    except Exception as e:
+        print(f"[WARN] Erro ao iniciar BERT Watchdog: {e}")
+
     yield
     # Shutdown
     print("[-] Encerrando Portal PGE-MS...")
+
+    # Para o scheduler de tarefas
+    try:
+        from utils.background_tasks import stop_scheduler
+        await stop_scheduler()
+        print("[WATCHDOG] Scheduler parado")
+    except Exception as e:
+        print(f"[WARN] Erro ao parar scheduler: {e}")
 
 
 # Cria a aplicação FastAPI
@@ -261,6 +300,10 @@ else:
             "http://localhost:3000",
         ]
 
+# TRACING: Request ID para rastreamento de requisições
+# Deve ser o primeiro middleware para que o ID esteja disponível em todo o request
+app.add_middleware(RequestIDMiddleware)
+
 # SECURITY: Adiciona middleware de headers ANTES do CORS
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -279,6 +322,9 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 # PERFORMANCE: Middleware de timing (apenas para admin quando ativado)
 app.add_middleware(PerformanceMiddleware)
 
+# METRICS: Coleta métricas de request (Prometheus-style)
+app.add_middleware(MetricsMiddleware)
+
 
 # ==================================================
 # SECURITY: EXCEPTION HANDLERS - Sanitiza erros em produção
@@ -292,12 +338,15 @@ async def global_exception_handler(request: Request, exc: Exception):
     Em produção: retorna mensagem genérica (não vaza stack traces).
     Em desenvolvimento: retorna detalhes para debug.
     """
+    # Obtém request_id para rastreamento
+    request_id = get_request_id() or getattr(request.state, 'request_id', 'unknown')
+
     if IS_PRODUCTION:
         # SECURITY: Em produção, não expõe detalhes internos
-        logging.error(f"Unhandled exception: {exc}", exc_info=True)
+        logging.error(f"[{request_id}] Unhandled exception: {exc}", exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={"detail": "Erro interno do servidor. Tente novamente mais tarde."}
+            content={"detail": "Erro interno do servidor. Tente novamente mais tarde.", "request_id": request_id}
         )
     else:
         # Em desenvolvimento, mostra detalhes para debug
@@ -306,7 +355,8 @@ async def global_exception_handler(request: Request, exc: Exception):
             content={
                 "detail": str(exc),
                 "type": type(exc).__name__,
-                "traceback": traceback.format_exc()
+                "traceback": traceback.format_exc(),
+                "request_id": request_id
             }
         )
 
@@ -318,17 +368,19 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
     Sanitiza mensagens de erro para não expor estrutura interna.
     """
+    request_id = get_request_id() or getattr(request.state, 'request_id', 'unknown')
+
     if IS_PRODUCTION:
         # SECURITY: Mensagem simplificada em produção
         return JSONResponse(
             status_code=422,
-            content={"detail": "Dados inválidos na requisição."}
+            content={"detail": "Dados inválidos na requisição.", "request_id": request_id}
         )
     else:
         # Em desenvolvimento, mostra detalhes
         return JSONResponse(
             status_code=422,
-            content={"detail": exc.errors()}
+            content={"detail": exc.errors(), "request_id": request_id}
         )
 
 # Templates Jinja2 para páginas do portal
@@ -353,18 +405,150 @@ async def root():
     return RedirectResponse(url="/dashboard")
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Health check básico",
+    response_description="Status simplificado do sistema"
+)
 async def health_check():
-    """Health check para monitoramento"""
-    import os
-    has_api_key = bool(os.getenv("OPENROUTER_API_KEY", ""))
-    has_db_url = bool(os.getenv("DATABASE_URL", ""))
-    return {
-        "status": "ok", 
-        "service": "portal-pge",
-        "has_openrouter_key": has_api_key,
-        "has_database_url": has_db_url
-    }
+    """
+    Health check básico para load balancers e monitoramento.
+
+    Retorna status simplificado - use /health/detailed para diagnóstico completo.
+    """
+    try:
+        from utils.health_check import get_health_summary, HealthStatus
+        health = await get_health_summary()
+
+        # Retorna 200 para healthy/degraded, 503 para unhealthy
+        status_code = 200 if health["status"] in ("healthy", "degraded") else 503
+        return JSONResponse(content=health, status_code=status_code)
+    except Exception as e:
+        # Fallback se health check falhar
+        return JSONResponse(
+            content={"status": "unhealthy", "error": str(e)[:100]},
+            status_code=503
+        )
+
+
+@app.get(
+    "/health/detailed",
+    tags=["Health"],
+    summary="Health check detalhado",
+    response_description="Status detalhado de todos os componentes"
+)
+async def health_check_detailed():
+    """
+    Health check detalhado com status de todos os componentes.
+
+    Verifica:
+    - Banco de dados (PostgreSQL)
+    - APIs externas (Gemini)
+    - Circuit Breakers
+    - Background Tasks
+    - Variáveis de ambiente
+    """
+    try:
+        from utils.health_check import get_health_status, HealthStatus
+        health = await get_health_status(include_details=True)
+
+        status_code = 200 if health.status in (HealthStatus.HEALTHY, HealthStatus.DEGRADED) else 503
+        return JSONResponse(content=health.to_dict(), status_code=status_code)
+    except Exception as e:
+        return JSONResponse(
+            content={"status": "unhealthy", "error": str(e)[:200]},
+            status_code=503
+        )
+
+
+@app.get(
+    "/health/ready",
+    tags=["Health"],
+    summary="Kubernetes readiness probe",
+    response_description="Se o serviço está pronto para receber tráfego"
+)
+async def readiness_check():
+    """
+    Readiness probe para Kubernetes.
+
+    Retorna 200 apenas se o serviço está pronto para receber tráfego.
+    """
+    try:
+        from utils.health_check import check_database, HealthStatus
+        db_health = await check_database()
+
+        if db_health.status == HealthStatus.HEALTHY:
+            return {"status": "ready"}
+        else:
+            return JSONResponse(
+                content={"status": "not_ready", "reason": db_health.message},
+                status_code=503
+            )
+    except Exception as e:
+        return JSONResponse(
+            content={"status": "not_ready", "error": str(e)[:100]},
+            status_code=503
+        )
+
+
+@app.get(
+    "/health/live",
+    tags=["Health"],
+    summary="Kubernetes liveness probe",
+    response_description="Se o processo está vivo"
+)
+async def liveness_check():
+    """
+    Liveness probe para Kubernetes.
+
+    Retorna 200 se o processo está vivo (sempre retorna OK se chegou aqui).
+    """
+    return {"alive": True}
+
+
+# ==================================================
+# MÉTRICAS (PROMETHEUS-STYLE)
+# ==================================================
+
+@app.get(
+    "/metrics",
+    tags=["Metrics"],
+    summary="Métricas Prometheus",
+    response_description="Métricas em formato Prometheus text"
+)
+async def prometheus_metrics():
+    """
+    Endpoint de métricas em formato Prometheus.
+
+    Retorna métricas de:
+    - Contagem de requests por endpoint e status
+    - Latência (histograma)
+    - Erros por tipo
+    - Uptime do serviço
+
+    Pode ser usado diretamente por Prometheus para scraping.
+    """
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=get_metrics_text(),
+        media_type="text/plain; version=0.0.4; charset=utf-8"
+    )
+
+
+@app.get("/metrics/json")
+async def metrics_json():
+    """
+    Endpoint de métricas em formato JSON.
+
+    Retorna resumo das métricas em formato legível:
+    - Uptime
+    - Total de requests/erros
+    - Top endpoints
+    - Endpoints mais lentos
+    - Taxa de erro
+    """
+    return get_metrics_summary()
 
 
 # ==================================================
@@ -381,6 +565,10 @@ app.include_router(users_router)
 
 from admin.router import router as admin_router
 app.include_router(admin_router)
+
+# Router de Dashboard de Métricas (admin)
+from admin.dashboard_router import router as dashboard_router
+app.include_router(dashboard_router)
 
 # Router de Performance Logs (admin)
 app.include_router(performance_router)
@@ -737,6 +925,44 @@ async def admin_restaurar_slugs_page(request: Request):
 async def admin_performance_page(request: Request):
     """Página para gerenciar logs de performance (diagnóstico de latência)"""
     return templates.TemplateResponse("admin_performance.html", {"request": request})
+
+
+@app.get("/admin/tjms-docs")
+async def admin_tjms_docs_page(request: Request):
+    """Página de documentação da integração TJMS - explica como cada sistema consome do TJ-MS"""
+    return templates.TemplateResponse("admin_tjms_docs.html", {"request": request})
+
+
+@app.get("/admin/tjms-docs/plano")
+async def admin_tjms_plano_page():
+    """Retorna o plano de unificação TJMS em markdown"""
+    import os
+    plano_path = os.path.join(BASE_DIR, "docs", "PLANO_UNIFICACAO_TJMS.md")
+    if os.path.exists(plano_path):
+        with open(plano_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return HTMLResponse(content=f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Plano Unificação TJMS</title>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.2.0/github-markdown.min.css">
+            <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+            <style>
+                body {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+                .markdown-body {{ box-sizing: border-box; min-width: 200px; max-width: 980px; margin: 0 auto; padding: 45px; }}
+            </style>
+        </head>
+        <body class="markdown-body">
+            <a href="/admin/tjms-docs" style="display:inline-block;margin-bottom:20px;color:#0969da;">← Voltar</a>
+            <div id="content"></div>
+            <script>
+                document.getElementById('content').innerHTML = marked.parse(`{content.replace('`', '\\`')}`);
+            </script>
+        </body>
+        </html>
+        """)
+    return HTMLResponse(content="Arquivo não encontrado", status_code=404)
 
 
 # ==================================================

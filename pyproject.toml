@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portal-pge"
+version = "1.0.0"
+description = "Portal PGE-MS - Sistema de Procuradoria"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["services", "utils", "auth", "admin", "middleware", "database", "sistemas"]
+
+[tool.pytest.ini_options]
+# Adiciona o diretório raiz ao PYTHONPATH para imports
+pythonpath = ["."]
+
+# Diretório de testes
+testpaths = ["tests"]
+
+# Modo asyncio
+asyncio_mode = "auto"
+
+# Padrões de arquivos
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Opções padrão
+addopts = "-v --tb=short"
+
+# Filtros de warnings
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning"
+]

@@ -1,26 +1,38 @@
 # sistemas/classificador_documentos/services_tjms.py
 """
-Serviço de integração com TJ-MS para download de documentos.
+Servico de integracao com TJ-MS para download de documentos.
 
-Reutiliza a infraestrutura existente do portal-pge para:
+MIGRADO para usar services.tjms unificado em 2026-01-24.
+
+Funcionalidades:
 - Consultar processos no TJ-MS
+- Listar documentos disponiveis
 - Baixar documentos por ID
-- Converter RTF para PDF quando necessário
+- Converter RTF para PDF quando necessario
 
 Autor: LAB/PGE-MS
 """
 
 import logging
-import asyncio
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
+
+# Cliente TJMS unificado
+from services.tjms import (
+    TJMSClient,
+    ConsultaOptions,
+    DownloadOptions,
+    TipoConsulta,
+    DocumentoTJMS as TJMSDocumento,
+    DocumentoMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class DocumentoTJMS:
-    """Documento baixado do TJ-MS"""
+    """Documento baixado do TJ-MS (modelo local para compatibilidade)"""
     id_documento: str
     numero_processo: str
     tipo_documento: Optional[str] = None
@@ -32,105 +44,70 @@ class DocumentoTJMS:
 
 class TJMSDocumentService:
     """
-    Serviço para baixar documentos do TJ-MS.
+    Servico para baixar documentos do TJ-MS.
 
-    Reutiliza o DocumentDownloader existente do sistema pedido_calculo.
+    Usa o TJMSClient unificado de services.tjms.
     """
 
     def __init__(self):
-        self._downloader = None
+        self._client: Optional[TJMSClient] = None
 
-    async def _get_downloader(self):
-        """Lazy load do DocumentDownloader"""
-        if self._downloader is None:
-            try:
-                from sistemas.pedido_calculo.document_downloader import DocumentDownloader
-                self._downloader = DocumentDownloader()
-            except ImportError:
-                logger.error("DocumentDownloader não disponível")
-                raise ImportError("Módulo pedido_calculo.document_downloader não encontrado")
-        return self._downloader
+    def _get_client(self) -> TJMSClient:
+        """Retorna cliente TJMS (lazy init)"""
+        if self._client is None:
+            self._client = TJMSClient()
+        return self._client
 
     async def consultar_processo(self, numero_cnj: str) -> Tuple[Optional[str], Optional[str]]:
         """
         Consulta processo no TJ-MS e retorna XML.
 
         Args:
-            numero_cnj: Número CNJ do processo (apenas dígitos ou formatado)
+            numero_cnj: Numero CNJ do processo (apenas digitos ou formatado)
 
         Returns:
             Tupla (xml_texto, erro)
         """
         try:
-            downloader = await self._get_downloader()
-            async with downloader:
-                xml_texto = await downloader.consultar_processo(numero_cnj)
-                return xml_texto, None
+            client = self._get_client()
+            async with client:
+                options = ConsultaOptions(tipo=TipoConsulta.COMPLETA)
+                processo = await client.consultar_processo(numero_cnj, options)
+                return processo.xml_raw, None
         except Exception as e:
             logger.error(f"Erro ao consultar processo {numero_cnj}: {e}")
             return None, str(e)
 
     async def listar_documentos(self, numero_cnj: str) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
-        Lista documentos disponíveis em um processo.
+        Lista documentos disponiveis em um processo.
 
         Args:
-            numero_cnj: Número CNJ do processo
+            numero_cnj: Numero CNJ do processo
 
         Returns:
             Tupla (lista_documentos, erro)
         """
         try:
-            xml_texto, erro = await self.consultar_processo(numero_cnj)
-            if erro:
-                return [], erro
+            client = self._get_client()
+            async with client:
+                documentos = await client.listar_documentos(numero_cnj)
 
-            # Parse do XML para extrair documentos
-            documentos = self._extrair_documentos_do_xml(xml_texto)
-            return documentos, None
+            # Converte para formato de dict esperado
+            lista = []
+            for doc in documentos:
+                lista.append({
+                    "id": doc.id,
+                    "tipo": doc.tipo_codigo,
+                    "descricao": doc.descricao,
+                    "data": doc.data_juntada.isoformat() if doc.data_juntada else None
+                })
+
+            return lista, None
 
         except Exception as e:
             logger.error(f"Erro ao listar documentos do processo {numero_cnj}: {e}")
             return [], str(e)
-
-    def _extrair_documentos_do_xml(self, xml_texto: str) -> List[Dict[str, Any]]:
-        """
-        Extrai lista de documentos do XML do TJ-MS.
-
-        Returns:
-            Lista de dicionários com informações dos documentos
-        """
-        try:
-            import xml.etree.ElementTree as ET
-
-            # Namespaces do MNI
-            ns = {
-                "ns2": "http://www.cnj.jus.br/intercomunicacao-2.2.2"
-            }
-
-            root = ET.fromstring(xml_texto)
-            documentos = []
-
-            # Busca documentos no XML
-            for doc in root.findall(".//ns2:documento", ns):
-                id_doc = doc.get("idDocumento") or doc.findtext("ns2:idDocumento", namespaces=ns)
-                tipo = doc.findtext("ns2:tipoDocumento", namespaces=ns)
-                descricao = doc.findtext("ns2:descricao", namespaces=ns)
-                data = doc.findtext("ns2:dataHora", namespaces=ns)
-
-                if id_doc:
-                    documentos.append({
-                        "id": id_doc,
-                        "tipo": tipo,
-                        "descricao": descricao,
-                        "data": data
-                    })
-
-            return documentos
-
-        except Exception as e:
-            logger.error(f"Erro ao extrair documentos do XML: {e}")
-            return []
 
     async def baixar_documento(
         self,
@@ -138,34 +115,39 @@ class TJMSDocumentService:
         id_documento: str
     ) -> DocumentoTJMS:
         """
-        Baixa um documento específico do TJ-MS.
+        Baixa um documento especifico do TJ-MS.
 
         Args:
-            numero_cnj: Número CNJ do processo
+            numero_cnj: Numero CNJ do processo
             id_documento: ID do documento no TJ-MS
 
         Returns:
             DocumentoTJMS com bytes do documento ou erro
         """
         try:
-            downloader = await self._get_downloader()
-            async with downloader:
-                docs = await downloader.baixar_documentos(numero_cnj, [id_documento])
+            client = self._get_client()
+            async with client:
+                options = DownloadOptions(
+                    batch_size=1,
+                    timeout=180.0
+                )
+                docs = await client.baixar_documentos(numero_cnj, [id_documento], options)
 
-            if not docs or id_documento not in docs:
+            if id_documento not in docs or not docs[id_documento].sucesso:
+                erro = docs[id_documento].erro if id_documento in docs else "Documento nao encontrado"
                 return DocumentoTJMS(
                     id_documento=id_documento,
                     numero_processo=numero_cnj,
-                    erro="Documento não encontrado"
+                    erro=erro
                 )
 
-            doc_bytes = docs[id_documento]
+            doc = docs[id_documento]
+            doc_bytes = doc.conteudo_bytes
 
-            # Detecta formato
+            # Detecta formato e converte RTF se necessario
             formato = "pdf"
-            if doc_bytes.startswith(b'{\\rtf'):
+            if doc_bytes and doc_bytes.startswith(b'{\\rtf'):
                 formato = "rtf"
-                # Converte RTF para PDF
                 doc_bytes = self._converter_rtf_para_pdf(doc_bytes)
 
             return DocumentoTJMS(
@@ -189,27 +171,32 @@ class TJMSDocumentService:
         ids_documentos: List[str]
     ) -> List[DocumentoTJMS]:
         """
-        Baixa múltiplos documentos do TJ-MS.
+        Baixa multiplos documentos do TJ-MS.
 
         Args:
-            numero_cnj: Número CNJ do processo
+            numero_cnj: Numero CNJ do processo
             ids_documentos: Lista de IDs de documentos
 
         Returns:
             Lista de DocumentoTJMS
         """
         try:
-            downloader = await self._get_downloader()
-            async with downloader:
-                docs = await downloader.baixar_documentos(numero_cnj, ids_documentos)
+            client = self._get_client()
+            async with client:
+                options = DownloadOptions(
+                    batch_size=5,
+                    max_paralelo=4,
+                    timeout=180.0
+                )
+                docs = await client.baixar_documentos(numero_cnj, ids_documentos, options)
 
             resultados = []
             for id_doc in ids_documentos:
-                if id_doc in docs:
-                    doc_bytes = docs[id_doc]
+                if id_doc in docs and docs[id_doc].sucesso:
+                    doc_bytes = docs[id_doc].conteudo_bytes
                     formato = "pdf"
 
-                    if doc_bytes.startswith(b'{\\rtf'):
+                    if doc_bytes and doc_bytes.startswith(b'{\\rtf'):
                         formato = "rtf"
                         doc_bytes = self._converter_rtf_para_pdf(doc_bytes)
 
@@ -220,10 +207,11 @@ class TJMSDocumentService:
                         formato=formato
                     ))
                 else:
+                    erro = docs[id_doc].erro if id_doc in docs else "Documento nao encontrado"
                     resultados.append(DocumentoTJMS(
                         id_documento=id_doc,
                         numero_processo=numero_cnj,
-                        erro="Documento não encontrado"
+                        erro=erro
                     ))
 
             return resultados
@@ -243,13 +231,13 @@ class TJMSDocumentService:
         """
         Converte RTF para PDF.
 
-        Reutiliza a função existente do sistema pedido_calculo.
+        Tenta usar funcao existente do pedido_calculo ou faz conversao simples.
         """
         try:
             from sistemas.pedido_calculo.router import _converter_rtf_para_pdf
             return _converter_rtf_para_pdf(rtf_bytes)
         except ImportError:
-            # Fallback: tenta conversão simples com striprtf + reportlab
+            # Fallback: conversao simples com striprtf + reportlab
             try:
                 from striprtf.striprtf import rtf_to_text
                 from reportlab.lib.pagesizes import A4
@@ -262,7 +250,7 @@ class TJMSDocumentService:
                 c = canvas.Canvas(buffer, pagesize=A4)
                 width, height = A4
 
-                # Configurações básicas
+                # Configuracoes basicas
                 margin = 50
                 y_position = height - margin
                 line_height = 14
@@ -280,19 +268,19 @@ class TJMSDocumentService:
 
             except Exception as e:
                 logger.error(f"Erro ao converter RTF para PDF: {e}")
-                # Retorna bytes originais se conversão falhar
+                # Retorna bytes originais se conversao falhar
                 return rtf_bytes
 
 
 # ============================================
-# Instância global
+# Instancia global
 # ============================================
 
 _tjms_service: Optional[TJMSDocumentService] = None
 
 
 def get_tjms_service() -> TJMSDocumentService:
-    """Retorna instância singleton do serviço TJ-MS"""
+    """Retorna instancia singleton do servico TJ-MS"""
     global _tjms_service
     if _tjms_service is None:
         _tjms_service = TJMSDocumentService()

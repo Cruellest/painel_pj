@@ -17,9 +17,25 @@ from utils.password_policy import validate_password, MIN_PASSWORD_LENGTH
 # ==========================================
 
 class Token(BaseModel):
-    """Token JWT retornado no login"""
-    access_token: str
-    token_type: str = "bearer"
+    """Token JWT retornado no login."""
+    access_token: str = Field(
+        ...,
+        description="Token JWT para autenticação",
+        json_schema_extra={"example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."}
+    )
+    token_type: str = Field(
+        default="bearer",
+        description="Tipo do token (sempre 'bearer')"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyMSIsImV4cCI6MTcwMDAwMDAwMH0.xxx",
+                "token_type": "bearer"
+            }
+        }
+    }
 
 
 class TokenData(BaseModel):
@@ -33,10 +49,41 @@ class TokenData(BaseModel):
 # Schemas de Login
 # ==========================================
 
+class HTTPError(BaseModel):
+    """Schema padrão de erro HTTP."""
+    detail: str = Field(..., description="Mensagem de erro detalhada")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {"detail": "Usuário ou senha incorretos"}
+        }
+    }
+
+
 class LoginRequest(BaseModel):
-    """Request de login"""
-    username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=1)
+    """Request de login."""
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=50,
+        description="Nome de usuário",
+        json_schema_extra={"example": "joao.silva"}
+    )
+    password: str = Field(
+        ...,
+        min_length=1,
+        description="Senha do usuário",
+        json_schema_extra={"example": "MinhaSenh@123"}
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "username": "joao.silva",
+                "password": "MinhaSenh@123"
+            }
+        }
+    }
 
 
 class ChangePasswordRequest(BaseModel):

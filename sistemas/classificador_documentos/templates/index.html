@@ -720,6 +720,16 @@
                     <label class="block text-sm font-medium text-gray-700 mb-2">Conteudo do Prompt</label>
                     <textarea id="promptConteudo" rows="12" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"></textarea>
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Codigos de Tipos de Documento (TJ-MS)
+                        <span class="text-gray-400 font-normal ml-1">(opcional)</span>
+                    </label>
+                    <textarea id="promptCodigosDocumento" rows="3" placeholder="Digite os codigos separados por virgula ou um por linha. Ex:&#10;8, 15, 34&#10;ou&#10;8&#10;15&#10;34" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"></textarea>
+                    <p class="text-xs text-gray-500 mt-1">
+                        Codigos comuns: 8 (Sentenca), 15 (Decisao Interlocutoria), 34 (Acordao), 44 (Decisao Monocratica), 500 (Peticao Inicial)
+                    </p>
+                </div>
                 <div class="flex justify-end gap-3 pt-4">
                     <button type="button" onclick="hideModalPrompt()" class="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">Cancelar</button>
                     <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">Salvar</button>
@@ -960,6 +970,7 @@
             document.getElementById('promptNome').value = '';
             document.getElementById('promptDescricao').value = '';
             document.getElementById('promptConteudo').value = '';
+            document.getElementById('promptCodigosDocumento').value = '';
             document.getElementById('modalPrompt').classList.remove('hidden');
         }
 
@@ -975,16 +986,28 @@
             document.getElementById('promptNome').value = prompt.nome;
             document.getElementById('promptDescricao').value = prompt.descricao || '';
             document.getElementById('promptConteudo').value = prompt.conteudo;
+            document.getElementById('promptCodigosDocumento').value = prompt.codigos_documento || '';
             document.getElementById('modalPrompt').classList.remove('hidden');
         }
 
         async function salvarPrompt(e) {
             e.preventDefault();
             const id = document.getElementById('promptId').value;
+
+            // Normaliza codigos: remove espacos, converte quebras de linha para virgula
+            let codigosRaw = document.getElementById('promptCodigosDocumento').value || '';
+            let codigos = codigosRaw
+                .replace(/\n/g, ',')  // quebras de linha para virgula
+                .split(',')
+                .map(c => c.trim())
+                .filter(c => c.length > 0)
+                .join(',');
+
             const data = {
                 nome: document.getElementById('promptNome').value,
                 descricao: document.getElementById('promptDescricao').value,
-                conteudo: document.getElementById('promptConteudo').value
+                conteudo: document.getElementById('promptConteudo').value,
+                codigos_documento: codigos || null
             };
             try {
                 if (id) {
@@ -2348,11 +2371,81 @@
         document.getElementById('formAvulso').addEventListener('submit', classificarAvulso);
 
         // Novos event listeners para Novo Lote
-        document.getElementById('promptLote')?.addEventListener('change', atualizarBotaoIniciar);
+        document.getElementById('promptLote')?.addEventListener('change', () => {
+            atualizarBotaoIniciar();
+            preSelectTiposDocumentoPrompt();
+        });
         document.getElementById('processosLote')?.addEventListener('input', () => {
             contarProcessos();
             atualizarBotaoIniciar();
         });
+
+        // Event listener para Teste Rapido
+        document.getElementById('promptAvulso')?.addEventListener('change', preSelectTiposDocumentoTesteRapido);
+
+        // Pre-seleciona tipos de documento no Teste Rapido baseado nos codigos do prompt
+        function preSelectTiposDocumentoTesteRapido() {
+            const promptId = document.getElementById('promptAvulso').value;
+            if (!promptId) return;
+
+            const prompt = prompts.find(p => p.id === parseInt(promptId));
+            if (!prompt || !prompt.codigos_documento) return;
+
+            // Parseia os codigos do prompt
+            const codigos = prompt.codigos_documento.split(',').map(c => c.trim()).filter(c => c);
+            if (codigos.length === 0) return;
+
+            // Desmarca todos os checkboxes primeiro
+            document.querySelectorAll('.teste-tipo-doc').forEach(cb => {
+                cb.checked = false;
+            });
+
+            // Marca os checkboxes dos codigos do prompt
+            let nomesAdicionados = [];
+            codigos.forEach(codigo => {
+                const checkbox = document.querySelector(`.teste-tipo-doc[value="${codigo}"]`);
+                if (checkbox) {
+                    checkbox.checked = true;
+                    const nome = CATEGORIAS_TJMS[codigo] || codigo;
+                    nomesAdicionados.push(`${codigo} - ${nome}`);
+                }
+            });
+
+            // Mostra popup informando os codigos pre-selecionados
+            if (nomesAdicionados.length > 0) {
+                alert(`O prompt "${prompt.nome}" esta configurado para classificar os seguintes tipos de documento:\n\n${nomesAdicionados.join('\n')}\n\nOs tipos foram pre-selecionados automaticamente.`);
+            }
+        }
+
+        // Pre-seleciona tipos de documento baseado nos codigos do prompt
+        function preSelectTiposDocumentoPrompt() {
+            const promptId = document.getElementById('promptLote').value;
+            if (!promptId) return;
+
+            const prompt = prompts.find(p => p.id === parseInt(promptId));
+            if (!prompt || !prompt.codigos_documento) return;
+
+            // Parseia os codigos do prompt
+            const codigos = prompt.codigos_documento.split(',').map(c => c.trim()).filter(c => c);
+            if (codigos.length === 0) return;
+
+            // Limpa e adiciona os tipos do prompt
+            tiposSelecionadosTJMS.clear();
+            let nomesAdicionados = [];
+            codigos.forEach(codigo => {
+                tiposSelecionadosTJMS.add(codigo);
+                const nome = CATEGORIAS_TJMS[codigo] || codigo;
+                nomesAdicionados.push(`${codigo} - ${nome}`);
+            });
+
+            // Atualiza a UI
+            popularTiposDocumentos();
+
+            // Mostra popup informando os codigos pre-selecionados
+            if (nomesAdicionados.length > 0) {
+                alert(`O prompt "${prompt.nome}" esta configurado para classificar os seguintes tipos de documento:\n\n${nomesAdicionados.join('\n')}\n\nOs tipos foram pre-selecionados automaticamente.`);
+            }
+        }
 
         // ====================================
         // Inicializacao

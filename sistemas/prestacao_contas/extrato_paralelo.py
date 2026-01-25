@@ -32,7 +32,8 @@ from sistemas.prestacao_contas.scrapper_subconta import (
     StatusProcessamento,
     ResultadoExtracao,
 )
-from sistemas.pedido_calculo.document_downloader import (
+# Cliente TJMS unificado (funcoes de compatibilidade)
+from services.tjms import (
     baixar_documentos_async,
     extrair_texto_pdf,
 )

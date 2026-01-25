@@ -1,121 +1,162 @@
 # Portal PGE-MS
 
-Portal unificado da Procuradoria-Geral do Estado de Mato Grosso do Sul.
+> Sistema web para a Procuradoria-Geral do Estado de Mato Grosso do Sul que utiliza IA para automatizar tarefas juridicas.
 
-## Sistemas Integrados
-
-- **Assistência Judiciária**: Consulta de processos judiciais no TJ-MS com análise automática por IA
-- **Matrículas Confrontantes**: Análise documental de matrículas imobiliárias com IA visual
-
-## Requisitos
-
-- Python 3.10+
-
-## Instalação Local
-
-### 1. Clonar o projeto
+## Inicio Rapido
 
 ```bash
-git clone https://github.com/kaoyeoshiro/painel_pj.git
-cd painel_pj
-```
-
-### 2. Criar ambiente virtual
-
-```bash
+# 1. Criar ambiente virtual e instalar dependencias
 python -m venv .venv
 .venv\Scripts\activate  # Windows
-# ou
-source .venv/bin/activate  # Linux/Mac
-```
-
-### 3. Instalar dependências Python
-
-```bash
 pip install -r requirements.txt
+
+# 2. Configurar ambiente
+copy .env.example .env
+# Edite .env com suas credenciais
+
+# 3. Subir o servidor
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+
+# Ou no Windows:
+run.bat
 ```
 
-### 4. Configurar variáveis de ambiente
+**Acessar:**
+- Portal: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
-```bash
-cp .env.example .env
-# Edite o arquivo .env com suas configurações
-```
+## Documentacao
 
-### 5. Rodar o servidor
-
-```bash
-python main.py
-```
-
-ou
-
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-## Deploy no Railway
-
-### 1. Criar projeto no Railway
-
-1. Acesse [railway.app](https://railway.app)
-2. Crie um novo projeto
-3. Adicione um serviço PostgreSQL
-4. Conecte o repositório GitHub
-
-### 2. Configurar variáveis de ambiente
-
-No painel do Railway, configure as seguintes variáveis:
-
-```env
-# Banco de dados (Railway preenche automaticamente com PostgreSQL)
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-
-# Autenticação
-SECRET_KEY=sua-chave-secreta-muito-forte
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=sua-senha-admin
-
-# OpenRouter (IA)
-OPENROUTER_API_KEY=sua-api-key
-```
-
-### 3. Deploy
-
-O Railway detecta automaticamente o `railway.toml` e faz o deploy.
+| Documento | Descricao |
+|-----------|-----------|
+| [.claude/CLAUDE.md](.claude/CLAUDE.md) | **LEIA PRIMEIRO** - Regras operacionais |
+| [docs/](docs/) | Documentacao tecnica completa |
+| [docs/sistemas/](docs/sistemas/) | Documentacao por sistema |
 
 ## Estrutura do Projeto
 
 ```
 portal-pge/
-├── auth/                           # Autenticação JWT
-├── admin/                          # Administração de prompts e IA
-├── users/                          # CRUD de usuários
-├── database/                       # Banco de dados SQLAlchemy
-├── sistemas/
-│   ├── assistencia_judiciaria/     # Sistema 1
-│   └── matriculas_confrontantes/   # Sistema 2
-├── frontend/                       # Templates HTML
-├── logo/                           # Logotipos
-├── main.py                         # Aplicação FastAPI
-├── config.py                       # Configurações
-├── railway.toml                    # Configuração Railway
-└── requirements.txt                # Dependências Python
+├── .claude/
+│   └── CLAUDE.md          # Regras operacionais (fonte unica de verdade)
+├── admin/                  # Painel administrativo
+├── auth/                   # Autenticacao JWT
+├── database/               # Conexao SQLAlchemy
+├── docs/                   # Documentacao tecnica
+│   ├── sistemas/           # Docs por sistema
+│   ├── operacoes/          # AUDIT.md, RUNBOOK.md
+│   └── decisions/          # ADRs
+├── frontend/               # Templates e assets
+├── middleware/             # Middlewares FastAPI
+├── migrations/             # Alembic migrations
+├── scripts/                # Scripts utilitarios
+├── services/               # Servicos compartilhados
+│   ├── tjms/               # Cliente TJ-MS unificado
+│   └── gemini_service.py   # Cliente Gemini
+├── sistemas/               # Modulos de negocio
+│   ├── gerador_pecas/
+│   ├── pedido_calculo/
+│   ├── prestacao_contas/
+│   ├── relatorio_cumprimento/
+│   ├── matriculas_confrontantes/
+│   ├── assistencia_judiciaria/
+│   ├── bert_training/
+│   └── classificador_documentos/
+├── tests/                  # Testes automatizados
+├── config.py               # Configuracoes globais
+├── main.py                 # Entry point FastAPI
+├── requirements.txt        # Dependencias Python
+└── run.bat                 # Script para rodar local (Windows)
 ```
 
-## Usuário Padrão
+## Sistemas Disponiveis
 
-- **Usuário**: admin
-- **Senha**: Definida em `ADMIN_PASSWORD` (deve ser alterada)
+| Sistema | URL | Descricao |
+|---------|-----|-----------|
+| Gerador de Pecas | `/gerador-pecas` | Geracao de pecas juridicas com IA |
+| Pedido de Calculo | `/pedido-calculo` | Calculo de valores de condenacao |
+| Prestacao de Contas | `/prestacao-contas` | Analise de prestacao de contas |
+| Relatorio de Cumprimento | `/relatorio-cumprimento` | Relatorios de cumprimento de sentenca |
+| Matriculas Confrontantes | `/matriculas` | Analise de matriculas imobiliarias |
+| Assistencia Judiciaria | `/assistencia-judiciaria` | Consulta de processos |
+| BERT Training | `/bert-training` | Treinamento de classificadores |
+| Classificador de Documentos | `/classificador` | Classificacao de PDFs com IA |
 
-## Tecnologias
+## Monitoramento e Observabilidade
 
-- **Backend**: FastAPI, SQLAlchemy, Pydantic
-- **Frontend**: HTML/CSS/JS (Tailwind CSS)
-- **Banco de Dados**: SQLite (desenvolvimento) / PostgreSQL (produção)
-- **Autenticação**: JWT
-- **IA**: OpenRouter API
+| Endpoint | Descricao |
+|----------|-----------|
+| `/health` | Health check basico |
+| `/health/detailed` | Health check com status de dependencias |
+| `/health/ready` | Readiness probe (Kubernetes) |
+| `/health/live` | Liveness probe (Kubernetes) |
+| `/metrics` | Metricas formato Prometheus |
+| `/admin/dashboard` | Dashboard visual de metricas (requer auth) |
 
-## Licença
+## Stack Tecnologico
 
-Uso interno - Procuradoria-Geral do Estado de Mato Grosso do Sul
+| Componente | Tecnologia |
+|------------|------------|
+| Backend | FastAPI + Uvicorn |
+| Banco de Dados | PostgreSQL (prod) / SQLite (dev) |
+| ORM | SQLAlchemy 2.0 |
+| IA | Google Gemini API |
+| Frontend | Vanilla JS + TailwindCSS |
+| Deploy | Railway |
+
+## Variaveis de Ambiente
+
+```env
+# Obrigatorias
+DATABASE_URL=postgresql://user:pass@host:5432/db
+SECRET_KEY=chave-secreta-jwt
+GEMINI_KEY=sua-api-key
+
+# TJ-MS
+TJ_WS_USER=usuario
+TJ_WS_PASS=senha
+TJMS_PROXY_URL=https://proxy.exemplo.com
+
+# Admin inicial
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=senha
+```
+
+## Testes
+
+```bash
+# Todos os testes
+pytest
+
+# Com cobertura
+pytest --cov=. --cov-report=html
+
+# Testes especificos
+pytest tests/test_gerador_pecas.py -v
+
+# Testes E2E (fluxos criticos)
+pytest tests/e2e/ -v
+
+# Testes de servicos (TJ-MS, Gemini)
+pytest tests/services/ -v
+```
+
+### Load Testing (k6)
+
+```bash
+# Instalar k6: https://k6.io/docs/getting-started/installation/
+
+# Teste basico (10 VUs, 30s)
+k6 run tests/load/k6_load_test.js
+
+# Contra servidor local
+k6 run -e BASE_URL=http://localhost:8000 tests/load/k6_load_test.js
+
+# Com mais carga
+k6 run --vus 50 --duration 2m tests/load/k6_load_test.js
+```
+
+## Contato
+
+- **Equipe**: LAB/PGE-MS
+- **Issues**: GitHub Issues

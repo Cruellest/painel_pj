@@ -25,7 +25,9 @@ from .models import (
 )
 from .xml_parser import XMLParser
 from .agentes import Agente1AnaliseXML, Agente2ExtracaoPDFs, Agente3GeracaoPedido
-from .document_downloader import DocumentDownloader
+
+# Cliente TJMS unificado (adaptador compativel)
+from services.tjms import DocumentDownloader
 
 
 def _calcular_dias_uteis(data_inicial: date, dias: int) -> date:

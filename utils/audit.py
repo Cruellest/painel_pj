@@ -26,9 +26,14 @@ from enum import Enum
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-# Configura logger dedicado para auditoria
-audit_logger = logging.getLogger("security.audit")
-audit_logger.setLevel(logging.INFO)
+# Tenta usar logging estruturado se disponível
+try:
+    from utils.logging_config import get_logger, STRUCTLOG_AVAILABLE
+    audit_logger = get_logger("security.audit")
+except ImportError:
+    STRUCTLOG_AVAILABLE = False
+    audit_logger = logging.getLogger("security.audit")
+    audit_logger.setLevel(logging.INFO)
 
 # Handler para arquivo de auditoria (em produção, usar sistema centralizado)
 import os
@@ -175,6 +180,18 @@ def log_audit_event(
             details={"method": "password"}
         )
     """
+    # Obtém request_id para rastreamento
+    request_id = None
+    try:
+        from middleware.request_id import get_request_id
+        request_id = get_request_id()
+    except ImportError:
+        pass
+
+    # Fallback: tenta obter do request.state
+    if not request_id and request:
+        request_id = getattr(request.state, 'request_id', None)
+
     # Constrói registro de auditoria
     audit_record = {
         "event": event.value,
@@ -186,6 +203,7 @@ def log_audit_event(
         "user_agent": request.headers.get("User-Agent", "unknown") if request else "unknown",
         "path": str(request.url.path) if request else "unknown",
         "method": request.method if request else "unknown",
+        "request_id": request_id,
     }
 
     # Adiciona detalhes (mascarando dados sensíveis)
@@ -320,3 +338,186 @@ def log_rate_limit_exceeded(request: Request, limit_type: str):
         success=False,
         severity="WARNING"
     )
+
+
+def log_idor_attempt(
+    user_id: int,
+    username: str,
+    request: Request,
+    resource_type: str,
+    resource_id: Any,
+    owner_id: Optional[int] = None
+):
+    """
+    SECURITY: Registra tentativa de IDOR (Insecure Direct Object Reference).
+
+    Chamado quando um usuário tenta acessar recurso de outro usuário.
+
+    Args:
+        user_id: ID do usuário que tentou acessar
+        username: Username do usuário
+        request: Request do FastAPI
+        resource_type: Tipo do recurso (ex: "documento", "processo")
+        resource_id: ID do recurso tentado
+        owner_id: ID do dono real do recurso (se conhecido)
+    """
+    log_audit_event(
+        AuditEvent.IDOR_ATTEMPT,
+        user_id=user_id,
+        username=username,
+        request=request,
+        details={
+            "resource_type": resource_type,
+            "resource_id": str(resource_id),
+            "owner_id": owner_id
+        },
+        success=False,
+        severity="CRITICAL"
+    )
+
+
+def log_data_access(
+    user_id: int,
+    username: str,
+    request: Request,
+    data_type: str,
+    record_count: int = 1,
+    query_params: Optional[Dict[str, Any]] = None
+):
+    """
+    Registra acesso a dados sensíveis para compliance.
+
+    Args:
+        user_id: ID do usuário
+        username: Username
+        request: Request do FastAPI
+        data_type: Tipo de dado acessado (ex: "processos", "usuarios")
+        record_count: Quantidade de registros acessados
+        query_params: Parâmetros de filtro usados (opcional)
+    """
+    log_audit_event(
+        AuditEvent.DATA_ACCESS,
+        user_id=user_id,
+        username=username,
+        request=request,
+        details={
+            "data_type": data_type,
+            "record_count": record_count,
+            "query_params": mask_sensitive_data(query_params) if query_params else None
+        }
+    )
+
+
+def log_data_export(
+    user_id: int,
+    username: str,
+    request: Request,
+    export_type: str,
+    record_count: int,
+    format: str = "unknown"
+):
+    """
+    Registra exportação de dados para compliance.
+
+    Args:
+        user_id: ID do usuário
+        username: Username
+        request: Request do FastAPI
+        export_type: Tipo de dados exportados
+        record_count: Quantidade de registros
+        format: Formato da exportação (csv, xlsx, pdf, etc.)
+    """
+    log_audit_event(
+        AuditEvent.DATA_EXPORT,
+        user_id=user_id,
+        username=username,
+        request=request,
+        details={
+            "export_type": export_type,
+            "record_count": record_count,
+            "format": format
+        },
+        severity="INFO"
+    )
+
+
+def log_suspicious_activity(
+    request: Request,
+    activity_type: str,
+    details: Dict[str, Any],
+    user_id: Optional[int] = None,
+    username: Optional[str] = None
+):
+    """
+    Registra atividade suspeita detectada.
+
+    Args:
+        request: Request do FastAPI
+        activity_type: Tipo de atividade (ex: "sql_injection_attempt", "xss_attempt")
+        details: Detalhes da atividade
+        user_id: ID do usuário (se autenticado)
+        username: Username (se autenticado)
+    """
+    log_audit_event(
+        AuditEvent.SUSPICIOUS_ACTIVITY,
+        user_id=user_id,
+        username=username,
+        request=request,
+        details={"activity_type": activity_type, **details},
+        success=False,
+        severity="CRITICAL"
+    )
+
+
+# ============================================
+# Funções de consulta de logs
+# ============================================
+
+def get_audit_log_path() -> str:
+    """Retorna o caminho do arquivo de audit log."""
+    return os.path.join(LOG_DIR, "audit.log")
+
+
+def get_recent_security_events(limit: int = 100) -> list:
+    """
+    Retorna eventos de segurança recentes do log.
+
+    NOTA: Esta função lê o arquivo de log diretamente.
+    Em produção, use um sistema centralizado de logs.
+
+    Args:
+        limit: Número máximo de eventos a retornar
+
+    Returns:
+        Lista de eventos (mais recentes primeiro)
+    """
+    events = []
+    log_path = get_audit_log_path()
+
+    if not os.path.exists(log_path):
+        return events
+
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        # Processa linhas do final para o início
+        for line in reversed(lines[-limit * 2:]):  # Lê 2x para garantir
+            if len(events) >= limit:
+                break
+
+            try:
+                # Formato: timestamp | level | json
+                parts = line.strip().split(" | ", 2)
+                if len(parts) >= 3:
+                    event_data = json.loads(parts[2])
+                    event_data["_log_timestamp"] = parts[0]
+                    event_data["_log_level"] = parts[1]
+                    events.append(event_data)
+            except (json.JSONDecodeError, IndexError):
+                continue
+
+    except Exception as e:
+        audit_logger.error(f"Erro ao ler audit log: {e}")
+
+    return events

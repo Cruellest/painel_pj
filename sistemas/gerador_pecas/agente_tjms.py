@@ -36,6 +36,9 @@ load_dotenv()
 # Serviço centralizado de normalização de texto
 from services.text_normalizer import text_normalizer
 
+# Cache de resumos JSON
+from utils.cache import get_cached_resumo, set_cached_resumo
+
 
 def _normalizar_texto_pdf(texto: str) -> str:
     """
@@ -48,17 +51,20 @@ def _normalizar_texto_pdf(texto: str) -> str:
 
 
 # =========================
-# Configurações
+# Configurações (via services/tjms unificado)
 # =========================
-URL_WSDL = os.getenv('URL_WSDL') or os.getenv('TJ_WSDL_URL') or os.getenv('TJ_URL_WSDL')
-WS_USER = os.getenv('WS_USER') or os.getenv('TJ_WS_USER')
-WS_PASS = os.getenv('WS_PASS') or os.getenv('TJ_WS_PASS')
+from services.tjms import get_config as _get_tjms_config
+
+_tjms_config = _get_tjms_config()
+URL_WSDL = _tjms_config.soap_url
+WS_USER = _tjms_config.soap_user
+WS_PASS = _tjms_config.soap_pass
 
 # Validação das configurações
 if not URL_WSDL:
-    print("[WARN] URL_WSDL não configurada - defina TJ_WSDL_URL no .env")
+    print("[WARN] URL_WSDL não configurada - verifique services/tjms/config.py")
 if not WS_USER or not WS_PASS:
-    print("[WARN] Credenciais TJ-MS não configuradas - defina TJ_WS_USER e TJ_WS_PASS no .env")
+    print("[WARN] Credenciais TJ-MS não configuradas - verifique services/tjms/config.py")
 
 # Modelo padrão (sem prefixo google/)
 MODELO_PADRAO = "gemini-3-flash-preview"
@@ -1352,6 +1358,57 @@ RESUMOS DOS DOCUMENTOS PARA ANÁLISE:
         gerenciador = self._obter_gerenciador_json()
         return gerenciador is not None and gerenciador.tem_formatos_configurados()
 
+    def _obter_categoria_id(self, doc) -> Optional[int]:
+        """Obtém o ID da categoria para o documento (para cache)."""
+        if not self._deve_usar_json():
+            return None
+        gerenciador = self._obter_gerenciador_json()
+        if not gerenciador:
+            return None
+        codigo = int(doc.tipo_documento) if doc.tipo_documento else 0
+        formato = gerenciador.obter_formato(codigo, doc_id=doc.id)
+        return formato.categoria_id if formato else None
+
+    def _verificar_cache_resumo(self, doc, texto: str) -> Optional[Dict[str, Any]]:
+        """
+        Verifica se existe resumo em cache para o documento.
+
+        Args:
+            doc: Documento sendo processado
+            texto: Texto extraído do documento
+
+        Returns:
+            Dicionário JSON do resumo cacheado ou None se não encontrado
+        """
+        categoria_id = self._obter_categoria_id(doc)
+        if categoria_id is None:
+            return None
+
+        numero_processo = getattr(doc, 'numero_processo', None)
+        cached = get_cached_resumo(texto, categoria_id, numero_processo)
+
+        if cached:
+            print(f"[CACHE HIT] Resumo encontrado em cache para doc '{doc.descricao or doc.id}'")
+            return cached
+
+        return None
+
+    def _salvar_cache_resumo(self, doc, texto: str, resumo_json: Dict[str, Any]) -> None:
+        """
+        Salva resumo no cache.
+
+        Args:
+            doc: Documento processado
+            texto: Texto extraído do documento
+            resumo_json: Dicionário JSON do resumo extraído
+        """
+        categoria_id = self._obter_categoria_id(doc)
+        if categoria_id is None:
+            return
+
+        numero_processo = getattr(doc, 'numero_processo', None)
+        set_cached_resumo(texto, categoria_id, resumo_json, numero_processo)
+
     async def analisar_processo(
         self,
         numero_processo: str,
@@ -1908,6 +1965,17 @@ REGRAS IMPORTANTES:
                     # Truncar se muito grande
                     texto = texto_completo[:80000]  # Mais espaço para docs agrupados
 
+                    # CACHE: Verifica se já temos resumo em cache
+                    cached_resumo = self._verificar_cache_resumo(doc, texto)
+                    if cached_resumo:
+                        # Usa resumo do cache
+                        doc.resumo = json.dumps(cached_resumo, ensure_ascii=False)
+                        doc.resumo_json = cached_resumo
+                        from sistemas.gerador_pecas.extrator_resumo_json import verificar_irrelevante_json
+                        is_irrelevante, _ = verificar_irrelevante_json(cached_resumo)
+                        doc.irrelevante = is_irrelevante
+                        return
+
                     # Gerar resumo via LLM - usa JSON ou MD conforme configurado
                     prompt_json = self._obter_prompt_json(doc)
                     if prompt_json:
@@ -1924,6 +1992,10 @@ REGRAS IMPORTANTES:
                     # Passa flag indicando se prompt era JSON (corrige bug de inconsistência)
                     sucesso = self._processar_resposta_resumo(doc, resposta, usar_json=bool(prompt_json))
 
+                    # CACHE: Salva resumo no cache se for JSON válido
+                    if sucesso and prompt_json and hasattr(doc, 'resumo_json') and doc.resumo_json:
+                        self._salvar_cache_resumo(doc, texto, doc.resumo_json)
+
                     # RETRY: Se JSON falhou, tenta novamente com prompt de correção
                     if not sucesso and prompt_json:
                         print(f"[JSON_RETRY] 🔄 Tentando novamente para doc '{doc.descricao or doc.id}'...")
@@ -1936,6 +2008,9 @@ REGRAS IMPORTANTES:
                         sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry, usar_json=True)
                         if sucesso_retry:
                             print(f"[JSON_RETRY] ✅ Retry bem-sucedido para doc '{doc.descricao or doc.id}'")
+                            # CACHE: Salva resumo do retry no cache
+                            if hasattr(doc, 'resumo_json') and doc.resumo_json:
+                                self._salvar_cache_resumo(doc, texto, doc.resumo_json)
                         else:
                             print(f"[JSON_RETRY] ❌ Retry falhou para doc '{doc.descricao or doc.id}' - usando fallback texto")
 
@@ -2001,6 +2076,17 @@ REGRAS IMPORTANTES:
 
                     texto = doc.texto_extraido[:50000]
 
+                    # CACHE: Verifica se já temos resumo em cache
+                    cached_resumo = self._verificar_cache_resumo(doc, texto)
+                    if cached_resumo:
+                        # Usa resumo do cache
+                        doc.resumo = json.dumps(cached_resumo, ensure_ascii=False)
+                        doc.resumo_json = cached_resumo
+                        from sistemas.gerador_pecas.extrator_resumo_json import verificar_irrelevante_json
+                        is_irrelevante, _ = verificar_irrelevante_json(cached_resumo)
+                        doc.irrelevante = is_irrelevante
+                        return
+
                     # Gerar resumo via LLM - usa JSON ou MD conforme configurado
                     prompt_json = self._obter_prompt_json(doc)
                     if prompt_json:
@@ -2017,6 +2103,10 @@ REGRAS IMPORTANTES:
                     # Passa flag indicando se prompt era JSON
                     sucesso = self._processar_resposta_resumo(doc, resposta, usar_json=bool(prompt_json))
 
+                    # CACHE: Salva resumo no cache se for JSON válido
+                    if sucesso and prompt_json and hasattr(doc, 'resumo_json') and doc.resumo_json:
+                        self._salvar_cache_resumo(doc, texto, doc.resumo_json)
+
                     # RETRY: Se JSON falhou, tenta novamente
                     if not sucesso and prompt_json:
                         print(f"[JSON_RETRY] 🔄 Tentando novamente para doc único '{doc.descricao or doc.id}'...")
@@ -2029,6 +2119,9 @@ REGRAS IMPORTANTES:
                         sucesso_retry = self._processar_resposta_resumo(doc, resposta_retry, usar_json=True)
                         if sucesso_retry:
                             print(f"[JSON_RETRY] ✅ Retry bem-sucedido para doc único '{doc.descricao or doc.id}'")
+                            # CACHE: Salva resumo do retry no cache
+                            if hasattr(doc, 'resumo_json') and doc.resumo_json:
+                                self._salvar_cache_resumo(doc, texto, doc.resumo_json)
                         else:
                             print(f"[JSON_RETRY] ❌ Retry falhou para doc único '{doc.descricao or doc.id}'")
                 else:

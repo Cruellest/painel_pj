@@ -1,0 +1,66 @@
+Migrations do Portal PGE-MS
+===========================
+
+Este diretorio contem as migrations do banco de dados gerenciadas pelo Alembic.
+
+Comandos Basicos
+----------------
+
+# Ver versao atual do banco
+alembic current
+
+# Ver historico de migrations
+alembic history
+
+# Aplicar todas as migrations pendentes
+alembic upgrade head
+
+# Criar nova migration (autogenerate detecta mudancas nos models)
+alembic revision --autogenerate -m "descricao da mudanca"
+
+# Rollback da ultima migration
+alembic downgrade -1
+
+# Rollback para versao especifica
+alembic downgrade <revision_id>
+
+# Gerar SQL sem aplicar (para revisao)
+alembic upgrade head --sql > migration.sql
+
+
+Fluxo de Trabalho
+-----------------
+
+1. Modifique os models SQLAlchemy no codigo
+2. Execute: alembic revision --autogenerate -m "descricao"
+3. Revise o arquivo gerado em migrations/versions/
+4. Aplique: alembic upgrade head
+5. Commit dos arquivos de migration junto com o codigo
+
+
+Ambientes
+---------
+
+As migrations usam DATABASE_URL do .env para conectar.
+Para diferentes ambientes, ajuste o .env ou use variaveis de ambiente.
+
+
+Tabelas Ignoradas
+-----------------
+
+O autogenerate pode nao detectar certas mudancas:
+- Renomeacao de colunas (detecta como drop + add)
+- Mudancas em tipos complexos
+- Mudancas em constraints com nomes especificos
+
+Sempre revise as migrations geradas antes de aplicar em producao.
+
+
+Estrutura
+---------
+
+migrations/
+  env.py          - Configuracao do ambiente
+  script.py.mako  - Template para novas migrations
+  versions/       - Arquivos de migration
+  README          - Este arquivo

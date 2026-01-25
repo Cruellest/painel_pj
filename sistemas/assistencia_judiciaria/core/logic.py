@@ -1,14 +1,21 @@
 # sistemas/assistencia_judiciaria/core/logic.py
+"""
+Logica de negocio do sistema Assistencia Judiciaria.
+
+MIGRADO para usar services.tjms unificado em 2026-01-24.
+"""
 import os
 import re
 import json
 import html
 import logging
-import requests
+import asyncio
 from datetime import datetime
 from typing import Tuple, List, Dict, Any
-from requests.adapters import HTTPAdapter, Retry
 import xml.etree.ElementTree as ET
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from utils.security import safe_parse_xml
 from config import (
@@ -19,6 +26,9 @@ from database.connection import SessionLocal
 from admin.models import PromptConfig, ConfiguracaoIA
 from sqlalchemy.orm import Session
 from services.ia_params_resolver import get_ia_params
+
+# Cliente TJMS unificado
+from services.tjms import TJMSClient, ConsultaOptions, TipoConsulta
 
 logger = logging.getLogger("sistemas.assistencia_judiciaria.core.logic")
 
@@ -407,24 +417,54 @@ def call_openrouter(messages: list, model: str = DEFAULT_MODEL, temperature=0.2,
     """Alias para call_gemini (compatibilidade)"""
     return call_gemini(messages, model, temperature, max_tokens, timeout)
 
-def full_flow(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[str, Any], str]:
+async def consultar_processo_tjms_unificado(numero_processo: str) -> str:
+    """
+    Consulta processo usando o cliente TJMS unificado.
+
+    Args:
+        numero_processo: Numero CNJ (apenas digitos)
+
+    Returns:
+        XML da resposta do TJ-MS
+    """
+    logger.info(f"Consultando processo {numero_processo} via TJMSClient unificado...")
+
+    async with TJMSClient() as client:
+        # Assistencia Judiciaria so precisa de movimentos, nao de documentos
+        options = ConsultaOptions(
+            tipo=TipoConsulta.MOVIMENTOS_ONLY,
+            incluir_movimentos=True,
+            incluir_documentos=False,
+            timeout=90.0
+        )
+
+        processo = await client.consultar_processo(numero_processo, options)
+
+        # Retorna o XML raw para manter compatibilidade com parse_xml_processo
+        return processo.xml_raw
+
+
+async def full_flow_async(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[str, Any], str]:
+    """
+    Fluxo completo assincrono - usa TJMSClient unificado.
+    """
     ok_config, msg_config = validate_config()
     if not ok_config:
-        raise RuntimeError(f"Falha na configuração: {msg_config}")
+        raise RuntimeError(f"Falha na configuracao: {msg_config}")
 
     ok_cnj, d, msg_cnj = validate_cnj(numero_raw)
     if not ok_cnj:
-        raise ValueError(f"CNJ inválido: {msg_cnj}")
+        raise ValueError(f"CNJ invalido: {msg_cnj}")
     cnj_fmt = format_cnj(d)
 
-    session = make_session()
-    xml_text = soap_consultar_processo(session, d, timeout=90, movimentos=True, incluir_docs=False)
-    
+    # Usa cliente TJMS unificado
+    xml_text = await consultar_processo_tjms_unificado(d)
+
     dados = parse_xml_processo(xml_text)
-    
+
     db = SessionLocal()
     try:
-        # Usa resolver de parâmetros por agente
+        # Usa resolver de parametros por agente
         try:
             params = get_ia_params(db, "assistencia_judiciaria", "relatorio")
             model = params.modelo
@@ -438,7 +478,7 @@ def full_flow(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[
 
         if diagnostic_mode:
             messages = [
-                {"role": "system", "content": "Você é um analisador de sanidade. Responda sucintamente."},
+                {"role": "system", "content": "Voce e um analisador de sanidade. Responda sucintamente."},
                 {"role": "user", "content": f"Teste: recebi JSON com AT={len(dados['partes']['AT'])}"}
             ]
         else:
@@ -446,9 +486,26 @@ def full_flow(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[
     finally:
         db.close()
 
-    rel = call_openrouter(messages, model=model, temperature=temperature, max_tokens=max_tokens)
-    
+    rel = await call_gemini_async(messages, model=model, temperature=temperature, max_tokens=max_tokens)
+
     if dados.get("cumprimento") and dados.get("possivel_apenso"):
-        rel += "\n\nAviso: Processo de cumprimento possivelmente apensado. Talvez seja necessário consultar o processo originário para confirmar a AJG."
-        
+        rel += "\n\nAviso: Processo de cumprimento possivelmente apensado. Talvez seja necessario consultar o processo originario para confirmar a AJG."
+
     return dados, rel
+
+
+def full_flow(numero_raw: str, model: str, diagnostic_mode=False) -> Tuple[Dict[str, Any], str]:
+    """
+    Fluxo completo sincrono - wrapper para full_flow_async.
+
+    Mantido para compatibilidade com codigo existente.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        # Estamos em contexto assincrono
+        import nest_asyncio
+        nest_asyncio.apply()
+        return loop.run_until_complete(full_flow_async(numero_raw, model, diagnostic_mode))
+    except RuntimeError:
+        # Nao ha loop rodando - criar um novo
+        return asyncio.run(full_flow_async(numero_raw, model, diagnostic_mode))

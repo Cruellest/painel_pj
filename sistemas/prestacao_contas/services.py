@@ -45,8 +45,8 @@ from sistemas.prestacao_contas.identificador_peticoes import (
 from sistemas.prestacao_contas.agente_analise import AgenteAnalise, DadosAnalise, ResultadoAnalise
 from sistemas.prestacao_contas.ia_logger import IALogger, create_logger
 
-# Importa funções do pedido_calculo para reutilizar download de documentos
-from sistemas.pedido_calculo.document_downloader import (
+# Cliente TJMS unificado (funcoes de compatibilidade)
+from services.tjms import (
     consultar_processo_async,
     baixar_documentos_async,
     extrair_texto_pdf,

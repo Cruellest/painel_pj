@@ -258,6 +258,10 @@ class PromptClassificacao(Base):
     # Conteúdo
     conteudo = Column(Text, nullable=False)
 
+    # Códigos de tipos de documento do TJ-MS que este prompt classifica
+    # Armazenado como string separada por vírgula: "8,15,34,500"
+    codigos_documento = Column(String(500), nullable=True)
+
     # Metadados
     ativo = Column(Boolean, default=True)
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
