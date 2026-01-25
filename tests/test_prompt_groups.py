@@ -110,7 +110,8 @@ class PromptGroupTests(unittest.TestCase):
             subgroup_id=sub_b.id,
         )
         modulo_b.subcategorias.append(subcat_b)
-        self._create_modulo(
+        # Módulo C não tem subcategoria - será tratado como "universal"
+        modulo_c = self._create_modulo(
             nome="mod_c",
             titulo="Modulo C",
             ordem=3,
@@ -134,7 +135,8 @@ class PromptGroupTests(unittest.TestCase):
         modulos = service._carregar_modulos_conteudo()
         modulos_ids = [modulo.id for modulo in modulos]
 
-        self.assertEqual(modulos_ids, [modulo_a.id])
+        # Módulos retornados: A (tem subcategoria A) e C (sem subcategoria = universal)
+        self.assertEqual(modulos_ids, [modulo_a.id, modulo_c.id])
 
     def test_seed_prompt_groups_define_ps_default(self):
         user = self._create_user("usuario_seed")

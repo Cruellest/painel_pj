@@ -14,6 +14,15 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 
+def _can_import_torch() -> bool:
+    """Verifica se PyTorch está disponível."""
+    try:
+        import torch
+        return True
+    except ImportError:
+        return False
+
+
 # ==================== Testes de Validação de Excel ====================
 
 class TestExcelValidation:

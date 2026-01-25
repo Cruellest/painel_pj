@@ -27,13 +27,12 @@ from admin.models import ConfiguracaoIA
 from admin.models_prompts import PromptModulo
 from services.ia_params_resolver import get_ia_params, IAParams
 
-
-# Modelos padrão (usados se não houver configuração no banco)
-MODELO_AGENTE1_PADRAO = "gemini-3-flash-preview"
-
-# Timeouts em segundos
-TIMEOUT_AG2_DETECCAO = 60  # Timeout para detecção de módulos (AG2)
-TIMEOUT_AG2_FAST_PATH = 30  # Timeout mais curto para fast path (sem LLM)
+# Constantes centralizadas
+from sistemas.gerador_pecas.constants import (
+    MODELO_AGENTE1_PADRAO,
+    TIMEOUT_AG2_DETECCAO,
+    TIMEOUT_AG2_FAST_PATH,
+)
 
 
 def _extrair_json_de_resumo_consolidado(resumo_consolidado: str) -> Dict[str, Any]:

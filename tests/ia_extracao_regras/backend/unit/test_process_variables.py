@@ -19,7 +19,7 @@ from typing import List, Optional
 from sistemas.gerador_pecas.services_process_variables import (
     ProcessVariableDefinition,
     ProcessVariableResolver,
-    _resolver_ajuizado_apos_tema_106,
+    _resolver_ajuizado_apos_2024_09_19,
     _resolver_valor_causa_numerico,
     _resolver_estado_polo_passivo,
     _resolver_autor_com_assistencia_judiciaria,
@@ -62,7 +62,7 @@ class TestProcessoAjuizadoAposTema106(unittest.TestCase):
             numero_processo="0001234-56.2024.8.12.0001",
             data_ajuizamento=None
         )
-        resultado = _resolver_ajuizado_apos_tema_106(dados)
+        resultado = _resolver_ajuizado_apos_2024_09_19(dados)
         self.assertIsNone(resultado)
 
     def test_data_antes_corte_retorna_false(self):
@@ -71,7 +71,7 @@ class TestProcessoAjuizadoAposTema106(unittest.TestCase):
             numero_processo="0001234-56.2024.8.12.0001",
             data_ajuizamento=datetime(2024, 4, 18, 10, 30, 0)
         )
-        resultado = _resolver_ajuizado_apos_tema_106(dados)
+        resultado = _resolver_ajuizado_apos_2024_09_19(dados)
         self.assertFalse(resultado)
 
     def test_data_exata_corte_retorna_false(self):
@@ -80,7 +80,7 @@ class TestProcessoAjuizadoAposTema106(unittest.TestCase):
             numero_processo="0001234-56.2024.8.12.0001",
             data_ajuizamento=datetime(2024, 4, 19, 10, 30, 0)
         )
-        resultado = _resolver_ajuizado_apos_tema_106(dados)
+        resultado = _resolver_ajuizado_apos_2024_09_19(dados)
         self.assertFalse(resultado)
 
     def test_data_apos_corte_retorna_true(self):
@@ -89,7 +89,7 @@ class TestProcessoAjuizadoAposTema106(unittest.TestCase):
             numero_processo="0001234-56.2024.8.12.0001",
             data_ajuizamento=datetime(2024, 4, 20, 10, 30, 0)
         )
-        resultado = _resolver_ajuizado_apos_tema_106(dados)
+        resultado = _resolver_ajuizado_apos_2024_09_19(dados)
         self.assertTrue(resultado)
 
     def test_data_muito_depois_corte_retorna_true(self):
@@ -98,7 +98,7 @@ class TestProcessoAjuizadoAposTema106(unittest.TestCase):
             numero_processo="0001234-56.2025.8.12.0001",
             data_ajuizamento=datetime(2025, 1, 15, 10, 30, 0)
         )
-        resultado = _resolver_ajuizado_apos_tema_106(dados)
+        resultado = _resolver_ajuizado_apos_2024_09_19(dados)
         self.assertTrue(resultado)
 
     def test_data_muito_antes_corte_retorna_false(self):
@@ -107,7 +107,7 @@ class TestProcessoAjuizadoAposTema106(unittest.TestCase):
             numero_processo="0001234-56.2023.8.12.0001",
             data_ajuizamento=datetime(2023, 12, 31, 23, 59, 59)
         )
-        resultado = _resolver_ajuizado_apos_tema_106(dados)
+        resultado = _resolver_ajuizado_apos_2024_09_19(dados)
         self.assertFalse(resultado)
 
 

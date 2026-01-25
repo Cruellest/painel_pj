@@ -27,6 +27,12 @@ from sistemas.gerador_pecas.services_deterministic import (
     batch_verificar_regras_especificas
 )
 from sistemas.gerador_pecas.services_process_variables import ProcessVariableResolver
+from sistemas.gerador_pecas.constants import (
+    MODO_ATIVACAO_LLM,
+    MODO_ATIVACAO_DETERMINISTICO,
+    MODO_ATIVACAO_MISTO,
+    MODO_ATIVACAO_FAST_PATH,
+)
 
 # Logger estruturado para métricas de performance
 logger = logging.getLogger(__name__)

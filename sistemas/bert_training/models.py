@@ -260,7 +260,7 @@ class BertLog(Base):
     batch = Column(Integer, nullable=True)
 
     # Timestamp
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relacionamentos
     run = relationship("BertRun", back_populates="logs")

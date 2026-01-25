@@ -9,6 +9,7 @@ Este módulo cobre:
 - Avaliação de regras com variáveis do processo
 """
 
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
@@ -437,8 +438,6 @@ for cls in [TestFastPathDeterministico, TestModoMisto, TestIntegracaoVariaveisPr
             if asyncio.iscoroutinefunction(method):
                 setattr(cls, name, async_test(method))
 
-
-import asyncio
 
 if __name__ == "__main__":
     unittest.main()

@@ -289,4 +289,12 @@ curl -X POST http://localhost:8000/gerador-pecas/api/buscar-argumentos \
 | `sistemas/gerador_pecas/services_busca_argumentos.py` | Busca vetorial de argumentos |
 | `sistemas/gerador_pecas/document_classifier.py` | Classificador de PDFs anexados |
 | `sistemas/gerador_pecas/models.py` | Modelos SQLAlchemy |
+| `sistemas/gerador_pecas/constants.py` | Constantes centralizadas (timeouts, limites, mensagens) |
+| `sistemas/gerador_pecas/exceptions.py` | Excecoes customizadas do dominio |
 | `sistemas/gerador_pecas/templates/` | Frontend SPA |
+
+## Documentacao Complementar
+
+- **Onboarding para novos devs**: `docs/onboarding_gerador_pecas.md`
+- **Arquitetura geral**: `docs/arquitetura/ARQUITETURA_GERAL.md`
+- **Cliente TJ-MS unificado**: `services/tjms/`
