@@ -377,8 +377,27 @@ class ClassificadorService:
         self.db.commit()
 
         try:
-            # 1. Baixa documento do TJ-MS
-            if codigo.fonte == FonteDocumento.TJMS.value and codigo.numero_processo:
+            texto_documento = None
+            via_ocr = False
+
+            # 1. Obtém texto do documento baseado na fonte
+            if codigo.fonte == FonteDocumento.UPLOAD.value:
+                # Upload: usa texto já extraído no momento do upload
+                if codigo.texto_extraido and len(codigo.texto_extraido.strip()) >= 50:
+                    texto_documento = codigo.texto_extraido
+                    via_ocr = False  # Já foi extraído antes
+                else:
+                    resultado_db.status = StatusArquivo.ERRO.value
+                    resultado_db.erro_mensagem = "Texto do upload vazio ou muito curto"
+                    self.db.commit()
+                    return ResultadoClassificacaoDTO(
+                        codigo_documento=codigo.codigo,
+                        nome_arquivo=codigo.arquivo_nome,
+                        erro="Texto do upload vazio ou muito curto"
+                    )
+
+            elif codigo.fonte == FonteDocumento.TJMS.value and codigo.numero_processo:
+                # TJ-MS: baixa documento e extrai texto
                 doc = await self.tjms.baixar_documento(
                     codigo.numero_processo,
                     codigo.codigo
@@ -393,42 +412,44 @@ class ClassificadorService:
                         erro=doc.erro
                     )
 
-                pdf_bytes = doc.conteudo_bytes
+                # Extrai texto do PDF baixado
+                extraction = self.extractor.extrair_texto(doc.conteudo_bytes)
+
+                if not extraction.texto or len(extraction.texto.strip()) < 50:
+                    resultado_db.status = StatusArquivo.ERRO.value
+                    resultado_db.erro_mensagem = "Texto extraído vazio ou muito curto"
+                    self.db.commit()
+                    return ResultadoClassificacaoDTO(
+                        codigo_documento=codigo.codigo,
+                        numero_processo=codigo.numero_processo,
+                        erro="Texto extraído vazio"
+                    )
+
+                texto_documento = extraction.texto
+                via_ocr = extraction.via_ocr
+                resultado_db.tokens_extraidos = extraction.tokens_total
+
             else:
-                # Documento não é do TJ-MS ou não tem processo - erro
+                # Fonte desconhecida ou sem dados necessários
                 resultado_db.status = StatusArquivo.ERRO.value
-                resultado_db.erro_mensagem = "Documento sem processo associado"
+                resultado_db.erro_mensagem = "Documento sem fonte válida ou processo associado"
                 self.db.commit()
                 return ResultadoClassificacaoDTO(
                     codigo_documento=codigo.codigo,
-                    erro="Documento sem processo associado"
+                    erro="Documento sem fonte válida"
                 )
 
-            # 2. Extrai texto (com OCR fallback)
-            extraction = self.extractor.extrair_texto(pdf_bytes)
+            resultado_db.texto_extraido_via = "ocr" if via_ocr else "pdf"
 
-            if not extraction.texto or len(extraction.texto.strip()) < 50:
-                resultado_db.status = StatusArquivo.ERRO.value
-                resultado_db.erro_mensagem = "Texto extraído vazio ou muito curto"
-                self.db.commit()
-                return ResultadoClassificacaoDTO(
-                    codigo_documento=codigo.codigo,
-                    numero_processo=codigo.numero_processo,
-                    erro="Texto extraído vazio"
-                )
-
-            resultado_db.texto_extraido_via = "ocr" if extraction.via_ocr else "pdf"
-            resultado_db.tokens_extraidos = extraction.tokens_total
-
-            # 3. Extrai chunk para classificação
+            # 2. Extrai chunk para classificação
             if projeto.modo_processamento == "chunk":
                 chunk = self.extractor.extrair_chunk(
-                    extraction.texto,
+                    texto_documento,
                     projeto.tamanho_chunk,
                     projeto.posicao_chunk
                 )
             else:
-                chunk = extraction.texto
+                chunk = texto_documento
 
             resultado_db.chunk_usado = chunk[:5000]  # Limita para auditoria
 
@@ -458,6 +479,9 @@ class ClassificadorService:
             )
             self.db.add(log_ia)
 
+            # Estima tokens (aproximadamente 4 chars por token)
+            tokens_estimados = resultado_db.tokens_extraidos or len(texto_documento) // 4
+
             if not openrouter_result.sucesso:
                 resultado_db.status = StatusArquivo.ERRO.value
                 resultado_db.erro_mensagem = openrouter_result.erro
@@ -465,12 +489,13 @@ class ClassificadorService:
                 return ResultadoClassificacaoDTO(
                     codigo_documento=codigo.codigo,
                     numero_processo=codigo.numero_processo,
+                    nome_arquivo=codigo.arquivo_nome,
                     erro=openrouter_result.erro,
-                    texto_via="ocr" if extraction.via_ocr else "pdf",
-                    tokens_usados=extraction.tokens_total
+                    texto_via="ocr" if via_ocr else "pdf",
+                    tokens_usados=tokens_estimados
                 )
 
-            # 5. Salva resultado
+            # 3. Salva resultado
             resultado = openrouter_result.resultado
             resultado_db.categoria = resultado.get("categoria")
             resultado_db.subcategoria = resultado.get("subcategoria")
@@ -485,13 +510,14 @@ class ClassificadorService:
             return ResultadoClassificacaoDTO(
                 codigo_documento=codigo.codigo,
                 numero_processo=codigo.numero_processo,
+                nome_arquivo=codigo.arquivo_nome,
                 categoria=resultado.get("categoria"),
                 subcategoria=resultado.get("subcategoria"),
                 confianca=resultado.get("confianca"),
                 justificativa=resultado.get("justificativa_breve"),
                 sucesso=True,
-                texto_via="ocr" if extraction.via_ocr else "pdf",
-                tokens_usados=extraction.tokens_total,
+                texto_via="ocr" if via_ocr else "pdf",
+                tokens_usados=tokens_estimados,
                 chunk_usado=chunk[:500],
                 resultado_completo=resultado
             )
