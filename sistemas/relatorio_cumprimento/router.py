@@ -223,6 +223,19 @@ async def processar_stream(
                 yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro ao baixar documentos: {erro}'})}\n\n"
                 return
 
+            # Validação crítica: sem documentos não é possível gerar relatório
+            if not documentos:
+                msg_erro = (
+                    "Nenhum documento encontrado para download. "
+                    "Verifique se o processo possui sentenças, acórdãos ou decisões vinculadas. "
+                    f"Processo de cumprimento: {numero_cnj}"
+                )
+                if numero_principal:
+                    msg_erro += f" | Processo principal: {numero_principal}"
+                logger.error(f"{log_prefix} DOCUMENTOS_NAO_ENCONTRADOS | {msg_erro}")
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': msg_erro})}\n\n"
+                return
+
             # Estatísticas dos documentos
             qtd_peticao = len([d for d in documentos if d.categoria == CategoriaDocumento.PETICAO_INICIAL_CUMPRIMENTO])
             qtd_sentencas = len([d for d in documentos if d.categoria == CategoriaDocumento.SENTENCA])
