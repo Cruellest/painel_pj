@@ -941,6 +941,8 @@ async def admin_tjms_plano_page():
     if os.path.exists(plano_path):
         with open(plano_path, "r", encoding="utf-8") as f:
             content = f.read()
+        # Escapa backticks para uso em template literal JS
+        escaped_content = content.replace('`', '\\`')
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -957,7 +959,7 @@ async def admin_tjms_plano_page():
             <a href="/admin/tjms-docs" style="display:inline-block;margin-bottom:20px;color:#0969da;">← Voltar</a>
             <div id="content"></div>
             <script>
-                document.getElementById('content').innerHTML = marked.parse(`{content.replace('`', '\\`')}`);
+                document.getElementById('content').innerHTML = marked.parse(`{escaped_content}`);
             </script>
         </body>
         </html>
