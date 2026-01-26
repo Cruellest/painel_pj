@@ -144,12 +144,12 @@ async def check_gemini_api() -> ComponentHealth:
     try:
         from services.gemini_service import gemini_service, get_service_status
 
-        # Verifica configuração
+        # Verifica configuração (DEGRADED, não UNHEALTHY - sistema funciona sem Gemini)
         if not gemini_service.is_configured():
             return ComponentHealth(
                 name="gemini_api",
-                status=HealthStatus.UNHEALTHY,
-                message="GEMINI_KEY não configurada"
+                status=HealthStatus.DEGRADED,
+                message="GEMINI_KEY não configurada (funcionalidades de IA indisponíveis)"
             )
 
         # Obtém status detalhado
