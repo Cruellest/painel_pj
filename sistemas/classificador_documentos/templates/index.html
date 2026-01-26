@@ -649,7 +649,7 @@
     <div id="modalProjeto" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
         <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div class="p-6 border-b border-gray-200">
-                <h3 id="modalProjetoTitulo" class="text-lg font-semibold text-gray-900">Novo Projeto</h3>
+                <h3 id="modalProjetoTitulo" class="text-lg font-semibold text-gray-900">Novo Lote</h3>
             </div>
             <form id="formProjeto" class="p-6 space-y-4">
                 <input type="hidden" id="projetoId">
@@ -742,7 +742,7 @@
     <div id="modalDetalheProjeto" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
         <div class="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div class="p-6 border-b border-gray-200 flex justify-between items-center">
-                <h3 id="detalheTitulo" class="text-lg font-semibold text-gray-900">Projeto</h3>
+                <h3 id="detalheTitulo" class="text-lg font-semibold text-gray-900">Lote</h3>
                 <button onclick="hideModalDetalheProjeto()" class="text-gray-400 hover:text-gray-600">
                     <i class="fas fa-times text-xl"></i>
                 </button>
@@ -1049,7 +1049,7 @@
                 container.innerHTML = `
                     <div class="text-center py-12 text-red-500">
                         <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
-                        <p>Erro ao carregar projetos</p>
+                        <p>Erro ao carregar lotes</p>
                         <p class="text-sm mt-2">${SecurityUtils.escapeHtml(e.message)}</p>
                         <button onclick="carregarProjetos()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                             Tentar novamente
@@ -1065,8 +1065,8 @@
                 container.innerHTML = `
                     <div class="text-center py-12 text-gray-500">
                         <i class="fas fa-folder-open text-4xl mb-4"></i>
-                        <p>Nenhum projeto cadastrado</p>
-                        <p class="text-sm mt-2">Crie seu primeiro projeto para organizar suas classificacoes.</p>
+                        <p>Nenhum lote cadastrado</p>
+                        <p class="text-sm mt-2">Crie seu primeiro lote para organizar suas classificacoes.</p>
                     </div>
                 `;
                 return;
@@ -1097,7 +1097,7 @@
         }
 
         function showModalCriarProjeto() {
-            document.getElementById('modalProjetoTitulo').textContent = 'Novo Projeto';
+            document.getElementById('modalProjetoTitulo').textContent = 'Novo Lote';
             document.getElementById('projetoId').value = '';
             document.getElementById('projetoNome').value = '';
             document.getElementById('projetoDescricao').value = '';
@@ -1116,7 +1116,7 @@
         async function editarProjeto(id) {
             const projeto = projetos.find(p => p.id === id);
             if (!projeto) return;
-            document.getElementById('modalProjetoTitulo').textContent = 'Editar Projeto';
+            document.getElementById('modalProjetoTitulo').textContent = 'Editar Lote';
             document.getElementById('projetoId').value = projeto.id;
             document.getElementById('projetoNome').value = projeto.nome;
             document.getElementById('projetoDescricao').value = projeto.descricao || '';
@@ -1149,17 +1149,17 @@
                 hideModalProjeto();
                 carregarProjetos();
             } catch (e) {
-                alert('Erro ao salvar projeto');
+                alert('Erro ao salvar lote');
             }
         }
 
         async function deletarProjeto(id) {
-            if (!confirm('Deseja realmente excluir este projeto?')) return;
+            if (!confirm('Deseja realmente excluir este lote?')) return;
             try {
                 await fetchAPI(`/classificador/api/projetos/${id}`, { method: 'DELETE' });
                 carregarProjetos();
             } catch (e) {
-                alert('Erro ao excluir projeto');
+                alert('Erro ao excluir lote');
             }
         }
 
@@ -1171,7 +1171,7 @@
                 renderizarDetalheProjeto();
                 document.getElementById('modalDetalheProjeto').classList.remove('hidden');
             } catch (e) {
-                alert('Erro ao carregar projeto');
+                alert('Erro ao carregar lote');
             }
         }
 
@@ -2366,9 +2366,9 @@
         // ====================================
         // Event Listeners
         // ====================================
-        document.getElementById('formPrompt').addEventListener('submit', salvarPrompt);
-        document.getElementById('formProjeto').addEventListener('submit', salvarProjeto);
-        document.getElementById('formAvulso').addEventListener('submit', classificarAvulso);
+        document.getElementById('formPrompt')?.addEventListener('submit', salvarPrompt);
+        document.getElementById('formProjeto')?.addEventListener('submit', salvarProjeto);
+        document.getElementById('formAvulso')?.addEventListener('submit', classificarAvulso);
 
         // Novos event listeners para Novo Lote
         document.getElementById('promptLote')?.addEventListener('change', () => {
@@ -2450,17 +2450,75 @@
         // ====================================
         // Inicializacao
         // ====================================
-        document.addEventListener('DOMContentLoaded', async () => {
-            setupDropZone();
-            setupDropZoneLote();
-            setupFiltroAno();
-            popularTiposDocumentos();
-            await Promise.all([
-                verificarStatusAPI(),
-                carregarPrompts(),
-                carregarProjetos()
+
+        // Helper para adicionar timeout em promises
+        function withTimeout(promise, ms, errorMsg = 'Timeout') {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error(errorMsg)), ms)
+                )
             ]);
-            atualizarSelectsPromptLote();
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('[INIT] Iniciando classificador...');
+
+            // Setup das dropzones e filtros (com tratamento de erro)
+            try {
+                setupDropZone();
+                setupDropZoneLote();
+                setupFiltroAno();
+                popularTiposDocumentos();
+            } catch (e) {
+                console.error('[INIT] Erro no setup inicial:', e);
+            }
+
+            // Carregar dados da API com timeout de 15s
+            try {
+                await Promise.all([
+                    withTimeout(verificarStatusAPI(), 15000, 'Timeout ao verificar status da API'),
+                    withTimeout(carregarPrompts(), 15000, 'Timeout ao carregar prompts'),
+                    withTimeout(carregarProjetos(), 15000, 'Timeout ao carregar lotes')
+                ]);
+            } catch (e) {
+                console.error('[INIT] Erro ao carregar dados:', e);
+                // Em caso de timeout ou erro, garantir que a UI mostre estado de erro
+                const promptsContainer = document.getElementById('listaPrompts');
+                if (promptsContainer && (promptsContainer.innerHTML.includes('Carregando') || promptsContainer.innerHTML.includes('fa-spinner'))) {
+                    promptsContainer.innerHTML = `
+                        <div class="text-center py-12 text-red-500">
+                            <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                            <p>Erro ao carregar prompts</p>
+                            <p class="text-sm mt-2">${SecurityUtils.escapeHtml(e.message)}</p>
+                            <button onclick="carregarPrompts()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                Tentar novamente
+                            </button>
+                        </div>
+                    `;
+                }
+                const projetosContainer = document.getElementById('listaProjetos');
+                if (projetosContainer && (projetosContainer.innerHTML.includes('Carregando') || projetosContainer.innerHTML.includes('fa-spinner'))) {
+                    projetosContainer.innerHTML = `
+                        <div class="text-center py-12 text-red-500">
+                            <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                            <p>Erro ao carregar lotes</p>
+                            <p class="text-sm mt-2">${SecurityUtils.escapeHtml(e.message)}</p>
+                            <button onclick="carregarProjetos()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                Tentar novamente
+                            </button>
+                        </div>
+                    `;
+                }
+            }
+
+            try {
+                atualizarSelectsPromptLote();
+            } catch (e) {
+                console.error('[INIT] Erro ao atualizar selects:', e);
+            }
+
+            console.log('[INIT] Inicializacao concluida');
         });
     </script>
 </body>

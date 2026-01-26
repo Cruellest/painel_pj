@@ -244,6 +244,9 @@ RETRY_ERRORS = (
     aiohttp.ServerDisconnectedError,
 )
 
+# Status codes HTTP que devem fazer retry (erros temporários)
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
 # HTTP Client singleton
 _http_client: Optional[httpx.AsyncClient] = None
 _http_client_lock = asyncio.Lock()
@@ -573,8 +576,33 @@ class GeminiService:
                     await asyncio.sleep(delay)
 
             except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+
+                # Retry em status codes temporários (503, 429, 500, 502, 504)
+                if status_code in RETRYABLE_STATUS_CODES:
+                    last_error = e
+                    metrics.retry_count = attempt + 1
+
+                    if attempt < MAX_RETRIES - 1:
+                        # Para 429 (rate limit), respeita Retry-After se presente
+                        retry_after = e.response.headers.get("Retry-After")
+                        if retry_after and status_code == 429:
+                            try:
+                                delay = min(float(retry_after), RETRY_MAX_DELAY)
+                            except ValueError:
+                                delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                        else:
+                            delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+
+                        logger.warning(
+                            f"[Gemini] HTTP {status_code} - Retry {attempt + 1}/{MAX_RETRIES} após {delay:.1f}s"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+
+                # Status code não retriável ou tentativas esgotadas
                 metrics.success = False
-                metrics.error = f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+                metrics.error = f"HTTP {status_code}: {e.response.text[:200]}"
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.log()
                 asyncio.create_task(self._log_to_db(metrics, ctx, temperature=temperature, thinking_level=thinking_level))
@@ -1171,8 +1199,31 @@ class GeminiService:
                     await asyncio.sleep(delay)
 
             except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+
+                # Retry em status codes temporários (503, 429, 500, 502, 504)
+                if status_code in RETRYABLE_STATUS_CODES:
+                    last_error = e
+                    metrics.retry_count = attempt + 1
+
+                    if attempt < MAX_RETRIES - 1:
+                        retry_after = e.response.headers.get("Retry-After")
+                        if retry_after and status_code == 429:
+                            try:
+                                delay = min(float(retry_after), RETRY_MAX_DELAY)
+                            except ValueError:
+                                delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                        else:
+                            delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+
+                        logger.warning(
+                            f"[Gemini] HTTP {status_code} - Retry {attempt + 1}/{MAX_RETRIES} após {delay:.1f}s"
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+
                 metrics.success = False
-                metrics.error = f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}"
+                metrics.error = f"Erro HTTP {status_code}: {e.response.text[:200]}"
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, temperature=temperature, thinking_level=thinking_level))
                 return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
@@ -1493,61 +1544,92 @@ class GeminiService:
         metrics.prompt_tokens_estimated = len(prompt) // 4
 
         t_request_start = time.perf_counter()
-        
-        try:
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                t_connect_start = time.perf_counter()
-                response = await client.post(url, json=payload)
-                metrics.time_connect_ms = (time.perf_counter() - t_connect_start) * 1000
-                
-                response.raise_for_status()
-                data = response.json()
+        last_error = None
 
-                content = self._extract_content(data)
-                tokens = self._extract_tokens(data)
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    t_connect_start = time.perf_counter()
+                    response = await client.post(url, json=payload)
+                    metrics.time_connect_ms = (time.perf_counter() - t_connect_start) * 1000
 
-                # Extrai informações de grounding se disponíveis
-                grounding_metadata = self._extract_grounding_metadata(data)
-                if grounding_metadata:
-                    content += f"\n\n---\n**Fontes consultadas:** {grounding_metadata}"
+                    response.raise_for_status()
+                    data = response.json()
 
-                metrics.success = True
-                metrics.response_tokens = tokens
+                    content = self._extract_content(data)
+                    tokens = self._extract_tokens(data)
+
+                    # Extrai informações de grounding se disponíveis
+                    grounding_metadata = self._extract_grounding_metadata(data)
+                    if grounding_metadata:
+                        content += f"\n\n---\n**Fontes consultadas:** {grounding_metadata}"
+
+                    metrics.success = True
+                    metrics.response_tokens = tokens
+                    metrics.retry_count = attempt
+                    metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                    metrics.log()
+
+                    # Loga no banco de dados
+                    asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
+
+                    return GeminiResponse(
+                        success=True,
+                        content=content,
+                        tokens_used=tokens,
+                        metrics=metrics
+                    )
+
+            except RETRY_ERRORS as e:
+                last_error = e
+                metrics.retry_count = attempt + 1
+                if attempt < MAX_RETRIES - 1:
+                    delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                    logger.warning(f"[Gemini Search] Retry {attempt + 1}/{MAX_RETRIES} após {delay:.1f}s: {type(e).__name__}")
+                    await asyncio.sleep(delay)
+
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+
+                if status_code in RETRYABLE_STATUS_CODES:
+                    last_error = e
+                    metrics.retry_count = attempt + 1
+                    if attempt < MAX_RETRIES - 1:
+                        delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                        logger.warning(f"[Gemini Search] HTTP {status_code} - Retry {attempt + 1}/{MAX_RETRIES} após {delay:.1f}s")
+                        await asyncio.sleep(delay)
+                        continue
+
+                metrics.success = False
+                metrics.error = f"HTTP {status_code}"
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.log()
-                
-                # Loga no banco de dados
                 asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
-
                 return GeminiResponse(
-                    success=True,
-                    content=content,
-                    tokens_used=tokens,
+                    success=False,
+                    error=f"Erro HTTP {status_code}: {e.response.text[:200]}",
                     metrics=metrics
                 )
 
-        except httpx.HTTPStatusError as e:
-            metrics.success = False
-            metrics.error = f"HTTP {e.response.status_code}"
-            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
-            metrics.log()
-            asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
-            return GeminiResponse(
-                success=False,
-                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}",
-                metrics=metrics
-            )
-        except Exception as e:
-            metrics.success = False
-            metrics.error = str(e)[:100]
-            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
-            metrics.log()
-            asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
-            return GeminiResponse(
-                success=False,
-                error=f"Erro: {str(e)}",
-                metrics=metrics
-            )
+            except Exception as e:
+                metrics.success = False
+                metrics.error = str(e)[:100]
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.log()
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
+                return GeminiResponse(
+                    success=False,
+                    error=f"Erro: {str(e)}",
+                    metrics=metrics
+                )
+
+        # Todas as tentativas falharam
+        metrics.success = False
+        metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
+        metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+        metrics.log()
+        asyncio.create_task(self._log_to_db(metrics, ctx, has_search=True, temperature=temperature, thinking_level=thinking_level))
+        return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
     async def generate_with_images_and_search(
         self,
@@ -1648,55 +1730,87 @@ class GeminiService:
                 "parts": [{"text": system_prompt}]
             }
 
-        try:
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                t_connect_start = time.perf_counter()
-                response = await client.post(url, json=payload)
-                metrics.time_connect_ms = (time.perf_counter() - t_connect_start) * 1000
+        last_error = None
 
-                response.raise_for_status()
-                data = response.json()
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    t_connect_start = time.perf_counter()
+                    response = await client.post(url, json=payload)
+                    metrics.time_connect_ms = (time.perf_counter() - t_connect_start) * 1000
 
-                content = self._extract_content(data)
-                tokens = self._extract_tokens(data)
+                    response.raise_for_status()
+                    data = response.json()
 
-                metrics.success = True
-                metrics.response_tokens = tokens
+                    content = self._extract_content(data)
+                    tokens = self._extract_tokens(data)
+
+                    metrics.success = True
+                    metrics.response_tokens = tokens
+                    metrics.retry_count = attempt
+                    metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                    metrics.log()
+
+                    # Loga no banco de dados
+                    asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
+
+                    return GeminiResponse(
+                        success=True,
+                        content=content,
+                        tokens_used=tokens,
+                        metrics=metrics
+                    )
+
+            except RETRY_ERRORS as e:
+                last_error = e
+                metrics.retry_count = attempt + 1
+                if attempt < MAX_RETRIES - 1:
+                    delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                    logger.warning(f"[Gemini Images+Search] Retry {attempt + 1}/{MAX_RETRIES} após {delay:.1f}s: {type(e).__name__}")
+                    await asyncio.sleep(delay)
+
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+
+                if status_code in RETRYABLE_STATUS_CODES:
+                    last_error = e
+                    metrics.retry_count = attempt + 1
+                    if attempt < MAX_RETRIES - 1:
+                        delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                        logger.warning(f"[Gemini Images+Search] HTTP {status_code} - Retry {attempt + 1}/{MAX_RETRIES} após {delay:.1f}s")
+                        await asyncio.sleep(delay)
+                        continue
+
+                metrics.success = False
+                metrics.error = f"HTTP {status_code}"
                 metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
                 metrics.log()
-
-                # Loga no banco de dados
                 asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
-
                 return GeminiResponse(
-                    success=True,
-                    content=content,
-                    tokens_used=tokens,
+                    success=False,
+                    error=f"Erro HTTP {status_code}: {e.response.text[:200]}",
                     metrics=metrics
                 )
 
-        except httpx.HTTPStatusError as e:
-            metrics.success = False
-            metrics.error = f"HTTP {e.response.status_code}"
-            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
-            metrics.log()
-            asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
-            return GeminiResponse(
-                success=False,
-                error=f"Erro HTTP {e.response.status_code}: {e.response.text[:200]}",
-                metrics=metrics
-            )
-        except Exception as e:
-            metrics.success = False
-            metrics.error = str(e)[:100]
-            metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
-            metrics.log()
-            asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
-            return GeminiResponse(
-                success=False,
-                error=f"Erro: {str(e)}",
-                metrics=metrics
-            )
+            except Exception as e:
+                metrics.success = False
+                metrics.error = str(e)[:100]
+                metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+                metrics.log()
+                asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
+                return GeminiResponse(
+                    success=False,
+                    error=f"Erro: {str(e)}",
+                    metrics=metrics
+                )
+
+        # Todas as tentativas falharam
+        metrics.success = False
+        metrics.error = f"Falhou após {MAX_RETRIES} tentativas: {str(last_error)}"
+        metrics.time_total_ms = (time.perf_counter() - t_start) * 1000
+        metrics.log()
+        asyncio.create_task(self._log_to_db(metrics, ctx, has_images=True, has_search=True, temperature=temperature, thinking_level=thinking_level))
+        return GeminiResponse(success=False, error=metrics.error, metrics=metrics)
 
     def _extract_content(self, data: Dict) -> str:
         """Extrai conteúdo da resposta do Gemini"""
