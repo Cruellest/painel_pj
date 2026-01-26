@@ -28,6 +28,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from sqlalchemy import text
 from typing import Any, Dict, List, Optional
 
 # Tenta usar logging estruturado
@@ -99,7 +100,7 @@ async def check_database() -> ComponentHealth:
         db = SessionLocal()
         try:
             # Query simples para testar conexão
-            result = db.execute("SELECT 1").fetchone()
+            result = db.execute(text("SELECT 1")).fetchone()
             latency = (time.perf_counter() - start) * 1000
 
             if result and result[0] == 1:
