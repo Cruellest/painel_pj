@@ -896,9 +896,22 @@
 
                 // Se for sistema com chat, carrega histórico e versões
                 if (sistema === 'gerador_pecas' || sistema === 'relatorio_cumprimento') {
-                    renderizarHistoricoChat(data.historico_chat || []);
+                    // Usa edicoes_chat (só mensagens do usuário) se disponível, senão filtra do historico_chat
+                    const edicoesChat = data.edicoes_chat || (data.historico_chat || []).filter(m => m.role === 'user');
+                    const totalEdicoes = data.total_edicoes_chat !== undefined ? data.total_edicoes_chat : edicoesChat.length;
+                    renderizarHistoricoChat(data.historico_chat || [], totalEdicoes);
+
                     if (sistema === 'gerador_pecas') {
-                        carregarVersoes(consultaId);
+                        // Usa versões já retornadas pelo endpoint se disponíveis
+                        if (data.versoes && data.versoes.length > 0) {
+                            renderizarVersoes(data.versoes);
+                            const badge = document.getElementById('versoes-badge');
+                            badge.textContent = data.total_versoes || data.versoes.length;
+                            badge.classList.remove('hidden');
+                        } else {
+                            // Fallback: carrega versões do endpoint separado
+                            carregarVersoes(consultaId);
+                        }
                     } else {
                         // Para relatorio_cumprimento, esconde a tab de versões
                         document.getElementById('tab-versoes').classList.add('hidden');
@@ -938,11 +951,15 @@
             document.getElementById(`conteudo-${tab}`).classList.remove('hidden');
         }
 
-        function renderizarHistoricoChat(historico) {
+        function renderizarHistoricoChat(historico, totalEdicoes) {
             const container = document.getElementById('chat-container');
             const badge = document.getElementById('chat-badge');
 
-            if (!historico || historico.length === 0) {
+            // Conta apenas mensagens do usuário (pedidos de revisão)
+            const edicoesUsuario = (historico || []).filter(m => m.role === 'user');
+            const numEdicoes = totalEdicoes !== undefined ? totalEdicoes : edicoesUsuario.length;
+
+            if (!historico || historico.length === 0 || numEdicoes === 0) {
                 badge.classList.add('hidden');
                 container.innerHTML = `
                     <div class="text-center py-12 text-gray-400">
@@ -953,13 +970,14 @@
                 return;
             }
 
-            badge.textContent = historico.length;
+            // Badge mostra apenas o número de pedidos de revisão (mensagens do usuário)
+            badge.textContent = numEdicoes;
             badge.classList.remove('hidden');
 
             let html = `
                 <div class="bg-purple-50 rounded-lg p-4 mb-4 border border-purple-200">
                     <p class="text-purple-800 font-medium"><i class="fas fa-info-circle mr-2"></i>Histórico de Edições</p>
-                    <p class="text-purple-600 text-sm mt-1">O usuário solicitou ${historico.length} alteração(ões) via chat após a geração inicial.</p>
+                    <p class="text-purple-600 text-sm mt-1">O usuário solicitou ${numEdicoes} alteração(ões) via chat após a geração inicial.</p>
                 </div>
             `;
 
@@ -1055,11 +1073,15 @@
             };
 
             versoes.forEach((versao) => {
-                const tipoLabel = tipoLabels[versao.tipo_alteracao] || versao.tipo_alteracao;
-                const tipoClass = tipoClasses[versao.tipo_alteracao] || 'bg-gray-100 text-gray-700';
+                // Suporta tanto 'tipo_alteracao' quanto 'origem' (campos diferentes dos endpoints)
+                const tipo = versao.tipo_alteracao || versao.origem || 'geracao_inicial';
+                const tipoLabel = tipoLabels[tipo] || tipo;
+                const tipoClass = tipoClasses[tipo] || 'bg-gray-100 text-gray-700';
                 const dataFormatada = versao.criado_em
                     ? formatarDataHora(versao.criado_em)
                     : 'Data não disponível';
+                // Suporta tanto 'descricao' quanto 'descricao_alteracao'
+                const descricao = versao.descricao || versao.descricao_alteracao;
 
                 html += `
                     <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
@@ -1072,9 +1094,9 @@
                                 <i class="fas fa-clock mr-1"></i>${dataFormatada}
                             </div>
                         </div>
-                        ${versao.descricao ? `
+                        ${descricao ? `
                             <div class="px-4 py-2 bg-blue-50 border-b border-blue-100">
-                                <p class="text-sm text-blue-700"><i class="fas fa-comment mr-1"></i>${escapeHtml(versao.descricao)}</p>
+                                <p class="text-sm text-blue-700"><i class="fas fa-comment mr-1"></i>${escapeHtml(descricao)}</p>
                             </div>
                         ` : ''}
                         <div class="p-4">

@@ -25,7 +25,7 @@ from admin.seed_prompts import seed_default_prompts
 # Importa modelos de feedback
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
 from sistemas.matriculas_confrontantes.models import Analise, FeedbackMatricula
-from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca
+from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo
 from sistemas.prestacao_contas.models import GeracaoAnalise, FeedbackPrestacao
 from sistemas.relatorio_cumprimento.models import GeracaoRelatorioCumprimento, FeedbackRelatorioCumprimento
@@ -1899,6 +1899,19 @@ async def obter_consulta_detalhes(
                 FeedbackPeca.geracao_id == consulta_id
             ).first()
 
+            # Busca versões da peça
+            versoes = db.query(VersaoPeca).filter(
+                VersaoPeca.geracao_id == consulta_id
+            ).order_by(VersaoPeca.numero_versao).all()
+
+            # Formata histórico de chat filtrando apenas mensagens do usuário (role: user)
+            # para evitar contagem duplicada (respostas do assistente não são edições)
+            historico_chat = g.historico_chat or []
+            edicoes_chat = [
+                msg for msg in historico_chat
+                if isinstance(msg, dict) and msg.get('role') == 'user'
+            ]
+
             return {
                 "id": g.id,
                 "sistema": "gerador_pecas",
@@ -1910,7 +1923,21 @@ async def obter_consulta_detalhes(
                 "modelo": g.modelo_usado,
                 "usuario": full_name or username,
                 "criado_em": to_iso_utc(g.criado_em),
-                "historico_chat": g.historico_chat,  # Histórico de edições via chat
+                "historico_chat": historico_chat,  # Histórico completo de chat
+                "edicoes_chat": edicoes_chat,  # Apenas mensagens do usuário (pedidos de revisão)
+                "total_edicoes_chat": len(edicoes_chat),  # Contagem correta
+                "versoes": [
+                    {
+                        "id": v.id,
+                        "numero_versao": v.numero_versao,
+                        "origem": v.origem,
+                        "descricao_alteracao": v.descricao_alteracao,
+                        "conteudo": v.conteudo,
+                        "criado_em": to_iso_utc(v.criado_em)
+                    }
+                    for v in versoes
+                ],
+                "total_versoes": len(versoes),
                 "feedback": {
                     "avaliacao": feedback.avaliacao if feedback else None,
                     "comentario": feedback.comentario if feedback else None,
