@@ -1624,11 +1624,9 @@ async def exportar_docx(
 @router.get("/download/{filename}")
 async def download_documento(
     filename: str,
-    background_tasks: BackgroundTasks,
-    token: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user_from_token_or_query)
 ):
-    """Download do documento gerado (aceita token via header ou query param)"""
+    """Download do documento gerado (aceita token via header, cookie ou query param)"""
     
     filepath = os.path.join(TEMP_DIR, filename)
     
