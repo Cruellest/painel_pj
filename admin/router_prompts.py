@@ -565,14 +565,25 @@ async def resumo_configuracao_tipos_peca(
     total_modulos = query_conteudo.count()
 
     # Query única para contar ativos/inativos por tipo_peca (evita N+1)
-    contagens = db.query(
+    # Importante: filtra por group_id quando especificado para manter consistência
+    # com total_modulos que também é filtrado
+    query_contagens = db.query(
         ModuloTipoPeca.tipo_peca,
         func.sum(case((ModuloTipoPeca.ativo == True, 1), else_=0)).label('ativos'),
         func.sum(case((ModuloTipoPeca.ativo == False, 1), else_=0)).label('inativos')
-    ).group_by(ModuloTipoPeca.tipo_peca).all()
+    ).join(
+        PromptModulo,
+        ModuloTipoPeca.modulo_id == PromptModulo.id
+    ).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.ativo == True
+    )
+    if group_id:
+        query_contagens = query_contagens.filter(PromptModulo.group_id == group_id)
+    contagens = query_contagens.group_by(ModuloTipoPeca.tipo_peca).all()
 
     # Mapeia resultados
-    contagens_map = {c.tipo_peca: {'ativos': c.ativos or 0, 'inativos': c.inativos or 0} for c in contagens}
+    contagens_map = {c.tipo_peca: {'ativos': int(c.ativos or 0), 'inativos': int(c.inativos or 0)} for c in contagens}
 
     resultado = []
     for tipo in tipos_peca:

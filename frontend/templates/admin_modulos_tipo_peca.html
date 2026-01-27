@@ -530,6 +530,36 @@
                 cb.checked = ativo;
                 marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), ativo);
             });
+            // Atualiza contagens no header
+            atualizarContagensHeader(tipoPeca);
+        }
+
+        function atualizarContagensHeader(tipoPeca) {
+            // Conta ativos/inativos baseado nos checkboxes atuais
+            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"]`);
+            let ativos = 0;
+            let inativos = 0;
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    ativos++;
+                } else {
+                    inativos++;
+                }
+            });
+
+            // Atualiza o header do card (se os módulos estiverem carregados)
+            if (checkboxes.length > 0) {
+                const card = document.querySelector(`.tipo-peca-card[data-tipo="${tipoPeca}"]`);
+                if (card) {
+                    const statsP = card.querySelector('.text-sm.text-gray-500');
+                    if (statsP) {
+                        statsP.innerHTML = `
+                            <span class="text-green-600 font-medium">${ativos}</span> ativos ·
+                            <span class="text-gray-400">${inativos}</span> inativos
+                        `;
+                    }
+                }
+            }
         }
 
         function marcarAlteracao(tipoPeca, moduloId, ativo) {
@@ -537,16 +567,19 @@
                 alteracoesPendentes[tipoPeca] = {};
             }
             alteracoesPendentes[tipoPeca][moduloId] = ativo;
-            
+
             // Atualiza badge
             document.getElementById(`badge-${tipoPeca}`).classList.remove('hidden');
-            
-            // Atualiza contador
+
+            // Atualiza contador de pendentes
             let total = 0;
             Object.keys(alteracoesPendentes).forEach(t => {
                 total += Object.keys(alteracoesPendentes[t]).length;
             });
             document.getElementById('stat-pendentes').textContent = total;
+
+            // Atualiza contagens no header em tempo real
+            atualizarContagensHeader(tipoPeca);
         }
 
         function selecionarTodos(tipoPeca, ativo) {
@@ -555,6 +588,8 @@
                 cb.checked = ativo;
                 marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), ativo);
             });
+            // Atualiza contagens no header
+            atualizarContagensHeader(tipoPeca);
         }
 
         function inverterSelecao(tipoPeca) {
@@ -563,6 +598,8 @@
                 cb.checked = !cb.checked;
                 marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), cb.checked);
             });
+            // Atualiza contagens no header
+            atualizarContagensHeader(tipoPeca);
         }
 
         async function salvarTipoPeca(tipoPeca) {
@@ -600,8 +637,11 @@
                 // Limpa cache e recarrega os dados do servidor
                 delete modulosPorTipo[tipoPeca];
                 await carregarModulosTipoPeca(tipoPeca);
-                
-                // Atualiza contador
+
+                // Atualiza as contagens no header com base nos dados recarregados
+                atualizarContagensHeader(tipoPeca);
+
+                // Atualiza contador de pendentes
                 let total = 0;
                 Object.keys(alteracoesPendentes).forEach(t => {
                     total += Object.keys(alteracoesPendentes[t]).length;
