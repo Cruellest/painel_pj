@@ -1063,17 +1063,28 @@
         }
         this.esconderTypingIndicator();
         if (minutaCompleta) {
-          this.minutaMarkdown = minutaCompleta;
-          this.renderizarMinuta();
-          this.historicoChat.push({ role: "user", content: mensagem });
-          this.historicoChat.push({ role: "assistant", content: "Minuta atualizada com sucesso." });
-          this.adicionarMensagemChat(
-            "ai",
-            "Pronto! Atualizei a minuta conforme solicitado. Veja as alteracoes na visualizacao ao lado.",
-            true
-          );
-          this.destacarMinuta();
-          this.salvarMinutaAuto();
+          // Verifica se a resposta é uma pergunta de clarificação
+          const isPergunta = minutaCompleta.trim().startsWith("[PERGUNTA]");
+          if (isPergunta) {
+            // Remove o marcador [PERGUNTA] e mostra no chat
+            const perguntaTexto = minutaCompleta.trim().replace(/^\[PERGUNTA\]\s*/i, "").trim();
+            this.historicoChat.push({ role: "user", content: mensagem });
+            this.historicoChat.push({ role: "assistant", content: perguntaTexto });
+            this.adicionarMensagemChat("ai", perguntaTexto, true);
+          } else {
+            // Resposta normal - atualiza a minuta
+            this.minutaMarkdown = minutaCompleta;
+            this.renderizarMinuta();
+            this.historicoChat.push({ role: "user", content: mensagem });
+            this.historicoChat.push({ role: "assistant", content: "Minuta atualizada com sucesso." });
+            this.adicionarMensagemChat(
+              "ai",
+              "Pronto! Atualizei a minuta conforme solicitado. Veja as alteracoes na visualizacao ao lado.",
+              true
+            );
+            this.destacarMinuta();
+            this.salvarMinutaAuto();
+          }
         } else {
           this.adicionarMensagemChat(
             "ai",
