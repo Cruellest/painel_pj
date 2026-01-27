@@ -1380,16 +1380,20 @@ async def obter_pergunta(
     """Obtém uma pergunta específica"""
     perf_ctx.set_action("obter_pergunta")
 
-    # PERFORMANCE: Usa joinedload para evitar N+1 query
-    pergunta = db.query(ExtractionQuestion).options(
-        joinedload(ExtractionQuestion.categoria)
+    # PERFORMANCE: Usa LEFT JOIN para buscar categoria em uma única query
+    # (ExtractionQuestion não tem relacionamento direto com CategoriaResumoJSON)
+    result = db.query(
+        ExtractionQuestion,
+        CategoriaResumoJSON.nome.label("categoria_nome")
+    ).outerjoin(
+        CategoriaResumoJSON,
+        ExtractionQuestion.categoria_id == CategoriaResumoJSON.id
     ).filter(ExtractionQuestion.id == pergunta_id).first()
 
-    if not pergunta:
+    if not result:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
 
-    # Usa o relacionamento já carregado (sem query adicional)
-    categoria_nome = pergunta.categoria.nome if pergunta.categoria else None
+    pergunta, categoria_nome = result
 
     return ExtractionQuestionResponse(
         id=pergunta.id,
