@@ -2887,12 +2887,27 @@ qual o valor da causa?"></textarea>
                         });
 
                         if (!response.ok) {
-                            console.error('Erro ao atualizar pergunta:', p.id);
+                            // IMPORTANTE: Mostrar erro ao usuario e parar o loop
+                            let errorMsg = `Erro ao atualizar pergunta "${p.pergunta?.substring(0, 50)}..."`;
+                            try {
+                                const errorData = await response.json();
+                                if (errorData.detail) {
+                                    errorMsg += `\n\n${errorData.detail}`;
+                                }
+                            } catch (e) {
+                                // Ignora erro de parse
+                            }
+                            console.error('Erro ao atualizar pergunta:', p.id, errorMsg);
+                            throw new Error(errorMsg);
                         }
+
+                        // Atualiza dados locais com resposta do servidor (fonte de verdade)
+                        const perguntaAtualizada = await response.json();
+                        p.nome_variavel_sugerido = perguntaAtualizada.nome_variavel_sugerido;
                     }
                 } catch (error) {
                     console.error('Erro ao salvar pergunta:', error);
-                }
+                    throw error; // Re-lanca para interromper o salvamento
             }
         }
 
