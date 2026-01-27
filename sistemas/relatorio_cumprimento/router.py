@@ -381,9 +381,14 @@ async def processar_stream(
                 elif event["tipo"] == "error":
                     logger.error(f"{log_prefix} GERACAO_ERROR | geracao_id={geracao_id} | error={event['error']}")
                     yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': event['error']})}\n\n"
-                    geracao.status = StatusProcessamento.ERRO.value
-                    geracao.erro_mensagem = event["error"]
-                    db.commit()
+                    # Re-fetch geracao para garantir estado atualizado da sessão
+                    geracao = db.query(GeracaoRelatorioCumprimento).filter(
+                        GeracaoRelatorioCumprimento.id == geracao_id
+                    ).first()
+                    if geracao:
+                        geracao.status = StatusProcessamento.ERRO.value
+                        geracao.erro_mensagem = event["error"]
+                        db.commit()
                     return
 
             # Valida que conteúdo não está vazio (proteção extra)
@@ -394,9 +399,24 @@ async def processar_stream(
                     f"raw_len={len(relatorio_completo or '')}"
                 )
                 yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Relatório gerado está vazio. Por favor, tente novamente.'})}\n\n"
-                geracao.status = StatusProcessamento.ERRO.value
-                geracao.erro_mensagem = "Conteúdo gerado vazio"
-                db.commit()
+                # Re-fetch geracao para garantir estado atualizado da sessão
+                geracao = db.query(GeracaoRelatorioCumprimento).filter(
+                    GeracaoRelatorioCumprimento.id == geracao_id
+                ).first()
+                if geracao:
+                    geracao.status = StatusProcessamento.ERRO.value
+                    geracao.erro_mensagem = "Conteúdo gerado vazio"
+                    db.commit()
+                return
+
+            # Re-fetch geracao para garantir estado atualizado da sessão após streaming longo
+            geracao = db.query(GeracaoRelatorioCumprimento).filter(
+                GeracaoRelatorioCumprimento.id == geracao_id
+            ).first()
+
+            if not geracao:
+                logger.error(f"{log_prefix} GERACAO_NAO_ENCONTRADA | geracao_id={geracao_id}")
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Erro interno: registro não encontrado'})}\n\n"
                 return
 
             # Atualiza registro
@@ -409,6 +429,11 @@ async def processar_stream(
                 "principal": dados_principal.to_dict() if dados_principal else None
             }
             db.commit()
+
+            logger.info(
+                f"{log_prefix} STATUS_ATUALIZADO | geracao_id={geracao_id} | "
+                f"status={geracao.status} | commit_ok=True"
+            )
 
             logger.info(
                 f"{log_prefix} PROCESSAR_STREAM_DONE | "
