@@ -98,8 +98,11 @@ class SlugRenameService:
         if not novo_slug:
             return "Novo slug nao pode ser vazio"
 
-        if not re.match(r'^[a-z][a-z0-9_]*$', novo_slug):
-            return "Slug deve comecar com letra e conter apenas letras minusculas, numeros e underscores"
+        # Permite letras maiusculas e minusculas (case-insensitive)
+        # Regex aceita: letras (a-z, A-Z), numeros, underscores
+        # Deve comecar com letra
+        if not re.match(r'^[a-zA-Z][a-zA-Z0-9_]*$', novo_slug):
+            return "Slug deve comecar com letra e conter apenas letras, numeros e underscores"
 
         if len(novo_slug) < 3:
             return "Slug deve ter pelo menos 3 caracteres"

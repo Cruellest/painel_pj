@@ -555,6 +555,53 @@ class TestSlugValidation(BaseSlugTestCase):
 class TestSlugRenameViaPergunta(BaseSlugTestCase):
     """Testes para cenario de renomeacao via edicao de pergunta"""
 
+    def test_renomear_slug_com_maiusculas_aceita(self):
+        """
+        Teste do bug onde slugs com maiusculas eram rejeitados.
+
+        Cenario real: usuario editava slug para 'pareceres_procedimento_materiais_nao_SUS'
+        e o sistema REJEITAVA por causa das letras maiusculas, sem mostrar erro claro.
+        """
+        # Setup
+        formato_json = json.dumps({
+            "pareceres_procedimento_materiais_etc_SUS": {"type": "text", "description": "Parecer"}
+        })
+        categoria = self._create_categoria("cat_maiusculas", formato_json)
+        pergunta = self._create_pergunta(
+            categoria.id,
+            nome_variavel_sugerido="pareceres_procedimento_materiais_etc_SUS",
+            pergunta="Qual o parecer sobre os procedimentos materiais SUS?"
+        )
+        variavel = self._create_variavel(
+            "pareceres_procedimento_materiais_etc_SUS",
+            categoria_id=categoria.id,
+            source_question_id=pergunta.id
+        )
+        self.db.commit()
+
+        # Renomeia para slug com maiusculas (caso real)
+        service = SlugRenameService(self.db)
+        result = service.renomear(
+            variavel_id=variavel.id,
+            novo_slug="pareceres_procedimento_materiais_nao_SUS",
+            normalizar=False,  # Sem normalizar, como faz o endpoint
+            skip_pergunta=True
+        )
+
+        # DEVE aceitar slugs com maiusculas
+        self.assertTrue(result.success, f"Falha inesperada: {result.error}")
+        self.assertEqual(result.new_slug, "pareceres_procedimento_materiais_nao_SUS")
+
+        # Verifica que a variavel foi atualizada
+        self.db.refresh(variavel)
+        self.assertEqual(variavel.slug, "pareceres_procedimento_materiais_nao_SUS")
+
+        # Verifica que o JSON foi atualizado
+        self.db.refresh(categoria)
+        schema = json.loads(categoria.formato_json)
+        self.assertNotIn("pareceres_procedimento_materiais_etc_SUS", schema)
+        self.assertIn("pareceres_procedimento_materiais_nao_SUS", schema)
+
     def test_renomear_slug_via_pergunta_persiste(self):
         """
         Teste do bug reportado: editar slug da pergunta e garantir que persiste.
