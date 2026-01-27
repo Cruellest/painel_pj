@@ -4046,6 +4046,190 @@ async def reativar_variavel(
     return {"success": True, "message": "Variável reativada com sucesso"}
 
 
+# ============================================================================
+# ENDPOINTS - RENOMEACAO DE SLUG
+# ============================================================================
+
+
+class RenomearSlugRequest(BaseModel):
+    """Schema para requisicao de renomeacao de slug"""
+    novo_slug: str = Field(..., description="Novo slug desejado")
+    normalizar: bool = Field(True, description="Se deve normalizar o slug (remover acentos, etc)")
+
+
+class RenomearSlugResponse(BaseModel):
+    """Schema de resposta para renomeacao de slug"""
+    success: bool
+    old_slug: str
+    new_slug: str
+    error: Optional[str] = None
+    categoria_json_atualizada: bool = False
+    perguntas_atualizadas: int = 0
+    prompts_atualizados: int = 0
+    regras_tipo_peca_atualizadas: int = 0
+    prompt_usages_atualizados: int = 0
+    variaveis_dependentes_atualizadas: int = 0
+    perguntas_dependentes_atualizadas: int = 0
+    detalhes: List[str] = []
+
+
+@router.put("/variaveis/{variavel_id}/renomear-slug", response_model=RenomearSlugResponse)
+async def renomear_slug_variavel(
+    variavel_id: int,
+    data: RenomearSlugRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Renomeia o slug de uma variavel de forma transacional.
+
+    Esta operacao propaga a mudanca automaticamente para:
+    - JSON da categoria (formato_json)
+    - Perguntas de extracao (nome_variavel_sugerido)
+    - Regras deterministicas de prompts modulares
+    - Regras deterministicas por tipo de peca
+    - PromptVariableUsage
+    - Dependencias de outras variaveis e perguntas
+
+    IMPORTANTE: Use este endpoint para renomear slugs. Nao edite
+    diretamente o JSON da categoria pois isso causa inconsistencias.
+    """
+    # Verifica permissao
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissao para renomear variaveis")
+
+    from .services_slug_rename import SlugRenameService
+
+    service = SlugRenameService(db)
+    result = service.renomear(
+        variavel_id=variavel_id,
+        novo_slug=data.novo_slug,
+        normalizar=data.normalizar
+    )
+
+    if result.success:
+        db.commit()
+        logger.info(
+            f"[SLUG-RENAME] Renomeacao concluida por {current_user.username}: "
+            f"{result.old_slug} -> {result.new_slug}"
+        )
+    else:
+        db.rollback()
+
+    return RenomearSlugResponse(
+        success=result.success,
+        old_slug=result.old_slug,
+        new_slug=result.new_slug,
+        error=result.error,
+        categoria_json_atualizada=result.categoria_json_atualizada,
+        perguntas_atualizadas=result.perguntas_atualizadas,
+        prompts_atualizados=result.prompts_atualizados,
+        regras_tipo_peca_atualizadas=result.regras_tipo_peca_atualizadas,
+        prompt_usages_atualizados=result.prompt_usages_atualizados,
+        variaveis_dependentes_atualizadas=result.variaveis_dependentes_atualizadas,
+        perguntas_dependentes_atualizadas=result.perguntas_dependentes_atualizadas,
+        detalhes=result.detalhes
+    )
+
+
+class ConsistenciaSlugResponse(BaseModel):
+    """Schema de resposta para verificacao de consistencia de slugs"""
+    consistente: bool
+    categoria_id: Optional[int] = None
+    categoria_nome: Optional[str] = None
+    total_slugs_json: int = 0
+    total_variaveis_ativas: int = 0
+    slugs_orfaos_json: List[str] = []
+    slugs_orfaos_variaveis: List[str] = []
+    mensagem: str = ""
+    erro: Optional[str] = None
+
+
+@router.get("/variaveis/{variavel_id}/verificar-consistencia", response_model=ConsistenciaSlugResponse)
+async def verificar_consistencia_variavel(
+    variavel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Verifica consistencia entre o slug da variavel e suas referencias.
+
+    Retorna:
+    - Se a variavel esta no JSON da categoria
+    - Se ha slugs orfaos no JSON
+    - Se ha variaveis sem entrada no JSON
+    """
+    variavel = db.query(ExtractionVariable).filter(ExtractionVariable.id == variavel_id).first()
+    if not variavel:
+        raise HTTPException(status_code=404, detail="Variavel nao encontrada")
+
+    if not variavel.categoria_id:
+        return ConsistenciaSlugResponse(
+            consistente=True,
+            mensagem="Variavel nao pertence a nenhuma categoria"
+        )
+
+    from .services_slug_rename import SlugConsistencyChecker
+
+    checker = SlugConsistencyChecker(db)
+    resultado = checker.verificar_categoria(variavel.categoria_id)
+
+    if resultado.get("erro"):
+        return ConsistenciaSlugResponse(
+            consistente=False,
+            erro=resultado["erro"]
+        )
+
+    return ConsistenciaSlugResponse(
+        consistente=resultado["consistente"],
+        categoria_id=resultado["categoria_id"],
+        categoria_nome=resultado["categoria_nome"],
+        total_slugs_json=resultado["total_slugs_json"],
+        total_variaveis_ativas=resultado["total_variaveis_ativas"],
+        slugs_orfaos_json=resultado["slugs_orfaos_json"],
+        slugs_orfaos_variaveis=resultado["slugs_orfaos_variaveis"],
+        mensagem=resultado["mensagem"]
+    )
+
+
+class ReferenciasSlugResponse(BaseModel):
+    """Schema de resposta para referencias de um slug"""
+    slug: str
+    total_prompts: int = 0
+    total_regras_tipo_peca: int = 0
+    prompts: List[dict] = []
+    regras_tipo_peca: List[dict] = []
+
+
+@router.get("/variaveis/{variavel_id}/referencias", response_model=ReferenciasSlugResponse)
+async def verificar_referencias_variavel(
+    variavel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Verifica onde o slug da variavel esta sendo usado em regras deterministicas.
+
+    Util para saber quais prompts serao afetados antes de renomear.
+    """
+    variavel = db.query(ExtractionVariable).filter(ExtractionVariable.id == variavel_id).first()
+    if not variavel:
+        raise HTTPException(status_code=404, detail="Variavel nao encontrada")
+
+    from .services_slug_rename import SlugConsistencyChecker
+
+    checker = SlugConsistencyChecker(db)
+    resultado = checker.verificar_referencias_prompts(variavel.slug)
+
+    return ReferenciasSlugResponse(
+        slug=resultado["slug"],
+        total_prompts=resultado["total_prompts"],
+        total_regras_tipo_peca=resultado["total_regras_tipo_peca"],
+        prompts=resultado["prompts"],
+        regras_tipo_peca=resultado["regras_tipo_peca"]
+    )
+
+
 @router.delete("/variaveis/{variavel_id}/permanente")
 async def excluir_variavel_permanente(
     variavel_id: int,

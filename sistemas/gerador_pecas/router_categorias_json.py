@@ -731,3 +731,176 @@ async def update_codigos_ignorados(
         "codigos": codigos_unicos,
         "mensagem": f"{len(codigos_unicos)} código(s) configurado(s) para ignorar"
     }
+
+
+# ==========================================
+# Endpoints de Consistencia de Slugs
+# ==========================================
+
+class ConsistenciaCategoriaSlugsResponse(BaseModel):
+    """Schema de resposta para verificacao de consistencia de slugs da categoria"""
+    consistente: bool
+    categoria_id: int
+    categoria_nome: str
+    total_slugs_json: int = 0
+    total_variaveis_ativas: int = 0
+    slugs_orfaos_json: List[str] = []
+    slugs_orfaos_variaveis: List[str] = []
+    mensagem: str = ""
+    erro: Optional[str] = None
+
+
+@router.get("/{categoria_id}/consistencia-slugs", response_model=ConsistenciaCategoriaSlugsResponse)
+async def verificar_consistencia_slugs(
+    categoria_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica consistencia entre o JSON da categoria e as variaveis de extracao.
+
+    Este endpoint DEVE ser usado pelo frontend para verificar se o JSON esta
+    realmente atualizado antes de mostrar "Atualizado" ao usuario.
+
+    Retorna:
+    - consistente: True se nao ha divergencias
+    - slugs_orfaos_json: slugs no JSON que nao tem variavel correspondente
+    - slugs_orfaos_variaveis: variaveis ativas que nao estao no JSON
+
+    IMPORTANTE: Se consistente=False, o sistema NAO deve dizer que esta "Atualizado".
+    """
+    from .services_slug_rename import SlugConsistencyChecker
+
+    checker = SlugConsistencyChecker(db)
+    resultado = checker.verificar_categoria(categoria_id)
+
+    if resultado.get("erro"):
+        raise HTTPException(status_code=400, detail=resultado["erro"])
+
+    return ConsistenciaCategoriaSlugsResponse(
+        consistente=resultado["consistente"],
+        categoria_id=resultado["categoria_id"],
+        categoria_nome=resultado["categoria_nome"],
+        total_slugs_json=resultado["total_slugs_json"],
+        total_variaveis_ativas=resultado["total_variaveis_ativas"],
+        slugs_orfaos_json=resultado["slugs_orfaos_json"],
+        slugs_orfaos_variaveis=resultado["slugs_orfaos_variaveis"],
+        mensagem=resultado["mensagem"]
+    )
+
+
+class RepararConsistenciaResponse(BaseModel):
+    """Schema de resposta para reparo de consistencia"""
+    success: bool
+    categoria_id: int
+    correcoes_aplicadas: int = 0
+    correcoes: List[str] = []
+    erro: Optional[str] = None
+
+
+@router.post("/{categoria_id}/reparar-consistencia", response_model=RepararConsistenciaResponse)
+async def reparar_consistencia_slugs(
+    categoria_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Repara inconsistencias entre o JSON da categoria e as variaveis.
+
+    Este endpoint corrige automaticamente:
+    - Remove do JSON slugs que nao tem variavel correspondente
+    - Adiciona ao JSON variaveis ativas que estao faltando
+
+    ATENCAO: Esta operacao modifica o JSON da categoria.
+    Recomenda-se verificar consistencia antes com GET /{categoria_id}/consistencia-slugs.
+    """
+    verificar_permissao(current_user)
+
+    from .services_slug_rename import SlugConsistencyChecker
+
+    checker = SlugConsistencyChecker(db)
+    resultado = checker.reparar_categoria(categoria_id, user_id=current_user.id)
+
+    if not resultado.get("success"):
+        raise HTTPException(status_code=400, detail=resultado.get("erro", "Erro ao reparar"))
+
+    if resultado.get("correcoes_aplicadas", 0) > 0:
+        db.commit()
+        logger.info(
+            f"[CONSISTENCIA] Categoria {categoria_id} reparada por {current_user.username}: "
+            f"{resultado['correcoes_aplicadas']} correcoes"
+        )
+    else:
+        logger.info(f"[CONSISTENCIA] Categoria {categoria_id} ja estava consistente")
+
+    return RepararConsistenciaResponse(
+        success=True,
+        categoria_id=categoria_id,
+        correcoes_aplicadas=resultado.get("correcoes_aplicadas", 0),
+        correcoes=resultado.get("correcoes", [])
+    )
+
+
+class RepararTodasResponse(BaseModel):
+    """Schema de resposta para reparo de todas as categorias"""
+    success: bool
+    categorias_verificadas: int = 0
+    categorias_reparadas: int = 0
+    total_correcoes: int = 0
+    detalhes: List[Dict[str, Any]] = []
+
+
+@router.post("/reparar-todas-consistencias", response_model=RepararTodasResponse)
+async def reparar_todas_consistencias(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Repara inconsistencias de TODAS as categorias ativas.
+
+    Util para migracao/limpeza de dados legados.
+    Apenas administradores podem executar esta operacao.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas administradores podem reparar todas as categorias"
+        )
+
+    from .services_slug_rename import SlugConsistencyChecker
+
+    categorias = db.query(CategoriaResumoJSON).filter(
+        CategoriaResumoJSON.ativo == True
+    ).all()
+
+    checker = SlugConsistencyChecker(db)
+    detalhes = []
+    categorias_reparadas = 0
+    total_correcoes = 0
+
+    for categoria in categorias:
+        resultado = checker.reparar_categoria(categoria.id, user_id=current_user.id)
+
+        if resultado.get("correcoes_aplicadas", 0) > 0:
+            categorias_reparadas += 1
+            total_correcoes += resultado["correcoes_aplicadas"]
+            detalhes.append({
+                "categoria_id": categoria.id,
+                "categoria_nome": categoria.nome,
+                "correcoes": resultado.get("correcoes", [])
+            })
+
+    if total_correcoes > 0:
+        db.commit()
+        logger.info(
+            f"[CONSISTENCIA] Reparo em massa por {current_user.username}: "
+            f"{categorias_reparadas} categorias, {total_correcoes} correcoes"
+        )
+
+    return RepararTodasResponse(
+        success=True,
+        categorias_verificadas=len(categorias),
+        categorias_reparadas=categorias_reparadas,
+        total_correcoes=total_correcoes,
+        detalhes=detalhes
+    )
