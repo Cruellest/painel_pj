@@ -61,7 +61,11 @@ from sistemas.gerador_pecas.router_admin import router as gerador_pecas_admin_ro
 from sistemas.gerador_pecas.router_categorias_json import router as categorias_json_router
 from sistemas.gerador_pecas.router_config_pecas import router as config_pecas_router
 from sistemas.gerador_pecas.router_teste_categorias import router as teste_categorias_router
-from sistemas.gerador_pecas.router_teste_ativacao import router as teste_ativacao_router
+# TEMPORÁRIO: import condicional até redeploy com arquivo models_teste_ativacao.py
+try:
+    from sistemas.gerador_pecas.router_teste_ativacao import router as teste_ativacao_router
+except ImportError:
+    teste_ativacao_router = None
 
 # Import do admin de prompts modulares
 from admin.router_prompts import router as prompts_modulos_router
@@ -586,7 +590,9 @@ app.include_router(categorias_json_router, prefix="/admin/api")
 app.include_router(teste_categorias_router, prefix="/admin/api")
 
 # Router de Teste de Ativacao de Modulos (admin)
-app.include_router(teste_ativacao_router, prefix="/admin/api")
+# TEMPORÁRIO: inclusão condicional até redeploy com arquivo models_teste_ativacao.py
+if teste_ativacao_router is not None:
+    app.include_router(teste_ativacao_router, prefix="/admin/api")
 
 # Router de Extração (perguntas, modelos, variáveis, regras determinísticas)
 app.include_router(extraction_router, prefix="/admin/api/extraction")
