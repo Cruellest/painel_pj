@@ -395,7 +395,8 @@ class SlugRenameService:
         self,
         variavel_id: int,
         novo_slug: str,
-        normalizar: bool = True
+        normalizar: bool = True,
+        skip_pergunta: bool = False
     ) -> SlugRenameResult:
         """
         Renomeia o slug de uma variavel de forma transacional.
@@ -404,6 +405,8 @@ class SlugRenameService:
             variavel_id: ID da variavel a renomear
             novo_slug: Novo slug desejado
             normalizar: Se True, normaliza o novo slug (remove acentos, etc)
+            skip_pergunta: Se True, nao atualiza a pergunta de origem (usado quando
+                           a renomeacao vem da propria pergunta que ja foi atualizada)
 
         Returns:
             SlugRenameResult com detalhes da operacao
@@ -463,8 +466,9 @@ class SlugRenameService:
             # 2. Propaga para JSON da categoria
             self._propagar_para_json_categoria(variavel, old_slug, novo_slug, result)
 
-            # 3. Propaga para pergunta de origem
-            self._propagar_para_pergunta(variavel, old_slug, novo_slug, result)
+            # 3. Propaga para pergunta de origem (se nao foi skip)
+            if not skip_pergunta:
+                self._propagar_para_pergunta(variavel, old_slug, novo_slug, result)
 
             # 4. Propaga para prompts e regras
             self._propagar_para_prompts(old_slug, novo_slug, result)

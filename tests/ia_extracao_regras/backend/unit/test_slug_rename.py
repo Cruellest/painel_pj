@@ -552,5 +552,122 @@ class TestSlugValidation(BaseSlugTestCase):
         self.assertFalse(result.success)
 
 
+class TestSlugRenameViaPergunta(BaseSlugTestCase):
+    """Testes para cenario de renomeacao via edicao de pergunta"""
+
+    def test_renomear_slug_via_pergunta_persiste(self):
+        """
+        Teste do bug reportado: editar slug da pergunta e garantir que persiste.
+
+        Cenario:
+        1. Criar pergunta com slug "despacho_data"
+        2. Editar para "despacho_data_"
+        3. Verificar que slug foi persistido na pergunta
+        4. Verificar que variavel foi renomeada
+        5. Verificar que JSON da categoria foi atualizado
+        """
+        # Setup
+        formato_json = json.dumps({
+            "despacho_data": {"type": "date", "description": "Data do despacho"}
+        })
+        categoria = self._create_categoria("cat_bug_test", formato_json)
+        pergunta = self._create_pergunta(
+            categoria.id,
+            nome_variavel_sugerido="despacho_data",
+            pergunta="Qual a data do despacho?"
+        )
+        variavel = self._create_variavel(
+            "despacho_data",
+            categoria_id=categoria.id,
+            source_question_id=pergunta.id
+        )
+        self.db.commit()
+
+        # Simula edicao do slug
+        novo_slug = "despacho_data_"
+
+        # Usa o SlugRenameService com skip_pergunta=True (como faz o endpoint)
+        service = SlugRenameService(self.db)
+        result = service.renomear(
+            variavel_id=variavel.id,
+            novo_slug=novo_slug,
+            normalizar=False,
+            skip_pergunta=True
+        )
+
+        # Atualiza a pergunta manualmente (como faz o endpoint)
+        pergunta.nome_variavel_sugerido = novo_slug
+
+        self.db.commit()
+
+        # Verificacoes
+        self.assertTrue(result.success, f"Falha: {result.error}")
+
+        # 1. Pergunta deve ter o novo slug
+        self.db.refresh(pergunta)
+        self.assertEqual(pergunta.nome_variavel_sugerido, "despacho_data_")
+
+        # 2. Variavel deve ter o novo slug
+        self.db.refresh(variavel)
+        self.assertEqual(variavel.slug, "despacho_data_")
+
+        # 3. JSON da categoria deve ter o novo slug
+        self.db.refresh(categoria)
+        schema = json.loads(categoria.formato_json)
+        self.assertNotIn("despacho_data", schema)
+        self.assertIn("despacho_data_", schema)
+
+    def test_reabrir_pergunta_nao_reverte_slug(self):
+        """
+        Testa que ao reabrir a pergunta, o slug nao reverte para o antigo.
+
+        Este teste simula o cenario onde:
+        1. Usuario edita slug
+        2. Salva
+        3. Reabre o modal
+        4. Slug deve continuar com o novo valor
+        """
+        # Setup
+        formato_json = json.dumps({
+            "variavel_original": {"type": "text"}
+        })
+        categoria = self._create_categoria("cat_reabrir", formato_json)
+        pergunta = self._create_pergunta(
+            categoria.id,
+            nome_variavel_sugerido="variavel_original",
+            pergunta="Pergunta teste"
+        )
+        variavel = self._create_variavel(
+            "variavel_original",
+            categoria_id=categoria.id,
+            source_question_id=pergunta.id
+        )
+        self.db.commit()
+
+        # Renomeia
+        service = SlugRenameService(self.db)
+        result = service.renomear(
+            variavel_id=variavel.id,
+            novo_slug="variavel_nova",
+            normalizar=False,
+            skip_pergunta=True
+        )
+        pergunta.nome_variavel_sugerido = "variavel_nova"
+        self.db.commit()
+
+        # Simula "reabrir" - busca do banco novamente
+        pergunta_recarregada = self.db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.id == pergunta.id
+        ).first()
+
+        variavel_recarregada = self.db.query(ExtractionVariable).filter(
+            ExtractionVariable.id == variavel.id
+        ).first()
+
+        # O slug NAO deve ter revertido
+        self.assertEqual(pergunta_recarregada.nome_variavel_sugerido, "variavel_nova")
+        self.assertEqual(variavel_recarregada.slug, "variavel_nova")
+
+
 if __name__ == "__main__":
     unittest.main()

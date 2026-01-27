@@ -531,10 +531,15 @@ def ensure_variable_for_question(
 
     if variavel_existente:
         # PRESERVA variável existente - NÃO altera o slug!
-        # Apenas sincroniza nome_variavel_sugerido da pergunta para exibição na UI
-        if not pergunta.nome_variavel_sugerido or pergunta.nome_variavel_sugerido != variavel_existente.slug:
-            pergunta.nome_variavel_sugerido = variavel_existente.slug
-            logger.info(f"Pergunta {pergunta.id}: sincronizado nome_variavel_sugerido = '{variavel_existente.slug}'")
+        # IMPORTANTE: Nao sobrescrever nome_variavel_sugerido da pergunta aqui!
+        # A renomeacao de slug eh tratada no endpoint PUT /perguntas/{id}
+        # Aqui apenas logamos se houver divergencia (nao sobrescrevemos)
+        if pergunta.nome_variavel_sugerido and pergunta.nome_variavel_sugerido != variavel_existente.slug:
+            logger.warning(
+                f"Pergunta {pergunta.id}: slug divergente detectado - "
+                f"pergunta='{pergunta.nome_variavel_sugerido}', variavel='{variavel_existente.slug}'. "
+                f"Use o endpoint PUT /perguntas/{pergunta.id} para renomear."
+            )
 
         # Atualiza apenas campos não-identificadores da variável (tipo, opções, dependências)
         variavel_existente.tipo = tipo_variavel
@@ -1425,6 +1430,9 @@ async def atualizar_pergunta(
     if not pergunta:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
 
+    # Guarda slug antigo ANTES de atualizar
+    slug_antigo = pergunta.nome_variavel_sugerido
+
     # Valida slug duplicado na mesma categoria (se está sendo alterado)
     update_data_check = data.model_dump(exclude_unset=True)
     novo_slug = update_data_check.get("nome_variavel_sugerido")
@@ -1452,8 +1460,50 @@ async def atualizar_pergunta(
     # Busca categoria para criar/atualizar variável
     categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == pergunta.categoria_id).first()
 
-    # Cria/atualiza variável correspondente (se pergunta tiver campos mínimos)
-    variavel = ensure_variable_for_question(db, pergunta, categoria) if categoria else None
+    # =========================================================================
+    # DETECCAO DE MUDANCA DE SLUG - PROPAGACAO AUTOMATICA
+    # =========================================================================
+    # Se o slug mudou, precisamos RENOMEAR a variavel existente (nao sobrescrever)
+    novo_slug_final = pergunta.nome_variavel_sugerido
+    variavel = None
+
+    if slug_antigo and novo_slug_final and slug_antigo != novo_slug_final:
+        # Slug foi alterado pelo usuario - RENOMEAR a variavel
+        variavel_existente = db.query(ExtractionVariable).filter(
+            ExtractionVariable.source_question_id == pergunta.id
+        ).first()
+
+        if variavel_existente:
+            from .services_slug_rename import SlugRenameService
+
+            service = SlugRenameService(db)
+            result = service.renomear(
+                variavel_id=variavel_existente.id,
+                novo_slug=novo_slug_final,
+                normalizar=False,  # Slug ja esta no formato desejado
+                skip_pergunta=True  # Pergunta ja foi atualizada acima
+            )
+
+            if result.success:
+                variavel = variavel_existente
+                logger.info(
+                    f"[SLUG-RENAME-PERGUNTA] Slug renomeado: {result.old_slug} -> {result.new_slug} "
+                    f"(pergunta_id={pergunta.id}, prompts={result.prompts_atualizados}, "
+                    f"deps={result.variaveis_dependentes_atualizadas + result.perguntas_dependentes_atualizadas})"
+                )
+            else:
+                # Falha na renomeacao - reverte slug da pergunta e lanca erro
+                pergunta.nome_variavel_sugerido = slug_antigo
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Erro ao renomear slug: {result.error}"
+                )
+        else:
+            # Nao existe variavel vinculada - cria nova com o novo slug
+            variavel = ensure_variable_for_question(db, pergunta, categoria) if categoria else None
+    else:
+        # Slug nao mudou - comportamento normal
+        variavel = ensure_variable_for_question(db, pergunta, categoria) if categoria else None
 
     db.commit()
     db.refresh(pergunta)
