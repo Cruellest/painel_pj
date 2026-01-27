@@ -1234,11 +1234,12 @@ Sua função é modificar a minuta fornecida de acordo com o pedido do usuário.
 Você DEVE responder em um dos dois formatos:
 
 ### FORMATO 1 - PERGUNTA DE CLARIFICAÇÃO (quando tiver dúvidas)
-Se o pedido não estiver claro, for ambíguo, ou você precisar de mais informações:
-\`\`\`
+Se o pedido não estiver claro, for ambíguo, ou você precisar de mais informações, comece sua resposta EXATAMENTE com [PERGUNTA] na primeira linha, seguido da sua pergunta:
+
 [PERGUNTA]
 Sua pergunta aqui para o usuário...
-\`\`\`
+
+IMPORTANTE: O marcador [PERGUNTA] DEVE estar sozinho no início da resposta, sem nenhum texto antes.
 
 Exemplos de quando perguntar:
 - "Adicione argumento sobre prescrição" → Pergunte: qual tipo de prescrição? Intercorrente? Quinquenal?
@@ -1246,7 +1247,7 @@ Exemplos de quando perguntar:
 - "Adicione jurisprudência" → Pergunte: sobre qual tema específico?
 
 ### FORMATO 2 - MINUTA EDITADA (quando tiver certeza do que fazer)
-Quando o pedido estiver claro, retorne APENAS a minuta editada em markdown, sem explicações.
+Quando o pedido estiver claro, retorne APENAS a minuta editada em markdown, sem explicações e SEM o marcador [PERGUNTA].
 
 ## REGRAS PARA USO DE ARGUMENTOS DA BASE DE CONHECIMENTO
 
