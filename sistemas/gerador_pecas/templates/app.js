@@ -1022,6 +1022,8 @@
         let buffer = "";
         let minutaCompleta = "";
         let primeiroChunk = true;
+        let isPergunta = false;
+        const minutaOriginal = this.minutaMarkdown; // Guarda minuta original
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -1051,7 +1053,12 @@
                     primeiroChunk = false;
                   }
                   minutaCompleta += parsed.text;
-                  if (minutaCompleta.length % 500 < parsed.text.length) {
+                  // Verifica se é pergunta nos primeiros caracteres
+                  if (!isPergunta && minutaCompleta.length < 50) {
+                    isPergunta = /^\s*\[PERGUNTA\]/i.test(minutaCompleta);
+                  }
+                  // Só atualiza visualização se NÃO for pergunta
+                  if (!isPergunta && minutaCompleta.length % 500 < parsed.text.length) {
                     this.minutaMarkdown = minutaCompleta;
                     this.renderizarMinuta();
                   }
@@ -1066,7 +1073,10 @@
           // Verifica se a resposta é uma pergunta de clarificação
           // Detecta [PERGUNTA] no início (com possíveis espaços/quebras antes)
           const perguntaMatch = minutaCompleta.match(/^\s*\[PERGUNTA\]\s*/i);
-          if (perguntaMatch) {
+          if (perguntaMatch || isPergunta) {
+            // Restaura a minuta original (não foi alterada)
+            this.minutaMarkdown = minutaOriginal;
+            this.renderizarMinuta();
             // Remove o marcador [PERGUNTA] e mostra no chat
             const perguntaTexto = minutaCompleta.replace(/^\s*\[PERGUNTA\]\s*/i, "").trim();
             this.historicoChat.push({ role: "user", content: mensagem });
