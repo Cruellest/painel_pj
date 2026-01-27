@@ -39,6 +39,12 @@ class JobStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+# Helper para garantir que SQLEnum use o value (lowercase) ao inves do name (uppercase)
+def _enum_values_callable(enum_class):
+    """Retorna os valores do enum para uso com SQLEnum."""
+    return [e.value for e in enum_class]
+
+
 class BertDataset(Base):
     """Dataset Excel enviado para treinamento."""
 
@@ -53,7 +59,7 @@ class BertDataset(Base):
     file_size_bytes = Column(Integer, nullable=False)
 
     # Estrutura do dataset
-    task_type = Column(SQLEnum(TaskType), nullable=False)
+    task_type = Column(SQLEnum(TaskType, values_callable=_enum_values_callable), nullable=False)
     text_column = Column(String(100), nullable=False)  # Coluna com tokens/texto
     label_column = Column(String(100), nullable=False)  # Coluna com labels/tags
 
@@ -94,7 +100,7 @@ class BertRun(Base):
     dataset_sha256 = Column(String(64), nullable=False)  # Snapshot do hash para reprodutibilidade
 
     # Tipo de tarefa
-    task_type = Column(SQLEnum(TaskType), nullable=False)
+    task_type = Column(SQLEnum(TaskType, values_callable=_enum_values_callable), nullable=False)
 
     # Modelo base
     base_model = Column(String(255), nullable=False)  # Ex: neuralmind/bert-base-portuguese-cased
@@ -157,7 +163,7 @@ class BertJob(Base):
     run_id = Column(Integer, ForeignKey("bert_runs.id"), nullable=False)
 
     # Status
-    status = Column(SQLEnum(JobStatus), default=JobStatus.PENDING, nullable=False)
+    status = Column(SQLEnum(JobStatus, values_callable=_enum_values_callable), default=JobStatus.PENDING, nullable=False)
 
     # Worker que pegou o job
     worker_id = Column(Integer, ForeignKey("bert_workers.id"), nullable=True)
