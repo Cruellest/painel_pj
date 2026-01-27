@@ -23,7 +23,11 @@ from sistemas.gerador_pecas.models_extraction import (
     PromptVariableUsage, PromptActivationLog
 )
 from sistemas.gerador_pecas.models_teste_categorias import TesteDocumento, TesteObservacao
-from sistemas.gerador_pecas.models_teste_ativacao import CenarioTesteAtivacao
+# TEMPORÁRIO: import condicional até redeploy com arquivo correto
+try:
+    from sistemas.gerador_pecas.models_teste_ativacao import CenarioTesteAtivacao
+except ImportError:
+    CenarioTesteAtivacao = None  # Tabela não será criada automaticamente
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from sistemas.relatorio_cumprimento.models import GeracaoRelatorioCumprimento, LogChamadaIARelatorioCumprimento, FeedbackRelatorioCumprimento
