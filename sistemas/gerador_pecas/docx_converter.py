@@ -621,21 +621,24 @@ class DocxConverter:
         p.paragraph_format.first_line_indent = Cm(0)  # SEM recuo
         p.paragraph_format.left_indent = Cm(0)  # SEM recuo esquerdo
         
+        # Limpa marcadores markdown órfãos do texto
+        text = self._clean_orphan_markers(text)
+
         # Padrão especial para "Processo nº XXX" (sem dois pontos)
         text_lower = text.lower()
         if 'processo' in text_lower and ('nº' in text_lower or 'n°' in text_lower):
-            # Encontra onde termina "nº" ou "n°" 
+            # Encontra onde termina "nº" ou "n°"
             match = re.search(r'(processo\s*n[º°]\s*:?)', text, re.IGNORECASE)
             if match:
-                label = match.group(1).rstrip(':').strip()
-                value = text[match.end():].strip().lstrip(':').strip()
-                
+                label = self._strip_markdown(match.group(1).rstrip(':').strip())
+                value = self._strip_markdown(text[match.end():].strip().lstrip(':').strip())
+
                 # Etiqueta em negrito e maiúsculo
                 run_label = p.add_run(label.upper() + ':')
                 run_label.font.name = self.font_name
                 run_label.font.size = Pt(self.font_size)
                 run_label.bold = True
-                
+
                 # Valor
                 if value:
                     run_value = p.add_run(' ' + value)
@@ -647,15 +650,15 @@ class DocxConverter:
         # Separa etiqueta do valor quando há dois pontos (ex: "Requerente: Nome")
         elif ':' in text:
             parts = text.split(':', 1)
-            label = parts[0].strip()
-            value = parts[1].strip() if len(parts) > 1 else ''
-            
+            label = self._strip_markdown(parts[0].strip())
+            value = self._strip_markdown(parts[1].strip()) if len(parts) > 1 else ''
+
             # Etiqueta em negrito e maiúsculo
             run_label = p.add_run(label.upper() + ':')
             run_label.font.name = self.font_name
             run_label.font.size = Pt(self.font_size)
             run_label.bold = True
-            
+
             # Valor normal
             if value:
                 run_value = p.add_run(' ' + value)
@@ -734,6 +737,9 @@ class DocxConverter:
     
     def _add_formatted_text(self, paragraph, text: str):
         """Adiciona texto com formatação inline (negrito, itálico)."""
+        # Limpa marcadores órfãos antes de processar
+        text = self._clean_orphan_markers(text)
+
         # Padrões de formatação Markdown
         # Ordem importante: negrito+itálico primeiro
         patterns = [
@@ -742,11 +748,11 @@ class DocxConverter:
             (r'\*(.+?)\*', 'italic'),                # *texto*
             (r'_(.+?)_', 'italic'),                  # _texto_
         ]
-        
+
         # Encontra todas as formatações e suas posições
         segments = []
         last_end = 0
-        
+
         # Combina todos os padrões em um regex
         combined_pattern = r'(\*\*\*.+?\*\*\*|\*\*.+?\*\*|\*[^*]+?\*|_.+?_)'
         
@@ -1010,6 +1016,38 @@ class DocxConverter:
         # Remove itálico
         text = re.sub(r'\*(.+?)\*', r'\1', text)
         text = re.sub(r'_(.+?)_', r'\1', text)
+        # Remove ** órfãos (sem par)
+        text = re.sub(r'\*\*', '', text)
+        return text
+
+    def _clean_orphan_markers(self, text: str) -> str:
+        """
+        Remove marcadores markdown órfãos (sem par) do texto.
+
+        Exemplos de órfãos:
+        - 'texto**' -> 'texto' (** no fim sem par)
+        - '**texto' -> 'texto' (** no início sem par)
+
+        Exemplos válidos (não remove):
+        - '**texto**' -> mantém (par completo, será processado depois)
+        """
+        # Conta ocorrências de **
+        count = text.count('**')
+
+        # Se não há ** ou pares completos, retorna como está
+        if count == 0 or count % 2 == 0:
+            return text
+
+        # Número ímpar de ** - há pelo menos um órfão
+        # Estratégia: remove ** do final primeiro (mais comum em erros de geração)
+        if text.rstrip().endswith('**'):
+            text = re.sub(r'\*\*\s*$', '', text)
+        elif text.lstrip().startswith('**'):
+            text = re.sub(r'^\s*\*\*', '', text)
+        else:
+            # Órfão no meio - remove a primeira ocorrência
+            text = re.sub(r'\*\*', '', text, count=1)
+
         return text
 
 
