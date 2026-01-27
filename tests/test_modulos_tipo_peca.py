@@ -615,3 +615,266 @@ class TestBugContagensIncorretas:
 
         # Este é exatamente o bug que foi corrigido!
         assert mapa_filtrado != mapa_sem_filtro or len(contagens_sem_filtro) == 0
+
+
+# ============================================================================
+# TESTES DE GATE - Módulos inativos NÃO devem ser avaliados
+# ============================================================================
+
+class TestGateModulosInativos:
+    """
+    Testes para verificar que módulos inativos por tipo de peça funcionam
+    como um GATE ABSOLUTO - não são avaliados nem ativados, independente
+    de regras determinísticas ou modo LLM.
+
+    Regra de Ouro:
+    1. Selecionar módulos associados ao tipo de peça
+    2. FILTRAR apenas módulos ATIVOS para aquele tipo de peça (GATE)
+    3. Aplicar lógica de ativação (determinística e/ou LLM)
+    4. Gerar lista final de módulos
+
+    Se o filtro (2) não existir ou estiver depois do (3), é um bug.
+    """
+
+    def test_modulo_inativo_nao_aparece_na_lista_de_disponiveis(
+        self, db_transactional, grupo_teste, tipo_peca_teste, modulos_conteudo_teste
+    ):
+        """
+        Módulo marcado como INATIVO para um tipo de peça não deve aparecer
+        na lista de módulos disponíveis para detecção.
+        """
+        from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
+
+        # Marca módulo 0 como INATIVO para o tipo de peça
+        modulo_desativado = modulos_conteudo_teste[0]
+        assoc = ModuloTipoPeca(
+            modulo_id=modulo_desativado.id,
+            tipo_peca=tipo_peca_teste.categoria,
+            ativo=False
+        )
+        db_transactional.add(assoc)
+        db_transactional.flush()
+
+        # Carrega módulos disponíveis usando o detector
+        detector = DetectorModulosIA(db_transactional)
+        modulos_disponiveis = detector._carregar_modulos_disponiveis(
+            tipo_peca=tipo_peca_teste.categoria,
+            group_id=grupo_teste.id
+        )
+
+        # Verifica que o módulo desativado NÃO está na lista
+        ids_disponiveis = [m.id for m in modulos_disponiveis]
+        assert modulo_desativado.id not in ids_disponiveis, \
+            f"Módulo inativo {modulo_desativado.id} não deveria estar disponível"
+
+        # Verifica que os outros módulos ESTÃO na lista
+        for modulo in modulos_conteudo_teste[1:]:
+            assert modulo.id in ids_disponiveis, \
+                f"Módulo ativo {modulo.id} deveria estar disponível"
+
+    def test_modulo_inativo_com_regra_deterministica_verdadeira_nao_ativa(
+        self, db_transactional, grupo_teste, tipo_peca_teste
+    ):
+        """
+        Mesmo que um módulo tenha uma regra determinística que seria TRUE,
+        se ele estiver INATIVO para o tipo de peça, ele NÃO deve ser ativado.
+
+        Este é o teste crítico: a regra seria satisfeita, mas o gate impede.
+        """
+        from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
+        import uuid
+
+        # Cria módulo com regra determinística que SEMPRE é TRUE
+        modulo_com_regra = PromptModulo(
+            nome=f"modulo_regra_sempre_true_{uuid.uuid4().hex[:8]}",
+            titulo="Módulo Regra Sempre True",
+            tipo="conteudo",
+            categoria="Teste Gate",
+            conteudo="Conteúdo do módulo",
+            condicao_ativacao="Sempre ativar este módulo",
+            ativo=True,
+            group_id=grupo_teste.id,
+            modo_ativacao="deterministic",
+            # Regra que sempre é TRUE: valor_teste == True
+            regra_deterministica={
+                "type": "condition",
+                "variable": "valor_teste",
+                "operator": "equals",
+                "value": True
+            }
+        )
+        db_transactional.add(modulo_com_regra)
+        db_transactional.flush()
+
+        # Marca como INATIVO para o tipo de peça
+        assoc = ModuloTipoPeca(
+            modulo_id=modulo_com_regra.id,
+            tipo_peca=tipo_peca_teste.categoria,
+            ativo=False  # INATIVO!
+        )
+        db_transactional.add(assoc)
+        db_transactional.flush()
+
+        # Carrega módulos disponíveis
+        detector = DetectorModulosIA(db_transactional)
+        modulos_disponiveis = detector._carregar_modulos_disponiveis(
+            tipo_peca=tipo_peca_teste.categoria,
+            group_id=grupo_teste.id
+        )
+
+        # O módulo NÃO deve estar disponível (GATE absoluto)
+        ids_disponiveis = [m.id for m in modulos_disponiveis]
+        assert modulo_com_regra.id not in ids_disponiveis, \
+            "Módulo INATIVO não deveria estar disponível, mesmo com regra TRUE"
+
+    def test_modulo_ativo_com_regra_deterministica_verdadeira_ativa(
+        self, db_transactional, grupo_teste, tipo_peca_teste
+    ):
+        """
+        Módulo ATIVO com regra determinística TRUE deve ser ativado normalmente.
+        Este é o caso de controle para garantir que o sistema funciona.
+        """
+        from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
+        import uuid
+
+        # Cria módulo com regra determinística que SEMPRE é TRUE
+        modulo_com_regra = PromptModulo(
+            nome=f"modulo_regra_ativo_{uuid.uuid4().hex[:8]}",
+            titulo="Módulo Regra Ativo",
+            tipo="conteudo",
+            categoria="Teste Gate",
+            conteudo="Conteúdo do módulo",
+            condicao_ativacao="Sempre ativar este módulo",
+            ativo=True,
+            group_id=grupo_teste.id,
+            modo_ativacao="deterministic",
+            regra_deterministica={
+                "type": "condition",
+                "variable": "valor_teste",
+                "operator": "equals",
+                "value": True
+            }
+        )
+        db_transactional.add(modulo_com_regra)
+        db_transactional.flush()
+
+        # Marca como ATIVO para o tipo de peça
+        assoc = ModuloTipoPeca(
+            modulo_id=modulo_com_regra.id,
+            tipo_peca=tipo_peca_teste.categoria,
+            ativo=True  # ATIVO!
+        )
+        db_transactional.add(assoc)
+        db_transactional.flush()
+
+        # Carrega módulos disponíveis
+        detector = DetectorModulosIA(db_transactional)
+        modulos_disponiveis = detector._carregar_modulos_disponiveis(
+            tipo_peca=tipo_peca_teste.categoria,
+            group_id=grupo_teste.id
+        )
+
+        # O módulo DEVE estar disponível
+        ids_disponiveis = [m.id for m in modulos_disponiveis]
+        assert modulo_com_regra.id in ids_disponiveis, \
+            "Módulo ATIVO deveria estar disponível"
+
+    def test_filtro_acontece_antes_da_separacao_deterministic_llm(
+        self, db_transactional, grupo_teste, tipo_peca_teste
+    ):
+        """
+        Verifica que a filtragem por ativo/inativo acontece ANTES da
+        separação entre módulos determinísticos e LLM.
+
+        Isso garante que módulos inativos nunca chegam à etapa de avaliação.
+        """
+        from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
+        import uuid
+
+        # Cria 3 módulos:
+        # 1. Determinístico + INATIVO
+        # 2. LLM + INATIVO
+        # 3. Determinístico + ATIVO (controle)
+
+        modulo_det_inativo = PromptModulo(
+            nome=f"det_inativo_{uuid.uuid4().hex[:8]}",
+            titulo="Det Inativo",
+            tipo="conteudo",
+            categoria="Teste",
+            conteudo="...",
+            ativo=True,
+            group_id=grupo_teste.id,
+            modo_ativacao="deterministic",
+            regra_deterministica={"type": "condition", "variable": "x", "operator": "equals", "value": True}
+        )
+
+        modulo_llm_inativo = PromptModulo(
+            nome=f"llm_inativo_{uuid.uuid4().hex[:8]}",
+            titulo="LLM Inativo",
+            tipo="conteudo",
+            categoria="Teste",
+            conteudo="...",
+            ativo=True,
+            group_id=grupo_teste.id,
+            modo_ativacao="llm"  # Sem regra determinística
+        )
+
+        modulo_det_ativo = PromptModulo(
+            nome=f"det_ativo_{uuid.uuid4().hex[:8]}",
+            titulo="Det Ativo",
+            tipo="conteudo",
+            categoria="Teste",
+            conteudo="...",
+            ativo=True,
+            group_id=grupo_teste.id,
+            modo_ativacao="deterministic",
+            regra_deterministica={"type": "condition", "variable": "y", "operator": "equals", "value": True}
+        )
+
+        db_transactional.add_all([modulo_det_inativo, modulo_llm_inativo, modulo_det_ativo])
+        db_transactional.flush()
+
+        # Marca os dois primeiros como INATIVOS
+        assoc1 = ModuloTipoPeca(modulo_id=modulo_det_inativo.id, tipo_peca=tipo_peca_teste.categoria, ativo=False)
+        assoc2 = ModuloTipoPeca(modulo_id=modulo_llm_inativo.id, tipo_peca=tipo_peca_teste.categoria, ativo=False)
+        assoc3 = ModuloTipoPeca(modulo_id=modulo_det_ativo.id, tipo_peca=tipo_peca_teste.categoria, ativo=True)
+        db_transactional.add_all([assoc1, assoc2, assoc3])
+        db_transactional.flush()
+
+        # Carrega módulos disponíveis
+        detector = DetectorModulosIA(db_transactional)
+        modulos_disponiveis = detector._carregar_modulos_disponiveis(
+            tipo_peca=tipo_peca_teste.categoria,
+            group_id=grupo_teste.id
+        )
+
+        ids_disponiveis = [m.id for m in modulos_disponiveis]
+
+        # Apenas o módulo ATIVO deve estar disponível
+        assert modulo_det_inativo.id not in ids_disponiveis, "Det inativo não deveria estar disponível"
+        assert modulo_llm_inativo.id not in ids_disponiveis, "LLM inativo não deveria estar disponível"
+        assert modulo_det_ativo.id in ids_disponiveis, "Det ativo deveria estar disponível"
+
+    def test_sem_associacao_considera_ativo_por_padrao(
+        self, db_transactional, grupo_teste, tipo_peca_teste, modulos_conteudo_teste
+    ):
+        """
+        Módulos SEM associação em ModuloTipoPeca devem ser considerados
+        ATIVOS por padrão (retrocompatibilidade).
+        """
+        from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
+
+        # Não cria nenhuma associação - todos devem aparecer como ativos
+
+        detector = DetectorModulosIA(db_transactional)
+        modulos_disponiveis = detector._carregar_modulos_disponiveis(
+            tipo_peca=tipo_peca_teste.categoria,
+            group_id=grupo_teste.id
+        )
+
+        ids_disponiveis = [m.id for m in modulos_disponiveis]
+
+        # Todos os módulos devem estar disponíveis
+        for modulo in modulos_conteudo_teste:
+            assert modulo.id in ids_disponiveis, \
+                f"Módulo {modulo.id} sem associação deveria estar disponível (padrão ativo)"
