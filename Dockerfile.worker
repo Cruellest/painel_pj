@@ -1,0 +1,31 @@
+FROM python:3.12-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt .
+COPY requirements_worker.txt .
+
+# Install dependencies
+# Using requirements.txt for base compatibility + specific worker deps
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements_worker.txt
+
+# Copy source code
+COPY . .
+
+# Create models directory
+RUN mkdir -p models
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Run the inference server
+# Binding to 0.0.0.0 to be accessible outside the container
+CMD ["python", "-m", "sistemas.bert_training.worker.inference_server", "--host", "0.0.0.0", "--port", "8765"]
