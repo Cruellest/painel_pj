@@ -445,69 +445,139 @@ async def atualizar_categoria(
     categoria.atualizado_por = current_user.id
     categoria.atualizado_em = datetime.utcnow()
 
-    # Sincroniza variáveis APENAS se explicitamente solicitado (flag de segurança)
-    # IMPORTANTE: Por padrão NÃO desativa variáveis ao atualizar JSON
-    # Use "Aplicar JSON nas Perguntas" para sincronização completa
-    if categoria_data.formato_json is not None and categoria_data.sincronizar_variaveis:
+    # ==========================================================================
+    # DETECCAO E PROPAGACAO AUTOMATICA DE RENOMEACAO DE SLUGS
+    # ==========================================================================
+    # Quando o usuario edita o JSON da categoria e muda uma chave (slug),
+    # o sistema detecta e propaga automaticamente para todas as referencias:
+    # - ExtractionVariable (fonte de verdade)
+    # - Regras deterministicas em prompts
+    # - Dependencias de outras variaveis/perguntas
+    # ==========================================================================
+    if categoria_data.formato_json is not None:
         try:
-            import json
             from .models_extraction import ExtractionVariable, ExtractionQuestion
+            from .services_slug_rename import SlugRenameService
 
-            schema = json.loads(categoria_data.formato_json)
+            # Parse JSON antigo e novo
+            schema_antigo = json.loads(categoria.formato_json) if categoria.formato_json else {}
+            schema_novo = json.loads(categoria_data.formato_json)
 
-            # Extrai slugs do novo JSON
-            slugs_no_json = set()
-            for slug, campo_info in schema.items():
-                if isinstance(campo_info, dict):
-                    slugs_no_json.add(slug)
+            slugs_antigos = set(k for k, v in schema_antigo.items() if isinstance(v, dict))
+            slugs_novos = set(k for k, v in schema_novo.items() if isinstance(v, dict))
 
-            # Busca todas as variáveis ativas da categoria
+            # Detecta slugs removidos e adicionados
+            slugs_removidos = slugs_antigos - slugs_novos
+            slugs_adicionados = slugs_novos - slugs_antigos
+
+            # Busca variaveis ativas da categoria
             variaveis_categoria = db.query(ExtractionVariable).filter(
                 ExtractionVariable.categoria_id == categoria_id,
                 ExtractionVariable.ativo == True
             ).all()
+            variaveis_por_slug = {v.slug: v for v in variaveis_categoria}
 
-            # Desativa variáveis que não estão mais no JSON (órfãs)
-            # SEGURANÇA: Só executa se sincronizar_variaveis=True
-            for variavel in variaveis_categoria:
-                if variavel.slug not in slugs_no_json:
-                    variavel.ativo = False
-                    variavel.atualizado_em = datetime.utcnow()
-                    logger.info(f"Variável órfã desativada: slug={variavel.slug} (removida do JSON)")
+            # DETECCAO DE RENOMEACAO:
+            # Se um slug foi removido E um novo foi adicionado, pode ser renomeacao
+            # Criterio: slug removido existe como variavel ativa
+            renomeacoes_detectadas = []
 
-                    # Desativa a pergunta associada, se existir
-                    if variavel.source_question_id:
-                        pergunta = db.query(ExtractionQuestion).filter(
-                            ExtractionQuestion.id == variavel.source_question_id
+            for slug_antigo in slugs_removidos:
+                if slug_antigo in variaveis_por_slug:
+                    variavel = variaveis_por_slug[slug_antigo]
+
+                    # Tenta encontrar o novo slug correspondente
+                    # Heuristica: mesmo tipo ou descricao similar
+                    for slug_novo in slugs_adicionados:
+                        info_nova = schema_novo.get(slug_novo, {})
+                        info_antiga = schema_antigo.get(slug_antigo, {})
+
+                        # Se tem o mesmo tipo, provavelmente eh renomeacao
+                        mesmo_tipo = info_nova.get("type") == info_antiga.get("type")
+
+                        if mesmo_tipo or len(slugs_adicionados) == 1:
+                            renomeacoes_detectadas.append({
+                                "variavel_id": variavel.id,
+                                "slug_antigo": slug_antigo,
+                                "slug_novo": slug_novo
+                            })
+                            slugs_adicionados.discard(slug_novo)
+                            break
+
+            # Executa renomeacoes detectadas
+            if renomeacoes_detectadas:
+                service = SlugRenameService(db)
+
+                for rename in renomeacoes_detectadas:
+                    result = service.renomear(
+                        variavel_id=rename["variavel_id"],
+                        novo_slug=rename["slug_novo"],
+                        normalizar=False  # Slug ja esta no formato desejado
+                    )
+
+                    if result.success:
+                        logger.info(
+                            f"[AUTO-RENAME] Slug renomeado automaticamente: "
+                            f"{rename['slug_antigo']} -> {rename['slug_novo']} "
+                            f"(prompts={result.prompts_atualizados}, "
+                            f"regras_tipo_peca={result.regras_tipo_peca_atualizadas}, "
+                            f"deps_vars={result.variaveis_dependentes_atualizadas}, "
+                            f"deps_pergs={result.perguntas_dependentes_atualizadas})"
+                        )
+                    else:
+                        logger.warning(
+                            f"[AUTO-RENAME] Falha ao renomear {rename['slug_antigo']}: {result.error}"
+                        )
+
+            # Sincroniza variaveis APENAS se explicitamente solicitado
+            if categoria_data.sincronizar_variaveis:
+                # Recalcula slugs apos renomeacoes
+                slugs_no_json = set(k for k, v in schema_novo.items() if isinstance(v, dict))
+
+                # Recarrega variaveis (podem ter sido atualizadas)
+                variaveis_categoria = db.query(ExtractionVariable).filter(
+                    ExtractionVariable.categoria_id == categoria_id,
+                    ExtractionVariable.ativo == True
+                ).all()
+
+                # Desativa variaveis orfas
+                for variavel in variaveis_categoria:
+                    if variavel.slug not in slugs_no_json:
+                        variavel.ativo = False
+                        variavel.atualizado_em = datetime.utcnow()
+                        logger.info(f"Variavel orfa desativada: slug={variavel.slug}")
+
+                        if variavel.source_question_id:
+                            pergunta = db.query(ExtractionQuestion).filter(
+                                ExtractionQuestion.id == variavel.source_question_id
+                            ).first()
+                            if pergunta and pergunta.ativo:
+                                pergunta.ativo = False
+                                pergunta.atualizado_por = current_user.id
+                                pergunta.atualizado_em = datetime.utcnow()
+
+                # Atualiza tipo/descricao de variaveis existentes
+                for slug, campo_info in schema_novo.items():
+                    if isinstance(campo_info, dict):
+                        variavel = db.query(ExtractionVariable).filter(
+                            ExtractionVariable.slug == slug,
+                            ExtractionVariable.categoria_id == categoria_id
                         ).first()
-                        if pergunta and pergunta.ativo:
-                            pergunta.ativo = False
-                            pergunta.atualizado_por = current_user.id
-                            pergunta.atualizado_em = datetime.utcnow()
-                            logger.info(f"Pergunta órfã desativada: id={pergunta.id}")
 
-            # Atualiza variáveis existentes no JSON
-            for slug, campo_info in schema.items():
-                if isinstance(campo_info, dict):
-                    variavel = db.query(ExtractionVariable).filter(
-                        ExtractionVariable.slug == slug,
-                        ExtractionVariable.categoria_id == categoria_id
-                    ).first()
+                        if variavel:
+                            tipo_json = campo_info.get("type")
+                            descricao_json = campo_info.get("description")
 
-                    if variavel:
-                        tipo_json = campo_info.get("type")
-                        descricao_json = campo_info.get("description")
+                            if tipo_json and variavel.tipo != tipo_json:
+                                variavel.tipo = tipo_json
+                                variavel.atualizado_em = datetime.utcnow()
 
-                        if tipo_json and variavel.tipo != tipo_json:
-                            variavel.tipo = tipo_json
-                            variavel.atualizado_em = datetime.utcnow()
-
-                        if descricao_json and variavel.descricao != descricao_json:
-                            variavel.descricao = descricao_json
-                            variavel.atualizado_em = datetime.utcnow()
+                            if descricao_json and variavel.descricao != descricao_json:
+                                variavel.descricao = descricao_json
+                                variavel.atualizado_em = datetime.utcnow()
 
         except Exception as e:
-            logger.warning(f"Não foi possível sincronizar variáveis com JSON: {e}")
+            logger.warning(f"Erro ao processar mudancas de slug: {e}")
 
     db.commit()
     db.refresh(categoria)

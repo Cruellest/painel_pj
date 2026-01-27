@@ -271,6 +271,35 @@ class SlugRenameService:
             result.detalhes.append(f"{len(usages)} PromptVariableUsage atualizados")
             logger.info(f"[SLUG-RENAME] {len(usages)} PromptVariableUsage atualizados: {old_slug} -> {new_slug}")
 
+    def _atualizar_dependency_config(self, config: Dict[str, Any], old_slug: str, new_slug: str) -> Tuple[Dict[str, Any], bool]:
+        """
+        Atualiza referencias ao slug em dependency_config (JSON complexo).
+
+        Returns:
+            Tuple[config_atualizado, foi_modificado]
+        """
+        if not config or not isinstance(config, dict):
+            return config, False
+
+        modificado = False
+        config_copy = json.loads(json.dumps(config))  # Deep copy
+
+        # Verifica campo 'variable' direto
+        if config_copy.get("variable") == old_slug:
+            config_copy["variable"] = new_slug
+            modificado = True
+
+        # Verifica array de conditions
+        if "conditions" in config_copy and isinstance(config_copy["conditions"], list):
+            for i, cond in enumerate(config_copy["conditions"]):
+                if isinstance(cond, dict):
+                    updated_cond, cond_modified = self._atualizar_dependency_config(cond, old_slug, new_slug)
+                    if cond_modified:
+                        config_copy["conditions"][i] = updated_cond
+                        modificado = True
+
+        return config_copy, modificado
+
     def _propagar_para_dependencias(self, old_slug: str, new_slug: str, result: SlugRenameResult) -> None:
         """Propaga renomeacao para dependencias de outras variaveis e perguntas"""
         # Atualiza variaveis que dependem desta
@@ -282,6 +311,14 @@ class SlugRenameService:
             var.depends_on_variable = new_slug
             var.atualizado_em = datetime.utcnow()
             result.variaveis_dependentes_atualizadas += 1
+
+            # Atualiza dependency_config se existir
+            if var.dependency_config:
+                updated_config, modificado = self._atualizar_dependency_config(
+                    var.dependency_config, old_slug, new_slug
+                )
+                if modificado:
+                    var.dependency_config = updated_config
 
         if variaveis_dependentes:
             result.detalhes.append(f"{len(variaveis_dependentes)} variaveis dependentes atualizadas")
@@ -296,8 +333,63 @@ class SlugRenameService:
             perg.atualizado_em = datetime.utcnow()
             result.perguntas_dependentes_atualizadas += 1
 
+            # Atualiza dependency_config se existir
+            if perg.dependency_config:
+                updated_config, modificado = self._atualizar_dependency_config(
+                    perg.dependency_config, old_slug, new_slug
+                )
+                if modificado:
+                    perg.dependency_config = updated_config
+
         if perguntas_dependentes:
             result.detalhes.append(f"{len(perguntas_dependentes)} perguntas dependentes atualizadas")
+
+        # Tambem busca variaveis/perguntas que tem o slug no dependency_config
+        # mas nao no depends_on_variable (casos de config complexa)
+        self._propagar_para_dependency_configs_complexos(old_slug, new_slug, result)
+
+    def _propagar_para_dependency_configs_complexos(self, old_slug: str, new_slug: str, result: SlugRenameResult) -> None:
+        """
+        Busca e atualiza dependency_config que contem o slug em formato JSON complexo.
+
+        Casos onde depends_on_variable pode ser diferente mas o slug aparece em conditions.
+        """
+        # Busca variaveis com dependency_config que pode conter o slug
+        # Nota: Busca por LIKE no JSON (funciona para SQLite e PostgreSQL)
+        variaveis_com_config = self.db.query(ExtractionVariable).filter(
+            ExtractionVariable.dependency_config.isnot(None),
+            ExtractionVariable.depends_on_variable != old_slug  # Ja processamos acima
+        ).all()
+
+        for var in variaveis_com_config:
+            if var.dependency_config:
+                config_str = json.dumps(var.dependency_config)
+                if old_slug in config_str:
+                    updated_config, modificado = self._atualizar_dependency_config(
+                        var.dependency_config, old_slug, new_slug
+                    )
+                    if modificado:
+                        var.dependency_config = updated_config
+                        var.atualizado_em = datetime.utcnow()
+                        logger.info(f"[SLUG-RENAME] dependency_config de variavel {var.id} atualizado")
+
+        # Busca perguntas com dependency_config complexo
+        perguntas_com_config = self.db.query(ExtractionQuestion).filter(
+            ExtractionQuestion.dependency_config.isnot(None),
+            ExtractionQuestion.depends_on_variable != old_slug  # Ja processamos acima
+        ).all()
+
+        for perg in perguntas_com_config:
+            if perg.dependency_config:
+                config_str = json.dumps(perg.dependency_config)
+                if old_slug in config_str:
+                    updated_config, modificado = self._atualizar_dependency_config(
+                        perg.dependency_config, old_slug, new_slug
+                    )
+                    if modificado:
+                        perg.dependency_config = updated_config
+                        perg.atualizado_em = datetime.utcnow()
+                        logger.info(f"[SLUG-RENAME] dependency_config de pergunta {perg.id} atualizado")
 
     def renomear(
         self,
