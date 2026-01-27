@@ -1,6 +1,7 @@
-# Portal PGE-MS
+# Portal PGE-MS Rewrite
 
 > Sistema web para a Procuradoria-Geral do Estado de Mato Grosso do Sul que utiliza IA para automatizar tarefas juridicas.
+> Rewrite com o objetivo de facilitar a depuração e ajustar o codigo para facil implantação, alem de identificar problemas
 
 ## Inicio Rapido
 
@@ -14,11 +15,26 @@ pip install -r requirements.txt
 copy .env.example .env
 # Edite .env com suas credenciais
 
-# 3. Subir o servidor
+# 4. Instalar dependencias node
+cd ./frontend
+npm install
+
+# 5. Subir o servidor
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 
-# Ou no Windows:
-run.bat
+```
+## Script de execução
+
+Para auxiliar a instanciação do app, tambem existem 2 scripts de inicialização, para windows, linux e macOS (não testado)
+
+Para windows podemos executar:
+```
+./run.bat
+```
+
+Para Linux/MacOS:
+```
+./run.sh
 ```
 
 **Acessar:**

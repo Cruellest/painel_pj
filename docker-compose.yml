@@ -1,0 +1,50 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Database connection string pointing to the db service
+      - DATABASE_URL=postgresql://postgres:Teste@db:5432/postgres
+      
+      # Environment Settings
+      - ENV=development
+      - RAILWAY_ENVIRONMENT=development
+      
+      # Auth Settings
+      - SECRET_KEY=GERE_UMA_CHAVE_SEGURA_AQUI
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=480
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=DEFINA_SENHA_FORTE_AQUI
+      - DEFAULT_USER_PASSWORD=mudar123
+      
+      # CORS
+      - ALLOWED_ORIGINS=
+      
+      # TJ-MS Settings
+      - TJ_WSDL_URL=https://esaj.tjms.jus.br/mniws/servico-intercomunicacao-2.2.2/intercomunicacao?wsdl
+      - TJ_WS_USER=SEU_USUARIO_TJMS
+      - TJ_WS_PASS=SUA_SENHA_TJMS
+      
+      # Gemini Settings
+      - GEMINI_KEY=SUA_API_KEY_GEMINI
+    depends_on:
+      - db
+    # Uncomment the following lines to enable hot-reloading for development
+    # volumes:
+    #   - .:/app
+    # command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_PASSWORD=Teste
+      - PGDATA=/var/lib/postgresql/data
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5344:5432" # Maps container 5432 to host 5344 to match your .env config
+
+volumes:
+  pg_data:
