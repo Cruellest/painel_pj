@@ -46,5 +46,16 @@ services:
     ports:
       - "5344:5432" # Maps container 5432 to host 5344 to match your .env config
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./models:/app/models
+    environment:
+      - PYTHONPATH=/app
+
 volumes:
   pg_data:

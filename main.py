@@ -247,7 +247,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com",
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: blob: https:",
-            "connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai",
+            "connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai http://127.0.0.1:8765 http://localhost:8765 https://cdn.jsdelivr.net",
             "frame-src 'self' blob:",  # Permite iframes com blob URLs (PDFs)
             "object-src 'self' blob:",  # Permite objetos/plugins com blob URLs (PDFs)
             "frame-ancestors 'self'",  # Permite embedding apenas do próprio domínio (para visualizador de PDF)
