@@ -1707,41 +1707,10 @@ def seed_prompt_groups(db: Session):
         PromptModuloHistorico.group_id.is_(None)
     ).update({PromptModuloHistorico.group_id: grupo_ps.id}, synchronize_session=False)
 
-    # Cria subgrupos a partir das categorias existentes (PS)
-    # Apenas modulos ativos sao considerados para criar subgrupos
-    categorias = db.query(PromptModulo.categoria).filter(
-        PromptModulo.tipo == "conteudo",
-        PromptModulo.categoria.isnot(None),
-        PromptModulo.group_id == grupo_ps.id,
-        PromptModulo.ativo == True
-    ).distinct().all()
-
-    for (categoria,) in categorias:
-        slug = slugify(categoria)
-        if not slug:
-            continue
-        subgrupo = db.query(PromptSubgroup).filter(
-            PromptSubgroup.group_id == grupo_ps.id,
-            PromptSubgroup.slug == slug
-        ).first()
-        if not subgrupo:
-            subgrupo = PromptSubgroup(
-                group_id=grupo_ps.id,
-                name=categoria,
-                slug=slug,
-                active=True,
-                order=0
-            )
-            db.add(subgrupo)
-            db.flush()
-
-        db.query(PromptModulo).filter(
-            PromptModulo.tipo == "conteudo",
-            PromptModulo.group_id == grupo_ps.id,
-            PromptModulo.subgroup_id.is_(None),
-            PromptModulo.categoria == categoria,
-            PromptModulo.ativo == True
-        ).update({PromptModulo.subgroup_id: subgrupo.id}, synchronize_session=False)
+    # NOTA: Subgrupos foram removidos da logica de seed.
+    # Categorias (Preliminar, Merito, Eventualidade) sao usadas diretamente no campo 'categoria'
+    # dos modulos e nao devem ser duplicadas como subgrupos.
+    # A funcionalidade de subgrupo foi descontinuada para evitar confusao conceitual.
 
     # Garante grupos permitidos e grupo padrao para usuarios
     usuarios = db.query(User).all()

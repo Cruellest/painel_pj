@@ -248,8 +248,12 @@ class PromptSubgroupBase(BaseModel):
     order: int = 0
 
 
-class PromptSubgroupCreate(PromptSubgroupBase):
-    pass
+class PromptSubgroupCreate(BaseModel):
+    """Schema para criacao de subgrupo (group_id vem da URL, nao do body)."""
+    name: str
+    slug: str
+    active: bool = True
+    order: int = 0
 
 
 class PromptSubgroupUpdate(BaseModel):
@@ -376,7 +380,7 @@ async def listar_modulos(
         )
 
     if subgroup_id:
-        # Subgrupo só filtra módulos de conteúdo
+        # Subgrupo operacional - filtra apenas módulos de conteúdo
         query = query.filter(
             (PromptModulo.subgroup_id == subgroup_id) |
             (PromptModulo.tipo.in_(["peca", "base"]))
@@ -682,6 +686,12 @@ async def listar_subgrupos(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Lista subgrupos operacionais de um grupo.
+
+    Subgrupos sao recortes operacionais (ex: Conhecimento, Cumprimento).
+    NAO confundir com Categorias (Preliminar, Merito, Eventualidade).
+    """
     query = db.query(PromptSubgroup).filter(PromptSubgroup.group_id == group_id)
     if apenas_ativos:
         query = query.filter(PromptSubgroup.active == True)
@@ -696,6 +706,12 @@ async def criar_subgrupo(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Cria um subgrupo operacional para um grupo.
+
+    Subgrupos sao recortes operacionais (ex: Conhecimento, Cumprimento).
+    NAO use para categorias juridicas (Preliminar, Merito) - use o campo 'categoria' do modulo.
+    """
     verificar_permissao_prompts(current_user, "criar")
 
     grupo = db.query(PromptGroup).filter(PromptGroup.id == group_id).first()
@@ -733,6 +749,7 @@ async def atualizar_subgrupo(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """Atualiza um subgrupo operacional."""
     verificar_permissao_prompts(current_user, "editar")
 
     subgrupo = db.query(PromptSubgroup).filter(PromptSubgroup.id == subgroup_id).first()
@@ -1714,7 +1731,12 @@ def _obter_ou_criar_grupo(db: Session, grupo_slug: str, grupo_name: str = None) 
 
 
 def _obter_ou_criar_subgrupo(db: Session, grupo: PromptGroup, subgrupo_slug: str, subgrupo_name: str = None) -> PromptSubgroup:
-    """Obtém um subgrupo existente ou cria um novo se não existir."""
+    """
+    Obtém um subgrupo existente ou cria um novo se não existir.
+
+    Subgrupos sao recortes operacionais (ex: Conhecimento, Cumprimento).
+    NAO confundir com Categorias (Preliminar, Merito, Eventualidade).
+    """
     slug_normalizado = str(subgrupo_slug).lower().strip()
     subgrupo = db.query(PromptSubgroup).filter(
         PromptSubgroup.group_id == grupo.id,
@@ -1773,6 +1795,11 @@ async def importar_modulos(
     Importa módulos de prompts a partir de arquivo JSON.
     Cria automaticamente grupos, subgrupos e subcategorias que não existirem.
 
+    IMPORTANTE:
+    - 'categoria': agrupamento juridico (Preliminar, Merito, Eventualidade)
+    - 'subgroup_slug': recorte operacional (Conhecimento, Cumprimento)
+    NAO confundir esses conceitos!
+
     Formato esperado do JSON (versão 2.0):
     {
         "modulos": [
@@ -1782,8 +1809,8 @@ async def importar_modulos(
                 "subcategoria": "Competência",
                 "group_slug": "ps",
                 "group_name": "Prestação de Saúde",
-                "subgroup_slug": "medicamentos",
-                "subgroup_name": "Medicamentos",
+                "subgroup_slug": "conhecimento",
+                "subgroup_name": "Conhecimento",
                 "subcategorias_associadas": [
                     {"slug": "alto_custo", "nome": "Alto Custo"}
                 ],
@@ -1886,7 +1913,7 @@ async def importar_modulos(
                     erros.append(f"Módulo {i+1} ({nome}): não foi possível obter/criar grupo")
                     continue
 
-                # Obtém ou cria o subgrupo (se informado)
+                # Obtém ou cria o subgrupo operacional (se informado)
                 if subgrupo_slug and grupo:
                     cache_key = f"{grupo.id}:{subgrupo_slug.lower()}"
                     if cache_key in subgrupos_cache:

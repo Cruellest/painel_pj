@@ -494,7 +494,7 @@
             <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50">
                 <div>
                     <h2 class="text-lg font-semibold text-gray-800">Grupos e Subgrupos de Conteudo</h2>
-                    <p class="text-sm text-gray-500">Gerencie os grupos usados nos prompts de conteudo</p>
+                    <p class="text-sm text-gray-500">Gerencie os grupos e subgrupos operacionais (ex: Conhecimento, Cumprimento)</p>
                 </div>
                 <button onclick="fecharModalGrupos()"
                     class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100">
@@ -542,9 +542,9 @@
                         <div id="lista-grupos" class="space-y-2"></div>
                     </div>
                     <div class="space-y-4">
-                        <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subgrupos</h3>
+                        <h3 class="text-sm font-semibold text-gray-700 uppercase tracking-wide">Subgrupos Operacionais</h3>
                         <div id="subgrupo-grupo-info" class="text-sm text-gray-500">Selecione um grupo para editar
-                            subgrupos.</div>
+                            subgrupos. Use para recortes operacionais (ex: Conhecimento, Cumprimento).</div>
                         <form id="form-subgrupo" class="space-y-3">
                             <input type="hidden" id="subgrupo-id">
                             <input type="hidden" id="subgrupo-grupo-id">
@@ -680,7 +680,7 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Subgrupo</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Subgrupo Operacional</label>
                             <select id="modulo-subgrupo"
                                 class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
                                 <option value="">Sem subgrupo</option>
@@ -2165,15 +2165,15 @@
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Erro ao salvar subgrupo');
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || JSON.stringify(errorData) || 'Erro ao salvar subgrupo');
                 }
 
                 limparSubgrupoForm();
                 await carregarSubgruposGrupo(groupId);
                 carregarGrupos();
             } catch (error) {
-                alert('Erro: ' + error.message);
+                alert('Erro: ' + (error.message || String(error)));
             }
         }
 

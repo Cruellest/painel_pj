@@ -139,6 +139,12 @@ class PromptGroupTests(unittest.TestCase):
         self.assertEqual(modulos_ids, [modulo_a.id, modulo_c.id])
 
     def test_seed_prompt_groups_define_ps_default(self):
+        """
+        Verifica que seed_prompt_groups:
+        - Define grupo PS como padrao
+        - Vincula modulos ao grupo PS
+        - NAO cria subgrupos (funcionalidade descontinuada)
+        """
         user = self._create_user("usuario_seed")
         modulo_meds = self._create_modulo(
             nome="mod_meds",
@@ -169,9 +175,13 @@ class PromptGroupTests(unittest.TestCase):
         self.assertEqual(modulo_meds.group_id, grupo_ps.id)
         self.assertEqual(modulo_cir.group_id, grupo_ps.id)
 
-        self.assertIsNotNone(modulo_meds.subgroup_id)
-        subgroup_meds = self.db.get(PromptSubgroup, modulo_meds.subgroup_id)
-        self.assertEqual(subgroup_meds.slug, "medicamentos")
+        # ATUALIZADO: Subgrupos foram descontinuados - nao devem ser criados
+        self.assertIsNone(modulo_meds.subgroup_id, "Subgrupos foram descontinuados")
+        self.assertIsNone(modulo_cir.subgroup_id, "Subgrupos foram descontinuados")
+
+        # Categoria deve permanecer intacta
+        self.assertEqual(modulo_meds.categoria, "Medicamentos")
+        self.assertEqual(modulo_cir.categoria, "Cirurgia")
 
         historico_ref = self.db.query(PromptModuloHistorico).filter(
             PromptModuloHistorico.id == historico.id

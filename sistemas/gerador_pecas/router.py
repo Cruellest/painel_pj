@@ -300,6 +300,11 @@ async def listar_subgrupos_por_grupo(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Lista subgrupos operacionais de um grupo.
+
+    Subgrupos sao recortes operacionais (ex: Conhecimento, Cumprimento).
+    """
     grupo, _ = _resolver_grupo_e_subcategorias(current_user, db, group_id, [])
 
     subgrupos = db.query(PromptSubgroup).filter(
