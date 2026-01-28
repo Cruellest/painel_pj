@@ -111,6 +111,20 @@ interface FeedbackResponse {
 }
 
 // ============================================
+// Utility Functions
+// ============================================
+
+/**
+ * Escapa caracteres HTML para prevenir XSS
+ */
+function escapeHtml(text: string | null | undefined): string {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ============================================
 // API Configuration
 // ============================================
 
@@ -404,7 +418,12 @@ function updateConfigUI(): void {
 }
 
 async function uploadFile(file: File, replace: boolean = false): Promise<void> {
-  if (!checkAuth()) return;
+  console.log('[uploadFile] Iniciando upload:', file.name);
+
+  if (!checkAuth()) {
+    console.log('[uploadFile] Falha na autenticação');
+    return;
+  }
 
   const token = getAuthToken();
   const formData = new FormData();
@@ -415,6 +434,8 @@ async function uploadFile(file: File, replace: boolean = false): Promise<void> {
       ? `${API_BASE}/files/upload?replace=true`
       : `${API_BASE}/files/upload`;
 
+    console.log('[uploadFile] Enviando para:', url);
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -423,6 +444,8 @@ async function uploadFile(file: File, replace: boolean = false): Promise<void> {
       body: formData
     });
 
+    console.log('[uploadFile] Response status:', response.status);
+
     if (response.status === 401) {
       localStorage.removeItem('access_token');
       window.location.href = '/login';
@@ -430,6 +453,7 @@ async function uploadFile(file: File, replace: boolean = false): Promise<void> {
     }
 
     const result = await response.json();
+    console.log('[uploadFile] Resultado:', result);
 
     if (result.success) {
       await loadFiles();
@@ -439,7 +463,8 @@ async function uploadFile(file: File, replace: boolean = false): Promise<void> {
     } else {
       showToast(result.error || 'Erro ao importar arquivo', 'error');
     }
-  } catch {
+  } catch (error) {
+    console.error('[uploadFile] Erro:', error);
     showToast('Erro de conexao ao importar arquivo', 'error');
   }
 }
@@ -1529,15 +1554,29 @@ function setupFileUpload(): void {
 }
 
 function triggerFileUpload(): void {
-  document.getElementById('file-input')?.click();
+  console.log('[triggerFileUpload] Botão importar clicado');
+  const fileInput = document.getElementById('file-input') as HTMLInputElement;
+  console.log('[triggerFileUpload] Input encontrado:', !!fileInput);
+  if (fileInput) {
+    fileInput.click();
+  } else {
+    console.error('[triggerFileUpload] Input file não encontrado no DOM!');
+  }
 }
 
 async function handleFileSelect(event: Event): Promise<void> {
+  console.log('[handleFileSelect] Evento disparado', event);
   const target = event.target as HTMLInputElement;
   const files = target.files;
-  if (!files || files.length === 0) return;
+  console.log('[handleFileSelect] Arquivos selecionados:', files?.length || 0);
+
+  if (!files || files.length === 0) {
+    console.log('[handleFileSelect] Nenhum arquivo selecionado, retornando');
+    return;
+  }
 
   for (const file of Array.from(files)) {
+    console.log('[handleFileSelect] Iniciando upload de:', file.name, file.type, file.size);
     await uploadFile(file);
   }
 

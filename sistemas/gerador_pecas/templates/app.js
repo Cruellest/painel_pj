@@ -1,6 +1,6 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\sistemas\gerador_pecas\app.ts
-// Built at: 2026-01-24T19:56:06.920Z
+// Built at: 2026-01-28T12:56:49.912Z
 
 "use strict";
 (() => {
@@ -1022,8 +1022,6 @@
         let buffer = "";
         let minutaCompleta = "";
         let primeiroChunk = true;
-        let isPergunta = false;
-        const minutaOriginal = this.minutaMarkdown; // Guarda minuta original
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -1053,12 +1051,7 @@
                     primeiroChunk = false;
                   }
                   minutaCompleta += parsed.text;
-                  // Verifica se é pergunta nos primeiros caracteres
-                  if (!isPergunta && minutaCompleta.length < 50) {
-                    isPergunta = /^\s*\[PERGUNTA\]/i.test(minutaCompleta);
-                  }
-                  // Só atualiza visualização se NÃO for pergunta
-                  if (!isPergunta && minutaCompleta.length % 500 < parsed.text.length) {
+                  if (minutaCompleta.length % 500 < parsed.text.length) {
                     this.minutaMarkdown = minutaCompleta;
                     this.renderizarMinuta();
                   }
@@ -1070,32 +1063,17 @@
         }
         this.esconderTypingIndicator();
         if (minutaCompleta) {
-          // Verifica se a resposta é uma pergunta de clarificação
-          // Detecta [PERGUNTA] no início (com possíveis espaços/quebras antes)
-          const perguntaMatch = minutaCompleta.match(/^\s*\[PERGUNTA\]\s*/i);
-          if (perguntaMatch || isPergunta) {
-            // Restaura a minuta original (não foi alterada)
-            this.minutaMarkdown = minutaOriginal;
-            this.renderizarMinuta();
-            // Remove o marcador [PERGUNTA] e mostra no chat
-            const perguntaTexto = minutaCompleta.replace(/^\s*\[PERGUNTA\]\s*/i, "").trim();
-            this.historicoChat.push({ role: "user", content: mensagem });
-            this.historicoChat.push({ role: "assistant", content: perguntaTexto });
-            this.adicionarMensagemChat("ai", perguntaTexto, true, null, true);
-          } else {
-            // Resposta normal - atualiza a minuta
-            this.minutaMarkdown = minutaCompleta;
-            this.renderizarMinuta();
-            this.historicoChat.push({ role: "user", content: mensagem });
-            this.historicoChat.push({ role: "assistant", content: "Minuta atualizada com sucesso." });
-            this.adicionarMensagemChat(
-              "ai",
-              "Pronto! Atualizei a minuta conforme solicitado. Veja as alteracoes na visualizacao ao lado.",
-              true
-            );
-            this.destacarMinuta();
-            this.salvarMinutaAuto();
-          }
+          this.minutaMarkdown = minutaCompleta;
+          this.renderizarMinuta();
+          this.historicoChat.push({ role: "user", content: mensagem });
+          this.historicoChat.push({ role: "assistant", content: "Minuta atualizada com sucesso." });
+          this.adicionarMensagemChat(
+            "ai",
+            "Pronto! Atualizei a minuta conforme solicitado. Veja as alteracoes na visualizacao ao lado.",
+            true
+          );
+          this.destacarMinuta();
+          this.salvarMinutaAuto();
         } else {
           this.adicionarMensagemChat(
             "ai",
@@ -1110,18 +1088,7 @@
         this.isProcessingEdit = false;
       }
     }
-    // Renderiza markdown básico para HTML (negrito, itálico)
-    renderMarkdownBasico(texto) {
-      let html = this.escapeHtml(texto);
-      // Negrito: **texto** -> <strong>texto</strong>
-      html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      // Itálico: *texto* -> <em>texto</em>
-      html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-      // Quebras de linha
-      html = html.replace(/\n/g, '<br>');
-      return html;
-    }
-    adicionarMensagemChat(tipo, conteudo, sucesso = true, indice = null, usarMarkdown = false) {
+    adicionarMensagemChat(tipo, conteudo, sucesso = true, indice = null) {
       const chatContainer = document.getElementById("chat-messages");
       if (!chatContainer) return;
       if (indice === null) {
@@ -1146,16 +1113,15 @@
             `;
       } else {
         const iconClass = sucesso ? "fa-check-circle text-green-500" : "fa-exclamation-circle text-red-500";
-        const conteudoHtml = usarMarkdown ? this.renderMarkdownBasico(conteudo) : this.escapeHtml(conteudo);
         msgDiv.innerHTML = `
                 <div class="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center flex-shrink-0">
                     <i class="fas fa-robot text-white text-xs"></i>
                 </div>
                 <div class="chat-bubble-ai px-4 py-3 max-w-[85%]">
-                    <div class="text-sm text-gray-700">
+                    <p class="text-sm text-gray-700">
                         <i class="fas ${iconClass} mr-1"></i>
-                        ${conteudoHtml}
-                    </div>
+                        ${this.escapeHtml(conteudo)}
+                    </p>
                 </div>
                 <button onclick="app.deletarMensagemChat(${indice})"
                     class="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 transition-all self-center"
@@ -2251,7 +2217,6 @@
   var app;
   document.addEventListener("DOMContentLoaded", () => {
     app = new GeradorPecasApp();
-    window.app = app;  // Expor globalmente para handlers onclick
   });
   window.toggleHistorico = toggleHistorico;
   window.fecharModalEditor = fecharModalEditor;
