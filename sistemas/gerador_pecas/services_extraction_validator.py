@@ -325,6 +325,7 @@ class ExtractionValidator:
 def validar_extracao(
     dados: Dict[str, Any],
     texto_pedidos: Optional[str] = None,
+    texto_completo: Optional[str] = None,
     auto_corrigir: bool = True
 ) -> Dict[str, Any]:
     """
@@ -333,13 +334,14 @@ def validar_extracao(
     Args:
         dados: Dicionário com variáveis extraídas
         texto_pedidos: Texto dos pedidos da petição
+        texto_completo: Texto completo dos documentos (incluindo decisões)
         auto_corrigir: Se deve corrigir automaticamente
 
     Returns:
         Dados validados (e opcionalmente corrigidos)
     """
     validator = ExtractionValidator(auto_corrigir=auto_corrigir)
-    dados_resultado, _ = validator.validar(dados, texto_pedidos)
+    dados_resultado, _ = validator.validar(dados, texto_pedidos, texto_completo)
     return dados_resultado
 
 

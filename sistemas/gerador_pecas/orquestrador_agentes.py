@@ -685,7 +685,11 @@ class OrquestradorAgentes:
             # Ref: docs/diagnostico_divergencia_modulos_fast_path.md
             from sistemas.gerador_pecas.services_extraction_validator import validar_extracao
             texto_pedidos = dados_extracao.get('peticao_inicial_pedidos', '')
-            dados_extracao = validar_extracao(dados_extracao, texto_pedidos)
+            dados_extracao = validar_extracao(
+                dados_extracao,
+                texto_pedidos,
+                texto_completo=resumo_consolidado
+            )
 
             resultado.agente2 = await self._executar_agente2(
                 resumo_consolidado,

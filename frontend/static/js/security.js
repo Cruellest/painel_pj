@@ -1,6 +1,6 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\shared\security.ts
-// Built at: 2026-01-28T12:56:50.144Z
+// Built at: 2026-01-28T13:55:56.202Z
 
 "use strict";
 (() => {
