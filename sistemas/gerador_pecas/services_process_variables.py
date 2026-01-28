@@ -365,6 +365,8 @@ def _resolver_autor_com_defensoria(dados: 'DadosProcesso') -> Optional[bool]:
 
 
 # Lista de municípios de Mato Grosso do Sul
+# Nota: Não é necessário incluir variantes com de/do/da pois a função
+# _normalizar_nome_municipio() já normaliza todas as preposições
 MUNICIPIOS_MS = [
     "Agua Clara", "Alcinopolis", "Amambai", "Anastacio", "Anaurilandia",
     "Angelica", "Antonio Joao", "Aparecida do Taboado", "Aquidauana", "Aral Moreira",
@@ -394,6 +396,52 @@ def _normalizar_texto(texto: str) -> str:
     return texto_sem_acentos.lower()
 
 
+def _normalizar_nome_municipio(texto: str) -> str:
+    """
+    Normaliza nome de município para comparação.
+
+    Remove acentos, padroniza preposições (de/do/da/dos/das → 'de'),
+    remove caracteres especiais e espaços duplicados.
+
+    Args:
+        texto: Nome do município a ser normalizado
+
+    Returns:
+        Nome normalizado para comparação
+
+    Examples:
+        >>> _normalizar_nome_municipio("Dois Irmãos do Buriti")
+        'dois irmaos de buriti'
+        >>> _normalizar_nome_municipio("Dois Irmãos de Buriti")
+        'dois irmaos de buriti'
+    """
+    import unicodedata
+    import re
+
+    # Remove acentos
+    texto_normalizado = unicodedata.normalize('NFD', texto)
+    texto_sem_acentos = ''.join(c for c in texto_normalizado if unicodedata.category(c) != 'Mn')
+
+    # Converte para minúsculas
+    texto_lower = texto_sem_acentos.lower()
+
+    # Normaliza preposições comuns em nomes de municípios
+    # do/da/dos/das → de (para padronização)
+    texto_lower = re.sub(r'\b(do|da|dos|das)\b', 'de', texto_lower)
+
+    # Substitui caracteres especiais por espaços (para preservar separação de palavras)
+    # antes de remover completamente
+    texto_lower = re.sub(r'[/\-]', ' ', texto_lower)
+
+    # Remove caracteres especiais exceto espaços e letras
+    texto_limpo = re.sub(r'[^a-z\s]', '', texto_lower)
+
+    # Remove espaços duplicados e espaços nas extremidades
+    texto_final = ' '.join(texto_limpo.split())
+
+    return texto_final
+
+
 def _resolver_municipio_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
     """
     Verifica se algum município de MS está no polo passivo.
@@ -415,12 +463,13 @@ def _resolver_municipio_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
     if not dados.polo_passivo:
         return None
 
-    # Normaliza a lista de municípios para comparação
-    municipios_normalizados = [_normalizar_texto(m) for m in MUNICIPIOS_MS]
+    # Normaliza a lista de municípios para comparação usando a função específica
+    municipios_normalizados = [_normalizar_nome_municipio(m) for m in MUNICIPIOS_MS]
 
     for parte in dados.polo_passivo:
         nome = parte.nome
-        nome_normalizado = _normalizar_texto(nome)
+        # Usa a função específica para nomes de municípios
+        nome_normalizado = _normalizar_nome_municipio(nome)
 
         # Padrão 1: "Município de X" ou "Municipio de X"
         if "municipio de" in nome_normalizado:
@@ -428,11 +477,12 @@ def _resolver_municipio_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
             partes = nome_normalizado.split("municipio de")
             if len(partes) > 1:
                 nome_municipio = partes[1].strip()
-                # Remove sufixos como "/MS", "-MS", " MS"
-                nome_municipio = nome_municipio.replace("/ms", "").replace("-ms", "").replace(" ms", "").strip()
+                # Remove sufixos como "/MS", "-MS", " ms" (já normalizado para minúsculas)
+                nome_municipio = nome_municipio.replace("ms", "").strip()
                 # Verifica se é um município de MS
                 for mun in municipios_normalizados:
-                    if mun in nome_municipio or nome_municipio in mun:
+                    # Match mais robusto: verifica se as palavras principais coincidem
+                    if mun == nome_municipio or mun in nome_municipio or nome_municipio in mun:
                         return True
 
         # Padrão 2: "Prefeitura Municipal de X"
@@ -445,7 +495,7 @@ def _resolver_municipio_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
         else:
             for mun in municipios_normalizados:
                 # Verifica match exato ou parcial
-                if mun in nome_normalizado:
+                if mun in nome_normalizado or nome_normalizado in mun:
                     # Evita falsos positivos: verifica se é pessoa jurídica
                     if parte.tipo_pessoa == "juridica":
                         return True
