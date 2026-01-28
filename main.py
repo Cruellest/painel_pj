@@ -84,6 +84,9 @@ from sistemas.prestacao_contas.router_admin import router as prestacao_contas_ad
 # Import do sistema de Relatório de Cumprimento
 from sistemas.relatorio_cumprimento.router import router as relatorio_cumprimento_router
 
+# Import do sistema Cumprimento de Sentença Beta
+from sistemas.cumprimento_beta.router import router as cumprimento_beta_router
+
 # Import do sistema de Classificador de Documentos
 from sistemas.classificador_documentos.router import router as classificador_documentos_router
 
@@ -110,6 +113,7 @@ GERADOR_PECAS_TEMPLATES = BASE_DIR / "sistemas" / "gerador_pecas" / "templates"
 PEDIDO_CALCULO_TEMPLATES = BASE_DIR / "sistemas" / "pedido_calculo" / "templates"
 PRESTACAO_CONTAS_TEMPLATES = BASE_DIR / "sistemas" / "prestacao_contas" / "templates"
 RELATORIO_CUMPRIMENTO_TEMPLATES = BASE_DIR / "sistemas" / "relatorio_cumprimento" / "templates"
+CUMPRIMENTO_BETA_TEMPLATES = BASE_DIR / "sistemas" / "cumprimento_beta" / "templates"
 CLASSIFICADOR_DOCUMENTOS_TEMPLATES = BASE_DIR / "sistemas" / "classificador_documentos" / "templates"
 BERT_TRAINING_TEMPLATES = BASE_DIR / "sistemas" / "bert_training" / "templates"
 
@@ -611,6 +615,9 @@ app.include_router(prestacao_contas_admin_router)  # Admin router - sem prefixo 
 # Router de Relatório de Cumprimento
 app.include_router(relatorio_cumprimento_router, prefix="/relatorio-cumprimento/api")
 
+# Router de Cumprimento de Sentença Beta
+app.include_router(cumprimento_beta_router, prefix="/api")
+
 # Router de Classificador de Documentos
 app.include_router(classificador_documentos_router, prefix="/classificador/api")
 
@@ -762,6 +769,15 @@ async def serve_prestacao_contas_static(filename: str = ""):
 async def serve_relatorio_cumprimento_static(filename: str = ""):
     """Serve arquivos do frontend Relatório de Cumprimento"""
     return safe_serve_static(RELATORIO_CUMPRIMENTO_TEMPLATES, filename, no_cache=True)
+
+
+# Cumprimento de Sentença Beta
+@app.get("/cumprimento-beta/{filename:path}")
+@app.get("/cumprimento-beta/")
+@app.get("/cumprimento-beta")
+async def serve_cumprimento_beta_static(filename: str = ""):
+    """Serve arquivos do frontend Cumprimento de Sentença Beta"""
+    return safe_serve_static(CUMPRIMENTO_BETA_TEMPLATES, filename, no_cache=True)
 
 
 # Classificador de Documentos
