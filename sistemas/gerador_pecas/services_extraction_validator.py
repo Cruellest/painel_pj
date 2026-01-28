@@ -24,6 +24,23 @@ logger = logging.getLogger(__name__)
 # TERMOS INDICADORES POR VARIÁVEL
 # =============================================================================
 
+# Termos que indicam responsabilização PESSOAL de agentes públicos
+# (não confundir com responsabilização genérica do ente)
+TERMOS_RESPONSABILIZACAO_PESSOAL = [
+    'secretário', 'secretaria municipal', 'secretaria estadual',
+    'prefeito', 'governador', 'gestor', 'responsável',
+    'agente público', 'servidor público', 'autoridade',
+    'pessoa física', 'cpf',
+    'título de crime', 'ato de improbidade',
+]
+
+# Termos que indicam responsabilização genérica (NÃO pessoal)
+TERMOS_RESPONSABILIZACAO_GENERICA = [
+    'estado', 'município', 'união', 'ente', 'fazenda pública',
+    'poder público', 'administração pública',
+    'bloqueio de verbas', 'sequestro de verbas', 'penhora',
+]
+
 # Termos que indicam equipamentos/materiais médicos
 TERMOS_EQUIPAMENTOS = [
     'sonda', 'cateter', 'bomba de infusão', 'cpap', 'bipap',
@@ -127,6 +144,11 @@ class ExtractionValidator:
         if alerta:
             alertas.append(alerta)
 
+        # Validação: responsabilização pessoal de agente
+        alerta = self._validar_responsabilizacao_pessoal(dados_resultado, texto_lower)
+        if alerta:
+            alertas.append(alerta)
+
         # Log consolidado
         if alertas and self.log_alertas:
             logger.warning(
@@ -225,6 +247,64 @@ class ExtractionValidator:
 
         return None
 
+    def _validar_responsabilizacao_pessoal(
+        self,
+        dados: Dict[str, Any],
+        texto_lower: str
+    ) -> Optional[str]:
+        """
+        Valida variável de responsabilização pessoal de agente.
+
+        Responsabilização PESSOAL requer:
+        1. Menção explícita a agente/cargo (prefeito, secretário, governador)
+        2. NÃO apenas "responsabilização" genérica do ente público
+
+        Casos comuns de FALSE POSITIVE:
+        - "sob pena de bloqueio de verbas e responsabilização" → NÃO é pessoal
+        - "responsabilização do ente público" → NÃO é pessoal
+        - "responsabilização do Estado" → NÃO é pessoal
+
+        Casos TRUE POSITIVE:
+        - "responsabilização pessoal do prefeito" → é pessoal
+        - "sob pena de responsabilização do secretário" → é pessoal
+        - "agente público será responsabilizado" → é pessoal
+        """
+        var = 'decisoes_responsabilizacao_pessoal_agente'
+        valor_atual = dados.get(var)
+
+        # Se não está True, não precisa validar
+        if valor_atual is not True:
+            return None
+
+        # Verifica se tem termo de responsabilização pessoal
+        termo_pessoal = self._encontrar_termo(texto_lower, TERMOS_RESPONSABILIZACAO_PESSOAL)
+
+        # Verifica se tem apenas responsabilização genérica
+        termo_generico = self._encontrar_termo(texto_lower, TERMOS_RESPONSABILIZACAO_GENERICA)
+
+        # Se não tem termo pessoal MAS tem genérico, é falso positivo
+        if not termo_pessoal and termo_generico:
+            alerta = (
+                f"{var}: True mas texto só menciona responsabilização genérica "
+                f"('{termo_generico}'), sem citar agente público específico "
+                f"-> corrigido para False"
+            )
+            if self.auto_corrigir:
+                dados[var] = False
+            return alerta
+
+        # Se não tem nenhum termo de responsabilização, é falso positivo
+        if not termo_pessoal and 'responsabiliza' in texto_lower:
+            alerta = (
+                f"{var}: True mas texto não cita agente público específico "
+                f"(prefeito, secretário, etc.) -> corrigido para False"
+            )
+            if self.auto_corrigir:
+                dados[var] = False
+            return alerta
+
+        return None
+
     def _encontrar_termo(self, texto: str, termos: List[str]) -> Optional[str]:
         """
         Encontra primeiro termo presente no texto.
@@ -274,4 +354,6 @@ __all__ = [
     'TERMOS_MEDICAMENTOS',
     'TERMOS_CIRURGIA',
     'TERMOS_EXAMES',
+    'TERMOS_RESPONSABILIZACAO_PESSOAL',
+    'TERMOS_RESPONSABILIZACAO_GENERICA',
 ]
