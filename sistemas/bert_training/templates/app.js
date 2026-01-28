@@ -1,6 +1,6 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\sistemas\bert_training\app.ts
-// Built at: 2026-01-24T19:56:06.839Z
+// Built at: 2026-01-28T12:56:49.874Z
 
 "use strict";
 (() => {
