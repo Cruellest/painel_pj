@@ -1,6 +1,6 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\sistemas\gerador_pecas\app.ts
-// Built at: 2026-01-28T12:56:49.912Z
+// Built at: 2026-01-28T13:55:55.966Z
 
 "use strict";
 (() => {
@@ -2217,6 +2217,7 @@
   var app;
   document.addEventListener("DOMContentLoaded", () => {
     app = new GeradorPecasApp();
+    window.app = app;
   });
   window.toggleHistorico = toggleHistorico;
   window.fecharModalEditor = fecharModalEditor;

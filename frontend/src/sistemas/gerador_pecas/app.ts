@@ -2857,6 +2857,7 @@ function fecharModalEditor(): void {
 let app: GeradorPecasApp;
 document.addEventListener('DOMContentLoaded', () => {
   app = new GeradorPecasApp();
+  window.app = app;
 });
 
 // ============================================
