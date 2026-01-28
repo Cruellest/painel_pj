@@ -100,6 +100,11 @@ if not TJ_WS_USER or not TJ_WS_PASS:
     )
 
 # ==================================================
+# CONFIGURAÇÕES DO BERT TRAINING
+# ==================================================
+BERT_WORKER_URL = os.getenv("BERT_WORKER_URL", "http://127.0.0.1:8765")
+
+# ==================================================
 # CONFIGURAÇÕES DO GOOGLE GEMINI (IA)
 # ==================================================
 GEMINI_API_KEY = os.getenv("GEMINI_KEY", "")

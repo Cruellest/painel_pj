@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import os
 
-from config import IS_PRODUCTION
+from config import IS_PRODUCTION, BERT_WORKER_URL
 
 # Middleware de Request ID para rastreamento
 from middleware.request_id import RequestIDMiddleware, get_request_id
@@ -128,6 +128,7 @@ async def lifespan(app: FastAPI):
     setup_logging()
     logger = get_logger("portal-pge")
     logger.info(f"Iniciando aplicação (environment={'production' if IS_PRODUCTION else 'development'})")
+    logger.info(f"BERT_WORKER_URL configurada: {BERT_WORKER_URL}")
 
     init_database()
 
@@ -247,7 +248,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com",
             "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com data:",
             "img-src 'self' data: blob: https:",
-            "connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai http://127.0.0.1:8765 http://localhost:8765 https://cdn.jsdelivr.net",
+            "connect-src 'self' https://generativelanguage.googleapis.com https://openrouter.ai http://127.0.0.1:8765 http://localhost:8765 https://cdn.jsdelivr.net http: https:",
             "frame-src 'self' blob:",  # Permite iframes com blob URLs (PDFs)
             "object-src 'self' blob:",  # Permite objetos/plugins com blob URLs (PDFs)
             "frame-ancestors 'self'",  # Permite embedding apenas do próprio domínio (para visualizador de PDF)
@@ -767,12 +768,42 @@ async def serve_classificador_static(filename: str = ""):
     return safe_serve_static(CLASSIFICADOR_DOCUMENTOS_TEMPLATES, filename, no_cache=True)
 
 
+import re
+
 # BERT Training
 @app.get("/bert-training/templates/{filename:path}")
 @app.get("/bert-training/")
 @app.get("/bert-training")
 async def serve_bert_training_static(filename: str = ""):
     """Serve arquivos do frontend BERT Training"""
+    # Intercepta app.js para injetar URL do worker
+    if filename == "app.js" or filename.endswith("/app.js"):
+        file_path = BERT_TRAINING_TEMPLATES / filename
+        # Verifica path traversal simples antes de ler
+        if ".." not in filename and file_path.exists() and file_path.is_file():
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                
+                # Log para debug da injeção
+                logging.info(f"Injetando BERT_WORKER_URL no app.js: {BERT_WORKER_URL}")
+
+                # Substitui a URL harcoded pela configurada usando Regex para ser mais robusto
+                # Substitui: var WORKER_URL = "http://...";
+                content = re.sub(
+                    r'var\s+WORKER_URL\s*=\s*["\'].*?["\'];', 
+                    f'var WORKER_URL = "{BERT_WORKER_URL}";', 
+                    content
+                )
+                
+                headers = {
+                    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                    "Pragma": "no-cache"
+                }
+                return Response(content=content, media_type="application/javascript", headers=headers)
+            except Exception as e:
+                logging.error(f"Erro ao servir app.js injetado: {e}")
+                # Fallback para safe_serve_static em caso de erro
+
     return safe_serve_static(BERT_TRAINING_TEMPLATES, filename, no_cache=True)
 
 
