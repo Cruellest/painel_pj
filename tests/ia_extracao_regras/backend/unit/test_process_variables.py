@@ -25,7 +25,6 @@ from sistemas.gerador_pecas.services_process_variables import (
     _resolver_autor_com_assistencia_judiciaria,
     _resolver_autor_com_defensoria,
     _resolver_municipio_polo_passivo,
-    _normalizar_nome_municipio,
 )
 
 
@@ -461,67 +460,13 @@ class TestProcessVariableDefinition(unittest.TestCase):
         self.assertEqual(definition.resolver(None), True)
 
 
-class TestNormalizarNomeMunicipio(unittest.TestCase):
-    """Testes para a função _normalizar_nome_municipio."""
-
-    def test_normaliza_acentos(self):
-        """Deve remover acentos."""
-        self.assertEqual(_normalizar_nome_municipio("São Paulo"), "sao paulo")
-        self.assertEqual(_normalizar_nome_municipio("Três Lagoas"), "tres lagoas")
-
-    def test_normaliza_preposicao_do_para_de(self):
-        """Deve normalizar 'do' para 'de'."""
-        self.assertEqual(_normalizar_nome_municipio("Dois Irmãos do Buriti"), "dois irmaos de buriti")
-        self.assertEqual(_normalizar_nome_municipio("São Gabriel do Oeste"), "sao gabriel de oeste")
-
-    def test_normaliza_preposicao_da_para_de(self):
-        """Deve normalizar 'da' para 'de'."""
-        resultado = _normalizar_nome_municipio("Conceição da Barra")
-        self.assertEqual(resultado, "conceicao de barra")
-
-    def test_normaliza_preposicao_dos_para_de(self):
-        """Deve normalizar 'dos' para 'de'."""
-        resultado = _normalizar_nome_municipio("Olho dos Aguas")
-        self.assertEqual(resultado, "olho de aguas")
-
-    def test_normaliza_preposicao_das_para_de(self):
-        """Deve normalizar 'das' para 'de'."""
-        resultado = _normalizar_nome_municipio("Feira das Flores")
-        self.assertEqual(resultado, "feira de flores")
-
-    def test_remove_caracteres_especiais(self):
-        """Deve remover caracteres especiais."""
-        self.assertEqual(_normalizar_nome_municipio("Rio Verde/MS"), "rio verde ms")
-        self.assertEqual(_normalizar_nome_municipio("Campo-Grande"), "campo grande")
-
-    def test_remove_espacos_duplicados(self):
-        """Deve remover espaços duplicados."""
-        self.assertEqual(_normalizar_nome_municipio("Campo  Grande"), "campo grande")
-        self.assertEqual(_normalizar_nome_municipio("Rio   Verde"), "rio verde")
-
-    def test_normaliza_maiusculas(self):
-        """Deve converter para minúsculas."""
-        self.assertEqual(_normalizar_nome_municipio("CAMPO GRANDE"), "campo grande")
-        self.assertEqual(_normalizar_nome_municipio("DoUrAdOs"), "dourados")
-
-    def test_caso_real_dois_irmaos_variantes(self):
-        """Casos reais devem ser normalizados para a mesma forma."""
-        variante1 = _normalizar_nome_municipio("Dois Irmãos do Buriti")
-        variante2 = _normalizar_nome_municipio("Dois Irmãos de Buriti")
-        variante3 = _normalizar_nome_municipio("Dois Irmaos do Buriti")
-        variante4 = _normalizar_nome_municipio("DOIS IRMÃOS DO BURITI /MS")
-
-        # Todas as variantes sem sufixo devem ser iguais
-        self.assertEqual(variante1, variante2)
-        self.assertEqual(variante2, variante3)
-        self.assertEqual(variante1, "dois irmaos de buriti")
-
-        # Variante com /MS deve conter "ms" no final mas ainda deve fazer match
-        self.assertIn("dois irmaos de buriti", variante4)
-
-
 class TestMunicipioPoloPassivo(unittest.TestCase):
-    """Testes para a variavel municipio_polo_passivo."""
+    """
+    Testes para a variavel municipio_polo_passivo.
+
+    Lógica simplificada: Se a parte tem 'Município' ou 'Prefeitura Municipal'
+    no nome e é pessoa jurídica, então é um município no polo passivo.
+    """
 
     def test_polo_passivo_vazio_retorna_none(self):
         """Polo passivo vazio deve retornar None."""
@@ -587,8 +532,8 @@ class TestMunicipioPoloPassivo(unittest.TestCase):
         resultado = _resolver_municipio_polo_passivo(dados)
         self.assertFalse(resultado)
 
-    def test_municipio_outro_estado_retorna_false(self):
-        """Municipio de outro estado deve retornar False."""
+    def test_municipio_outro_estado_retorna_true(self):
+        """Município de outro estado também deve retornar True (lógica simplificada)."""
         dados = MockDadosProcesso(
             numero_processo="0001234-56.2024.8.12.0001",
             polo_passivo=[
@@ -596,7 +541,7 @@ class TestMunicipioPoloPassivo(unittest.TestCase):
             ]
         )
         resultado = _resolver_municipio_polo_passivo(dados)
-        self.assertFalse(resultado)
+        self.assertTrue(resultado)
 
     def test_municipio_entre_multiplas_partes_retorna_true(self):
         """Municipio entre multiplas partes deve retornar True."""
@@ -621,82 +566,58 @@ class TestMunicipioPoloPassivo(unittest.TestCase):
         resultado = _resolver_municipio_polo_passivo(dados)
         self.assertTrue(resultado)
 
-    def test_dois_irmaos_do_buriti_retorna_true(self):
-        """'Município de Dois Irmãos do Buriti' deve retornar True."""
+    def test_municipio_qualquer_nome_retorna_true(self):
+        """Qualquer município (não só de MS) deve retornar True."""
         dados = MockDadosProcesso(
             numero_processo="0001234-56.2024.8.12.0001",
             polo_passivo=[
-                MockParteProcesso(nome="Município de Dois Irmãos do Buriti", tipo_pessoa="juridica", polo="PA")
+                MockParteProcesso(nome="Município de São Paulo", tipo_pessoa="juridica", polo="PA")
             ]
         )
         resultado = _resolver_municipio_polo_passivo(dados)
         self.assertTrue(resultado)
 
-    def test_dois_irmaos_de_buriti_retorna_true(self):
-        """'Município de Dois Irmãos de Buriti' (com 'de') deve retornar True."""
-        dados = MockDadosProcesso(
-            numero_processo="0001234-56.2024.8.12.0001",
-            polo_passivo=[
-                MockParteProcesso(nome="Município de Dois Irmãos de Buriti /MS", tipo_pessoa="juridica", polo="PA")
-            ]
-        )
-        resultado = _resolver_municipio_polo_passivo(dados)
-        self.assertTrue(resultado)
-
-    def test_aparecida_do_taboado_retorna_true(self):
-        """'Município de Aparecida do Taboado' deve retornar True."""
-        dados = MockDadosProcesso(
-            numero_processo="0001234-56.2024.8.12.0001",
-            polo_passivo=[
-                MockParteProcesso(nome="Município de Aparecida do Taboado", tipo_pessoa="juridica", polo="PA")
-            ]
-        )
-        resultado = _resolver_municipio_polo_passivo(dados)
-        self.assertTrue(resultado)
-
-    def test_gloria_de_dourados_retorna_true(self):
-        """'Prefeitura Municipal de Gloria de Dourados' deve retornar True."""
-        dados = MockDadosProcesso(
-            numero_processo="0001234-56.2024.8.12.0001",
-            polo_passivo=[
-                MockParteProcesso(nome="Prefeitura Municipal de Gloria de Dourados", tipo_pessoa="juridica", polo="PA")
-            ]
-        )
-        resultado = _resolver_municipio_polo_passivo(dados)
-        self.assertTrue(resultado)
-
-    def test_sao_gabriel_do_oeste_variacao_preposicao(self):
-        """'São Gabriel do Oeste' e 'São Gabriel de Oeste' devem ser reconhecidos igualmente."""
-        # Teste com "do"
+    def test_municipio_com_variacao_preposicao_retorna_true(self):
+        """'Município de/do X' deve retornar True independente da preposição."""
+        # Com "do"
         dados_do = MockDadosProcesso(
             numero_processo="0001234-56.2024.8.12.0001",
             polo_passivo=[
-                MockParteProcesso(nome="Município de São Gabriel do Oeste", tipo_pessoa="juridica", polo="PA")
+                MockParteProcesso(nome="Município do Rio de Janeiro", tipo_pessoa="juridica", polo="PA")
             ]
         )
-        resultado_do = _resolver_municipio_polo_passivo(dados_do)
-        self.assertTrue(resultado_do)
+        self.assertTrue(_resolver_municipio_polo_passivo(dados_do))
 
-        # Teste com "de" (variação)
+        # Com "de"
         dados_de = MockDadosProcesso(
             numero_processo="0001234-56.2024.8.12.0001",
             polo_passivo=[
-                MockParteProcesso(nome="Município de São Gabriel de Oeste", tipo_pessoa="juridica", polo="PA")
+                MockParteProcesso(nome="Município de São Paulo", tipo_pessoa="juridica", polo="PA")
             ]
         )
-        resultado_de = _resolver_municipio_polo_passivo(dados_de)
-        self.assertTrue(resultado_de)
+        self.assertTrue(_resolver_municipio_polo_passivo(dados_de))
 
-    def test_rio_verde_de_mato_grosso_variacao_preposicao(self):
-        """'Rio Verde de Mato Grosso' deve ser reconhecido com diferentes preposições."""
+    def test_municipio_pessoa_fisica_retorna_false(self):
+        """Pessoa física com 'Município' no nome não deve retornar True."""
         dados = MockDadosProcesso(
             numero_processo="0001234-56.2024.8.12.0001",
             polo_passivo=[
-                MockParteProcesso(nome="Prefeitura Municipal de Rio Verde de Mato Grosso", tipo_pessoa="juridica", polo="PA")
+                MockParteProcesso(nome="João do Município", tipo_pessoa="fisica", polo="PA")
             ]
         )
         resultado = _resolver_municipio_polo_passivo(dados)
-        self.assertTrue(resultado)
+        self.assertFalse(resultado)
+
+    def test_prefeitura_sem_municipal_nao_retorna_true(self):
+        """'Prefeitura' sem 'Municipal' não deve retornar True."""
+        dados = MockDadosProcesso(
+            numero_processo="0001234-56.2024.8.12.0001",
+            polo_passivo=[
+                MockParteProcesso(nome="Prefeitura da Universidade", tipo_pessoa="juridica", polo="PA")
+            ]
+        )
+        resultado = _resolver_municipio_polo_passivo(dados)
+        self.assertFalse(resultado)
 
 
 if __name__ == "__main__":

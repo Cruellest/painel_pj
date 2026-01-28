@@ -364,29 +364,6 @@ def _resolver_autor_com_defensoria(dados: 'DadosProcesso') -> Optional[bool]:
     return False
 
 
-# Lista de municípios de Mato Grosso do Sul
-# Nota: Não é necessário incluir variantes com de/do/da pois a função
-# _normalizar_nome_municipio() já normaliza todas as preposições
-MUNICIPIOS_MS = [
-    "Agua Clara", "Alcinopolis", "Amambai", "Anastacio", "Anaurilandia",
-    "Angelica", "Antonio Joao", "Aparecida do Taboado", "Aquidauana", "Aral Moreira",
-    "Bandeirantes", "Bataguassu", "Bataypora", "Bela Vista", "Bodoquena",
-    "Bonito", "Brasilandia", "Caarapo", "Camapua", "Campo Grande",
-    "Caracol", "Cassilandia", "Chapadao do Sul", "Corguinho", "Coronel Sapucaia",
-    "Corumba", "Costa Rica", "Coxim", "Deodapolis", "Dois Irmaos do Buriti",
-    "Douradina", "Dourados", "Eldorado", "Fatima do Sul", "Figueirao",
-    "Gloria de Dourados", "Guia Lopes da Laguna", "Iguatemi", "Inocencia", "Itapora",
-    "Itaquirai", "Ivinhema", "Japora", "Jaraguari", "Jardim",
-    "Jatei", "Juti", "Ladario", "Laguna Carapa", "Maracaju",
-    "Miranda", "Mundo Novo", "Navirai", "Nioaque", "Nova Alvorada do Sul",
-    "Nova Andradina", "Novo Horizonte do Sul", "Paraiso das Aguas", "Paranaiba", "Paranhos",
-    "Pedro Gomes", "Ponta Pora", "Porto Murtinho", "Ribas do Rio Pardo", "Rio Brilhante",
-    "Rio Negro", "Rio Verde de Mato Grosso", "Rochedo", "Santa Rita do Pardo", "Sao Gabriel do Oeste",
-    "Selviria", "Sete Quedas", "Sidrolandia", "Sonora", "Tacuru",
-    "Taquarussu", "Terenos", "Tres Lagoas", "Vicentina"
-]
-
-
 def _normalizar_texto(texto: str) -> str:
     """Remove acentos e converte para minúsculas."""
     import unicodedata
@@ -396,109 +373,43 @@ def _normalizar_texto(texto: str) -> str:
     return texto_sem_acentos.lower()
 
 
-def _normalizar_nome_municipio(texto: str) -> str:
-    """
-    Normaliza nome de município para comparação.
-
-    Remove acentos, padroniza preposições (de/do/da/dos/das → 'de'),
-    remove caracteres especiais e espaços duplicados.
-
-    Args:
-        texto: Nome do município a ser normalizado
-
-    Returns:
-        Nome normalizado para comparação
-
-    Examples:
-        >>> _normalizar_nome_municipio("Dois Irmãos do Buriti")
-        'dois irmaos de buriti'
-        >>> _normalizar_nome_municipio("Dois Irmãos de Buriti")
-        'dois irmaos de buriti'
-    """
-    import unicodedata
-    import re
-
-    # Remove acentos
-    texto_normalizado = unicodedata.normalize('NFD', texto)
-    texto_sem_acentos = ''.join(c for c in texto_normalizado if unicodedata.category(c) != 'Mn')
-
-    # Converte para minúsculas
-    texto_lower = texto_sem_acentos.lower()
-
-    # Normaliza preposições comuns em nomes de municípios
-    # do/da/dos/das → de (para padronização)
-    texto_lower = re.sub(r'\b(do|da|dos|das)\b', 'de', texto_lower)
-
-    # Substitui caracteres especiais por espaços (para preservar separação de palavras)
-    # antes de remover completamente
-    texto_lower = re.sub(r'[/\-]', ' ', texto_lower)
-
-    # Remove caracteres especiais exceto espaços e letras
-    texto_limpo = re.sub(r'[^a-z\s]', '', texto_lower)
-
-    # Remove espaços duplicados e espaços nas extremidades
-    texto_final = ' '.join(texto_limpo.split())
-
-    return texto_final
-
-
 def _resolver_municipio_polo_passivo(dados: 'DadosProcesso') -> Optional[bool]:
     """
-    Verifica se algum município de MS está no polo passivo.
+    Verifica se algum município está no polo passivo.
 
     Detecta padrões como:
-    - "Município de Bandeirantes/MS"
-    - "Município de Campo Grande"
-    - "Prefeitura Municipal de Dourados"
-    - Nome direto do município
+    - "Município de X" (qualquer município)
+    - "Prefeitura Municipal de X"
+
+    Lógica simplificada: Se a parte tem "Município" ou "Prefeitura Municipal"
+    no nome e é pessoa jurídica, então é um município no polo passivo.
 
     Args:
         dados: Dados do processo
 
     Returns:
-        True se algum município de MS está no polo passivo
-        False se nenhum município de MS está no polo passivo
+        True se algum município está no polo passivo
+        False se nenhum município está no polo passivo
         None se não há partes no polo passivo
     """
     if not dados.polo_passivo:
         return None
 
-    # Normaliza a lista de municípios para comparação usando a função específica
-    municipios_normalizados = [_normalizar_nome_municipio(m) for m in MUNICIPIOS_MS]
-
     for parte in dados.polo_passivo:
+        # Verifica apenas pessoa jurídica
+        if parte.tipo_pessoa != "juridica":
+            continue
+
         nome = parte.nome
-        # Usa a função específica para nomes de municípios
-        nome_normalizado = _normalizar_nome_municipio(nome)
+        nome_normalizado = _normalizar_texto(nome)
 
-        # Padrão 1: "Município de X" ou "Municipio de X"
-        if "municipio de" in nome_normalizado:
-            # Extrai o nome após "município de"
-            partes = nome_normalizado.split("municipio de")
-            if len(partes) > 1:
-                nome_municipio = partes[1].strip()
-                # Remove sufixos como "/MS", "-MS", " ms" (já normalizado para minúsculas)
-                nome_municipio = nome_municipio.replace("ms", "").strip()
-                # Verifica se é um município de MS
-                for mun in municipios_normalizados:
-                    # Match mais robusto: verifica se as palavras principais coincidem
-                    if mun == nome_municipio or mun in nome_municipio or nome_municipio in mun:
-                        return True
+        # Padrão 1: Contém "município" no nome
+        if "municipio" in nome_normalizado:
+            return True
 
-        # Padrão 2: "Prefeitura Municipal de X"
-        elif "prefeitura" in nome_normalizado and "municipal" in nome_normalizado:
-            for mun in municipios_normalizados:
-                if mun in nome_normalizado:
-                    return True
-
-        # Padrão 3: Nome direto do município (menos comum)
-        else:
-            for mun in municipios_normalizados:
-                # Verifica match exato ou parcial
-                if mun in nome_normalizado or nome_normalizado in mun:
-                    # Evita falsos positivos: verifica se é pessoa jurídica
-                    if parte.tipo_pessoa == "juridica":
-                        return True
+        # Padrão 2: Contém "prefeitura" e "municipal" no nome
+        if "prefeitura" in nome_normalizado and "municipal" in nome_normalizado:
+            return True
 
     return False
 
