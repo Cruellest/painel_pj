@@ -681,6 +681,12 @@ class OrquestradorAgentes:
             # Consolida dados extraídos dos resumos JSON para avaliação determinística
             dados_extracao = consolidar_dados_extracao(resultado.agente1)
 
+            # Valida e corrige inconsistências óbvias na extração
+            # Ref: docs/diagnostico_divergencia_modulos_fast_path.md
+            from sistemas.gerador_pecas.services_extraction_validator import validar_extracao
+            texto_pedidos = dados_extracao.get('peticao_inicial_pedidos', '')
+            dados_extracao = validar_extracao(dados_extracao, texto_pedidos)
+
             resultado.agente2 = await self._executar_agente2(
                 resumo_consolidado,
                 tipo_peca,
