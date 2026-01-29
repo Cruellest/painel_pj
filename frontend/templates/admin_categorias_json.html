@@ -3350,9 +3350,24 @@ qual o valor da causa?"></textarea>
                 }
             }
 
+            // APLICA PREFIXO/NAMESPACE AO NOME DA VARIÁVEL
+            // O backend também aplica como fonte de verdade, mas aplicamos aqui para
+            // consistência visual imediata no frontend
+            const nomeVariavelInput = document.getElementById('pergunta-nome-variavel').value.trim();
+            const namespace = obterNamespaceCategoria();
+            let nomeVariavelComPrefixo = null;
+            if (nomeVariavelInput) {
+                // Aplica prefixo apenas se não já tiver
+                if (namespace && !nomeVariavelInput.startsWith(namespace + '_')) {
+                    nomeVariavelComPrefixo = namespace + '_' + nomeVariavelInput;
+                } else {
+                    nomeVariavelComPrefixo = nomeVariavelInput;
+                }
+            }
+
             const perguntaData = {
                 pergunta: texto,
-                nome_variavel_sugerido: document.getElementById('pergunta-nome-variavel').value.trim() || null,
+                nome_variavel_sugerido: nomeVariavelComPrefixo,
                 tipo_sugerido: tipo || null,
                 opcoes_sugeridas: (tipo === 'choice' && opcoes.length > 0) ? opcoes : null,
                 ordem: ordem,

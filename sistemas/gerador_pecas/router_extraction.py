@@ -748,24 +748,33 @@ async def criar_pergunta(
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
 
-    # Valida slug duplicado na mesma categoria
+    # NORMALIZA nome_variavel_sugerido COM PREFIXO DA CATEGORIA
+    # Esta é a fonte de verdade - o prefixo é SEMPRE aplicado pelo backend
+    nome_variavel_normalizado = None
     if data.nome_variavel_sugerido and data.nome_variavel_sugerido.strip():
+        slug_input = data.nome_variavel_sugerido.strip()
+        namespace = categoria.namespace
+        nome_variavel_normalizado = _aplicar_namespace(slug_input, namespace)
+        logger.debug(f"[PREFIXO] Normalizado: '{slug_input}' -> '{nome_variavel_normalizado}' (namespace={namespace})")
+
+    # Valida slug duplicado na mesma categoria (usando slug JÁ normalizado)
+    if nome_variavel_normalizado:
         slug_existente = db.query(ExtractionQuestion).filter(
             ExtractionQuestion.categoria_id == data.categoria_id,
-            ExtractionQuestion.nome_variavel_sugerido == data.nome_variavel_sugerido.strip(),
+            ExtractionQuestion.nome_variavel_sugerido == nome_variavel_normalizado,
             ExtractionQuestion.ativo == True
         ).first()
         if slug_existente:
             raise HTTPException(
                 status_code=400,
-                detail=f"Já existe uma pergunta ativa com o slug '{data.nome_variavel_sugerido}' nesta categoria"
+                detail=f"Já existe uma pergunta ativa com o slug '{nome_variavel_normalizado}' nesta categoria"
             )
 
-    # Cria a pergunta
+    # Cria a pergunta com nome_variavel_sugerido JÁ normalizado
     pergunta = ExtractionQuestion(
         categoria_id=data.categoria_id,
         pergunta=data.pergunta,
-        nome_variavel_sugerido=data.nome_variavel_sugerido,
+        nome_variavel_sugerido=nome_variavel_normalizado,
         tipo_sugerido=data.tipo_sugerido,
         opcoes_sugeridas=data.opcoes_sugeridas,
         descricao=data.descricao,
@@ -915,11 +924,23 @@ async def criar_perguntas_lote(
                     tipo_sugerido = p.tipo_sugerido
                     opcoes_sugeridas = p.opcoes_sugeridas
 
+                # NORMALIZA nome_variavel COM PREFIXO DA CATEGORIA
+                # Esta é a fonte de verdade - o prefixo é SEMPRE aplicado pelo backend
+                namespace = categoria.namespace
+                if nome_variavel and nome_variavel.strip():
+                    nome_variavel_normalizado = _aplicar_namespace(nome_variavel.strip(), namespace)
+                    logger.debug(f"[PREFIXO-LOTE] Normalizado: '{nome_variavel}' -> '{nome_variavel_normalizado}'")
+                    nome_variavel = nome_variavel_normalizado
+
                 # Busca dependência inferida para esta pergunta
                 dep_info = dependencias_map.get(str(i), {})
                 depends_on = dep_info.get("depends_on_variable")
                 dep_operator = dep_info.get("operator", "equals") if depends_on else None
                 dep_value = dep_info.get("value") if depends_on else None
+
+                # Também normaliza depends_on com prefixo
+                if depends_on and depends_on.strip():
+                    depends_on = _aplicar_namespace(depends_on.strip(), namespace)
 
                 pergunta = ExtractionQuestion(
                     categoria_id=data.categoria_id,
@@ -1434,16 +1455,29 @@ async def atualizar_pergunta(
     if not pergunta:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
 
+    # Busca categoria ANTES para poder normalizar o slug
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == pergunta.categoria_id).first()
+    namespace = categoria.namespace if categoria else ""
+
     # Guarda slug antigo ANTES de atualizar
     slug_antigo = pergunta.nome_variavel_sugerido
 
-    # Valida slug duplicado na mesma categoria (se está sendo alterado)
-    update_data_check = data.model_dump(exclude_unset=True)
-    novo_slug = update_data_check.get("nome_variavel_sugerido")
-    if novo_slug and novo_slug.strip() and novo_slug != pergunta.nome_variavel_sugerido:
+    # NORMALIZA nome_variavel_sugerido COM PREFIXO DA CATEGORIA
+    # Esta é a fonte de verdade - o prefixo é SEMPRE aplicado pelo backend
+    update_data = data.model_dump(exclude_unset=True)
+    if "nome_variavel_sugerido" in update_data:
+        novo_slug_input = update_data.get("nome_variavel_sugerido")
+        if novo_slug_input and novo_slug_input.strip():
+            novo_slug_normalizado = _aplicar_namespace(novo_slug_input.strip(), namespace)
+            update_data["nome_variavel_sugerido"] = novo_slug_normalizado
+            logger.debug(f"[PREFIXO-UPDATE] Normalizado: '{novo_slug_input}' -> '{novo_slug_normalizado}' (namespace={namespace})")
+
+    # Valida slug duplicado na mesma categoria (usando slug JÁ normalizado)
+    novo_slug = update_data.get("nome_variavel_sugerido")
+    if novo_slug and novo_slug.strip() and novo_slug != slug_antigo:
         slug_existente = db.query(ExtractionQuestion).filter(
             ExtractionQuestion.categoria_id == pergunta.categoria_id,
-            ExtractionQuestion.nome_variavel_sugerido == novo_slug.strip(),
+            ExtractionQuestion.nome_variavel_sugerido == novo_slug,
             ExtractionQuestion.id != pergunta_id,
             ExtractionQuestion.ativo == True
         ).first()
@@ -1453,16 +1487,14 @@ async def atualizar_pergunta(
                 detail=f"Já existe uma pergunta ativa com o slug '{novo_slug}' nesta categoria"
             )
 
-    # Atualiza campos fornecidos
-    update_data = data.model_dump(exclude_unset=True)
+    # Atualiza campos fornecidos (com nome_variavel_sugerido JÁ normalizado)
     for field, value in update_data.items():
         setattr(pergunta, field, value)
 
     pergunta.atualizado_por = current_user.id
     pergunta.atualizado_em = datetime.utcnow()
 
-    # Busca categoria para criar/atualizar variável
-    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == pergunta.categoria_id).first()
+    # Nota: categoria já foi buscada acima para normalizar o slug
 
     # =========================================================================
     # DETECCAO DE MUDANCA DE SLUG - PROPAGACAO AUTOMATICA
