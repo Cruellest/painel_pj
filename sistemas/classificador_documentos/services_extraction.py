@@ -165,24 +165,29 @@ class TextExtractor:
 
         Returns:
             Tupla (texto, num_paginas)
+
+        IMPORTANTE: Usa lock global pois PyMuPDF NÃO é thread-safe.
         """
         try:
             import fitz
+            from utils.pymupdf_lock import pymupdf_lock
 
             # Suprime warnings de imagens corrompidas
             # (comum em PDFs escaneados com JPEG2000)
             fitz.TOOLS.mupdf_warnings(False)
 
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            textos = []
-            num_paginas = len(doc)
+            # LOCK OBRIGATÓRIO: PyMuPDF/MuPDF não é thread-safe!
+            with pymupdf_lock:
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                textos = []
+                num_paginas = len(doc)
 
-            for page in doc:
-                texto_pagina = page.get_text("text")
-                if texto_pagina:
-                    textos.append(texto_pagina)
+                for page in doc:
+                    texto_pagina = page.get_text("text")
+                    if texto_pagina:
+                        textos.append(texto_pagina)
 
-            doc.close()
+                doc.close()
 
             return "\n\n".join(textos), num_paginas
 

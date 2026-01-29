@@ -30,6 +30,11 @@ import fitz  # PyMuPDF
 fitz.TOOLS.mupdf_warnings(False)  # Suprime warnings de imagens JPEG2000 corrompidas
 import pymupdf4llm
 
+# IMPORTANTE: PyMuPDF/MuPDF NÃO é thread-safe!
+# Usar lock centralizado para TODAS as operações com fitz/pymupdf4llm
+# Sem isso, múltiplas threads causam Segmentation Fault em produção.
+from utils.pymupdf_lock import pymupdf_lock as _PYMUPDF_LOCK
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -949,67 +954,73 @@ def extrair_conteudo_pdf(pdf_bytes: bytes, max_paginas_imagem: int = 10) -> Cont
     Extrai conteúdo do PDF - texto ou imagens se for PDF digitalizado.
 
     Retorna ConteudoPDF com tipo 'texto' ou 'imagens'.
+
+    IMPORTANTE: Usa _PYMUPDF_LOCK para serializar acesso ao PyMuPDF,
+    que NÃO é thread-safe. Sem isso, múltiplas threads causam SEGFAULT.
     """
     try:
-        # Verifica se é RTF disfarçado
+        # Verifica se é RTF disfarçado (não precisa de lock)
         if pdf_bytes.startswith(b'{\\rtf'):
             texto = pdf_bytes.decode('latin-1', errors='ignore')
             return ConteudoPDF(tipo='texto', conteudo=_normalizar_texto_pdf(texto), paginas=1)
 
-        # Tenta abrir como PDF
-        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            num_paginas = len(doc)
+        # LOCK OBRIGATÓRIO: PyMuPDF/MuPDF não é thread-safe!
+        with _PYMUPDF_LOCK:
+            # Tenta abrir como PDF
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+                num_paginas = len(doc)
 
-            # Primeiro tenta extrair texto
-            texto_completo = ""
-            for page in doc:
-                texto_completo += page.get_text()
+                # Primeiro tenta extrair texto
+                texto_completo = ""
+                for page in doc:
+                    texto_completo += page.get_text()
 
-            # Se tem texto suficiente (mais de 200 chars), retorna texto
-            if len(texto_completo.strip()) > 200:
-                # Usa pymupdf4llm para extração otimizada
-                try:
-                    # Suprime avisos do pymupdf4llm (find_tables exceptions)
-                    import io
-                    old_stderr = sys.stderr
-                    sys.stderr = io.StringIO()
+                # Se tem texto suficiente (mais de 200 chars), retorna texto
+                if len(texto_completo.strip()) > 200:
+                    # Usa pymupdf4llm para extração otimizada
                     try:
-                        md_text = pymupdf4llm.to_markdown(doc)
-                    finally:
-                        sys.stderr = old_stderr
-                    # pymupdf4llm já formata bem, mas aplicamos normalização leve
-                    return ConteudoPDF(tipo='texto', conteudo=md_text, paginas=num_paginas)
-                except:
-                    # Fallback com normalização
-                    return ConteudoPDF(tipo='texto', conteudo=_normalizar_texto_pdf(texto_completo), paginas=num_paginas)
+                        # Suprime avisos do pymupdf4llm (find_tables exceptions)
+                        import io
+                        old_stderr = sys.stderr
+                        sys.stderr = io.StringIO()
+                        try:
+                            md_text = pymupdf4llm.to_markdown(doc)
+                        finally:
+                            sys.stderr = old_stderr
+                        # pymupdf4llm já formata bem, mas aplicamos normalização leve
+                        return ConteudoPDF(tipo='texto', conteudo=md_text, paginas=num_paginas)
+                    except Exception:
+                        # Fallback com normalização
+                        return ConteudoPDF(tipo='texto', conteudo=_normalizar_texto_pdf(texto_completo), paginas=num_paginas)
 
-            # PDF digitalizado - converter páginas para imagens
-            imagens = []
-            paginas_processar = min(num_paginas, max_paginas_imagem)
+                # PDF digitalizado - converter páginas para imagens
+                imagens = []
+                paginas_processar = min(num_paginas, max_paginas_imagem)
 
-            for i in range(paginas_processar):
-                page = doc[i]
-                # Renderiza página como imagem (zoom 2x para melhor qualidade)
-                mat = fitz.Matrix(2, 2)
-                pix = page.get_pixmap(matrix=mat)
+                for i in range(paginas_processar):
+                    page = doc[i]
+                    # Renderiza página como imagem (zoom 2x para melhor qualidade)
+                    mat = fitz.Matrix(2, 2)
+                    pix = page.get_pixmap(matrix=mat)
 
-                # Converte para JPEG base64
-                img_bytes = pix.tobytes("jpeg", 85)
-                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-                imagens.append(f"data:image/jpeg;base64,{img_base64}")
+                    # Converte para JPEG base64
+                    img_bytes = pix.tobytes("jpeg", 85)
+                    img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                    imagens.append(f"data:image/jpeg;base64,{img_base64}")
 
-            return ConteudoPDF(tipo='imagens', conteudo=imagens, paginas=num_paginas)
+                return ConteudoPDF(tipo='imagens', conteudo=imagens, paginas=num_paginas)
 
     except Exception as e:
-        # Fallback: tenta extração simples de texto
+        # Fallback: tenta extração simples de texto (também com lock)
         try:
-            with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-                text = ""
-                for page in doc:
-                    text += page.get_text()
-                if text.strip():
-                    return ConteudoPDF(tipo='texto', conteudo=_normalizar_texto_pdf(text), paginas=len(doc))
-        except:
+            with _PYMUPDF_LOCK:
+                with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+                    text = ""
+                    for page in doc:
+                        text += page.get_text()
+                    if text.strip():
+                        return ConteudoPDF(tipo='texto', conteudo=_normalizar_texto_pdf(text), paginas=len(doc))
+        except Exception:
             pass
         return ConteudoPDF(tipo='texto', conteudo=f"[Erro na extração: {str(e)}]", paginas=0)
 

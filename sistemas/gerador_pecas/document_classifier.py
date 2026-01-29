@@ -23,6 +23,11 @@ from typing import List, Optional, Dict, Any, Tuple
 import fitz  # PyMuPDF
 fitz.TOOLS.mupdf_warnings(False)  # Suprime warnings de imagens JPEG2000 corrompidas
 
+# IMPORTANTE: PyMuPDF/MuPDF NÃO é thread-safe!
+# Usar lock centralizado para TODAS as operações com fitz
+# Sem isso, múltiplas threads causam Segmentation Fault em produção.
+from utils.pymupdf_lock import pymupdf_lock as _PYMUPDF_LOCK
+
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -150,6 +155,9 @@ def extrair_conteudo_pdf(pdf_bytes: bytes) -> PDFContent:
 
     Returns:
         PDFContent com texto e/ou imagens
+
+    IMPORTANTE: Usa _PYMUPDF_LOCK para serializar acesso ao PyMuPDF,
+    que NÃO é thread-safe. Sem isso, múltiplas threads causam SEGFAULT.
     """
     texto_completo = []
     imagens = []
@@ -159,48 +167,50 @@ def extrair_conteudo_pdf(pdf_bytes: bytes) -> PDFContent:
     total_paginas = 0
 
     try:
-        pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
-        total_paginas = len(pdf)
+        # LOCK OBRIGATÓRIO: PyMuPDF/MuPDF não é thread-safe!
+        with _PYMUPDF_LOCK:
+            pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
+            total_paginas = len(pdf)
 
-        # 1. Tenta extrair texto de cada página
-        for pagina in pdf:
-            texto = pagina.get_text()
-            if texto and texto.strip():
-                texto_completo.append(texto)
+            # 1. Tenta extrair texto de cada página
+            for pagina in pdf:
+                texto = pagina.get_text()
+                if texto and texto.strip():
+                    texto_completo.append(texto)
 
-        texto_final = "\n".join(texto_completo)
-        qualidade = _avaliar_qualidade_texto(texto_final)
+            texto_final = "\n".join(texto_completo)
+            qualidade = _avaliar_qualidade_texto(texto_final)
 
-        if qualidade == "good":
-            tem_texto = True
+            if qualidade == "good":
+                tem_texto = True
+                pdf.close()
+                return PDFContent(
+                    texto=texto_final,
+                    imagens=[],
+                    tem_texto=True,
+                    ocr_tentado=False,
+                    ocr_sucesso=False,
+                    total_paginas=total_paginas,
+                    texto_qualidade=qualidade
+                )
+
+            # 2. Se texto é pobre ou inexistente, converte para imagens
+            logger.info(f"[PDF] Texto com qualidade '{qualidade}', convertendo para imagens")
+
+            for i, pagina in enumerate(pdf):
+                # Renderiza a página como imagem (PNG)
+                # Usa zoom de 2x para melhor qualidade
+                mat = fitz.Matrix(2, 2)
+                pix = pagina.get_pixmap(matrix=mat)
+                img_bytes = pix.tobytes("png")
+                imagens.append(img_bytes)
+
+                # Limita a 10 páginas para não sobrecarregar a API
+                if i >= 9:
+                    logger.warning(f"[PDF] Limitando a 10 páginas (total: {total_paginas})")
+                    break
+
             pdf.close()
-            return PDFContent(
-                texto=texto_final,
-                imagens=[],
-                tem_texto=True,
-                ocr_tentado=False,
-                ocr_sucesso=False,
-                total_paginas=total_paginas,
-                texto_qualidade=qualidade
-            )
-
-        # 2. Se texto é pobre ou inexistente, converte para imagens
-        logger.info(f"[PDF] Texto com qualidade '{qualidade}', convertendo para imagens")
-
-        for i, pagina in enumerate(pdf):
-            # Renderiza a página como imagem (PNG)
-            # Usa zoom de 2x para melhor qualidade
-            mat = fitz.Matrix(2, 2)
-            pix = pagina.get_pixmap(matrix=mat)
-            img_bytes = pix.tobytes("png")
-            imagens.append(img_bytes)
-
-            # Limita a 10 páginas para não sobrecarregar a API
-            if i >= 9:
-                logger.warning(f"[PDF] Limitando a 10 páginas (total: {total_paginas})")
-                break
-
-        pdf.close()
 
         return PDFContent(
             texto=texto_final if qualidade != "none" else "",
