@@ -1938,7 +1938,8 @@
 
         async function executarClassificacaoLote(loteId) {
             // Usa SSE para progresso em tempo real
-            const eventSource = new EventSource(`/classificador/api/projetos/${loteId}/executar?token=${localStorage.getItem('token')}`);
+            // IMPORTANTE: O token é armazenado como 'access_token' no localStorage
+            const eventSource = new EventSource(`/classificador/api/projetos/${loteId}/executar?token=${localStorage.getItem('access_token')}`);
             let recebeuEvento = false;
             let ultimoErro = null;
 
