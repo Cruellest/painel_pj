@@ -241,10 +241,15 @@ class ClassificadorService:
         Yields:
             Eventos de progresso: {tipo, mensagem, dados}
         """
+        logger.info(f"[CLASSIFICADOR] Iniciando execução do projeto {projeto_id} para usuário {usuario_id}")
+
         projeto = self.obter_projeto(projeto_id)
         if not projeto:
+            logger.warning(f"[CLASSIFICADOR] Projeto {projeto_id} não encontrado")
             yield {"tipo": "erro", "mensagem": "Projeto não encontrado"}
             return
+
+        logger.info(f"[CLASSIFICADOR] Projeto encontrado: {projeto.nome}, modelo: {projeto.modelo}")
 
         # Carrega prompt
         prompt_texto = None
@@ -252,8 +257,10 @@ class ClassificadorService:
             prompt = self.obter_prompt(projeto.prompt_id)
             if prompt:
                 prompt_texto = prompt.conteudo
+                logger.info(f"[CLASSIFICADOR] Prompt carregado: {prompt.nome} ({len(prompt_texto)} chars)")
 
         if not prompt_texto:
+            logger.warning(f"[CLASSIFICADOR] Prompt não configurado para projeto {projeto_id}")
             yield {"tipo": "erro", "mensagem": "Prompt não configurado para o projeto"}
             return
 
@@ -263,11 +270,14 @@ class ClassificadorService:
                 CodigoDocumentoProjeto.id.in_(codigos_ids),
                 CodigoDocumentoProjeto.projeto_id == projeto_id
             ).all()
+            logger.info(f"[CLASSIFICADOR] Carregados {len(codigos)} códigos específicos (de {len(codigos_ids)} solicitados)")
         else:
             codigos = self.listar_codigos(projeto_id)
+            logger.info(f"[CLASSIFICADOR] Carregados {len(codigos)} códigos do projeto")
 
         if not codigos:
-            yield {"tipo": "erro", "mensagem": "Nenhum código de documento configurado"}
+            logger.warning(f"[CLASSIFICADOR] Nenhum código encontrado para projeto {projeto_id}")
+            yield {"tipo": "erro", "mensagem": "Nenhum código de documento configurado. Faça upload de arquivos primeiro."}
             return
 
         # Cria execução
@@ -365,6 +375,8 @@ class ClassificadorService:
         prompt_texto: str
     ) -> ResultadoClassificacaoDTO:
         """Processa um único código de documento"""
+        logger.info(f"[CLASSIFICADOR] Processando código {codigo.codigo} (fonte: {codigo.fonte}, arquivo: {codigo.arquivo_nome})")
+
         # Cria registro de resultado
         resultado_db = ResultadoClassificacao(
             execucao_id=execucao.id,
@@ -382,6 +394,7 @@ class ClassificadorService:
 
             # 1. Obtém texto do documento baseado na fonte
             if codigo.fonte == FonteDocumento.UPLOAD.value:
+                logger.debug(f"[CLASSIFICADOR] Fonte UPLOAD - usando texto extraído cached")
                 # Upload: usa texto já extraído no momento do upload
                 if codigo.texto_extraido and len(codigo.texto_extraido.strip()) >= 50:
                     texto_documento = codigo.texto_extraido

@@ -403,20 +403,33 @@ async def executar_projeto(
 
     Retorna stream de eventos de progresso.
     """
+    logger.info(f"[SSE] Iniciando execução do projeto {projeto_id} por usuário {current_user.id}")
+
     service = ClassificadorService(db)
     projeto = service.obter_projeto(projeto_id)
     if not projeto:
+        logger.warning(f"[SSE] Projeto {projeto_id} não encontrado")
         raise HTTPException(status_code=404, detail="Projeto não encontrado")
     if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        logger.warning(f"[SSE] Acesso negado ao projeto {projeto_id} para usuário {current_user.id}")
         raise HTTPException(status_code=403, detail="Acesso negado")
 
+    logger.info(f"[SSE] Projeto {projeto_id} encontrado, iniciando stream SSE")
+
     async def event_generator():
-        async for evento in service.executar_projeto(
-            projeto_id=projeto_id,
-            usuario_id=current_user.id,
-            codigos_ids=codigos_ids
-        ):
-            yield f"data: {json.dumps(evento, ensure_ascii=False)}\n\n"
+        try:
+            async for evento in service.executar_projeto(
+                projeto_id=projeto_id,
+                usuario_id=current_user.id,
+                codigos_ids=codigos_ids
+            ):
+                logger.debug(f"[SSE] Enviando evento: {evento.get('tipo', 'desconhecido')}")
+                yield f"data: {json.dumps(evento, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.exception(f"[SSE] Erro durante execução do projeto {projeto_id}: {e}")
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro interno: {str(e)}'}, ensure_ascii=False)}\n\n"
+        finally:
+            logger.info(f"[SSE] Stream finalizado para projeto {projeto_id}")
 
     return StreamingResponse(
         event_generator(),
@@ -828,11 +841,15 @@ async def upload_arquivos_lote(
     import hashlib
     from .models import CodigoDocumentoProjeto, FonteDocumento
 
+    logger.info(f"[UPLOAD] Recebendo {len(arquivos)} arquivo(s) para lote {lote_id} do usuário {current_user.id}")
+
     service = ClassificadorService(db)
     projeto = service.obter_projeto(lote_id)
     if not projeto:
+        logger.warning(f"[UPLOAD] Lote {lote_id} não encontrado")
         raise HTTPException(status_code=404, detail="Lote não encontrado")
     if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        logger.warning(f"[UPLOAD] Acesso negado ao lote {lote_id} para usuário {current_user.id}")
         raise HTTPException(status_code=403, detail="Acesso negado")
 
     # Limites
@@ -892,9 +909,11 @@ async def upload_arquivos_lote(
             adicionados.append(arquivo.filename)
 
         except Exception as e:
+            logger.error(f"[UPLOAD] Erro ao processar arquivo {arquivo.filename}: {e}")
             erros.append({"arquivo": arquivo.filename, "erro": str(e)})
 
     db.commit()
+    logger.info(f"[UPLOAD] Upload concluído: {len(adicionados)} sucesso, {len(erros)} erros para lote {lote_id}")
 
     return {
         "mensagem": f"{len(adicionados)} arquivos adicionados ao lote",

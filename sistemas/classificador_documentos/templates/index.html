@@ -1877,12 +1877,42 @@
         }
 
         async function uploadArquivosParaLote(loteId) {
-            // TODO: Implementar upload em lote no backend
-            // Por enquanto, simula sucesso
+            // Upload real dos arquivos para o backend
+            const formData = new FormData();
             for (const file of arquivosParaLote) {
+                formData.append('arquivos', file);
                 adicionarLogLote(`  - ${file.name}`);
             }
-            adicionarLogLote(`${arquivosParaLote.length} arquivos enviados.`);
+
+            try {
+                const response = await fetch(`/classificador/api/lotes/${loteId}/upload`, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'  // Inclui cookie de autenticacao
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `Erro HTTP ${response.status}`);
+                }
+
+                const result = await response.json();
+                adicionarLogLote(`${result.adicionados || arquivosParaLote.length} arquivos enviados com sucesso.`, 'success');
+
+                if (result.erros && result.erros > 0) {
+                    adicionarLogLote(`${result.erros} arquivo(s) com erro.`, 'error');
+                    if (result.detalhes_erros) {
+                        result.detalhes_erros.forEach(e => {
+                            adicionarLogLote(`  ! ${e.arquivo}: ${e.erro}`, 'error');
+                        });
+                    }
+                }
+
+                return result;
+            } catch (e) {
+                adicionarLogLote(`Erro no upload: ${e.message}`, 'error');
+                throw e;
+            }
         }
 
         async function adicionarProcessosTJMS(loteId, processos) {
@@ -1909,25 +1939,66 @@
         async function executarClassificacaoLote(loteId) {
             // Usa SSE para progresso em tempo real
             const eventSource = new EventSource(`/classificador/api/projetos/${loteId}/executar?token=${localStorage.getItem('token')}`);
+            let recebeuEvento = false;
+            let ultimoErro = null;
 
             eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                adicionarLogLote(data.mensagem || JSON.stringify(data));
+                recebeuEvento = true;
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[SSE] Evento recebido:', data);
 
-                if (data.tipo === 'concluido' || data.tipo === 'erro') {
-                    eventSource.close();
-                    mostrarResultadosLote(loteId);
-                }
+                    // Log da mensagem
+                    if (data.mensagem) {
+                        const tipo = data.tipo === 'erro' ? 'error' : (data.tipo === 'concluido' ? 'success' : 'info');
+                        adicionarLogLote(data.mensagem, tipo);
+                    }
 
-                if (data.progresso) {
-                    atualizarBarraProgresso(data.progresso.atual, data.progresso.total);
+                    // Atualiza progresso - backend envia processados/total diretamente
+                    if (data.processados !== undefined && data.total !== undefined) {
+                        atualizarBarraProgresso(data.processados, data.total);
+                    }
+
+                    // Eventos de conclusao ou erro
+                    if (data.tipo === 'concluido') {
+                        adicionarLogLote(`Sucesso: ${data.sucesso || 0} | Erros: ${data.erros || 0}`, 'success');
+                        eventSource.close();
+                        document.getElementById('statusProgressoLote').textContent = 'Concluido!';
+                        mostrarResultadosLote(loteId, data.execucao_id);
+                    } else if (data.tipo === 'erro') {
+                        ultimoErro = data.mensagem;
+                        eventSource.close();
+                        document.getElementById('statusProgressoLote').textContent = 'Erro';
+                        mostrarResultadosLote(loteId);
+                    } else if (data.tipo === 'inicio') {
+                        // Inicializa o total na barra de progresso
+                        document.getElementById('statusProgressoLote').textContent = 'Processando...';
+                    }
+                } catch (e) {
+                    console.error('[SSE] Erro ao processar evento:', e, event.data);
+                    adicionarLogLote(`Erro ao processar evento: ${e.message}`, 'error');
                 }
             };
 
-            eventSource.onerror = () => {
+            eventSource.onerror = (e) => {
+                console.error('[SSE] Erro na conexao:', e);
                 eventSource.close();
-                adicionarLogLote('Conexao encerrada.', 'info');
+
+                if (!recebeuEvento) {
+                    // Conexao falhou antes de receber qualquer evento - provavelmente erro de auth ou servidor
+                    adicionarLogLote('Erro: Conexao falhou antes de iniciar. Verifique se voce esta autenticado.', 'error');
+                    document.getElementById('statusProgressoLote').textContent = 'Erro de conexao';
+                } else if (ultimoErro) {
+                    adicionarLogLote(`Conexao encerrada: ${ultimoErro}`, 'error');
+                } else {
+                    adicionarLogLote('Conexao encerrada.', 'info');
+                }
                 mostrarResultadosLote(loteId);
+            };
+
+            eventSource.onopen = () => {
+                console.log('[SSE] Conexao aberta com sucesso');
+                adicionarLogLote('Conexao estabelecida, aguardando eventos...', 'info');
             };
         }
 
@@ -1947,13 +2018,51 @@
             contador.textContent = `${atual} / ${total}`;
         }
 
-        function mostrarResultadosLote(loteId) {
+        function mostrarResultadosLote(loteId, execucaoId = null) {
             const areaResultados = document.getElementById('areaResultadosLote');
             areaResultados.classList.remove('hidden');
-            // TODO: Carregar e exibir resultados
-            document.getElementById('resumoResultadosLote').innerHTML = `
-                <p class="text-gray-600">Lote #${loteId} concluido. Veja os resultados em "Meus Lotes".</p>
-            `;
+            document.getElementById('btnIniciarLote').disabled = false;
+
+            if (execucaoId) {
+                document.getElementById('resumoResultadosLote').innerHTML = `
+                    <p class="text-gray-600 mb-3">Lote #${loteId} concluido (execucao #${execucaoId}).</p>
+                    <div class="flex gap-3">
+                        <button onclick="showTab('meusLotes'); carregarProjetos();" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                            <i class="fas fa-folder-open mr-2"></i>Ver em Meus Lotes
+                        </button>
+                        <button onclick="exportarResultados(${execucaoId}, 'excel')" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
+                            <i class="fas fa-file-excel mr-2"></i>Exportar Excel
+                        </button>
+                    </div>
+                `;
+            } else {
+                document.getElementById('resumoResultadosLote').innerHTML = `
+                    <p class="text-gray-600">Lote #${loteId} processado. Veja os resultados em "Meus Lotes".</p>
+                    <button onclick="showTab('meusLotes'); carregarProjetos();" class="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                        <i class="fas fa-folder-open mr-2"></i>Ver em Meus Lotes
+                    </button>
+                `;
+            }
+        }
+
+        async function exportarResultados(execucaoId, formato) {
+            try {
+                const response = await fetch(`/classificador/api/execucoes/${execucaoId}/exportar/${formato}`, {
+                    credentials: 'include'
+                });
+                if (!response.ok) throw new Error('Erro ao exportar');
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `classificacao_${execucaoId}.${formato === 'excel' ? 'xlsx' : formato}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } catch (e) {
+                alert('Erro ao exportar: ' + e.message);
+            }
         }
 
         function pausarLote() {
