@@ -391,10 +391,10 @@ async def remover_codigo(
 # Execução de Classificação
 # ============================================
 
-@router.post("/projetos/{projeto_id}/executar")
+@router.get("/projetos/{projeto_id}/executar")
 async def executar_projeto(
     projeto_id: int,
-    codigos_ids: Optional[List[int]] = None,
+    codigos_ids: Optional[List[int]] = Query(None),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -402,6 +402,8 @@ async def executar_projeto(
     Executa classificação de um projeto via SSE (Server-Sent Events).
 
     Retorna stream de eventos de progresso.
+
+    NOTA: Usa GET para compatibilidade com EventSource do browser.
     """
     logger.info(f"[SSE] Iniciando execução do projeto {projeto_id} por usuário {current_user.id}")
 
@@ -982,7 +984,7 @@ async def importar_tjms_lote(
     }
 
 
-@router.post("/lotes/{lote_id}/executar-sincrono")
+@router.get("/lotes/{lote_id}/executar-sincrono")
 async def executar_lote_sincrono(
     lote_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -995,6 +997,8 @@ async def executar_lote_sincrono(
     - Para TJ-MS: consulta XML -> filtra por tipo -> baixa -> classifica
     - Para uploads: usa texto extraido cached -> classifica
     - Retorna eventos SSE em tempo real
+
+    NOTA: Usa GET para compatibilidade com EventSource do browser.
     """
     service = ClassificadorService(db)
     projeto = service.obter_projeto(lote_id)

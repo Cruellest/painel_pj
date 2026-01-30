@@ -606,7 +606,7 @@
                                     </button>
                                 </div>
                             </div>
-                            <div id="pdfViewer" class="border border-gray-200 rounded-lg bg-gray-100 flex items-center justify-center" style="height: 400px;">
+                            <div id="pdfViewer" class="border border-gray-200 rounded-lg bg-gray-100 flex items-center justify-center overflow-auto" style="height: 400px; max-height: 400px;">
                                 <div class="text-center text-gray-400">
                                     <i class="fas fa-file-pdf text-4xl mb-2"></i>
                                     <p class="text-sm">Nenhum documento carregado</p>
@@ -2313,7 +2313,19 @@
 
             try {
                 const page = await pdfDoc.getPage(numPagina);
-                const scale = 1.2;
+
+                // Calcula escala para caber no container
+                const containerWidth = viewer.clientWidth - 16; // padding
+                const containerHeight = viewer.clientHeight - 16;
+
+                // Obtem viewport original para calcular proporcoes
+                const originalViewport = page.getViewport({ scale: 1 });
+
+                // Calcula escala para caber na largura e altura disponivel
+                const scaleWidth = containerWidth / originalViewport.width;
+                const scaleHeight = containerHeight / originalViewport.height;
+                const scale = Math.min(scaleWidth, scaleHeight, 1.5); // Limita escala maxima
+
                 const viewport = page.getViewport({ scale });
 
                 // Cria canvas
@@ -2321,8 +2333,8 @@
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
-                canvas.style.maxWidth = '100%';
-                canvas.style.height = 'auto';
+                canvas.style.display = 'block';
+                canvas.style.margin = 'auto';
 
                 viewer.innerHTML = '';
                 viewer.appendChild(canvas);
