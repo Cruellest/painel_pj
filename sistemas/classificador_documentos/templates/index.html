@@ -594,24 +594,61 @@
                     <div class="space-y-4">
                         <!-- Card: Visualizacao PDF -->
                         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                            <div class="flex justify-between items-center mb-3">
+                            <!-- Header com controles -->
+                            <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
                                 <h3 class="text-sm font-medium text-gray-900">Visualizacao do Documento</h3>
-                                <div id="pdfNavegacao" class="hidden flex items-center gap-2">
-                                    <button onclick="pdfPaginaAnterior()" class="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">
-                                        <i class="fas fa-chevron-left"></i>
-                                    </button>
-                                    <span id="pdfPaginaInfo" class="text-xs text-gray-600">1 / 1</span>
-                                    <button onclick="pdfProximaPagina()" class="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">
-                                        <i class="fas fa-chevron-right"></i>
-                                    </button>
+
+                                <!-- Controles do PDF (aparecem quando ha documento) -->
+                                <div id="pdfControles" class="hidden flex flex-wrap items-center gap-1 sm:gap-2">
+                                    <!-- Navegacao de paginas -->
+                                    <div class="flex items-center gap-1 border-r border-gray-200 pr-2">
+                                        <button onclick="pdfPaginaAnterior()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Pagina anterior">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <span id="pdfPaginaInfo" class="text-xs text-gray-600 min-w-[40px] text-center">1 / 1</span>
+                                        <button onclick="pdfProximaPagina()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Proxima pagina">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Controles de zoom -->
+                                    <div class="flex items-center gap-1 border-r border-gray-200 pr-2">
+                                        <button onclick="pdfZoomOut()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Diminuir zoom">
+                                            <i class="fas fa-search-minus"></i>
+                                        </button>
+                                        <span id="pdfZoomInfo" class="text-xs text-gray-600 min-w-[45px] text-center">100%</span>
+                                        <button onclick="pdfZoomIn()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Aumentar zoom">
+                                            <i class="fas fa-search-plus"></i>
+                                        </button>
+                                        <button onclick="pdfZoomFit()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Ajustar ao container">
+                                            <i class="fas fa-compress-arrows-alt"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Acoes extras -->
+                                    <div class="flex items-center gap-1">
+                                        <button onclick="pdfFullscreen()" class="p-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-xs" title="Tela cheia">
+                                            <i class="fas fa-expand"></i>
+                                        </button>
+                                        <button onclick="pdfAbrirNovaAba()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Abrir em nova aba">
+                                            <i class="fas fa-external-link-alt"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div id="pdfViewer" class="border border-gray-200 rounded-lg bg-gray-100 flex items-center justify-center overflow-auto" style="height: 400px; max-height: 400px;">
+
+                            <!-- Container do PDF com altura maior -->
+                            <div id="pdfViewer" class="border border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center overflow-auto cursor-grab active:cursor-grabbing" style="height: 500px;">
                                 <div class="text-center text-gray-400">
                                     <i class="fas fa-file-pdf text-4xl mb-2"></i>
                                     <p class="text-sm">Nenhum documento carregado</p>
                                 </div>
                             </div>
+
+                            <!-- Dica de uso (aparece quando ha documento) -->
+                            <p id="pdfDica" class="hidden text-xs text-gray-400 mt-2 text-center">
+                                <i class="fas fa-lightbulb mr-1"></i>Use scroll do mouse para zoom, arraste para mover
+                            </p>
                         </div>
 
                         <!-- Card: Resultado da Classificacao -->
@@ -800,6 +837,46 @@
                     </button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal: PDF Fullscreen -->
+    <div id="modalPdfFullscreen" class="fixed inset-0 bg-black/90 hidden z-[60] flex flex-col">
+        <!-- Header do modal -->
+        <div class="flex justify-between items-center p-4 bg-gray-900/80 backdrop-blur">
+            <div class="flex items-center gap-4">
+                <h3 class="text-white font-medium">Visualizacao do Documento</h3>
+                <!-- Navegacao -->
+                <div class="flex items-center gap-2">
+                    <button onclick="pdfFullscreenPaginaAnterior()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-sm">
+                        <i class="fas fa-chevron-left mr-1"></i>Anterior
+                    </button>
+                    <span id="pdfFullscreenPaginaInfo" class="text-white text-sm min-w-[60px] text-center">1 / 1</span>
+                    <button onclick="pdfFullscreenProximaPagina()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-sm">
+                        Proxima<i class="fas fa-chevron-right ml-1"></i>
+                    </button>
+                </div>
+                <!-- Zoom -->
+                <div class="flex items-center gap-2 border-l border-white/20 pl-4">
+                    <button onclick="pdfFullscreenZoomOut()" class="p-2 bg-white/10 hover:bg-white/20 text-white rounded" title="Diminuir">
+                        <i class="fas fa-search-minus"></i>
+                    </button>
+                    <span id="pdfFullscreenZoomInfo" class="text-white text-sm min-w-[50px] text-center">100%</span>
+                    <button onclick="pdfFullscreenZoomIn()" class="p-2 bg-white/10 hover:bg-white/20 text-white rounded" title="Aumentar">
+                        <i class="fas fa-search-plus"></i>
+                    </button>
+                    <button onclick="pdfFullscreenZoomFit()" class="p-2 bg-white/10 hover:bg-white/20 text-white rounded" title="Ajustar">
+                        <i class="fas fa-compress-arrows-alt"></i>
+                    </button>
+                </div>
+            </div>
+            <button onclick="fecharPdfFullscreen()" class="p-2 bg-white/10 hover:bg-red-500 text-white rounded transition-colors" title="Fechar (ESC)">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <!-- Container do PDF fullscreen -->
+        <div id="pdfFullscreenViewer" class="flex-1 overflow-auto flex items-center justify-center p-4 cursor-grab active:cursor-grabbing">
+            <!-- Canvas sera inserido aqui -->
         </div>
     </div>
 
@@ -1454,11 +1531,15 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const pdfData = new Uint8Array(arrayBuffer);
 
+                // Armazena como base64 para poder abrir em nova aba
+                pdfBase64Data = btoa(String.fromCharCode.apply(null, pdfData));
+
                 pdfDoc = await pdfjsLib.getDocument({ data: pdfData }).promise;
                 pdfTotalPaginas = pdfDoc.numPages;
                 pdfPaginaAtual = 1;
+                pdfZoomLevel = 0; // Fit inicial
 
-                document.getElementById('pdfNavegacao').classList.remove('hidden');
+                mostrarControlesPdf();
                 atualizarInfoPagina();
                 await renderizarPagina(pdfPaginaAtual);
 
@@ -2118,6 +2199,12 @@
         let pdfDoc = null;
         let pdfPaginaAtual = 1;
         let pdfTotalPaginas = 0;
+        let pdfZoomLevel = 1.0;           // Nivel de zoom atual (1.0 = 100%)
+        let pdfZoomMin = 0.5;             // Zoom minimo (50%)
+        let pdfZoomMax = 3.0;             // Zoom maximo (300%)
+        let pdfZoomStep = 0.25;           // Incremento do zoom
+        let pdfFullscreenZoomLevel = 1.0; // Zoom separado para fullscreen
+        let pdfBase64Data = null;         // Armazena o PDF em base64 para abrir em nova aba
         let testeDocumentoSelecionado = null;  // {id_documento, numero_processo, tipo, base64}
         let testeDocumentosTJMS = [];  // Lista de documentos encontrados
 
@@ -2278,6 +2365,9 @@
             const viewer = document.getElementById('pdfViewer');
 
             try {
+                // Armazena base64 para poder abrir em nova aba
+                pdfBase64Data = base64;
+
                 // Decodifica base64 para Uint8Array
                 const pdfData = atob(base64);
                 const pdfArray = new Uint8Array(pdfData.length);
@@ -2289,9 +2379,10 @@
                 pdfDoc = await pdfjsLib.getDocument({ data: pdfArray }).promise;
                 pdfTotalPaginas = pdfDoc.numPages;
                 pdfPaginaAtual = 1;
+                pdfZoomLevel = 0; // Fit inicial
 
-                // Mostra navegacao
-                document.getElementById('pdfNavegacao').classList.remove('hidden');
+                // Mostra controles
+                mostrarControlesPdf();
                 atualizarInfoPagina();
 
                 // Renderiza primeira pagina
@@ -2306,27 +2397,37 @@
             }
         }
 
-        async function renderizarPagina(numPagina) {
-            const viewer = document.getElementById('pdfViewer');
-
-            if (!pdfDoc) return;
+        async function renderizarPagina(numPagina, targetViewer = 'pdfViewer', customZoom = null) {
+            const viewer = document.getElementById(targetViewer);
+            if (!pdfDoc || !viewer) return;
 
             try {
                 const page = await pdfDoc.getPage(numPagina);
-
-                // Calcula escala para caber no container
-                const containerWidth = viewer.clientWidth - 16; // padding
-                const containerHeight = viewer.clientHeight - 16;
-
-                // Obtem viewport original para calcular proporcoes
                 const originalViewport = page.getViewport({ scale: 1 });
 
-                // Calcula escala para caber na largura e altura disponivel
-                const scaleWidth = containerWidth / originalViewport.width;
-                const scaleHeight = containerHeight / originalViewport.height;
-                const scale = Math.min(scaleWidth, scaleHeight, 1.5); // Limita escala maxima
+                // Determina o zoom a usar
+                let zoom = customZoom;
+                if (zoom === null) {
+                    zoom = targetViewer === 'pdfFullscreenViewer' ? pdfFullscreenZoomLevel : pdfZoomLevel;
+                }
 
-                const viewport = page.getViewport({ scale });
+                // Se zoom = 0, calcula para ajustar ao container (fit)
+                if (zoom === 0) {
+                    const containerWidth = viewer.clientWidth - 32;
+                    const containerHeight = viewer.clientHeight - 32;
+                    const scaleWidth = containerWidth / originalViewport.width;
+                    const scaleHeight = containerHeight / originalViewport.height;
+                    zoom = Math.min(scaleWidth, scaleHeight);
+
+                    // Atualiza o nivel de zoom para refletir o fit
+                    if (targetViewer === 'pdfFullscreenViewer') {
+                        pdfFullscreenZoomLevel = zoom;
+                    } else {
+                        pdfZoomLevel = zoom;
+                    }
+                }
+
+                const viewport = page.getViewport({ scale: zoom });
 
                 // Cria canvas
                 const canvas = document.createElement('canvas');
@@ -2335,6 +2436,7 @@
                 canvas.width = viewport.width;
                 canvas.style.display = 'block';
                 canvas.style.margin = 'auto';
+                canvas.style.maxWidth = 'none'; // Permite que ultrapasse o container com zoom
 
                 viewer.innerHTML = '';
                 viewer.appendChild(canvas);
@@ -2345,6 +2447,9 @@
                     viewport: viewport
                 }).promise;
 
+                // Atualiza indicador de zoom
+                atualizarInfoZoom(targetViewer);
+
             } catch (e) {
                 console.error('Erro ao renderizar pagina:', e);
             }
@@ -2352,6 +2457,20 @@
 
         function atualizarInfoPagina() {
             document.getElementById('pdfPaginaInfo').textContent = `${pdfPaginaAtual} / ${pdfTotalPaginas}`;
+            const fullscreenInfo = document.getElementById('pdfFullscreenPaginaInfo');
+            if (fullscreenInfo) {
+                fullscreenInfo.textContent = `${pdfPaginaAtual} / ${pdfTotalPaginas}`;
+            }
+        }
+
+        function atualizarInfoZoom(targetViewer = 'pdfViewer') {
+            const zoom = targetViewer === 'pdfFullscreenViewer' ? pdfFullscreenZoomLevel : pdfZoomLevel;
+            const percentage = Math.round(zoom * 100);
+            const infoId = targetViewer === 'pdfFullscreenViewer' ? 'pdfFullscreenZoomInfo' : 'pdfZoomInfo';
+            const info = document.getElementById(infoId);
+            if (info) {
+                info.textContent = `${percentage}%`;
+            }
         }
 
         function pdfPaginaAnterior() {
@@ -2370,12 +2489,143 @@
             }
         }
 
+        // ====================================
+        // Controles de Zoom
+        // ====================================
+        function pdfZoomIn() {
+            if (pdfZoomLevel < pdfZoomMax) {
+                pdfZoomLevel = Math.min(pdfZoomLevel + pdfZoomStep, pdfZoomMax);
+                renderizarPagina(pdfPaginaAtual);
+            }
+        }
+
+        function pdfZoomOut() {
+            if (pdfZoomLevel > pdfZoomMin) {
+                pdfZoomLevel = Math.max(pdfZoomLevel - pdfZoomStep, pdfZoomMin);
+                renderizarPagina(pdfPaginaAtual);
+            }
+        }
+
+        function pdfZoomFit() {
+            pdfZoomLevel = 0; // 0 = fit to container
+            renderizarPagina(pdfPaginaAtual);
+        }
+
+        // ====================================
+        // Fullscreen
+        // ====================================
+        function pdfFullscreen() {
+            if (!pdfDoc) return;
+
+            const modal = document.getElementById('modalPdfFullscreen');
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Reseta zoom do fullscreen e renderiza
+            pdfFullscreenZoomLevel = 0; // Fit inicial
+            atualizarInfoPagina();
+            renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+
+            // Listener para tecla ESC
+            document.addEventListener('keydown', fecharPdfFullscreenEsc);
+        }
+
+        function fecharPdfFullscreen() {
+            const modal = document.getElementById('modalPdfFullscreen');
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+            document.removeEventListener('keydown', fecharPdfFullscreenEsc);
+        }
+
+        function fecharPdfFullscreenEsc(e) {
+            if (e.key === 'Escape') {
+                fecharPdfFullscreen();
+            }
+        }
+
+        function pdfFullscreenPaginaAnterior() {
+            if (pdfPaginaAtual > 1) {
+                pdfPaginaAtual--;
+                atualizarInfoPagina();
+                renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+                renderizarPagina(pdfPaginaAtual, 'pdfViewer'); // Sincroniza viewer principal
+            }
+        }
+
+        function pdfFullscreenProximaPagina() {
+            if (pdfPaginaAtual < pdfTotalPaginas) {
+                pdfPaginaAtual++;
+                atualizarInfoPagina();
+                renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+                renderizarPagina(pdfPaginaAtual, 'pdfViewer'); // Sincroniza viewer principal
+            }
+        }
+
+        function pdfFullscreenZoomIn() {
+            if (pdfFullscreenZoomLevel < pdfZoomMax) {
+                pdfFullscreenZoomLevel = Math.min(pdfFullscreenZoomLevel + pdfZoomStep, pdfZoomMax);
+                renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+            }
+        }
+
+        function pdfFullscreenZoomOut() {
+            if (pdfFullscreenZoomLevel > pdfZoomMin) {
+                pdfFullscreenZoomLevel = Math.max(pdfFullscreenZoomLevel - pdfZoomStep, pdfZoomMin);
+                renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+            }
+        }
+
+        function pdfFullscreenZoomFit() {
+            pdfFullscreenZoomLevel = 0;
+            renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+        }
+
+        // ====================================
+        // Abrir em nova aba
+        // ====================================
+        function pdfAbrirNovaAba() {
+            if (!pdfBase64Data) {
+                alert('Nenhum documento carregado');
+                return;
+            }
+
+            // Cria blob a partir do base64
+            const byteCharacters = atob(pdfBase64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+
+            window.open(url, '_blank');
+        }
+
+        // ====================================
+        // Mostrar controles do PDF
+        // ====================================
+        function mostrarControlesPdf() {
+            document.getElementById('pdfControles').classList.remove('hidden');
+            document.getElementById('pdfDica').classList.remove('hidden');
+            // Remove navegacao antiga se existir
+            const navAntiga = document.getElementById('pdfNavegacao');
+            if (navAntiga) navAntiga.classList.add('hidden');
+        }
+
+        function esconderControlesPdf() {
+            document.getElementById('pdfControles').classList.add('hidden');
+            document.getElementById('pdfDica').classList.add('hidden');
+        }
+
         function limparPdfViewer() {
             pdfDoc = null;
             pdfPaginaAtual = 1;
             pdfTotalPaginas = 0;
+            pdfZoomLevel = 1.0;
+            pdfBase64Data = null;
             testeDocumentoSelecionado = null;
-            document.getElementById('pdfNavegacao').classList.add('hidden');
+            esconderControlesPdf();
             document.getElementById('pdfViewer').innerHTML = `
                 <div class="text-center text-gray-400">
                     <i class="fas fa-file-pdf text-4xl mb-2"></i>
@@ -2383,6 +2633,42 @@
                 </div>
             `;
         }
+
+        // ====================================
+        // Scroll para zoom (mouse wheel)
+        // ====================================
+        function setupPdfWheelZoom() {
+            const viewer = document.getElementById('pdfViewer');
+            if (viewer) {
+                viewer.addEventListener('wheel', (e) => {
+                    if (e.ctrlKey && pdfDoc) {
+                        e.preventDefault();
+                        if (e.deltaY < 0) {
+                            pdfZoomIn();
+                        } else {
+                            pdfZoomOut();
+                        }
+                    }
+                }, { passive: false });
+            }
+
+            const fullscreenViewer = document.getElementById('pdfFullscreenViewer');
+            if (fullscreenViewer) {
+                fullscreenViewer.addEventListener('wheel', (e) => {
+                    if (e.ctrlKey && pdfDoc) {
+                        e.preventDefault();
+                        if (e.deltaY < 0) {
+                            pdfFullscreenZoomIn();
+                        } else {
+                            pdfFullscreenZoomOut();
+                        }
+                    }
+                }, { passive: false });
+            }
+        }
+
+        // Inicializa wheel zoom quando DOM estiver pronto
+        document.addEventListener('DOMContentLoaded', setupPdfWheelZoom);
 
         async function classificarTesteRapido() {
             const promptId = document.getElementById('promptAvulso').value;
