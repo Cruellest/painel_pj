@@ -22,6 +22,9 @@ from utils.audit import (
     log_user_created, log_user_deleted, log_admin_action, log_audit_event, AuditEvent
 )
 
+# SECURITY: Sanitização de inputs
+from utils.security_sanitizer import sanitize_html_input
+
 router = APIRouter(prefix="/users", tags=["Usuários"])
 
 
@@ -66,13 +69,25 @@ async def create_user(
             detail=f"Usuário '{user_data.username}' já existe"
         )
     
+    # SECURITY: Sanitiza inputs para prevenir XSS Persistente
+    clean_username = sanitize_html_input(user_data.username)
+    clean_full_name = sanitize_html_input(user_data.full_name)
+    clean_email = sanitize_html_input(user_data.email) if user_data.email else None
+    clean_setor = sanitize_html_input(user_data.setor) if user_data.setor else None
+    # SECURITY: Rejeita nomes vazios após sanitização (evita resposta inválida)
+    if not clean_full_name or len(clean_full_name.strip()) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="full_name inválido: deve ter ao menos 2 caracteres"
+        )
+    
     # Verifica se email já existe (se informado)
-    if user_data.email:
-        existing_email = db.query(User).filter(User.email == user_data.email).first()
+    if clean_email:
+        existing_email = db.query(User).filter(User.email == clean_email).first()
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Email '{user_data.email}' já cadastrado"
+                detail=f"Email '{clean_email}' já cadastrado"
             )
     
     # Verifica se o usuário tem acesso ao Gerador de Peças
@@ -116,14 +131,14 @@ async def create_user(
     
     # Cria usuário
     new_user = User(
-        username=user_data.username,
-        email=user_data.email,
-        full_name=user_data.full_name,
+        username=clean_username,
+        email=clean_email,
+        full_name=clean_full_name,
         hashed_password=get_password_hash(password),
         role=user_data.role,
         sistemas_permitidos=user_data.sistemas_permitidos,
         permissoes_especiais=user_data.permissoes_especiais,
-        setor=user_data.setor,
+        setor=clean_setor,
         default_group_id=default_group.id if default_group else None,
         allowed_groups=allowed_groups,
         must_change_password=True,  # Força troca no primeiro acesso
@@ -205,13 +220,18 @@ async def update_user(
             detail="Você não pode remover seu próprio acesso de administrador"
         )
     
+    # SECURITY: Sanitiza inputs antes de verificar duplicação
+    clean_email = sanitize_html_input(user_data.email) if user_data.email else None
+    clean_full_name = sanitize_html_input(user_data.full_name) if user_data.full_name else None
+    clean_setor = sanitize_html_input(user_data.setor) if user_data.setor else None
+    
     # Verifica email duplicado
-    if user_data.email and user_data.email != user.email:
-        existing_email = db.query(User).filter(User.email == user_data.email).first()
+    if clean_email and clean_email != user.email:
+        existing_email = db.query(User).filter(User.email == clean_email).first()
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Email '{user_data.email}' já cadastrado"
+                detail=f"Email '{clean_email}' já cadastrado"
             )
     
     # Determina se o usuário terá acesso ao Gerador de Peças após a atualização
@@ -266,8 +286,24 @@ async def update_user(
             # Mantém os grupos existentes, mas não requer validação
             pass
 
+    # Valida `full_name` sanitizado quando informado (evita salvar em estado inválido)
+    if clean_full_name is not None and len(clean_full_name.strip()) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="full_name inválido: deve ter ao menos 2 caracteres"
+        )
+
     # Atualiza campos informados
     update_data = user_data.model_dump(exclude_unset=True, exclude={"allowed_group_ids", "default_group_id"})
+    
+    # SECURITY: Aplica sanitização aos campos de texto
+    if 'email' in update_data:
+        update_data['email'] = clean_email
+    if 'full_name' in update_data:
+        update_data['full_name'] = clean_full_name
+    if 'setor' in update_data:
+        update_data['setor'] = clean_setor
+    
     for field, value in update_data.items():
         setattr(user, field, value)
     

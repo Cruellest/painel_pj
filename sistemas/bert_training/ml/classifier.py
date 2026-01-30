@@ -173,7 +173,9 @@ class BertClassifier(nn.Module):
             Tuple de (modelo, label_map, tokenizer_name, truncation_side)
         """
         path = Path(path)
-        checkpoint = torch.load(path / 'model.pt', map_location=device)
+        # SECURITY: weights_only=False por compatibilidade com modelos que usam objetos Python
+        # Para segurança máxima, migre para safetensors
+        checkpoint = torch.load(path / 'model.pt', map_location=device, weights_only=False)
 
         # Recria o modelo
         model = cls(

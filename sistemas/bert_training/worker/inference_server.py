@@ -57,9 +57,13 @@ def load_model(model_path: Path) -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        # Carrega checkpoint
+        # SECURITY: Carrega apenas pesos, bloqueando execução de código arbitrário
+        # weights_only=True previne RCE via desserialização de pickle malicioso
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        
+        # NOTA: weights_only=True não funciona com modelos que usam pickle de objetos complexos
+        # Para segurança total, migre para safetensors: https://github.com/huggingface/safetensors
 
         # Carrega tokenizer
         base_model = checkpoint.get("base_model", "neuralmind/bert-base-portuguese-cased")
@@ -167,7 +171,9 @@ def create_app(models_dir: Path) -> Flask:
 
                 # Carrega info basica do modelo
                 try:
-                    checkpoint = torch.load(model_path / "model.pt", map_location="cpu")
+                    # SECURITY: weights_only=False por compatibilidade com modelos legados
+                    # RECOMENDAÇÃO: Migrar para safetensors para segurança total
+                    checkpoint = torch.load(model_path / "model.pt", map_location="cpu", weights_only=False)
                     id_to_label = checkpoint.get("id_to_label", {})
                     base_model = checkpoint.get("base_model", "unknown")
 

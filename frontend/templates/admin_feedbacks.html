@@ -669,6 +669,17 @@
             }
         }
 
+        // SECURITY: Função para escapar HTML e prevenir XSS
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
         async function carregarFeedbacks() {
             try {
                 const avaliacao = document.getElementById('filtro-avaliacao').value;

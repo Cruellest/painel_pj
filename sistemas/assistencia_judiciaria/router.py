@@ -22,6 +22,9 @@ from utils.timezone import to_iso_utc
 from sistemas.assistencia_judiciaria.core.logic import full_flow, DEFAULT_MODEL
 from sistemas.assistencia_judiciaria.core.document import markdown_to_docx, docx_to_pdf
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
+
+# SECURITY: Sanitização de inputs
+from utils.security_sanitizer import sanitize_feedback_input
 from admin.models import ConfiguracaoIA
 
 router = APIRouter(tags=["Assistência Judiciária"])
@@ -447,17 +450,21 @@ async def enviar_feedback(
         ).first()
         
         if feedback_existente:
+            # SECURITY: Sanitiza comentário antes de atualizar
+            clean_comentario = sanitize_feedback_input(req.comentario) if req.comentario else None
             # Atualiza feedback existente
             feedback_existente.avaliacao = req.avaliacao
-            feedback_existente.comentario = req.comentario
+            feedback_existente.comentario = clean_comentario
             feedback_existente.campos_incorretos = req.campos_incorretos
         else:
+            # SECURITY: Sanitiza comentário antes de criar
+            clean_comentario = sanitize_feedback_input(req.comentario) if req.comentario else None
             # Cria novo feedback
             feedback = FeedbackAnalise(
                 consulta_id=req.consulta_id,
                 usuario_id=current_user.id,
                 avaliacao=req.avaliacao,
-                comentario=req.comentario,
+                comentario=clean_comentario,
                 campos_incorretos=req.campos_incorretos
             )
             db.add(feedback)

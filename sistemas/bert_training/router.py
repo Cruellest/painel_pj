@@ -224,6 +224,17 @@ async def upload_dataset(
 
     # Lê conteúdo e calcula hash
     content = await file.read()
+    
+    # SECURITY: Valida Magic Number do arquivo Excel
+    from utils.security_sanitizer import validate_file_magic_number
+    ext = file.filename.rsplit('.', 1)[1] if '.' in file.filename else ''
+    if not validate_file_magic_number(content, [ext]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Arquivo Excel inválido: arquivo não corresponde ao formato .{ext}. "
+                   "Possível tentativa de upload de arquivo malicioso."
+        )
+    
     sha256_hash = hashlib.sha256(content).hexdigest()
 
     # Verifica se já existe

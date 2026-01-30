@@ -41,6 +41,9 @@ from .models import (
 )
 from .services import RelatorioCumprimentoService
 
+# SECURITY: Sanitização de inputs
+from utils.security_sanitizer import sanitize_feedback_input
+
 # Detector de Agravo de Instrumento
 from sistemas.pedido_calculo.document_downloader import DocumentDownloader
 
@@ -901,12 +904,15 @@ async def enviar_feedback(
                 detail="Feedback já foi enviado para esta geração"
             )
 
+        # SECURITY: Sanitiza comentário para prevenir XSS
+        clean_comentario = sanitize_feedback_input(req.comentario) if req.comentario else None
+
         feedback = FeedbackRelatorioCumprimento(
             geracao_id=req.geracao_id,
             usuario_id=current_user.id,
             avaliacao=req.avaliacao,
             nota=req.nota,
-            comentario=req.comentario,
+            comentario=clean_comentario,
             campos_incorretos=req.campos_incorretos
         )
         db.add(feedback)

@@ -28,6 +28,9 @@ from services.performance_tracker import (
 from services.config_cache import config_cache
 from admin.services_request_perf import log_request_perf
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
+
+# SECURITY: Sanitização de inputs
+from utils.security_sanitizer import sanitize_feedback_input
 from sistemas.gerador_pecas.services import GeradorPecasService
 from sistemas.gerador_pecas.orquestrador_agentes import consolidar_dados_extracao
 from sistemas.gerador_pecas.versoes import (
@@ -2021,12 +2024,15 @@ async def enviar_feedback(
                 detail="Feedback já foi enviado para esta geração"
             )
 
+        # SECURITY: Sanitiza comentário para prevenir XSS
+        clean_comentario = sanitize_feedback_input(req.comentario) if req.comentario else None
+
         feedback = FeedbackPeca(
             geracao_id=req.geracao_id,
             usuario_id=current_user.id,
             avaliacao=req.avaliacao,
             nota=req.nota,
-            comentario=req.comentario,
+            comentario=clean_comentario,
             campos_incorretos=req.campos_incorretos
         )
         db.add(feedback)

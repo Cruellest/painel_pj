@@ -25,6 +25,9 @@ from auth.models import User
 from config import UPLOAD_FOLDER, ALLOWED_EXTENSIONS, DEFAULT_MODEL, FULL_REPORT_MODEL
 
 from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise, ArquivoUpload
+
+# SECURITY: Sanitização de inputs
+from utils.security_sanitizer import sanitize_feedback_input, validate_file_magic_number
 from sistemas.matriculas_confrontantes.schemas import (
     FileInfo, FileUploadResponse, AnaliseResponse, AnaliseStatusResponse,
     ResultadoAnalise, RegistroCreate, RegistroUpdate, RegistroResponse,
@@ -242,6 +245,19 @@ async def upload_file(
     if not allowed_file(file.filename):
         raise HTTPException(status_code=400, detail="Tipo de arquivo não permitido")
     
+    # SECURITY: Lê conteúdo para validação de Magic Number
+    content = await file.read()
+    
+    # SECURITY: Valida Magic Number para prevenir upload de arquivos maliciosos
+    # Extrai extensão permitida do nome do arquivo
+    ext = file.filename.rsplit('.', 1)[1] if '.' in file.filename else ''
+    if not validate_file_magic_number(content, [ext]):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Arquivo inválido: a extensão .{ext} não corresponde ao conteúdo real do arquivo. "
+                   "Possível tentativa de upload de arquivo malicioso disfarçado."
+        )
+    
     original_name = secure_filename(file.filename)
     
     # Verifica se já existe arquivo com mesmo nome
@@ -275,8 +291,7 @@ async def upload_file(
     unique_id = f"{uuid.uuid4().hex[:8]}_{original_name}"
     filepath = UPLOAD_FOLDER / unique_id
     
-    # Salva o arquivo
-    content = await file.read()
+    # Salva o arquivo (conteúdo já foi lido para validação)
     with open(filepath, "wb") as f:
         f.write(content)
     
@@ -1396,17 +1411,21 @@ async def enviar_feedback_matricula(
         ).first()
         
         if feedback_existente:
+            # SECURITY: Sanitiza comentário antes de atualizar
+            clean_comentario = sanitize_feedback_input(req.comentario) if req.comentario else None
             # Atualiza feedback existente
             feedback_existente.avaliacao = req.avaliacao
-            feedback_existente.comentario = req.comentario
+            feedback_existente.comentario = clean_comentario
             feedback_existente.campos_incorretos = req.campos_incorretos
         else:
+            # SECURITY: Sanitiza comentário antes de criar
+            clean_comentario = sanitize_feedback_input(req.comentario) if req.comentario else None
             # Cria novo feedback
             feedback = FeedbackMatricula(
                 analise_id=req.analise_id,
                 usuario_id=current_user.id,
                 avaliacao=req.avaliacao,
-                comentario=req.comentario,
+                comentario=clean_comentario,
                 campos_incorretos=req.campos_incorretos
             )
             db.add(feedback)

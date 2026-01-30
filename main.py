@@ -317,8 +317,14 @@ app.add_middleware(
 )
 
 # SECURITY: Rate Limiting
+# IMPORTANTE: O limiter já possui default_limits configurado em utils/rate_limit.py
+# que aplica 100 req/min para TODAS as rotas automaticamente
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+# NOTA: Para proteger rotas específicas com limites mais rigorosos,
+# use os decoradores @limiter.limit() diretamente nos endpoints
+# Exemplos: @limiter.limit("5/minute") para login, @limiter.limit("10/minute") para IA
 
 # PERFORMANCE: Middleware de timing (apenas para admin quando ativado)
 app.add_middleware(PerformanceMiddleware)

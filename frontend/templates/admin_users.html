@@ -428,6 +428,17 @@
             );
         }
 
+        // SECURITY: Função para escapar HTML e prevenir XSS
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
         // Renderiza tabela de usuarios
         function renderUsers(users) {
             const groupBy = document.getElementById('group-by').value;
@@ -506,7 +517,10 @@
                 : '<span class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-full">Inativo</span>';
 
             const createdAt = formatDate(user.created_at);
-            const setor = user.setor || '-';
+            // SECURITY: Escapa todos os campos de texto do usuário
+            const setor = escapeHtml(user.setor) || '-';
+            const username = escapeHtml(user.username);
+            const fullName = escapeHtml(user.full_name);
 
             return `
                 <tr class="hover:bg-gray-50 transition-colors">
@@ -515,10 +529,10 @@
                             <div class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center">
                                 <i class="fas fa-user text-primary-600 text-sm"></i>
                             </div>
-                            <span class="font-medium text-gray-800">${user.username}</span>
+                            <span class="font-medium text-gray-800">${username}</span>
                         </div>
                     </td>
-                    <td class="px-6 py-4 text-gray-600">${user.full_name}</td>
+                    <td class="px-6 py-4 text-gray-600">${fullName}</td>
                     <td class="px-6 py-4 text-gray-500 text-sm">${setor}</td>
                     <td class="px-6 py-4">${roleBadge}</td>
                     <td class="px-6 py-4">${statusBadge}</td>
@@ -533,7 +547,7 @@
                                 <i class="fas fa-edit"></i>
                             </button>
                             <button
-                                onclick="resetPassword(${user.id}, '${user.username}')"
+                                onclick="resetPassword(${user.id}, '${escapeHtml(user.username)}')"
                                 class="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
                                 title="Resetar Senha"
                             >

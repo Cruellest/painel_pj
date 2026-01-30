@@ -28,6 +28,9 @@ from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
 from sistemas.prestacao_contas.models import GeracaoAnalise, FeedbackPrestacao
+
+# SECURITY: Sanitização de inputs
+from utils.security_sanitizer import sanitize_feedback_input
 from sistemas.prestacao_contas.schemas import (
     AnalisarProcessoRequest,
     ResponderDuvidaRequest,
@@ -153,13 +156,16 @@ async def registrar_feedback(
     if not geracao:
         raise HTTPException(status_code=404, detail="Análise não encontrada")
 
+    # SECURITY: Sanitiza comentário para prevenir XSS
+    clean_comentario = sanitize_feedback_input(request.comentario) if request.comentario else None
+
     # Cria feedback
     feedback = FeedbackPrestacao(
         geracao_id=request.geracao_id,
         usuario_id=current_user.id,
         avaliacao=request.avaliacao,
         nota=request.nota,
-        comentario=request.comentario,
+        comentario=clean_comentario,
         parecer_correto=request.parecer_correto,
         valores_corretos=request.valores_corretos,
         medicamento_correto=request.medicamento_correto,
