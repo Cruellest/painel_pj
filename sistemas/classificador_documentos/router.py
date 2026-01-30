@@ -14,13 +14,15 @@ Autor: LAB/PGE-MS
 """
 
 import os
+import re
 import json
 import uuid
 import logging
 from datetime import datetime
 from typing import Optional, List
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File, Form, Request
 from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -28,7 +30,7 @@ from sqlalchemy.orm import Session
 from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
-from utils.timezone import to_iso_utc
+from utils.timezone import to_iso_utc, get_utc_now
 
 from .models import (
     ProjetoClassificacao,
@@ -51,6 +53,29 @@ from .services_openrouter import get_openrouter_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Classificador de Documentos"])
+
+
+def sanitizar_nome_arquivo(nome: str) -> str:
+    """
+    Sanitiza um nome para uso em nomes de arquivo.
+    Remove caracteres especiais e substitui espaços por underscores.
+    """
+    # Remove acentos comuns
+    nome = nome.replace("ã", "a").replace("õ", "o").replace("á", "a").replace("é", "e")
+    nome = nome.replace("í", "i").replace("ó", "o").replace("ú", "u").replace("ç", "c")
+    nome = nome.replace("Ã", "A").replace("Õ", "O").replace("Á", "A").replace("É", "E")
+    nome = nome.replace("Í", "I").replace("Ó", "O").replace("Ú", "U").replace("Ç", "C")
+    nome = nome.replace("â", "a").replace("ê", "e").replace("ô", "o")
+    nome = nome.replace("Â", "A").replace("Ê", "E").replace("Ô", "O")
+    # Remove caracteres não alfanuméricos (exceto espaço, hífen e underscore)
+    nome = re.sub(r'[^\w\s\-]', '', nome)
+    # Substitui espaços por underscores
+    nome = re.sub(r'\s+', '_', nome)
+    # Remove underscores múltiplos
+    nome = re.sub(r'_+', '_', nome)
+    # Remove underscores no início/fim
+    nome = nome.strip('_')
+    return nome
 
 
 # ============================================
@@ -512,6 +537,351 @@ async def obter_execucao(
 
 
 # ============================================
+# Execuções em Andamento
+# ============================================
+
+@router.get("/execucoes-em-andamento")
+async def listar_execucoes_em_andamento(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todas as execuções em andamento ou travadas do usuário atual.
+
+    Inclui informações de heartbeat para detecção de travamento no frontend.
+    Útil para mostrar progresso ao recarregar a página.
+    """
+    from .models import ExecucaoClassificacao, ProjetoClassificacao, StatusExecucao
+    from sqlalchemy import or_
+
+    # Busca execuções em andamento OU travadas dos projetos do usuário
+    execucoes = db.query(ExecucaoClassificacao).join(
+        ProjetoClassificacao,
+        ExecucaoClassificacao.projeto_id == ProjetoClassificacao.id
+    ).filter(
+        ProjetoClassificacao.usuario_id == current_user.id,
+        or_(
+            ExecucaoClassificacao.status == StatusExecucao.EM_ANDAMENTO.value,
+            ExecucaoClassificacao.status == StatusExecucao.TRAVADO.value
+        )
+    ).all()
+
+    return [
+        {
+            "id": e.id,
+            "projeto_id": e.projeto_id,
+            "projeto_nome": e.projeto.nome if e.projeto else None,
+            "status": e.status,
+            "total_arquivos": e.total_arquivos,
+            "arquivos_processados": e.arquivos_processados,
+            "arquivos_sucesso": e.arquivos_sucesso,
+            "arquivos_erro": e.arquivos_erro,
+            "progresso_percentual": e.progresso_percentual,
+            "modelo_usado": e.modelo_usado,
+            "iniciado_em": to_iso_utc(e.iniciado_em) if e.iniciado_em else None,
+            "criado_em": to_iso_utc(e.criado_em),
+            # Campos ADR-0010 para detecção de travamento
+            "ultimo_heartbeat": to_iso_utc(e.ultimo_heartbeat) if e.ultimo_heartbeat else None,
+            "esta_travada": e.esta_travada,
+            "pode_retomar": e.pode_retomar,
+            "tentativas_retry": e.tentativas_retry or 0,
+            "max_retries": e.max_retries or 3
+        }
+        for e in execucoes
+    ]
+
+
+# ============================================
+# Recuperação de Execuções (ADR-0010)
+# ============================================
+
+@router.get("/execucoes/{execucao_id}/status-detalhado")
+async def obter_status_detalhado(
+    execucao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtém status detalhado de uma execução incluindo informações de travamento.
+
+    Conforme ADR-0010: inclui heartbeat, erros, rota de origem, e se pode retomar.
+    """
+    from .watchdog import get_watchdog
+
+    service = ClassificadorService(db)
+    execucao = service.obter_execucao(execucao_id)
+    if not execucao:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+
+    projeto = service.obter_projeto(execucao.projeto_id)
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    watchdog = get_watchdog(db)
+    status = await watchdog.obter_status_detalhado(execucao_id)
+
+    if not status:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+
+    return status
+
+
+@router.get("/execucoes/{execucao_id}/erros")
+async def listar_erros_execucao(
+    execucao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Lista todos os documentos com erro de uma execução.
+
+    Conforme ADR-0010: inclui detalhes do erro, stack trace, tentativas e se pode reprocessar.
+    """
+    from .watchdog import get_watchdog
+
+    service = ClassificadorService(db)
+    execucao = service.obter_execucao(execucao_id)
+    if not execucao:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+
+    projeto = service.obter_projeto(execucao.projeto_id)
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    watchdog = get_watchdog(db)
+    erros = await watchdog.listar_erros(execucao_id)
+
+    return {
+        "execucao_id": execucao_id,
+        "total_erros": len(erros),
+        "erros": erros
+    }
+
+
+@router.get("/execucoes/{execucao_id}/retomar")
+async def retomar_execucao(
+    execucao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Retoma uma execução travada ou com erro de onde parou.
+
+    Conforme ADR-0010:
+    - Comportamento idempotente: pula documentos já processados com sucesso
+    - Reprocessa apenas documentos pendentes ou com erro
+    - Usa SSE para streaming de progresso
+
+    NOTA: Usa GET para compatibilidade com EventSource do browser.
+    """
+    logger.info(f"[SSE] Retomando execução {execucao_id} por usuário {current_user.id}")
+
+    service = ClassificadorService(db)
+    execucao = service.obter_execucao(execucao_id)
+    if not execucao:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+
+    projeto = service.obter_projeto(execucao.projeto_id)
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    async def event_generator():
+        try:
+            async for evento in service.retomar_execucao(
+                execucao_id=execucao_id,
+                usuario_id=current_user.id
+            ):
+                logger.debug(f"[SSE] Enviando evento retomada: {evento.get('tipo', 'desconhecido')}")
+                yield f"data: {json.dumps(evento, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.exception(f"[SSE] Erro durante retomada da execução {execucao_id}: {e}")
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro interno: {str(e)}'}, ensure_ascii=False)}\n\n"
+        finally:
+            logger.info(f"[SSE] Stream de retomada finalizado para execução {execucao_id}")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.get("/execucoes/{execucao_id}/reprocessar-erros")
+async def reprocessar_erros(
+    execucao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reprocessa apenas os documentos que tiveram erro.
+
+    Conforme ADR-0010:
+    - Reprocessa apenas documentos com status ERRO
+    - Respeita limite de tentativas por documento
+    - Usa SSE para streaming de progresso
+
+    NOTA: Usa GET para compatibilidade com EventSource do browser.
+    """
+    logger.info(f"[SSE] Reprocessando erros da execução {execucao_id} por usuário {current_user.id}")
+
+    service = ClassificadorService(db)
+    execucao = service.obter_execucao(execucao_id)
+    if not execucao:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+
+    projeto = service.obter_projeto(execucao.projeto_id)
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    async def event_generator():
+        try:
+            async for evento in service.reprocessar_erros(
+                execucao_id=execucao_id,
+                usuario_id=current_user.id
+            ):
+                logger.debug(f"[SSE] Enviando evento reprocessamento: {evento.get('tipo', 'desconhecido')}")
+                yield f"data: {json.dumps(evento, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.exception(f"[SSE] Erro durante reprocessamento da execução {execucao_id}: {e}")
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Erro interno: {str(e)}'}, ensure_ascii=False)}\n\n"
+        finally:
+            logger.info(f"[SSE] Stream de reprocessamento finalizado para execução {execucao_id}")
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@router.post("/watchdog/verificar")
+async def executar_verificacao_watchdog(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Executa verificação manual do watchdog para detectar execuções travadas.
+
+    Conforme ADR-0010: detecta execuções sem heartbeat por mais de 5 minutos.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Apenas administradores podem executar o watchdog")
+
+    from .watchdog import get_watchdog
+
+    watchdog = get_watchdog(db)
+    travadas = await watchdog.verificar_execucoes_travadas()
+
+    return {
+        "mensagem": f"Verificação concluída: {len(travadas)} execução(ões) marcada(s) como travada(s)",
+        "travadas": travadas
+    }
+
+
+@router.post("/execucoes/{execucao_id}/cancelar")
+async def cancelar_execucao(
+    execucao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Cancela uma execução em andamento ou travada.
+
+    Marca a execução como CANCELADO, impedindo retomada automática.
+    O usuário pode cancelar execuções que parecem travadas ou que deseja interromper.
+    """
+    from .models import ExecucaoClassificacao, ProjetoClassificacao, StatusExecucao
+
+    service = ClassificadorService(db)
+    execucao = service.obter_execucao(execucao_id)
+    if not execucao:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+
+    projeto = service.obter_projeto(execucao.projeto_id)
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    # Só pode cancelar execuções em andamento ou travadas
+    status_cancelaveis = [StatusExecucao.EM_ANDAMENTO.value, StatusExecucao.TRAVADO.value]
+    if execucao.status not in status_cancelaveis:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Não é possível cancelar execução com status '{execucao.status}'. Apenas execuções em andamento ou travadas podem ser canceladas."
+        )
+
+    # Marca como cancelado
+    execucao.status = StatusExecucao.CANCELADO.value
+    execucao.erro_mensagem = f"Cancelado manualmente pelo usuário em {get_utc_now().isoformat()}"
+    execucao.finalizado_em = get_utc_now()
+    db.commit()
+
+    logger.info(f"[CANCELAR] Execução {execucao_id} cancelada pelo usuário {current_user.id}")
+
+    return {
+        "mensagem": "Execução cancelada com sucesso",
+        "execucao_id": execucao_id,
+        "status": execucao.status,
+        "arquivos_processados": execucao.arquivos_processados,
+        "total_arquivos": execucao.total_arquivos
+    }
+
+
+@router.delete("/execucoes/{execucao_id}")
+async def arquivar_execucao(
+    execucao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Remove (arquiva) uma execução da lista de execuções em andamento.
+
+    Apenas execuções finalizadas (CONCLUIDO, ERRO, CANCELADO, TRAVADO) podem ser arquivadas.
+    Esta operação é um soft-delete: a execução não aparece mais na lista de "em andamento"
+    mas permanece no banco para histórico.
+    """
+    from .models import ExecucaoClassificacao, ProjetoClassificacao, StatusExecucao
+
+    service = ClassificadorService(db)
+    execucao = service.obter_execucao(execucao_id)
+    if not execucao:
+        raise HTTPException(status_code=404, detail="Execução não encontrada")
+
+    projeto = service.obter_projeto(execucao.projeto_id)
+    if projeto.usuario_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    # Verifica se pode arquivar (não está em andamento)
+    if execucao.status == StatusExecucao.EM_ANDAMENTO.value:
+        raise HTTPException(
+            status_code=400,
+            detail="Não é possível arquivar execução em andamento. Cancele primeiro se deseja removê-la."
+        )
+
+    # Para execuções travadas, marca como cancelada antes de "arquivar"
+    if execucao.status == StatusExecucao.TRAVADO.value:
+        execucao.status = StatusExecucao.CANCELADO.value
+        execucao.erro_mensagem = f"Arquivado (cancelado) pelo usuário em {get_utc_now().isoformat()}"
+        execucao.finalizado_em = get_utc_now()
+        db.commit()
+
+    logger.info(f"[ARQUIVAR] Execução {execucao_id} arquivada pelo usuário {current_user.id}")
+
+    return {
+        "mensagem": "Execução arquivada com sucesso",
+        "execucao_id": execucao_id,
+        "status": execucao.status
+    }
+
+
+# ============================================
 # Resultados
 # ============================================
 
@@ -586,12 +956,16 @@ async def exportar_excel(
     export_service = get_export_service()
     buffer = export_service.exportar_excel(resultados, execucao)
 
-    filename = f"classificacao_{projeto.nome}_{execucao_id}.xlsx"
+    # Gera nome do arquivo com nome do lote sanitizado
+    nome_lote = sanitizar_nome_arquivo(projeto.nome)
+    filename = f"classificacao_{nome_lote}_{execucao_id}.xlsx"
+    # Usa RFC 5987 encoding para suportar caracteres especiais no header
+    filename_encoded = quote(filename)
 
     return Response(
         content=buffer.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{filename_encoded}"}
     )
 
 
@@ -615,12 +989,15 @@ async def exportar_csv(
     export_service = get_export_service()
     buffer = export_service.exportar_csv(resultados)
 
-    filename = f"classificacao_{projeto.nome}_{execucao_id}.csv"
+    # Gera nome do arquivo com nome do lote sanitizado
+    nome_lote = sanitizar_nome_arquivo(projeto.nome)
+    filename = f"classificacao_{nome_lote}_{execucao_id}.csv"
+    filename_encoded = quote(filename)
 
     return Response(
         content=buffer.getvalue(),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{filename_encoded}"}
     )
 
 
@@ -644,7 +1021,16 @@ async def exportar_json(
     export_service = get_export_service()
     data = export_service.exportar_json(resultados)
 
-    return data
+    # Gera nome do arquivo com nome do lote sanitizado
+    nome_lote = sanitizar_nome_arquivo(projeto.nome)
+    filename = f"classificacao_{nome_lote}_{execucao_id}.json"
+    filename_encoded = quote(filename)
+
+    return Response(
+        content=json.dumps(data, ensure_ascii=False, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{filename_encoded}"}
+    )
 
 
 # ============================================
@@ -828,7 +1214,7 @@ class ExecutarLoteSincronoRequest(BaseModel):
 @router.post("/lotes/{lote_id}/upload")
 async def upload_arquivos_lote(
     lote_id: int,
-    arquivos: List[UploadFile] = File(...),
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -837,11 +1223,17 @@ async def upload_arquivos_lote(
 
     Conforme docs/REDESIGN_CLASSIFICADOR_v2.md secao 3:
     - Aceita PDF, TXT ou ZIP
-    - Max 500 arquivos por vez
+    - Max 2000 arquivos por vez (atualizado de 500 em Jan/2026)
     - Max 50MB por arquivo
+
+    NOTA: Usa Request.form() com max_files=2000 para contornar limite padrão do Starlette (1000).
     """
     import hashlib
     from .models import CodigoDocumentoProjeto, FonteDocumento
+
+    # Processa o formulário com limite aumentado de arquivos (padrão Starlette é 1000)
+    form = await request.form(max_files=2000, max_fields=2100)
+    arquivos = [v for k, v in form.multi_items() if hasattr(v, 'filename') and v.filename]
 
     logger.info(f"[UPLOAD] Recebendo {len(arquivos)} arquivo(s) para lote {lote_id} do usuário {current_user.id}")
 
@@ -854,8 +1246,8 @@ async def upload_arquivos_lote(
         logger.warning(f"[UPLOAD] Acesso negado ao lote {lote_id} para usuário {current_user.id}")
         raise HTTPException(status_code=403, detail="Acesso negado")
 
-    # Limites
-    MAX_FILES = 500
+    # Limites (aumentado de 500 para 2000 conforme solicitacao)
+    MAX_FILES = 2000
     MAX_SIZE = 50 * 1024 * 1024  # 50MB
     VALID_EXTENSIONS = {'.pdf', '.txt', '.zip'}
 

@@ -95,16 +95,108 @@ Havendo divergência entre o parecer do NATJus e outros documentos dos autos (la
 
 ---
 
+## REGRA CRÍTICA: FONTE DE VERDADE PARA IDENTIFICAÇÃO DOS PEDIDOS
+
+### Princípio Fundamental
+
+Os **PEDIDOS** da ação são definidos **EXCLUSIVAMENTE** pela **PETIÇÃO INICIAL**, não pelos documentos anexos.
+
+A prescrição médica, laudos, receitas e outros anexos são **documentos probatórios** — servem para fundamentar os pedidos, mas **NÃO os definem**.
+
+### Vedação Absoluta
+
+É **PROIBIDO**:
+- Considerar como pedido algo que consta apenas na prescrição médica, mas não na inicial
+- Confundir medicamentos prescritos com medicamentos efetivamente pedidos
+- Ampliar o objeto da lide com base em documentos anexos
+- Contestar itens que não foram pedidos na inicial
+
+### Regra de Verificação
+
+Antes de redigir os fatos e o mérito, **verificar com precisão**:
+
+**"Este item foi PEDIDO na petição inicial?"**
+- SIM → Contestar
+- NÃO (apenas consta na prescrição/laudo) → **NÃO CONTESTAR**
+
+### Exemplo Prático
+
+```
+SITUAÇÃO:
+- Prescrição médica: Medicamento A, Medicamento B, Medicamento C
+- Petição inicial: Pede apenas Medicamento A
+
+ANÁLISE CORRETA:
+- Medicamento A → ✅ CONTESTAR (foi pedido na inicial)
+- Medicamento B → ❌ NÃO MENCIONAR (não foi pedido)
+- Medicamento C → ❌ NÃO MENCIONAR (não foi pedido)
+
+A contestação deve tratar APENAS do Medicamento A.
+```
+
+```
+SITUAÇÃO:
+- Prescrição médica: Insulina Glargina 100UI + Insulina Asparte
+- Petição inicial: Pede apenas Insulina Glargina 100UI
+
+❌ INCORRETO (Fatos):
+"A parte autora requer o fornecimento de Insulina Glargina 100UI
+e Insulina Asparte..."
+
+✅ CORRETO (Fatos):
+"A parte autora requer o fornecimento de Insulina Glargina 100UI..."
+
+→ A Insulina Asparte não foi pedida, logo não deve ser mencionada.
+```
+
+### Hierarquia de Fontes para Pedidos
+
+| Documento | Função | Define pedidos? |
+|---|---|---|
+| Petição Inicial | Define o objeto da lide | ✅ SIM |
+| Prescrição Médica | Prova a indicação médica | ❌ NÃO |
+| Laudo Médico | Prova a necessidade clínica | ❌ NÃO |
+| Parecer NATJus | Análise técnica dos pedidos | ❌ NÃO |
+| Decisão Liminar | Define tutela provisória | ❌ NÃO |
+
+### Aplicação nos Fatos
+
+Ao redigir os fatos, informar **apenas** os pedidos que constam na petição inicial:
+
+```
+✅ CORRETO:
+"A parte autora ajuizou a presente demanda objetivando o fornecimento
+do medicamento [X], conforme pedido formulado na petição inicial."
+
+❌ INCORRETO:
+"A parte autora ajuizou a presente demanda objetivando o fornecimento
+dos medicamentos [X, Y e Z], conforme prescrição médica anexa."
+```
+
+---
+
 ## REGRAS PARA SEÇÃO DE FATOS
 
 Na redação do tópico **FATOS**, incluir **obrigatoriamente**:
 
-1. **Pedidos da inicial**: Informar expressamente quais são os pedidos formulados na petição inicial
+1. **Pedidos da inicial**: Informar expressamente quais são os pedidos formulados **NA PETIÇÃO INICIAL** (não na prescrição médica ou outros anexos)
 2. **Conclusão do NATJus**: Indicar a conclusão do parecer em relação ao pleito (favorável ou desfavorável)
 3. **Situação da tutela**: Registrar se houve ou não deferimento de tutela de urgência (concedida, indeferida ou ainda não apreciada)
 4. **Dados relevantes**: Tipo de tratamento/medicamento, valores, ente indicado como responsável
 
-É **VEDADO** redigir os fatos de forma genérica ou incompleta, sem menção explícita aos elementos acima.
+### Vedações na Seção de Fatos
+
+É **VEDADO**:
+- Redigir os fatos de forma genérica ou incompleta, sem menção explícita aos elementos acima
+- **Confundir prescrição médica com pedidos** — a prescrição pode conter mais itens do que os efetivamente pedidos
+- Mencionar medicamentos/procedimentos que constam apenas em anexos, mas não foram pedidos na inicial
+- Ampliar o objeto da demanda com base em documentos probatórios
+
+### Verificação Obrigatória
+
+Antes de redigir os fatos, confirmar:
+- [ ] Os pedidos listados estão **expressamente formulados na petição inicial**?
+- [ ] Não foram incluídos itens que constam apenas na prescrição/laudo?
 
 ---
 
@@ -288,8 +380,19 @@ Esses argumentos:
 
 Antes de concluir a contestação, verificar:
 
+### Identificação dos Pedidos
+- [ ] Os pedidos foram extraídos da **PETIÇÃO INICIAL** (não da prescrição médica)?
+- [ ] **Não foram incluídos itens que constam apenas em anexos**, mas não na inicial?
+- [ ] O objeto da contestação corresponde **exatamente** ao objeto da inicial?
+
+### Fatos
 - [ ] Os **FATOS** informam pedidos, conclusão do NAT e situação da tutela?
+- [ ] Os medicamentos/procedimentos listados nos fatos foram **efetivamente pedidos na inicial**?
+
+### Fontes Técnicas
 - [ ] O parecer do NATJus foi utilizado como fonte técnica (não como fonte de teses jurídicas)?
+
+### Estrutura
 - [ ] Preliminares existem **apenas** se há módulo [VALIDADO]?
 - [ ] Eventualidade existe **apenas** se há módulo [VALIDADO] E há argumentos de improcedência?
 - [ ] Se **NÃO há argumentos de improcedência**, a eventualidade virou mérito?

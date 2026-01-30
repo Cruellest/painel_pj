@@ -345,6 +345,142 @@ if is_feature_enabled("nova_feature"):
     usar_nova_logica()
 ```
 
+## Decisoes Recentes (Jan 2026)
+
+### Classificador de Documentos - Aumento do Limite de Upload
+
+**Data**: 2026-01-30
+**Decisao**: Aumentar o limite maximo de arquivos por upload de **500** para **2.000** arquivos.
+
+**Arquivos alterados**:
+- `sistemas/classificador_documentos/router.py` - Constante `MAX_FILES` alterada de 500 para 2000
+- `sistemas/classificador_documentos/templates/index.html` - Validacao frontend e texto informativo atualizados
+
+**Justificativa**:
+- Usuarios precisavam classificar lotes maiores de documentos
+- O processamento ja era assíncrono via SSE (streaming) com semaforo de concorrencia
+- Nao ha impacto significativo na memoria pois arquivos sao processados individualmente
+
+**Consideracoes tecnicas**:
+- Upload via FormData pode ser mais lento com muitos arquivos
+- Cada arquivo e limitado a 50MB individualmente
+- Processamento usa semaforo (padrao: 3 paralelos) para nao sobrecarregar IA
+- Tipos aceitos: PDF, TXT, ZIP
+- **IMPORTANTE**: O Starlette tem limite padrao de 1000 arquivos em `request.form()`. Para permitir 2000 arquivos, o endpoint usa `request.form(max_files=2000, max_fields=2100)` - ver `router.py:upload_arquivos_lote()`
+
+**Outras melhorias implementadas no mesmo commit**:
+- Correcao da exportacao Excel/CSV/JSON (funcao `exportarResultadosLote` estava apenas mostrando alert)
+- Visualizacao dos resultados em tabela no frontend (botao "Ver Classificacoes")
+- Tabela inclui: documento, categoria, subcategoria, confianca, justificativa
+
+### Ralph Loop - Investigação e Convenções de Logging
+
+**Data**: 2026-01-30
+**Decisao**: Documentar como o Ralph Loop funciona e remover instruções conflitantes do CLAUDE.md do usuário.
+
+**Problema investigado**:
+O terminal sempre mostrava "Total de iterações: 1" e não exibia mensagens de início de nova iteração.
+
+**Causa raiz identificada**:
+O arquivo `~/.claude/CLAUDE.md` continha instruções para que Claude exibisse manualmente o box de iteração, o que conflitava com o plugin Ralph Loop:
+1. O plugin `stop-hook.sh` já exibe o box de iteração automaticamente
+2. As instruções manuais faziam Claude exibir um box com contador incorreto
+3. O timing estava errado: Claude mostrava no INÍCIO, mas a iteração só incrementa no FIM
+
+**Arquivos do plugin Ralph Loop**:
+- Setup: `~/.claude/plugins/marketplaces/claude-plugins-official/plugins/ralph-loop/scripts/setup-ralph-loop.sh`
+- Stop Hook: `~/.claude/plugins/marketplaces/claude-plugins-official/plugins/ralph-loop/hooks/stop-hook.sh`
+- Estado: `.claude/ralph-loop.local.md` (criado no diretório do projeto)
+
+**Como funciona o tracking de iterações**:
+1. `setup-ralph-loop.sh` cria arquivo de estado com `iteration: 1`
+2. Quando Claude tenta sair, `stop-hook.sh` é executado
+3. O hook incrementa a iteração: `NEXT_ITERATION=$((ITERATION + 1))`
+4. O hook atualiza o arquivo e exibe: `🔄 RALPH LOOP - ITERAÇÃO [X/MAX]`
+5. O hook retorna JSON `{ "decision": "block", "reason": "prompt" }` para continuar
+
+**Convenções de logging (NÃO interferir)**:
+- ❌ NÃO exibir boxes de iteração manualmente (o plugin já faz)
+- ❌ NÃO ler `.claude/ralph-loop.local.md` para mostrar contador
+- ❌ NÃO mostrar "Total de iterações" na conclusão (o plugin já faz)
+- ✅ Trabalhar na tarefa normalmente
+- ✅ Outputar `<promise>TEXTO</promise>` quando tarefa estiver GENUINAMENTE completa
+
+**Versão Windows**:
+Existe também `~/.claude/plugins/local/ralph-loop-windows/` com scripts PowerShell para compatibilidade Windows.
+
+### Ralph Loop Windows - Correção do Erro de Carregamento
+
+**Data**: 2026-01-30
+**Problema**: Plugin "ralph-loop-windows" falhava ao carregar com erro "failed to load: 1 error"
+
+**Causa raiz**:
+1. Comandos PowerShell com aspas escapadas no `hooks.json` causavam erro de parsing
+2. Formato incorreto nos arquivos de comando (`invocation` ao invés de `allowed-tools`)
+3. Falta de scripts wrapper `.bat` para evitar problemas de escaping
+
+**Correções aplicadas**:
+1. Criados scripts `.bat` como wrappers para os scripts PowerShell:
+   - `hooks/stop-hook.bat` -> chama `stop-hook.ps1`
+   - `scripts/setup-ralph-loop.bat` -> chama `setup-ralph-loop.ps1`
+
+2. Simplificado `hooks.json` para usar apenas o caminho do `.bat`:
+   ```json
+   "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-hook.bat"
+   ```
+
+3. Corrigido formato dos comandos em `commands/*.md`:
+   - Removido `invocation` e `passArguments`
+   - Adicionado `allowed-tools` e `hide-from-slash-command-tool`
+   - Formato segue padrão do plugin oficial
+
+**Estrutura final do plugin**:
+```
+ralph-loop-windows/
+├── .claude-plugin/plugin.json
+├── commands/
+│   ├── ralph-loop.md
+│   ├── cancel-ralph.md
+│   └── help.md
+├── hooks/
+│   ├── hooks.json
+│   ├── stop-hook.bat     # Wrapper
+│   └── stop-hook.ps1
+├── scripts/
+│   ├── setup-ralph-loop.bat  # Wrapper
+│   └── setup-ralph-loop.ps1
+└── README.md
+```
+
+**Para habilitar**: Reinicie o Claude Code após as correções.
+
+### Classificador de Documentos - Bug "Executar Classificação" não funcionava
+
+**Data**: 2026-01-30
+**Problema**: Ao clicar em "Executar Classificação" na aba "Meus Lotes", nada acontecia (sem requests, sem logs).
+
+**Causa raiz**:
+Na função `executarProjeto()` em `templates/index.html`:
+1. Linha 1780: `hideModalDetalheProjeto()` era chamado **primeiro**
+2. `hideModalDetalheProjeto()` define `projetoAtual = null`
+3. Linha 1792: Tentava acessar `projetoAtual.id` → **TypeError: Cannot read properties of null**
+
+**Correção aplicada**:
+```javascript
+// ANTES (bugado):
+hideModalDetalheProjeto();
+// ...
+const projetoId = projetoAtual.id; // projetoAtual já é null!
+
+// DEPOIS (corrigido):
+const projetoId = projetoAtual.id;  // Salva ANTES de fechar o modal
+const projetoNome = projetoAtual.nome;
+hideModalDetalheProjeto();
+```
+
+**Lição aprendida**:
+Ao fechar modais que limpam estado global, sempre salvar os dados necessários ANTES de chamar a função de fechamento.
+
 ## Contato
 
 - **Equipe**: LAB/PGE-MS

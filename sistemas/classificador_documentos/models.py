@@ -31,6 +31,8 @@ class StatusExecucao(str, Enum):
     PENDENTE = "pendente"
     EM_ANDAMENTO = "em_andamento"
     PAUSADO = "pausado"
+    TRAVADO = "travado"  # Detectado automaticamente pelo watchdog
+    CANCELADO = "cancelado"  # Cancelado manualmente pelo usuário
     CONCLUIDO = "concluido"
     ERRO = "erro"
 
@@ -41,6 +43,7 @@ class StatusArquivo(str, Enum):
     PROCESSANDO = "processando"
     CONCLUIDO = "concluido"
     ERRO = "erro"
+    PULADO = "pulado"  # Pulado durante retomada (já processado com sucesso antes)
 
 
 class FonteDocumento(str, Enum):
@@ -174,6 +177,13 @@ class ExecucaoClassificacao(Base):
     erro_mensagem = Column(Text, nullable=True)
     usuario_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
+    # Campos para detecção de travamento e recuperação (ADR-0010)
+    ultimo_heartbeat = Column(DateTime, nullable=True)  # Atualizado a cada documento processado
+    ultimo_codigo_processado = Column(String(100), nullable=True)  # Código do último documento processado
+    tentativas_retry = Column(Integer, default=0)  # Quantas vezes a execução foi retomada
+    max_retries = Column(Integer, default=3)  # Limite de retomadas
+    rota_origem = Column(String(200), default="/classificador/")  # Rota que iniciou a execução
+
     # Timestamps
     iniciado_em = Column(DateTime, nullable=True)
     finalizado_em = Column(DateTime, nullable=True)
@@ -182,6 +192,24 @@ class ExecucaoClassificacao(Base):
     # Relacionamentos
     projeto = relationship("ProjetoClassificacao", back_populates="execucoes")
     resultados = relationship("ResultadoClassificacao", back_populates="execucao", cascade="all, delete-orphan")
+
+    @property
+    def esta_travada(self) -> bool:
+        """Verifica se a execução está travada (sem heartbeat por mais de 5 minutos)"""
+        if self.status != StatusExecucao.EM_ANDAMENTO.value:
+            return False
+        if not self.ultimo_heartbeat:
+            return False
+        from datetime import timedelta
+        return (get_utc_now() - self.ultimo_heartbeat) > timedelta(minutes=5)
+
+    @property
+    def pode_retomar(self) -> bool:
+        """Verifica se a execução pode ser retomada"""
+        return (
+            self.status in [StatusExecucao.TRAVADO.value, StatusExecucao.ERRO.value] and
+            self.tentativas_retry < self.max_retries
+        )
 
     @property
     def progresso_percentual(self) -> float:
@@ -226,8 +254,11 @@ class ResultadoClassificacao(Base):
     justificativa = Column(Text, nullable=True)
     resultado_json = Column(JSON, nullable=True)  # Resposta completa da IA
 
-    # Metadados de erro
+    # Metadados de erro (ADR-0010: campos expandidos para recuperação)
     erro_mensagem = Column(Text, nullable=True)
+    erro_stack = Column(Text, nullable=True)  # Stack trace para debug
+    tentativas = Column(Integer, default=0)  # Contador de tentativas
+    ultimo_erro_em = Column(DateTime, nullable=True)  # Timestamp do último erro
 
     # Timestamps
     processado_em = Column(DateTime, nullable=True)
@@ -235,6 +266,12 @@ class ResultadoClassificacao(Base):
 
     # Relacionamentos
     execucao = relationship("ExecucaoClassificacao", back_populates="resultados")
+
+    @property
+    def pode_reprocessar(self) -> bool:
+        """Verifica se o documento pode ser reprocessado"""
+        MAX_TENTATIVAS = 3
+        return self.status == StatusArquivo.ERRO.value and self.tentativas < MAX_TENTATIVAS
 
     def __repr__(self):
         return f"<ResultadoClassificacao(id={self.id}, codigo='{self.codigo_documento}', status='{self.status}')>"

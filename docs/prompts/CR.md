@@ -2,121 +2,132 @@
 
 ## REGRA HIERÁRQUICA
 
-Este prompt **complementa** o prompt de sistema e **não o substitui**.
-
-Todas as regras do prompt de sistema permanecem válidas, especialmente:
-- Regra de silêncio
-- Regra de origem da argumentação
-- Uso controlado dos autos
-- Regras materiais de aplicação de temas
-- Regras de estilo e formatação
+Este prompt **complementa** o prompt de sistema. Todas as regras do prompt de sistema permanecem válidas.
 
 ---
 
 ## OBJETIVO
 
-Elaborar **CONTRARRAZÕES** ao recurso interposto pela parte adversa, defendendo a manutenção da decisão recorrida, utilizando **exclusivamente** os fundamentos autorizados via módulos [VALIDADO].
+Elaborar **CONTRARRAZÕES** ao recurso interposto, utilizando **exclusivamente** os fundamentos autorizados via módulos [VALIDADO].
 
 ---
 
-## REGRA FUNDAMENTAL DAS CONTRARRAZÕES
+## REGRA FUNDAMENTAL
 
 Contrarrazões respondem ao **RECURSO**, não à inicial.
 
-### Princípio Operacional
+### Teste Obrigatório (aplicar a CADA argumento)
 
-Antes de utilizar qualquer argumento [VALIDADO], verificar:
-
-**"O recorrente atacou este ponto da decisão?"**
-- SIM → Argumento pode ser utilizado para defender
-- NÃO → Argumento deve ser **DESCARTADO**
+| Pergunta | Resposta | Ação |
+|----------|----------|------|
+| O recorrente atacou este ponto? | NÃO | **DESCARTAR** |
+| O recorrente fez este pedido? | NÃO | **NÃO FORMULAR CONTRAPEDIDO** |
 
 ### Vedações
 
-É **PROIBIDO**:
 - Reapresentar argumentos sobre pontos **não recorridos**
-- Discutir questões já decididas e **não impugnadas**
 - Usar argumentos só porque estão marcados como [VALIDADO]
-- Ampliar pedidos em favor do Estado
-- Renovar teses não acolhidas na instância de origem
-- Formular pedidos que extrapolem a manutenção da decisão recorrida
-- Suscitar matérias não impugnadas pelo recorrente (salvo questões de ordem pública)
-- Pleitear majoração de honorários advocatícios em favor do Estado
-
-### Permissões
-
-É **PERMITIDO**:
-- Refutar cada argumento do recurso
-- Defender o acerto da decisão recorrida
-- Suscitar preliminares de inadmissibilidade do recurso (se houver módulo [VALIDADO])
-- Formular pedidos eventuais para mitigar eventual provimento (se houver módulo [VALIDADO])
-
-O objeto das contrarrazões limita-se à defesa da decisão recorrida nos exatos limites da devolutividade do recurso (Art. 1.013, *caput*, do CPC).
+- Incluir eventualidade sobre pontos não recorridos
+- Pleitear majoração de honorários em favor do Estado
 
 ---
 
-## ETAPA OBRIGATÓRIA: ANÁLISE E FILTRAGEM
+## RECURSO DE MUNICÍPIO (LITISCONSÓRCIO PASSIVO)
 
-**ATENÇÃO: Esta etapa é obrigatória mas NÃO deve aparecer na peça final. Execute mentalmente antes de redigir.**
+Quando o **MUNICÍPIO** interpõe o recurso, o Estado é **litisconsorte passivo**. Argumentos que reduzem ou afastam a condenação **BENEFICIAM O ESTADO**.
 
-### PASSO 1: IDENTIFICAR O OBJETO DO RECURSO
+### Classificação Obrigatória de TODAS as Teses (inclusive preliminares)
 
-- O que **EXATAMENTE** o recorrente quer reformar?
-- Qual capítulo da decisão foi atacado?
-- Qual fundamento da decisão está sendo questionado?
+**ATENÇÃO:** Classificar **CADA TESE** do recurso do Município, incluindo preliminares.
 
-### PASSO 2: IDENTIFICAR O QUE NÃO É OBJETO DO RECURSO
+| Classificação | Descrição | Tratamento |
+|---------------|-----------|------------|
+| **PREJUDICIAL** | Transfere responsabilidade ao Estado, exclui o Município, agrava posição do Estado | ✅ **IMPUGNAR** |
+| **FAVORÁVEL** | Extingue o processo, afasta ou reduz a condenação, beneficia ambos os réus | ❌ **NÃO IMPUGNAR** |
+| **NEUTRO** | Não afeta o Estado | ❌ **NÃO IMPUGNAR** |
 
-- Quais pedidos já foram deferidos e **não** estão sendo questionados?
-- Quais teses já foram acolhidas e **não** estão sendo atacadas?
-- Quais capítulos da decisão **não** foram recorridos?
+**Exemplos de teses PREJUDICIAIS** (impugnar):
+- Exclusão do Município do polo passivo
+- Transferência de responsabilidade ao Estado
+- Concentração da execução no Estado
 
-### PASSO 3: FILTRAR ARGUMENTOS [VALIDADO]
+**Exemplos de teses FAVORÁVEIS** (NÃO impugnar):
+- **Inépcia da inicial** (se acolhida, extingue o processo = bom para o Estado)
+- **Improcedência do pedido** (afasta a condenação de ambos)
+- Prescrição, decadência
+- Falta de prova do direito
+- Redução de multa ou honorários
 
-Para cada argumento [VALIDADO] disponível:
+### Estrutura em Litisconsórcio
 
-**"O recorrente atacou este ponto?"**
-- SIM → Pode usar para defender
-- NÃO → **DESCARTAR** (mesmo sendo [VALIDADO])
+1. **Síntese seletiva**: Apenas teses que serão impugnadas
+2. **Mérito cirúrgico**: Apenas pontos prejudiciais
+3. **Silêncio estratégico**: Não mencionar teses favoráveis
+4. **Pedido específico**: Desprovimento apenas quanto aos pontos impugnados
 
-### PASSO 4: REDIGIR AS CONTRARRAZÕES
+### Vedações em Litisconsórcio
 
-Use **APENAS** argumentos que defendam pontos **efetivamente recorridos**.
-
-**Esta análise (Passos 1-4) NÃO deve aparecer na peça final.**
+- Expressões genéricas como "as razões recursais não merecem prosperar"
+- Pedir desprovimento total quando só parte das teses é prejudicial
+- Defender manutenção integral da sentença quando há teses favoráveis ao Estado
 
 ---
 
-## TRANSMUTAÇÃO DOS ARGUMENTOS EM SEDE RECURSAL
+## TEMA 793/STF (OBRIGATÓRIO EM SAÚDE)
 
-A classificação da contestação não é estática nas contrarrazões:
+O Tema 793 estabelece um **binômio**:
 
-| Classificação Original | Tratamento nas Contrarrazões |
-|---|---|
-| Preliminar acolhida e impugnada | Defender como acerto da decisão (mérito) |
-| Preliminar rejeitada e não impugnada | **Ignorar** |
-| Mérito acolhido e impugnado | Defender como acerto da decisão |
-| Mérito rejeitado e não impugnado | **Ignorar** |
-| Eventualidade acolhida e impugnada | Defender como acerto da decisão |
-| Eventualidade não acolhida e não impugnada | **Ignorar** |
+| Componente | Significado |
+|------------|-------------|
+| **Solidariedade jurídica** | Todos podem ser demandados (legitimidade) |
+| **Direcionamento executivo** | Cumprimento pelo ente competente |
 
-**Princípio:** A boa contrarrazão dialoga com o recurso, não replica a estrutura da contestação.
+### Posição do Direcionamento (MUTUAMENTE EXCLUSIVA)
+
+**⚠️ REGRA CRÍTICA:** O direcionamento aparece **OU** no mérito **OU** na eventualidade. **NUNCA NOS DOIS.**
+
+| Estratégia do Estado | Direcionamento vai onde? |
+|---------------------|--------------------------|
+| Estado **IMPUGNA** o recurso do Município | **APENAS NO MÉRITO** |
+| Estado **CONCORDA** com a improcedência | **APENAS NA EVENTUALIDADE** |
+
+**Se Estado IMPUGNA** (quer manter a condenação) → Direcionamento **NO MÉRITO**:
+> Ainda que reconhecida a responsabilidade solidária (Tema 793/STF), o próprio precedente impõe que o cumprimento seja direcionado ao ente com competência administrativa primária. A execução deve ser direcionada ao Município.
+
+**Se Estado CONCORDA** com improcedência → Direcionamento **NA EVENTUALIDADE**:
+> Caso mantida a procedência, requer-se que a execução seja direcionada ao Município, nos termos do Tema 793/STF.
+
+### Vedações sobre Tema 793
+
+- Invocar apenas para "manter solidariedade" sem direcionamento
+- Colocar direcionamento na eventualidade quando Estado **impugna** o recurso
+- **REPETIR** o direcionamento (uma vez no mérito, outra na eventualidade)
+
+---
+
+## ANÁLISE PRÉVIA (não incluir na peça)
+
+### Passo 1: Identificar Recorrente
+- **AUTOR** → impugnar normalmente
+- **MUNICÍPIO** → aplicar regras de litisconsórcio
+
+### Passo 2: Identificar Objeto do Recurso
+- O que exatamente o recorrente quer reformar?
+- Quais capítulos foram atacados?
+
+### Passo 3: Filtrar Argumentos [VALIDADO]
+- Argumento responde ao recurso? SIM → usar. NÃO → descartar.
 
 ---
 
 ## ESTRUTURA DA PEÇA
 
-### Endereçamento
+### Cabeçalho
 
-**À EGRÉGIA [NÚMERO] CÂMARA CÍVEL DO TRIBUNAL DE JUSTIÇA DO ESTADO DE MATO GROSSO DO SUL**
-
-(Adaptar ao caso concreto. Nunca usar o nome do Desembargador.)
-
-
-
+**À EGRÉGIA CÂMARA CÍVEL DO TRIBUNAL DE JUSTIÇA DO ESTADO DE MATO GROSSO DO SUL**
 
 [Tipo do Recurso]: [Apelação Cível / Agravo de Instrumento]
-Recorrente: [nome completo da parte contrária]
+Recorrente: [nome]
 Recorrido: Estado de Mato Grosso do Sul
 Origem: [Vara] da Comarca de [Cidade] - MS
 Processo nº: [número CNJ]
@@ -125,13 +136,13 @@ Processo nº: [número CNJ]
 
 O **ESTADO DE MATO GROSSO DO SUL**, pessoa jurídica de direito público interno, representado pela Procuradoria do Estado, vem apresentar **CONTRARRAZÕES** ao recurso interposto pela parte adversa, pelos fatos e fundamentos a seguir expostos.
 
-### Seções da Peça
+### Seções
 
 ```
 ## 1. DA SÍNTESE DO RECURSO
-## 2. DAS PRELIMINARES DE INADMISSIBILIDADE (somente se houver módulo [VALIDADO])
+## 2. DAS PRELIMINARES DE INADMISSIBILIDADE (se módulo [VALIDADO])
 ## 3. DO MÉRITO
-## 4. DA EVENTUALIDADE (somente se houver módulo [VALIDADO])
+## 4. DA EVENTUALIDADE (se módulo [VALIDADO] relacionado ao recurso)
 ## 5. DOS PEDIDOS
 ```
 
@@ -149,88 +160,76 @@ OAB/MS nº [NÚMERO]
 
 ## REGRAS POR SEÇÃO
 
-### 1. Da Síntese do Recurso
-
+### 1. Síntese do Recurso
 - Resumo objetivo das razões do recorrente
-- Identificar cada tese recursal que será refutada
-- Mencionar **apenas** os pontos efetivamente impugnados
+- Mencionar **apenas** pontos que serão efetivamente impugnados
 
-### 2. Das Preliminares de Inadmissibilidade (se houver)
+### 2. Preliminares (se houver módulo [VALIDADO])
+- Cada preliminar em subtópico próprio
 
-**Condição de existência:** Somente se houver módulo [VALIDADO] de preliminar de inadmissibilidade.
+### 3. Mérito
+- **ESPELHO DO RECURSO**: cada subseção corresponde a um argumento **DO RECURSO**
+- Seguir a mesma ordem dos argumentos do recurso
+- Usar apenas argumentos [VALIDADO] que defendam pontos recorridos
+- **PROIBIDO** criar subseções sobre temas que **não foram objeto do recurso**
 
-Sem módulo [VALIDADO] = **SEM SEÇÃO DE PRELIMINARES**.
+**Teste para cada subseção:** "O Município recorreu sobre isso?"
+- SIM → pode incluir
+- NÃO → **PROIBIDO**
 
-Cada preliminar autorizada via módulo [VALIDADO] deve:
-- Ter subtópico próprio (### 2.N.)
-- Ser desenvolvida com aderência ao caso concreto
+### 4. Eventualidade (se houver módulo [VALIDADO])
 
-É **PROIBIDO** criar preliminares por inferência ou "pertinência ao caso".
+**REGRA RÍGIDA:** Eventualidade **SÓ EXISTE** se:
+1. Houver módulo [VALIDADO] de eventualidade, **E**
+2. O ponto foi **OBJETO DO RECURSO**
 
-### 3. Do Mérito
+| O recurso tratou desse tema? | Pode incluir na eventualidade? |
+|------------------------------|--------------------------------|
+| SIM | ✅ Pode (se houver módulo) |
+| NÃO | ❌ **PROIBIDO** |
 
-Refutação ponto a ponto dos argumentos do recorrente:
-- Seguir **a mesma ordem** dos argumentos do recurso
-- Demonstrar o acerto da decisão recorrida
-- Utilizar **apenas** argumentos [VALIDADO] que defendam pontos efetivamente recorridos
+**Exemplo:** Se o recurso trata de "exclusão do Município" e "improcedência":
+- ❌ **NÃO** cabe eventualidade sobre três orçamentos (não foi recorrido)
+- ❌ **NÃO** cabe eventualidade sobre PMVG (não foi recorrido)
+- ❌ **NÃO** cabe eventualidade sobre restituição de valores (não foi recorrido)
+- ❌ **NÃO** cabe direcionamento na eventualidade SE o Estado impugnou no mérito
 
-É **PROIBIDO**:
-- Trazer argumentos sobre pontos não recorridos
-- Introduzir institutos jurídicos não validados
-- Expandir o objeto da defesa além do recurso
+**IMPORTANTE:** Se o Estado **IMPUGNA** o recurso do Município e coloca o direcionamento no **MÉRITO**, a seção de eventualidade pode ficar **VAZIA** ou **NÃO EXISTIR**. Isso é correto.
 
-### 4. Da Eventualidade (se houver)
+### 5. Pedidos
 
-**Condição de existência:** Somente se houver módulo [VALIDADO] de eventualidade.
+**Recurso de Autor:**
+> No mérito, requer-se o desprovimento do recurso e a manutenção da decisão recorrida.
 
-Sem módulo [VALIDADO] = **SEM SEÇÃO DE EVENTUALIDADE**.
-
-Pedidos subsidiários para mitigar eventual provimento do recurso:
-- Limitação do alcance do pedido do recorrente
-- Modulação de efeitos
-- Outras medidas específicas dos módulos [VALIDADO]
-
-**REGRA ESPECIAL**: Quando as contrarrazões pedirem a improcedência pelo mérito, discussões como remessa para Justiça Federal (se aplicável) ou outras questões que não girem em torno da improcedência devem vir na eventualidade.
-
-### 5. Dos Pedidos
-
-**Estrutura padrão:**
-
-**Preliminarmente** (somente se houver preliminares de inadmissibilidade):
-[Pedido de não conhecimento do recurso]
-
-**No mérito**:
-[Pedido de desprovimento e manutenção da decisão recorrida]
-
-**Subsidiariamente** (somente se houver eventualidade):
-[Pedidos correspondentes às teses subsidiárias validadas]
-
-### Vedação
-
-É **PROIBIDO** formular pedidos que não correspondam a argumentos [VALIDADO] desenvolvidos na peça.
+**Recurso de Município (litisconsorte):**
+> Requer-se o desprovimento do recurso **quanto à pretensão de [teses prejudiciais específicas]**, mantendo-se [o que deve ser mantido].
 
 ---
 
-## ARGUMENTOS [VALIDADO] - REGRA ESPECIAL PARA CONTRARRAZÕES
+## TRANSMUTAÇÃO EM SEDE RECURSAL
 
-**Argumento [VALIDADO] = juridicamente correto**
-**Argumento aplicável = juridicamente correto + responde ao recurso**
-
-Usar um argumento porque ele **DEFENDE** o que foi recorrido, não porque existe na lista.
-
-Um argumento [VALIDADO] que não responde ao recurso **DEVE SER DESCARTADO**.
+| Classificação Original | Tratamento nas Contrarrazões |
+|------------------------|------------------------------|
+| Acolhido e impugnado | Defender como acerto da decisão |
+| Rejeitado/não impugnado | **Ignorar** |
 
 ---
 
 ## VALIDAÇÃO FINAL
 
-- [ ] O recurso foi integralmente analisado?
-- [ ] Cada argumento responde a um ponto **efetivamente recorrido**?
-- [ ] Não há argumentos sobre pontos não impugnados?
-- [ ] Preliminares de inadmissibilidade existem **apenas** se há módulo [VALIDADO]?
-- [ ] Eventualidade existe **apenas** se há módulo [VALIDADO]?
-- [ ] Cada módulo [VALIDADO] gerou tópico próprio?
-- [ ] Nenhum instituto jurídico foi introduzido sem validação?
-- [ ] Os pedidos correspondem estritamente aos argumentos desenvolvidos?
-- [ ] A análise de filtragem **NÃO** aparece na peça?
-- [ ] A estrutura segue o modelo definido neste prompt?
+### Geral
+- [ ] Recorrente identificado (Autor ou Município)?
+- [ ] Cada subseção corresponde a tema do recurso?
+- [ ] Não há argumentos sobre pontos não recorridos?
+
+### Litisconsórcio (se Município)
+- [ ] Teses classificadas (prejudicial/favorável)?
+- [ ] Apenas teses prejudiciais impugnadas?
+- [ ] Pedido específico (não genérico)?
+
+### Tema 793 (se saúde)
+- [ ] Direcionamento incluído?
+- [ ] Posição correta (mérito se impugna, eventualidade se concorda)?
+
+### Teste Final
+**"O recorrente atacou este ponto?"** → Se NÃO para qualquer seção, **REMOVER**.

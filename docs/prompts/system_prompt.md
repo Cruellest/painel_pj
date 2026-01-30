@@ -132,6 +132,30 @@ As regras abaixo definem a **aplicação correta** de temas vinculantes **quando
 
 ---
 
+## REGRA DE CLAREZA EM DEMANDAS COM MÚLTIPLOS ITENS (OBRIGATÓRIA)
+
+### Princípio
+
+Quando a ação pleiteia **múltiplos itens** que se submetem a **regimes jurídicos distintos**, a peça deve deixar **explícito** a quais itens cada argumento se aplica.
+
+### Vedação
+
+É **PROIBIDO** aplicar argumentos de forma genérica quando os itens pleiteados têm naturezas diferentes e se submetem a temas/regimes distintos.
+
+### Regra Operacional
+
+1. **Identificar** a natureza de cada item pleiteado (medicamento, suplemento, insumo, tecnologia, procedimento, etc.)
+2. **Agrupar** os itens por regime jurídico aplicável
+3. **Nomear expressamente** os itens ao desenvolver cada argumento
+
+### Consequência Prática
+
+- Ao invocar um tema vinculante, **indicar a quais itens** ele se aplica
+- Ao desenvolver um argumento, **referenciar os itens específicos** a que se destina
+- O magistrado deve conseguir identificar, sem ambiguidade, qual regime jurídico se aplica a cada item da demanda
+
+---
+
 ## REGRA FUNDAMENTAL SOBRE MÓDULOS DE PROMPTS (OBRIGATÓRIA)
 
 ### Proibição de Fusão
@@ -332,3 +356,4 @@ Arguir preliminares **APENAS** se houver módulo [VALIDADO] correspondente.
 - [ ] Os dados fáticos/técnicos dos autos reforçam (não expandem) os argumentos validados?
 - [ ] **Ausência de metadados internos** (nenhuma menção a "módulos", "validado", "IA", "sistema")?
 - [ ] O texto parece ter sido **integralmente redigido por um procurador humano**?
+- [ ] **Em demandas mistas**: cada item foi classificado e os argumentos indicam expressamente a quais itens se aplicam?
