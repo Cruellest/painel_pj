@@ -1,0 +1,98 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+.tox/
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.editorconfig
+
+# Docker
+Dockerfile
+Dockerfile.worker
+docker-compose.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Logs e temporários
+logs/
+*.log
+tmp/
+temp/
+
+# Node (já foi buildado - MANTER scripts/, src/, tsconfig.json)
+frontend/node_modules/
+frontend/.npm/
+frontend/dist/
+
+# Documentação (não essencial em runtime)
+README.md
+docs/
+*.md
+!SECURITY_FIXES_SUMMARY.md
+
+# Testes (executar localmente, não no container)
+tests/
+run_tests.py
+run_tests.sh
+scripts/test_security_fixes.py
+
+# Database
+*.db
+*.sqlite
+
+# Environment files (não incluir no container, usar variáveis)
+.env
+.env.local
+.env.*.local
+
+# Dados
+data/
+models/ (worker monta volume)
+downloads/
+
+# Arquivos desnecessários
+COMMIT_MESSAGE.txt
+*.bak
+*.backup
+run.sh
+run.bat
+run_worker.sh
+railway.toml
+nixpacks.toml
+Procfile
+runtime.txt
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

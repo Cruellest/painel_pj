@@ -1,0 +1,73 @@
+# ==================================================
+# Dependências da App (Portal PGE-MS)
+# Exclui dependências do worker (torch, transformers, etc.)
+# ==================================================
+
+# Framework Web
+fastapi>=0.110.0
+uvicorn>=0.27.0
+python-multipart>=0.0.9
+werkzeug>=3.0.0
+
+# Templates
+Jinja2>=3.1.0
+
+# Banco de Dados
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+alembic>=1.13.0
+
+# Autenticação
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.0.0
+email-validator>=2.0.0
+
+# Variáveis de ambiente
+python-dotenv>=1.0.1
+
+# HTTP Requests (para APIs externas)
+requests>=2.32.0
+httpx[http2]>=0.27.0
+aiohttp>=3.9.0
+nest_asyncio>=1.6.0
+
+# Rate Limiting (SECURITY: Proteção contra DoS/brute-force)
+slowapi>=0.1.9
+
+# Logging Estruturado
+structlog>=24.1.0
+
+# Parser XML (TJ-MS)
+lxml>=5.2.0
+defusedxml>=0.7.1  # SECURITY: Proteção contra XXE
+
+# Geração de documentos
+python-docx>=1.1.0
+docx2pdf>=0.1.8
+
+# PDF e imagens
+PyMuPDF>=1.23.0
+pymupdf4llm>=0.0.10
+
+# ==================================================
+# Dependências de Testes
+# ==================================================
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+pytest-timeout>=2.2.0
+httpx>=0.27.0
+
+Pillow>=10.0.0
+
+# Utilitários de dados (sem ML pesado)
+numpy>=1.24.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# Scrapper
+playwright>=1.40.0
+rich>=13.0.0
+
+# Timezone
+pytz>=2024.1

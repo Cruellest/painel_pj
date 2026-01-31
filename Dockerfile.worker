@@ -1,31 +1,47 @@
+# ==============================================================================
+# Worker - Apenas Inference Server, sem dependências de FastAPI da app
+# ==============================================================================
 FROM python:3.12-slim
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy requirements
-COPY requirements.txt .
+# Security: Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Instala requirements do worker
 COPY requirements_worker.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements_worker.txt
 
-# Install dependencies
-# Using requirements.txt for base compatibility + specific worker deps
-RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir -r requirements_worker.txt
+# Limpa build dependencies
+RUN apt-get remove -y build-essential && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# Copy source code
-COPY . .
+# Copy apenas código necessário para o worker (minimal)
+COPY --chown=appuser:appuser config.py ./
+COPY --chown=appuser:appuser sistemas/bert_training/worker/ ./sistemas/bert_training/worker/
+COPY --chown=appuser:appuser utils/ ./utils/
 
-# Create models directory
-RUN mkdir -p models
+# Create models directory for mounted volume
+RUN mkdir -p models && chown -R appuser:appuser models
+
+# Security: Switch to non-root user
+USER appuser
 
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Run the inference server
-# Binding to 0.0.0.0 to be accessible outside the container
+# Expose port
+EXPOSE 8765
+
+# Health check para verificar se servidor está rodando
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import socket; s = socket.socket(); s.connect(('localhost', 8765)); s.close()" || exit 1
+
+# Run the inference server directly (sem passar pelo __init__.py que importa router)
 CMD ["python", "-m", "sistemas.bert_training.worker.inference_server", "--host", "0.0.0.0", "--port", "8765"]
