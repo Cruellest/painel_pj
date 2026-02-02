@@ -1580,11 +1580,13 @@ async def listar_feedbacks(
 
         # Feedbacks de Gerador de Peças
         if sistema is None or sistema == 'gerador_pecas':
+            # Query básica sem colunas de curadoria (que podem não existir no banco)
             query_gp = db.query(
                 FeedbackPeca,
                 GeracaoPeca.tipo_peca,
                 GeracaoPeca.numero_cnj,
                 GeracaoPeca.modelo_usado,
+                GeracaoPeca.id.label('geracao_id_ref'),
                 User.username,
                 User.full_name
             ).join(
@@ -1605,7 +1607,41 @@ async def listar_feedbacks(
             if usuario_id:
                 query_gp = query_gp.filter(FeedbackPeca.usuario_id == usuario_id)
 
-            for fb, tipo_peca, numero_cnj, modelo_usado, username, full_name in query_gp.all():
+            for fb, tipo_peca, numero_cnj, modelo_usado, geracao_id_ref, username, full_name in query_gp.all():
+                # Busca dados de curadoria usando SQL direto (evita erro se colunas não existem)
+                modo_ativacao = None
+                modulos_det = None
+                modulos_llm = None
+                curadoria_meta = None
+                try:
+                    from sqlalchemy import text
+                    result = db.execute(text("""
+                        SELECT modo_ativacao_agente2, modulos_ativados_det, modulos_ativados_llm, curadoria_metadata
+                        FROM geracoes_pecas WHERE id = :id
+                    """), {"id": geracao_id_ref}).fetchone()
+                    if result:
+                        modo_ativacao, modulos_det, modulos_llm, curadoria_meta = result
+                except Exception:
+                    # Colunas não existem no banco - ignora silenciosamente
+                    pass
+                # Dados específicos do modo semi-automático
+                modo_info = None
+                if modo_ativacao == 'semi_automatico':
+                    curadoria_data = curadoria_meta or {}
+                    modo_info = {
+                        "modo": "semi_automatico",
+                        "total_curados": curadoria_data.get("total_curados", (modulos_det or 0) + (modulos_llm or 0)),
+                        "total_manuais": curadoria_data.get("total_manuais", modulos_llm or 0),
+                        "total_excluidos": curadoria_data.get("total_excluidos", 0),
+                        "categorias_ordem": curadoria_data.get("categorias_ordem", [])
+                    }
+                elif modo_ativacao:
+                    modo_info = {
+                        "modo": modo_ativacao,
+                        "modulos_det": modulos_det,
+                        "modulos_llm": modulos_llm
+                    }
+
                 feedbacks_combinados.append({
                     "id": fb.id,
                     "consulta_id": fb.geracao_id,
@@ -1619,7 +1655,8 @@ async def listar_feedbacks(
                     "comentario": fb.comentario,
                     "campos_incorretos": fb.campos_incorretos,
                     "criado_em": to_iso_utc(fb.criado_em),
-                    "criado_em_dt": fb.criado_em
+                    "criado_em_dt": fb.criado_em,
+                    "modo_ativacao": modo_info
                 })
 
         # Feedbacks de Pedido de Cálculo
@@ -1879,8 +1916,21 @@ async def obter_consulta_detalhes(
             }
 
         elif sistema == "gerador_pecas":
+            # Query apenas com colunas que sempre existem (evita erro de coluna inexistente)
+            from sqlalchemy import text as sql_text
             geracao = db.query(
-                GeracaoPeca,
+                GeracaoPeca.id,
+                GeracaoPeca.numero_cnj,
+                GeracaoPeca.numero_cnj_formatado,
+                GeracaoPeca.tipo_peca,
+                GeracaoPeca.dados_processo,
+                GeracaoPeca.conteudo_gerado,
+                GeracaoPeca.prompt_enviado,
+                GeracaoPeca.resumo_consolidado,
+                GeracaoPeca.historico_chat,
+                GeracaoPeca.modelo_usado,
+                GeracaoPeca.tempo_processamento,
+                GeracaoPeca.criado_em,
                 User.username,
                 User.full_name
             ).join(
@@ -1892,7 +1942,8 @@ async def obter_consulta_detalhes(
             if not geracao:
                 raise HTTPException(status_code=404, detail="Geração não encontrada")
 
-            g, username, full_name = geracao
+            (g_id, g_cnj, g_cnj_fmt, g_tipo, g_dados, g_conteudo, g_prompt, g_resumo,
+             g_historico, g_modelo, g_tempo, g_criado, username, full_name) = geracao
 
             # Busca feedback se existir
             feedback = db.query(FeedbackPeca).filter(
@@ -1906,26 +1957,66 @@ async def obter_consulta_detalhes(
 
             # Formata histórico de chat filtrando apenas mensagens do usuário (role: user)
             # para evitar contagem duplicada (respostas do assistente não são edições)
-            historico_chat = g.historico_chat or []
+            historico_chat = g_historico or []
             edicoes_chat = [
                 msg for msg in historico_chat
                 if isinstance(msg, dict) and msg.get('role') == 'user'
             ]
 
+            # Obtém dados de curadoria usando SQL direto (colunas podem não existir no banco)
+            modo_ativacao = None
+            modulos_det = None
+            modulos_llm = None
+            curadoria_meta = None
+            try:
+                result = db.execute(sql_text("""
+                    SELECT modo_ativacao_agente2, modulos_ativados_det, modulos_ativados_llm, curadoria_metadata
+                    FROM geracoes_pecas WHERE id = :id
+                """), {"id": consulta_id}).fetchone()
+                if result:
+                    modo_ativacao, modulos_det, modulos_llm, curadoria_meta = result
+            except Exception:
+                pass
+
+            # Monta informações do modo
+            modo_info = None
+            if modo_ativacao == 'semi_automatico':
+                curadoria_data = curadoria_meta or {}
+                modo_info = {
+                    "modo": "semi_automatico",
+                    "total_preview": curadoria_data.get("total_preview", 0),
+                    "total_curados": curadoria_data.get("total_curados", (modulos_det or 0) + (modulos_llm or 0)),
+                    "total_manuais": curadoria_data.get("total_manuais", modulos_llm or 0),
+                    "total_excluidos": curadoria_data.get("total_excluidos", 0),
+                    "modulos_preview_ids": curadoria_data.get("modulos_preview_ids", []),
+                    "modulos_curados_ids": curadoria_data.get("modulos_curados_ids", []),
+                    "modulos_manuais_ids": curadoria_data.get("modulos_manuais_ids", []),
+                    "modulos_excluidos_ids": curadoria_data.get("modulos_excluidos_ids", []),
+                    "categorias_ordem": curadoria_data.get("categorias_ordem", []),
+                    "preview_timestamp": curadoria_data.get("preview_timestamp")
+                }
+            elif modo_ativacao:
+                modo_info = {
+                    "modo": modo_ativacao,
+                    "modulos_det": modulos_det,
+                    "modulos_llm": modulos_llm
+                }
+
             return {
-                "id": g.id,
+                "id": g_id,
                 "sistema": "gerador_pecas",
-                "identificador": g.numero_cnj_formatado or g.numero_cnj or g.tipo_peca,
-                "cnj": g.numero_cnj,
-                "tipo_peca": g.tipo_peca,
-                "dados": g.dados_processo,
-                "relatorio": g.conteudo_gerado,
-                "modelo": g.modelo_usado,
+                "identificador": g_cnj_fmt or g_cnj or g_tipo,
+                "cnj": g_cnj,
+                "tipo_peca": g_tipo,
+                "dados": g_dados,
+                "relatorio": g_conteudo,
+                "modelo": g_modelo,
                 "usuario": full_name or username,
-                "criado_em": to_iso_utc(g.criado_em),
+                "criado_em": to_iso_utc(g_criado),
                 "historico_chat": historico_chat,  # Histórico completo de chat
                 "edicoes_chat": edicoes_chat,  # Apenas mensagens do usuário (pedidos de revisão)
                 "total_edicoes_chat": len(edicoes_chat),  # Contagem correta
+                "modo_ativacao": modo_info,  # Informações do modo de ativação (automático/semi-automático)
                 "versoes": [
                     {
                         "id": v.id,

@@ -322,7 +322,8 @@ class ServicoCuradoria:
         """
         Monta o prompt de conteudo curado para enviar ao Agente 3.
 
-        Modulos adicionados manualmente sao marcados como (VALIDADO).
+        MODO SEMI-AUTOMÁTICO: Todos os modulos selecionados recebem tag [HUMAN_VALIDATED]
+        indicando que foram validados pelo usuário e DEVEM ser incluídos integralmente.
 
         Args:
             resultado_curadoria: Resultado da curadoria com modulos selecionados
@@ -332,8 +333,10 @@ class ServicoCuradoria:
         Returns:
             Prompt de conteudo formatado para Agente 3
         """
-        partes = ["## ARGUMENTOS E TESES APLICAVEIS (CURADOS)\n"]
-        partes.append("> Os argumentos abaixo foram selecionados e validados pelo usuario.\n")
+        partes = ["## ARGUMENTOS E TESES APLICAVEIS (HUMAN_VALIDATED)\n"]
+        partes.append("> **INSTRUÇÃO OBRIGATÓRIA**: Os argumentos marcados com [HUMAN_VALIDATED] foram\n")
+        partes.append("> validados pelo usuário e DEVEM ser incluídos integralmente na peça final.\n")
+        partes.append("> Não aplique juízo de valor ou modifique o conteúdo - apenas sanitização técnica se necessária.\n")
 
         for secao, modulos in resultado_curadoria.modulos_por_secao.items():
             modulos_selecionados = [m for m in modulos if m.selecionado]
@@ -346,11 +349,11 @@ class ServicoCuradoria:
             for modulo in modulos_selecionados:
                 subcategoria_info = f" ({modulo.subcategoria})" if modulo.subcategoria else ""
 
-                # Modulos validados (deterministicos ou adicionados manualmente) recebem marcacao
-                if modulo.validado or modulo.origem_ativacao == OrigemAtivacao.MANUAL.value:
-                    marcacao = " [VALIDADO]"
+                # HUMAN_VALIDATED: Tag obrigatória para todos os módulos no modo semi-automático
+                if modulo.origem_ativacao == OrigemAtivacao.MANUAL.value:
+                    marcacao = " [HUMAN_VALIDATED:MANUAL]"
                 else:
-                    marcacao = ""
+                    marcacao = " [HUMAN_VALIDATED]"
 
                 partes.append(f"#### {modulo.titulo}{subcategoria_info}{marcacao}\n")
                 partes.append(f"{modulo.conteudo}\n")

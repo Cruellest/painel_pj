@@ -321,6 +321,85 @@ modulosManuais: {42}            -> modulos_manuais_ids: [42]
 3. Verificar que módulos dentro da categoria mantêm sua ordem
 4. Gerar peça e verificar em `/admin/gerador-pecas/historico` se a ordem está correta no prompt
 
+### 11. Instrumentação e Auditoria Completa (2026-02-02)
+
+**Objetivo**: Permitir análise detalhada do uso do modo semi-automático para ajuste do modo automático e auditoria de decisões.
+
+**Problema identificado**: As telas administrativas (/admin/feedbacks e /admin/gerador-pecas/historico) não distinguiam claramente gerações feitas no modo semi-automático, nem mostravam quais módulos foram adicionados/removidos manualmente.
+
+**Solução implementada**:
+
+1. **Persistência completa em `curadoria_metadata`**:
+   ```python
+   curadoria_metadata = {
+       "modulos_preview_ids": [1, 2, 3],      # Sugeridos pelo Agente 2
+       "modulos_curados_ids": [1, 2, 4],       # Finais selecionados
+       "modulos_manuais_ids": [4],             # Adicionados manualmente
+       "modulos_excluidos_ids": [3],           # Removidos pelo usuário
+       "modulos_detalhados": [                 # Detalhes de cada módulo
+           {"id": 1, "origem": "preview", "status": "[VALIDADO]"},
+           {"id": 2, "origem": "preview", "status": "[VALIDADO]"},
+           {"id": 4, "origem": "manual", "status": "[VALIDADO-MANUAL]"},
+       ],
+       "categorias_ordem": ["Preliminar", "Mérito"],
+       "preview_timestamp": "2026-02-02T10:00:00Z",
+       "total_preview": 3,
+       "total_curados": 3,
+       "total_manuais": 1,
+       "total_excluidos": 1
+   }
+   ```
+
+2. **Marcação diferenciada no prompt**:
+   - Módulos do preview: `#### Título [VALIDADO]`
+   - Módulos manuais: `#### Título [VALIDADO-MANUAL]`
+
+3. **Dashboard de Feedbacks** (`/admin/feedbacks`):
+   - Coluna "Modo" exibe badge: "Semi-Auto (X curados, Y manuais)"
+   - Modal de detalhes mostra seção de curadoria com contagens
+
+4. **Endpoint de Curadoria** (`/gerador-pecas-admin/geracoes/{id}/curadoria`):
+   - Retorna lista de módulos incluídos com origem, status e ordem
+   - Retorna lista de módulos manuais com status [VALIDADO-MANUAL]
+   - Retorna lista de módulos excluídos
+
+**Arquivos modificados**:
+- `admin/router.py`:
+  - `/feedbacks/lista` inclui `modo_ativacao` com detalhes de curadoria
+  - `/feedbacks/consulta/{id}` inclui mesmos dados
+- `sistemas/gerador_pecas/router.py`:
+  - Salva `modulos_detalhados` com origem e status
+  - Marca módulos manuais com [VALIDADO-MANUAL] no prompt
+- `sistemas/gerador_pecas/router_admin.py`:
+  - Endpoint `/curadoria` retorna detalhes completos
+- `frontend/templates/admin_feedbacks.html`:
+  - Coluna "Modo" na tabela
+  - Seção de curadoria no modal
+
+**Testes adicionados**:
+- Classe `TestInstrumentacaoAuditoria` em `tests/test_curadoria_semi_automatico.py`
+- 12 testes cobrindo estrutura de metadados, marcação de prompts, endpoints e reconstrução de auditoria
+
+**Como usar para análise**:
+1. Acessar `/admin/feedbacks` e filtrar por "gerador_pecas"
+2. Identificar gerações semi-automáticas pela coluna "Modo"
+3. Clicar para ver detalhes: total preview vs curados, manuais, excluídos
+4. Usar endpoint `/curadoria` para análise programática
+5. Comparar módulos excluídos para identificar falsos positivos do Agente 2
+6. Analisar módulos manuais para identificar argumentos faltando na detecção automática
+
+**Reconstrução de decisão**:
+```python
+# A partir de curadoria_metadata, é possível reconstruir:
+preview = set(metadata["modulos_preview_ids"])
+curados = set(metadata["modulos_curados_ids"])
+manuais = set(metadata["modulos_manuais_ids"])
+
+aceitos_preview = preview & curados    # Aceitos do Agente 2
+removidos = preview - curados           # Falsos positivos
+adicionados = curados - preview         # Faltando na detecção
+```
+
 ## Referências
 
 - CLAUDE.md: Regras de negócio do gerador de peças

@@ -2327,8 +2327,11 @@ class CurationGenerateRequest(BaseModel):
     tipo_peca: str
     modulos_ids_curados: List[int]  # IDs dos modulos selecionados pelo usuario
     modulos_manuais_ids: Optional[List[int]] = None  # IDs dos modulos adicionados manualmente
+    modulos_preview_ids: Optional[List[int]] = None  # IDs originais do preview (Agente 2)
+    modulos_excluidos_ids: Optional[List[int]] = None  # IDs dos modulos excluidos pelo usuario
     modulos_ordem: Optional[Dict[str, List[int]]] = None  # Ordem de modulos por secao {secao: [id1, id2]}
     categorias_ordem: Optional[List[str]] = None  # Ordem das categorias/secoes ["Preliminar", "Mérito", ...]
+    preview_timestamp: Optional[str] = None  # Timestamp de quando o preview foi gerado
     observacao_usuario: Optional[str] = None
     group_id: Optional[int] = None
     subcategoria_ids: Optional[List[int]] = None
@@ -2635,10 +2638,13 @@ async def curation_generate_stream(
                 PromptModulo.categoria, PromptModulo.ordem
             ).all()
 
-            # Monta prompt de conteudo curado
-            # Todos os modulos selecionados manualmente sao marcados como VALIDADO
-            partes_conteudo = ["## ARGUMENTOS E TESES APLICAVEIS (CURADOS)\n"]
-            partes_conteudo.append("> Os argumentos abaixo foram selecionados e validados pelo usuario.\n")
+            # Monta prompt de conteudo curado com tag HUMAN_VALIDATED obrigatória
+            # MODO SEMI-AUTOMÁTICO: Todos os argumentos selecionados recebem tag [HUMAN_VALIDATED]
+            # A IA DEVE utilizar integralmente estes argumentos na peça final, sem juízo de valor
+            partes_conteudo = ["## ARGUMENTOS E TESES APLICAVEIS (HUMAN_VALIDATED)\n"]
+            partes_conteudo.append("> **INSTRUÇÃO OBRIGATÓRIA**: Os argumentos marcados com [HUMAN_VALIDATED] foram\n")
+            partes_conteudo.append("> validados pelo usuário e DEVEM ser incluídos integralmente na peça final.\n")
+            partes_conteudo.append("> Não aplique juízo de valor ou modifique o conteúdo - apenas sanitização técnica se necessária.\n")
 
             # Agrupa por categoria respeitando ordem personalizada
             modulos_por_cat = {}
@@ -2697,12 +2703,18 @@ async def curation_generate_stream(
 
                 for modulo in modulos_cat:
                     subcat = f" ({modulo.subcategoria})" if modulo.subcategoria else ""
-                    # Marca como VALIDADO - distingue manuais para logging
+                    # HUMAN_VALIDATED: Tag obrigatória para modo semi-automático
+                    # Indica que o usuário validou este argumento - IA DEVE incluí-lo integralmente
                     is_manual = modulo.id in modulos_manuais_set
                     if is_manual:
                         total_manuais += 1
-                        print(f"[CURADORIA] Modulo MANUAL selecionado: [{cat}] {modulo.titulo} (ID: {modulo.id})")
-                    partes_conteudo.append(f"#### {modulo.titulo}{subcat} [VALIDADO]\n")
+                        print(f"[CURADORIA] Modulo HUMAN_VALIDATED (manual): [{cat}] {modulo.titulo} (ID: {modulo.id})")
+                        # Módulo adicionado manualmente pelo usuário
+                        partes_conteudo.append(f"#### {modulo.titulo}{subcat} [HUMAN_VALIDATED:MANUAL]\n")
+                    else:
+                        # Módulo vindo do preview, confirmado pelo usuário
+                        print(f"[CURADORIA] Modulo HUMAN_VALIDATED (preview): [{cat}] {modulo.titulo} (ID: {modulo.id})")
+                        partes_conteudo.append(f"#### {modulo.titulo}{subcat} [HUMAN_VALIDATED]\n")
                     partes_conteudo.append(f"{modulo.conteudo}\n")
 
             print(f"[CURADORIA] Total de modulos: {len(req.modulos_ids_curados)}, manuais: {total_manuais}")
@@ -2782,8 +2794,41 @@ async def curation_generate_stream(
                 geracao.modo_ativacao_agente2 = "semi_automatico"
                 geracao.modulos_ativados_det = len(req.modulos_ids_curados) - total_manuais
                 geracao.modulos_ativados_llm = total_manuais  # Usa LLM para armazenar manuais no modo semi-auto
-            except AttributeError:
-                pass
+
+                # Salva metadados completos de curadoria para auditoria
+                # Monta lista de módulos com origem detalhada para cada um
+                modulos_detalhados = []
+                preview_set = set(req.modulos_preview_ids or [])
+                manuais_set = set(req.modulos_manuais_ids or [])
+                for mid in req.modulos_ids_curados:
+                    modulo_info = {"id": mid}
+                    if mid in manuais_set:
+                        modulo_info["origem"] = "manual"  # Adicionado manualmente pelo usuário
+                        modulo_info["status"] = "[VALIDADO-MANUAL]"
+                    elif mid in preview_set:
+                        modulo_info["origem"] = "preview"  # Veio do preview (Agente 2)
+                        modulo_info["status"] = "[VALIDADO]"
+                    else:
+                        modulo_info["origem"] = "desconhecido"
+                        modulo_info["status"] = "[VALIDADO]"
+                    modulos_detalhados.append(modulo_info)
+
+                geracao.curadoria_metadata = {
+                    "modulos_preview_ids": req.modulos_preview_ids or [],
+                    "modulos_curados_ids": req.modulos_ids_curados,
+                    "modulos_manuais_ids": req.modulos_manuais_ids or [],
+                    "modulos_excluidos_ids": req.modulos_excluidos_ids or [],
+                    "modulos_detalhados": modulos_detalhados,  # Lista com origem e status de cada módulo
+                    "categorias_ordem": req.categorias_ordem or [],
+                    "preview_timestamp": req.preview_timestamp,
+                    "total_preview": len(req.modulos_preview_ids or []),
+                    "total_curados": len(req.modulos_ids_curados),
+                    "total_manuais": total_manuais,
+                    "total_excluidos": len(req.modulos_excluidos_ids or [])
+                }
+                print(f"[CURADORIA] Metadados salvos: preview={len(req.modulos_preview_ids or [])}, curados={len(req.modulos_ids_curados)}, manuais={total_manuais}, excluidos={len(req.modulos_excluidos_ids or [])}")
+            except AttributeError as e:
+                print(f"[CURADORIA] Aviso: campo nao disponivel no modelo: {e}")
 
             try:
                 db.add(geracao)
@@ -2801,9 +2846,33 @@ async def curation_generate_stream(
                 db.commit()
                 db.refresh(geracao)
             except Exception as e:
-                db.rollback()
-                print(f"[CURADORIA] Erro ao salvar: {e}")
-                raise
+                # Se erro for por colunas inexistentes, tenta salvar sem os campos de curadoria
+                if 'modo_ativacao_agente2' in str(e) or 'modulos_ativados' in str(e) or 'curadoria_metadata' in str(e):
+                    db.rollback()
+                    print(f"[CURADORIA] Colunas de curadoria nao existem no banco, salvando sem metadados: {e}")
+                    # Remove atributos que causam erro
+                    from sqlalchemy import inspect
+                    state = inspect(geracao)
+                    for attr in ['modo_ativacao_agente2', 'modulos_ativados_det', 'modulos_ativados_llm', 'curadoria_metadata']:
+                        if attr in state.dict:
+                            del state.dict[attr]
+                    db.add(geracao)
+                    db.flush()
+                    versao = VersaoPeca(
+                        geracao_id=geracao.id,
+                        numero_versao=1,
+                        conteudo=resultado_agente3.conteudo_markdown,
+                        origem='geracao_curada',
+                        descricao_alteracao='Versao inicial gerada com modulos curados pelo usuario',
+                        diff_anterior=None
+                    )
+                    db.add(versao)
+                    db.commit()
+                    db.refresh(geracao)
+                else:
+                    db.rollback()
+                    print(f"[CURADORIA] Erro ao salvar: {e}")
+                    raise
 
             tracker.mark("db_save_done")
             tracker.mark("response_sent")

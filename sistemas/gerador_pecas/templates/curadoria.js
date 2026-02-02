@@ -18,6 +18,8 @@ class CuradoriaModule {
         this.modulosOrdem = {}; // {secao: [id1, id2, ...]}
         this.modulosSelecionados = new Set();
         this.modulosManuais = new Set(); // IDs dos módulos adicionados manualmente pelo usuário
+        this.modulosPreviewIds = new Set(); // IDs originais do preview (Agente 2) - para calcular excluídos
+        this.previewTimestamp = null; // Timestamp de quando o preview foi gerado
         this.draggedItem = null;
         this.draggedCategory = null; // Para drag de categoria inteira
         this.dragType = null; // 'modulo' ou 'categoria'
@@ -90,12 +92,17 @@ class CuradoriaModule {
         this.modulosOrdem = {};
         this.modulosSelecionados = new Set();
         this.modulosManuais = new Set(); // Limpa módulos manuais ao inicializar
+        this.modulosPreviewIds = new Set(); // Guarda IDs originais do preview
         this.categoriasOrdem = []; // Ordem das categorias
+        this.previewTimestamp = new Date().toISOString(); // Timestamp do preview
 
         for (const [secao, modulos] of Object.entries(this.dadosCuradoria.modulos_por_secao)) {
             this.modulosOrdem[secao] = modulos.map(m => m.id);
             this.categoriasOrdem.push(secao); // Adiciona categoria na ordem inicial
             modulos.forEach(m => {
+                // Guarda TODOS os IDs do preview original (para calcular excluídos depois)
+                this.modulosPreviewIds.add(m.id);
+
                 if (m.selecionado) {
                     this.modulosSelecionados.add(m.id);
                 }
@@ -105,6 +112,8 @@ class CuradoriaModule {
                 }
             });
         }
+
+        console.log(`[CURADORIA] Preview inicializado: ${this.modulosPreviewIds.size} módulos do Agente 2`);
     }
 
     /**
@@ -1069,6 +1078,17 @@ class CuradoriaModule {
         const groupId = document.getElementById('grupo-principal')?.value;
         const subcategoriaIds = app.getSubcategoriasIds?.() || [];
 
+        // Calcula módulos excluídos (estavam no preview mas não estão selecionados)
+        const modulosExcluidosIds = Array.from(this.modulosPreviewIds).filter(
+            id => !this.modulosSelecionados.has(id)
+        );
+
+        console.log(`[CURADORIA] Gerando peça:`);
+        console.log(`  - Preview original: ${this.modulosPreviewIds.size} módulos`);
+        console.log(`  - Selecionados: ${this.modulosSelecionados.size} módulos`);
+        console.log(`  - Manuais: ${this.modulosManuais.size} módulos`);
+        console.log(`  - Excluídos: ${modulosExcluidosIds.length} módulos`);
+
         // Mostra modal de progresso padrao
         app.mostrarLoading('Gerando peça com argumentos curados...', 3);
 
@@ -1084,8 +1104,11 @@ class CuradoriaModule {
                     tipo_peca: tipoPeca,
                     modulos_ids_curados: Array.from(this.modulosSelecionados),
                     modulos_manuais_ids: Array.from(this.modulosManuais), // IDs dos módulos adicionados manualmente
+                    modulos_preview_ids: Array.from(this.modulosPreviewIds), // IDs originais do preview
+                    modulos_excluidos_ids: modulosExcluidosIds, // IDs dos módulos excluídos pelo usuário
                     modulos_ordem: this.modulosOrdem,
                     categorias_ordem: this.categoriasOrdem, // Ordem das categorias definida pelo usuário
+                    preview_timestamp: this.previewTimestamp, // Quando o preview foi gerado
                     observacao_usuario: observacao,
                     group_id: groupId ? parseInt(groupId) : null,
                     subcategoria_ids: subcategoriaIds,

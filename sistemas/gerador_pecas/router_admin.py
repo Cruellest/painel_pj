@@ -183,3 +183,101 @@ async def obter_versao_geracao(
         "conteudo_markdown": versao.conteudo,  # Campo correto do modelo
         "criado_em": to_iso_utc(versao.criado_em)
     }
+
+
+@router.get("/geracoes/{geracao_id}/curadoria")
+async def obter_curadoria_geracao(
+    geracao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtém detalhes de curadoria de uma geração no modo semi-automático.
+
+    Retorna:
+    - Metadados de curadoria (IDs, contagens, timestamp)
+    - Lista de módulos incluídos com títulos
+    - Lista de módulos excluídos com títulos
+    - Lista de módulos adicionados manualmente com títulos
+    - Ordem das categorias
+    """
+    from admin.models_prompts import PromptModulo
+
+    geracao = db.query(GeracaoPeca).filter(GeracaoPeca.id == geracao_id).first()
+    if not geracao:
+        raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+    # Verifica se é modo semi-automático
+    modo = _safe_get_attr(geracao, 'modo_ativacao_agente2')
+    if modo != 'semi_automatico':
+        raise HTTPException(
+            status_code=404,
+            detail="Esta geração não foi feita no modo semi-automático"
+        )
+
+    # Obtém metadados de curadoria
+    metadata = _safe_get_attr(geracao, 'curadoria_metadata') or {}
+
+    # IDs dos módulos
+    modulos_curados_ids = metadata.get('modulos_curados_ids', [])
+    modulos_manuais_ids = metadata.get('modulos_manuais_ids', [])
+    modulos_excluidos_ids = metadata.get('modulos_excluidos_ids', [])
+
+    # Busca títulos dos módulos no banco
+    modulos_preview_ids = metadata.get('modulos_preview_ids', [])
+    todos_ids = set(modulos_curados_ids + modulos_manuais_ids + modulos_excluidos_ids + modulos_preview_ids)
+    modulos_db = {}
+    if todos_ids:
+        modulos = db.query(PromptModulo).filter(PromptModulo.id.in_(todos_ids)).all()
+        modulos_db = {m.id: {"id": m.id, "titulo": m.titulo, "categoria": m.categoria or "Outros"} for m in modulos}
+
+    # Usa modulos_detalhados se disponível (nova estrutura), senão reconstrói
+    modulos_detalhados = metadata.get('modulos_detalhados', [])
+    manuais_set = set(modulos_manuais_ids)
+    preview_set = set(modulos_preview_ids)
+
+    # Monta listas com títulos e informações de origem/status
+    modulos_incluidos = []
+    for i, mid in enumerate(modulos_curados_ids):
+        info = modulos_db.get(mid, {"id": mid, "titulo": f"Módulo {mid}", "categoria": "Desconhecido"}).copy()
+
+        # Busca detalhes da origem se disponível
+        if modulos_detalhados and i < len(modulos_detalhados):
+            detalhe = modulos_detalhados[i]
+            info["origem"] = detalhe.get("origem", "desconhecido")
+            info["status"] = detalhe.get("status", "[VALIDADO]")
+        else:
+            # Fallback para lógica anterior
+            info["origem"] = "manual" if mid in manuais_set else ("preview" if mid in preview_set else "automatico")
+            info["status"] = "[VALIDADO-MANUAL]" if mid in manuais_set else "[VALIDADO]"
+
+        info["ordem"] = i + 1  # Posição na ordem final
+        modulos_incluidos.append(info)
+
+    modulos_manuais = []
+    for mid in modulos_manuais_ids:
+        info = modulos_db.get(mid, {"id": mid, "titulo": f"Módulo {mid}", "categoria": "Desconhecido"}).copy()
+        info["status"] = "[VALIDADO-MANUAL]"
+        modulos_manuais.append(info)
+
+    modulos_excluidos = []
+    for mid in modulos_excluidos_ids:
+        info = modulos_db.get(mid, {"id": mid, "titulo": f"Módulo {mid}", "categoria": "Desconhecido"}).copy()
+        info["origem"] = "preview"  # Excluídos sempre vêm do preview
+        modulos_excluidos.append(info)
+
+    return {
+        "geracao_id": geracao_id,
+        "modo": "semi_automatico",
+        "metadata": {
+            "total_preview": metadata.get('total_preview', 0),
+            "total_curados": metadata.get('total_curados', 0),
+            "total_manuais": metadata.get('total_manuais', 0),
+            "total_excluidos": metadata.get('total_excluidos', 0),
+            "preview_timestamp": metadata.get('preview_timestamp'),
+            "categorias_ordem": metadata.get('categorias_ordem', [])
+        },
+        "modulos_incluidos": modulos_incluidos,  # Lista com origem, status e ordem
+        "modulos_manuais": modulos_manuais,  # Apenas os adicionados manualmente
+        "modulos_excluidos": modulos_excluidos  # Os que foram removidos pelo usuário
+    }

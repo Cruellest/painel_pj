@@ -52,7 +52,20 @@ class GeracaoPeca(Base):
     # NOTA: Usar deferred() para evitar erro se coluna não existir no banco (migration pendente)
     modulos_ativados_det = deferred(Column(Integer, nullable=True))  # Ativados por regra determinística
     modulos_ativados_llm = deferred(Column(Integer, nullable=True))  # Ativados por LLM
-    
+
+    # Metadados de curadoria (modo semi-automático)
+    # Formato JSON:
+    # {
+    #   "modulos_preview_ids": [1, 2, 3],      # IDs dos módulos do preview original (Agente 2)
+    #   "modulos_curados_ids": [1, 2, 4],      # IDs dos módulos selecionados pelo usuário
+    #   "modulos_manuais_ids": [4],            # IDs dos módulos adicionados manualmente
+    #   "modulos_excluidos_ids": [3],          # IDs dos módulos excluídos pelo usuário
+    #   "categorias_ordem": ["Preliminar", "Mérito"],  # Ordem das categorias definida pelo usuário
+    #   "preview_timestamp": "2026-02-02T10:00:00Z"    # Quando o preview foi gerado
+    # }
+    # NOTA: Usar deferred() para evitar erro se coluna não existir no banco (migration pendente)
+    curadoria_metadata = deferred(Column(JSON, nullable=True))
+
     # Tempo de processamento (segundos)
     tempo_processamento = Column(Integer, nullable=True)
     

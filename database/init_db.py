@@ -1496,22 +1496,41 @@ def run_migrations():
             db.rollback()
             print(f"[WARN] Criação de índice gemini_api_logs request_id: {e}")
 
-    # Migração: Adicionar colunas de modo de ativação do Agente 2 em geracoes_pecas
+    # Migração: Adicionar colunas de modo de ativação do Agente 2 e curadoria em geracoes_pecas
+    # IMPORTANTE: Usa SQL direto para evitar problemas com cache de colunas
     if table_exists('geracoes_pecas'):
+        # Limpa cache para garantir verificação correta
+        _columns_cache.pop('geracoes_pecas', None)
+
         colunas_modo_ativacao = [
             ("modo_ativacao_agente2", "VARCHAR(30)"),
             ("modulos_ativados_det", "INTEGER"),
             ("modulos_ativados_llm", "INTEGER"),
+            ("curadoria_metadata", "JSONB" if not is_sqlite else "JSON"),
         ]
 
         for coluna, tipo in colunas_modo_ativacao:
-            if not column_exists('geracoes_pecas', coluna):
-                try:
+            # Usa SQL direto para verificar se coluna existe (mais confiável que cache)
+            try:
+                if is_sqlite:
+                    check_result = db.execute(text(f"PRAGMA table_info(geracoes_pecas)"))
+                    existing_cols = {row[1] for row in check_result.fetchall()}
+                    col_exists = coluna in existing_cols
+                else:
+                    check_result = db.execute(text("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'geracoes_pecas' AND column_name = :col_name
+                    """), {"col_name": coluna})
+                    col_exists = check_result.fetchone() is not None
+
+                if not col_exists:
                     db.execute(text(f"ALTER TABLE geracoes_pecas ADD COLUMN {coluna} {tipo}"))
                     db.commit()
                     print(f"[OK] Migração: coluna {coluna} adicionada em geracoes_pecas")
-                except Exception as e:
-                    db.rollback()
+            except Exception as e:
+                db.rollback()
+                # Ignora erro "column already exists" (pode acontecer em race condition)
+                if 'already exists' not in str(e).lower() and 'duplicate column' not in str(e).lower():
                     print(f"[WARN] Migração {coluna} geracoes_pecas: {e}")
 
     # ============================================================

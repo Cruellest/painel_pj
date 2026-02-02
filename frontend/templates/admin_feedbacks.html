@@ -279,6 +279,7 @@
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Processo/Arquivo</th>
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Usuário</th>
                             <th class="px-4 py-3 text-center font-medium text-gray-600">Modelo IA</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Modo</th>
                             <th class="px-4 py-3 text-center font-medium text-gray-600">Avaliação</th>
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Comentário</th>
                             <th class="px-4 py-3 text-left font-medium text-gray-600">Data</th>
@@ -343,7 +344,7 @@
             </div>
 
             <div class="p-4 border-b border-gray-100 bg-gray-50">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                     <div>
                         <span class="text-gray-500">Usuário:</span>
                         <p id="modal-usuario" class="font-medium text-gray-800">-</p>
@@ -356,9 +357,38 @@
                         <span class="text-gray-500">Modelo IA:</span>
                         <p id="modal-modelo" class="font-medium text-purple-600">-</p>
                     </div>
+                    <div id="modal-modo-container" class="hidden">
+                        <span class="text-gray-500">Modo:</span>
+                        <p id="modal-modo" class="font-medium">-</p>
+                    </div>
                     <div>
                         <span class="text-gray-500">Avaliação:</span>
                         <p id="modal-avaliacao" class="font-medium">-</p>
+                    </div>
+                </div>
+                <!-- Seção de detalhes do modo semi-automático (aparece apenas quando aplicável) -->
+                <div id="modal-curadoria-info" class="hidden mt-4 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fas fa-hand-pointer text-amber-600"></i>
+                        <span class="font-medium text-amber-800">Detalhes da Curadoria (Modo Semi-Automático)</span>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                        <div>
+                            <span class="text-amber-700">Preview (Agente 2):</span>
+                            <p id="modal-curadoria-preview" class="font-semibold text-amber-900">-</p>
+                        </div>
+                        <div>
+                            <span class="text-amber-700">Curados (Final):</span>
+                            <p id="modal-curadoria-curados" class="font-semibold text-amber-900">-</p>
+                        </div>
+                        <div>
+                            <span class="text-amber-700">Manuais:</span>
+                            <p id="modal-curadoria-manuais" class="font-semibold text-amber-900">-</p>
+                        </div>
+                        <div>
+                            <span class="text-amber-700">Excluídos:</span>
+                            <p id="modal-curadoria-excluidos" class="font-semibold text-amber-900">-</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -725,13 +755,47 @@
                     const dataFormatada = fb.criado_em ? formatarData(fb.criado_em) : '-';
                     const horaFormatada = fb.criado_em ? formatarHora(fb.criado_em) : '';
                     const modeloFormatado = fb.modelo ? `<span class="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-mono">${fb.modelo}</span>` : '<span class="text-gray-400">N/A</span>';
-                    
+
+                    // Formata badge do modo de ativação (apenas para gerador_pecas)
+                    let modoBadge = '<span class="text-gray-300">-</span>';
+                    if (fb.sistema === 'gerador_pecas' && fb.modo_ativacao) {
+                        const modo = fb.modo_ativacao;
+                        if (modo.modo === 'semi_automatico') {
+                            const manuais = modo.total_manuais || 0;
+                            const curados = modo.total_curados || 0;
+                            const excluidos = modo.total_excluidos || 0;
+                            let tooltip = `Semi-Auto: ${curados} módulos curados`;
+                            if (manuais > 0) tooltip += `, ${manuais} manuais`;
+                            if (excluidos > 0) tooltip += `, ${excluidos} excluídos`;
+                            modoBadge = `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs cursor-help" title="${tooltip}">
+                                <i class="fas fa-hand-pointer mr-1"></i>Semi-Auto${manuais > 0 ? ` (${manuais}m)` : ''}
+                            </span>`;
+                        } else if (modo.modo === 'fast_path') {
+                            modoBadge = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs" title="100% determinístico">
+                                <i class="fas fa-bolt mr-1"></i>Fast
+                            </span>`;
+                        } else if (modo.modo === 'misto') {
+                            modoBadge = `<span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs" title="Det: ${modo.modulos_det || 0}, LLM: ${modo.modulos_llm || 0}">
+                                <i class="fas fa-random mr-1"></i>Misto
+                            </span>`;
+                        } else if (modo.modo === 'llm') {
+                            modoBadge = `<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs" title="100% LLM">
+                                <i class="fas fa-brain mr-1"></i>LLM
+                            </span>`;
+                        }
+                    } else if (fb.sistema === 'gerador_pecas') {
+                        modoBadge = `<span class="px-2 py-1 bg-gray-100 text-gray-500 rounded text-xs" title="Modo não registrado (geração anterior)">
+                            <i class="fas fa-question-circle mr-1"></i>N/R
+                        </span>`;
+                    }
+
                     return `
                         <tr class="hover:bg-gray-50">
                             <td class="px-4 py-3 text-xs">${sistemaLabels[fb.sistema] || fb.sistema || '-'}</td>
                             <td class="px-4 py-3 font-mono text-xs">${fb.identificador || fb.cnj || '-'}</td>
                             <td class="px-4 py-3">${fb.usuario}</td>
                             <td class="px-4 py-3 text-center">${modeloFormatado}</td>
+                            <td class="px-4 py-3 text-center">${modoBadge}</td>
                             <td class="px-4 py-3 text-center">
                                 <span class="px-2 py-1 rounded text-xs ${badges[fb.avaliacao] || 'bg-gray-100'}">
                                     ${labels[fb.avaliacao] || fb.avaliacao}
@@ -758,7 +822,7 @@
                             </td>
                         </tr>
                     `;
-                }).join('') || '<tr><td colspan="8" class="px-4 py-8 text-center text-gray-400">Nenhum feedback encontrado</td></tr>';
+                }).join('') || '<tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">Nenhum feedback encontrado</td></tr>';
 
             } catch (error) {
                 console.error('Erro ao carregar feedbacks:', error);
@@ -886,6 +950,46 @@
                     avaliacaoEl.innerHTML = `<span class="px-2 py-1 rounded text-xs ${badges[data.feedback.avaliacao]}">${labels[data.feedback.avaliacao]}</span>`;
                 } else {
                     avaliacaoEl.innerHTML = '<span class="text-orange-500"><i class="fas fa-clock mr-1"></i>Pendente</span>';
+                }
+
+                // Exibe informações do modo de ativação (apenas para gerador_pecas)
+                const modoContainer = document.getElementById('modal-modo-container');
+                const modoEl = document.getElementById('modal-modo');
+                const curadoriaInfo = document.getElementById('modal-curadoria-info');
+
+                if (sistema === 'gerador_pecas' && data.modo_ativacao) {
+                    modoContainer.classList.remove('hidden');
+                    const modo = data.modo_ativacao;
+
+                    if (modo.modo === 'semi_automatico') {
+                        modoEl.innerHTML = '<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs"><i class="fas fa-hand-pointer mr-1"></i>Semi-Automático</span>';
+
+                        // Mostra detalhes da curadoria
+                        curadoriaInfo.classList.remove('hidden');
+                        document.getElementById('modal-curadoria-preview').textContent = modo.total_preview || 0;
+                        document.getElementById('modal-curadoria-curados').textContent = modo.total_curados || 0;
+                        document.getElementById('modal-curadoria-manuais').textContent = modo.total_manuais || 0;
+                        document.getElementById('modal-curadoria-excluidos').textContent = modo.total_excluidos || 0;
+                    } else if (modo.modo === 'fast_path') {
+                        modoEl.innerHTML = '<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs"><i class="fas fa-bolt mr-1"></i>Fast Path</span>';
+                        curadoriaInfo.classList.add('hidden');
+                    } else if (modo.modo === 'misto') {
+                        modoEl.innerHTML = `<span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs"><i class="fas fa-random mr-1"></i>Misto (${modo.modulos_det || 0}d + ${modo.modulos_llm || 0}l)</span>`;
+                        curadoriaInfo.classList.add('hidden');
+                    } else if (modo.modo === 'llm') {
+                        modoEl.innerHTML = '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"><i class="fas fa-brain mr-1"></i>LLM</span>';
+                        curadoriaInfo.classList.add('hidden');
+                    } else {
+                        modoEl.innerHTML = `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">${modo.modo || 'Desconhecido'}</span>`;
+                        curadoriaInfo.classList.add('hidden');
+                    }
+                } else if (sistema === 'gerador_pecas') {
+                    modoContainer.classList.remove('hidden');
+                    modoEl.innerHTML = '<span class="text-gray-400 text-xs">Não registrado</span>';
+                    curadoriaInfo.classList.add('hidden');
+                } else {
+                    modoContainer.classList.add('hidden');
+                    curadoriaInfo.classList.add('hidden');
                 }
 
                 // Renderiza o relatório em Markdown

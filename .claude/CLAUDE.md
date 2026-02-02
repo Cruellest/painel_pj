@@ -481,6 +481,54 @@ hideModalDetalheProjeto();
 **Lição aprendida**:
 Ao fechar modais que limpam estado global, sempre salvar os dados necessários ANTES de chamar a função de fechamento.
 
+### Gerador de Peças - Tag HUMAN_VALIDATED para Modo Semi-Automático
+
+**Data**: 2026-02-02
+**Decisao**: Todos os prompts no modo semi-automático (curadoria) DEVEM ser marcados com a tag `[HUMAN_VALIDATED]`, indicando validação humana explícita.
+
+**Arquivos alterados**:
+- `sistemas/gerador_pecas/router.py` - Tags `[HUMAN_VALIDATED]` e `[HUMAN_VALIDATED:MANUAL]` no endpoint de geração com curadoria
+- `sistemas/gerador_pecas/services_curadoria.py` - Método `montar_prompt_curado` usa as mesmas tags
+- `tests/test_curadoria_semi_automatico.py` - Testes automatizados cobrindo o enforcement
+
+**Separação de modos**:
+| Modo | Arquivo Principal | Tag Usada |
+|------|-------------------|-----------|
+| Automático | `orquestrador_agentes.py` | `[VALIDADO]` |
+| Semi-Automático | `router.py` (curadoria), `services_curadoria.py` | `[HUMAN_VALIDATED]` |
+
+**Regras do modo semi-automático**:
+1. **Tag obrigatória**: Todo módulo selecionado pelo usuário recebe `[HUMAN_VALIDATED]`
+2. **Tag manual**: Módulos adicionados manualmente recebem `[HUMAN_VALIDATED:MANUAL]`
+3. **Instrução obrigatória**: O prompt inclui instrução explícita para a IA usar os argumentos integralmente
+4. **Sem modificação**: A IA NÃO deve aplicar juízo de valor nos argumentos validados
+5. **Sanitização técnica**: Apenas sanitização técnica é permitida (se necessária por segurança)
+
+**Formato do prompt gerado**:
+```
+## ARGUMENTOS E TESES APLICAVEIS (HUMAN_VALIDATED)
+> **INSTRUÇÃO OBRIGATÓRIA**: Os argumentos marcados com [HUMAN_VALIDATED] foram
+> validados pelo usuário e DEVEM ser incluídos integralmente na peça final.
+> Não aplique juízo de valor ou modifique o conteúdo - apenas sanitização técnica se necessária.
+
+### === CATEGORIA ===
+#### Titulo do Módulo [HUMAN_VALIDATED]
+Conteúdo do módulo...
+
+#### Titulo do Módulo Manual [HUMAN_VALIDATED:MANUAL]
+Conteúdo adicionado manualmente...
+```
+
+**IMPORTANTE - Modo automático inalterado**:
+O modo automático (`orquestrador_agentes.py`) permanece 100% inalterado, usando a tag `[VALIDADO]` original.
+Esta separação é intencional para distinguir claramente entre:
+- `[VALIDADO]`: Seleção automática pelo sistema (pode ter juízo de valor da IA)
+- `[HUMAN_VALIDATED]`: Validação explícita humana (uso integral obrigatório)
+
+**Testes automatizados**:
+- `TestHumanValidatedEnforcement` - Verifica que todos os prompts semi-automáticos têm a tag
+- `TestModoAutomaticoInabalterado` - Verifica que modo automático não foi alterado
+
 ## Contato
 
 - **Equipe**: LAB/PGE-MS
