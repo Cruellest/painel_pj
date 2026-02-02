@@ -192,14 +192,14 @@ async def obter_curadoria_geracao(
     db: Session = Depends(get_db)
 ):
     """
-    Obtém detalhes de curadoria de uma geração no modo semi-automático.
+    Obtém detalhes completos de curadoria de uma geração no modo semi-automático.
 
-    Retorna:
+    Retorna informações detalhadas para auditoria e transparência:
     - Metadados de curadoria (IDs, contagens, timestamp)
-    - Lista de módulos incluídos com títulos
-    - Lista de módulos excluídos com títulos
-    - Lista de módulos adicionados manualmente com títulos
-    - Ordem das categorias
+    - Lista completa de módulos incluídos com: título, categoria, conteúdo, origem, decisão
+    - Lista de módulos excluídos com: título, categoria, conteúdo, motivo
+    - Ordem das categorias definida pelo usuário
+    - Explicações semânticas de cada status/decisão
     """
     from admin.models_prompts import PromptModulo
 
@@ -222,62 +222,127 @@ async def obter_curadoria_geracao(
     modulos_curados_ids = metadata.get('modulos_curados_ids', [])
     modulos_manuais_ids = metadata.get('modulos_manuais_ids', [])
     modulos_excluidos_ids = metadata.get('modulos_excluidos_ids', [])
-
-    # Busca títulos dos módulos no banco
     modulos_preview_ids = metadata.get('modulos_preview_ids', [])
+
+    # Busca dados completos dos módulos no banco (incluindo conteúdo)
     todos_ids = set(modulos_curados_ids + modulos_manuais_ids + modulos_excluidos_ids + modulos_preview_ids)
     modulos_db = {}
     if todos_ids:
         modulos = db.query(PromptModulo).filter(PromptModulo.id.in_(todos_ids)).all()
-        modulos_db = {m.id: {"id": m.id, "titulo": m.titulo, "categoria": m.categoria or "Outros"} for m in modulos}
+        modulos_db = {
+            m.id: {
+                "id": m.id,
+                "titulo": m.titulo,
+                "categoria": m.categoria or "Outros",
+                "subcategoria": m.subcategoria,
+                "conteudo": m.conteudo,  # Conteúdo completo para transparência
+                "modo_ativacao_modulo": m.modo_ativacao or "llm"  # Como o módulo é normalmente ativado
+            }
+            for m in modulos
+        }
 
     # Usa modulos_detalhados se disponível (nova estrutura), senão reconstrói
     modulos_detalhados = metadata.get('modulos_detalhados', [])
     manuais_set = set(modulos_manuais_ids)
     preview_set = set(modulos_preview_ids)
 
-    # Monta listas com títulos e informações de origem/status
+    # Monta listas com informações completas de auditoria
     modulos_incluidos = []
     for i, mid in enumerate(modulos_curados_ids):
-        info = modulos_db.get(mid, {"id": mid, "titulo": f"Módulo {mid}", "categoria": "Desconhecido"}).copy()
+        base_info = modulos_db.get(mid, {
+            "id": mid,
+            "titulo": f"Módulo {mid}",
+            "categoria": "Desconhecido",
+            "subcategoria": None,
+            "conteudo": "(Conteúdo não disponível)",
+            "modo_ativacao_modulo": "desconhecido"
+        })
+        info = base_info.copy()
 
-        # Busca detalhes da origem se disponível
+        # Determina origem e tipo de decisão
         if modulos_detalhados and i < len(modulos_detalhados):
             detalhe = modulos_detalhados[i]
             info["origem"] = detalhe.get("origem", "desconhecido")
-            info["status"] = detalhe.get("status", "[VALIDADO]")
         else:
-            # Fallback para lógica anterior
             info["origem"] = "manual" if mid in manuais_set else ("preview" if mid in preview_set else "automatico")
-            info["status"] = "[VALIDADO-MANUAL]" if mid in manuais_set else "[VALIDADO]"
+
+        # Define status com tag HUMAN_VALIDATED e explicação semântica
+        if info["origem"] == "manual":
+            info["tag"] = "[HUMAN_VALIDATED:MANUAL]"
+            info["tipo_decisao"] = "manual"
+            info["decisao_explicacao"] = "Adicionado manualmente pelo usuário durante a curadoria"
+            info["motivo_inclusao"] = "O usuário escolheu incluir este argumento que não estava na sugestão automática"
+        else:
+            info["tag"] = "[HUMAN_VALIDATED]"
+            info["tipo_decisao"] = "confirmado"
+            info["decisao_explicacao"] = "Sugerido automaticamente e confirmado pelo usuário"
+            info["motivo_inclusao"] = "O sistema sugeriu este argumento e o usuário confirmou sua inclusão"
 
         info["ordem"] = i + 1  # Posição na ordem final
+        info["status_final"] = "incluido"
         modulos_incluidos.append(info)
 
-    modulos_manuais = []
-    for mid in modulos_manuais_ids:
-        info = modulos_db.get(mid, {"id": mid, "titulo": f"Módulo {mid}", "categoria": "Desconhecido"}).copy()
-        info["status"] = "[VALIDADO-MANUAL]"
-        modulos_manuais.append(info)
-
+    # Módulos excluídos com explicação
     modulos_excluidos = []
     for mid in modulos_excluidos_ids:
-        info = modulos_db.get(mid, {"id": mid, "titulo": f"Módulo {mid}", "categoria": "Desconhecido"}).copy()
+        base_info = modulos_db.get(mid, {
+            "id": mid,
+            "titulo": f"Módulo {mid}",
+            "categoria": "Desconhecido",
+            "subcategoria": None,
+            "conteudo": "(Conteúdo não disponível)",
+            "modo_ativacao_modulo": "desconhecido"
+        })
+        info = base_info.copy()
         info["origem"] = "preview"  # Excluídos sempre vêm do preview
+        info["tag"] = "[EXCLUÍDO]"
+        info["tipo_decisao"] = "removido"
+        info["decisao_explicacao"] = "Sugerido automaticamente mas removido pelo usuário"
+        info["motivo_exclusao"] = "O sistema sugeriu este argumento, mas o usuário decidiu não incluí-lo na peça final"
+        info["status_final"] = "excluido"
         modulos_excluidos.append(info)
+
+    # Calcula estatísticas detalhadas
+    total_preview = metadata.get('total_preview', len(modulos_preview_ids))
+    total_confirmados = len([m for m in modulos_incluidos if m["tipo_decisao"] == "confirmado"])
+    total_manuais = len([m for m in modulos_incluidos if m["tipo_decisao"] == "manual"])
+    total_excluidos = len(modulos_excluidos)
 
     return {
         "geracao_id": geracao_id,
         "modo": "semi_automatico",
         "metadata": {
-            "total_preview": metadata.get('total_preview', 0),
-            "total_curados": metadata.get('total_curados', 0),
-            "total_manuais": metadata.get('total_manuais', 0),
-            "total_excluidos": metadata.get('total_excluidos', 0),
+            "total_preview": total_preview,
+            "total_incluidos": len(modulos_incluidos),
+            "total_confirmados": total_confirmados,
+            "total_manuais": total_manuais,
+            "total_excluidos": total_excluidos,
             "preview_timestamp": metadata.get('preview_timestamp'),
             "categorias_ordem": metadata.get('categorias_ordem', [])
         },
-        "modulos_incluidos": modulos_incluidos,  # Lista com origem, status e ordem
-        "modulos_manuais": modulos_manuais,  # Apenas os adicionados manualmente
-        "modulos_excluidos": modulos_excluidos  # Os que foram removidos pelo usuário
+        # Glossário de termos para a UI exibir
+        "glossario": {
+            "HUMAN_VALIDATED": "Argumento validado pelo usuário - será incluído integralmente na peça final sem modificação pela IA",
+            "HUMAN_VALIDATED:MANUAL": "Argumento adicionado manualmente pelo usuário - não estava na sugestão automática",
+            "confirmado": "Argumento sugerido pelo sistema e confirmado pelo usuário",
+            "manual": "Argumento adicionado pelo usuário durante a revisão",
+            "removido": "Argumento sugerido pelo sistema mas removido pelo usuário",
+            "preview": "Sugestão automática do sistema (Agente 2) antes da revisão humana",
+            "incluido": "Este argumento FAZ PARTE da peça final gerada",
+            "excluido": "Este argumento NÃO FAZ PARTE da peça final gerada"
+        },
+        # Explicação do processo para transparência
+        "explicacao_processo": {
+            "titulo": "Como funciona o Modo Semi-Automático",
+            "etapas": [
+                "1. O sistema analisa o processo e sugere argumentos relevantes (Preview)",
+                "2. O usuário revisa a sugestão, podendo confirmar, remover ou adicionar argumentos",
+                "3. Argumentos confirmados recebem a tag [HUMAN_VALIDATED]",
+                "4. Argumentos adicionados manualmente recebem [HUMAN_VALIDATED:MANUAL]",
+                "5. A IA recebe instrução de usar estes argumentos integralmente, sem modificação"
+            ],
+            "garantia": "Todos os argumentos marcados como HUMAN_VALIDATED são incluídos na peça final exatamente como validados pelo usuário."
+        },
+        "modulos_incluidos": modulos_incluidos,
+        "modulos_excluidos": modulos_excluidos
     }

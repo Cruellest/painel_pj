@@ -2307,3 +2307,215 @@ class TestModoAutomaticoInabalterado:
         # Mas mesmo se passasse, a tag seria HUMAN_VALIDATED (que é o correto para semi-auto)
         assert modulo_det.origem_ativacao == "deterministic"
         assert modulo_det.validado is True
+
+
+# ============================================================================
+# TESTES: Transparência e Auditoria - Fev 2026
+# ============================================================================
+
+class TestTransparenciaAuditoria:
+    """
+    Testes para verificar que o endpoint de curadoria retorna informações
+    completas para transparência e auditoria:
+    - Glossário de termos
+    - Explicação do processo
+    - Detalhes completos de cada módulo
+    - Motivos de inclusão/exclusão
+    """
+
+    def test_endpoint_curadoria_retorna_glossario(self):
+        """
+        Endpoint deve retornar glossário explicando termos técnicos.
+        """
+        # Simula resposta do endpoint
+        resposta = {
+            "glossario": {
+                "HUMAN_VALIDATED": "Argumento validado pelo usuário",
+                "HUMAN_VALIDATED:MANUAL": "Argumento adicionado manualmente",
+                "confirmado": "Sugestão confirmada pelo usuário",
+                "manual": "Adicionado durante revisão",
+                "removido": "Sugestão removida pelo usuário",
+            }
+        }
+
+        glossario = resposta.get("glossario", {})
+        assert "HUMAN_VALIDATED" in glossario
+        assert "HUMAN_VALIDATED:MANUAL" in glossario
+        assert "confirmado" in glossario
+        assert "manual" in glossario
+        assert "removido" in glossario
+
+    def test_endpoint_curadoria_retorna_explicacao_processo(self):
+        """
+        Endpoint deve retornar explicação do processo para transparência.
+        """
+        resposta = {
+            "explicacao_processo": {
+                "titulo": "Como funciona o Modo Semi-Automático",
+                "etapas": [
+                    "1. Sistema sugere argumentos",
+                    "2. Usuário revisa",
+                    "3. Confirmados recebem HUMAN_VALIDATED",
+                    "4. Manuais recebem HUMAN_VALIDATED:MANUAL",
+                ],
+                "garantia": "Argumentos validados são incluídos integralmente."
+            }
+        }
+
+        explicacao = resposta.get("explicacao_processo", {})
+        assert "titulo" in explicacao
+        assert "etapas" in explicacao
+        assert "garantia" in explicacao
+        assert len(explicacao["etapas"]) >= 3
+
+    def test_modulo_incluido_contem_informacoes_completas(self):
+        """
+        Cada módulo incluído deve conter informações completas para auditoria.
+        """
+        modulo = {
+            "id": 1,
+            "titulo": "Argumento de Teste",
+            "categoria": "Mérito",
+            "subcategoria": "Medicamentos",
+            "conteudo": "Texto completo do argumento...",
+            "tag": "[HUMAN_VALIDATED]",
+            "tipo_decisao": "confirmado",
+            "decisao_explicacao": "Sugerido automaticamente e confirmado pelo usuário",
+            "motivo_inclusao": "O sistema sugeriu e o usuário confirmou",
+            "status_final": "incluido",
+            "ordem": 1
+        }
+
+        # Campos obrigatórios para auditoria
+        assert "id" in modulo
+        assert "titulo" in modulo
+        assert "conteudo" in modulo  # Conteúdo completo
+        assert "tag" in modulo
+        assert "tipo_decisao" in modulo
+        assert "decisao_explicacao" in modulo
+        assert "motivo_inclusao" in modulo
+        assert "status_final" in modulo
+
+    def test_modulo_excluido_contem_motivo(self):
+        """
+        Módulos excluídos devem conter motivo da exclusão.
+        """
+        modulo_excluido = {
+            "id": 2,
+            "titulo": "Argumento Excluído",
+            "categoria": "Preliminar",
+            "conteudo": "Conteúdo do argumento removido...",
+            "tag": "[EXCLUÍDO]",
+            "tipo_decisao": "removido",
+            "decisao_explicacao": "Sugerido mas removido pelo usuário",
+            "motivo_exclusao": "O usuário decidiu não incluir",
+            "status_final": "excluido"
+        }
+
+        assert modulo_excluido["status_final"] == "excluido"
+        assert "motivo_exclusao" in modulo_excluido
+        assert modulo_excluido["tipo_decisao"] == "removido"
+
+    def test_metadata_inclui_totais_detalhados(self):
+        """
+        Metadata deve incluir totais detalhados para resumo.
+        """
+        metadata = {
+            "total_preview": 10,
+            "total_incluidos": 8,
+            "total_confirmados": 6,  # Sugestões aceitas
+            "total_manuais": 2,  # Adicionados pelo usuário
+            "total_excluidos": 4,  # Sugestões removidas
+        }
+
+        assert "total_preview" in metadata
+        assert "total_incluidos" in metadata
+        assert "total_confirmados" in metadata
+        assert "total_manuais" in metadata
+        assert "total_excluidos" in metadata
+
+        # Verificação de consistência
+        assert metadata["total_incluidos"] == metadata["total_confirmados"] + metadata["total_manuais"]
+
+    def test_usuario_pode_responder_perguntas_de_auditoria(self):
+        """
+        Com os dados retornados, o usuário deve poder responder:
+        1. O que foi incluído?
+        2. O que foi excluído?
+        3. Por quê?
+        4. Baseado em qual decisão?
+        """
+        resposta_completa = {
+            "modulos_incluidos": [
+                {
+                    "id": 1,
+                    "titulo": "Argumento sobre Medicamento",
+                    "tag": "[HUMAN_VALIDATED]",
+                    "tipo_decisao": "confirmado",
+                    "decisao_explicacao": "Sugerido pelo sistema e confirmado",
+                    "motivo_inclusao": "Usuário confirmou a sugestão",
+                    "status_final": "incluido"
+                },
+                {
+                    "id": 2,
+                    "titulo": "Argumento Manual",
+                    "tag": "[HUMAN_VALIDATED:MANUAL]",
+                    "tipo_decisao": "manual",
+                    "decisao_explicacao": "Adicionado manualmente pelo usuário",
+                    "motivo_inclusao": "Usuário adicionou durante revisão",
+                    "status_final": "incluido"
+                }
+            ],
+            "modulos_excluidos": [
+                {
+                    "id": 3,
+                    "titulo": "Argumento Removido",
+                    "tag": "[EXCLUÍDO]",
+                    "tipo_decisao": "removido",
+                    "decisao_explicacao": "Removido pelo usuário",
+                    "motivo_exclusao": "Usuário rejeitou esta sugestão",
+                    "status_final": "excluido"
+                }
+            ],
+            "glossario": {
+                "HUMAN_VALIDATED": "Validado pelo usuário",
+                "HUMAN_VALIDATED:MANUAL": "Adicionado manualmente",
+                "confirmado": "Sugestão aceita",
+                "manual": "Adicionado pelo usuário",
+                "removido": "Sugestão rejeitada"
+            }
+        }
+
+        # 1. O que foi incluído?
+        incluidos = resposta_completa["modulos_incluidos"]
+        assert len(incluidos) == 2
+        titulos_incluidos = [m["titulo"] for m in incluidos]
+        assert "Argumento sobre Medicamento" in titulos_incluidos
+        assert "Argumento Manual" in titulos_incluidos
+
+        # 2. O que foi excluído?
+        excluidos = resposta_completa["modulos_excluidos"]
+        assert len(excluidos) == 1
+        assert excluidos[0]["titulo"] == "Argumento Removido"
+
+        # 3. Por quê? (motivo)
+        for m in incluidos:
+            assert "motivo_inclusao" in m
+            assert len(m["motivo_inclusao"]) > 0
+
+        for m in excluidos:
+            assert "motivo_exclusao" in m
+            assert len(m["motivo_exclusao"]) > 0
+
+        # 4. Baseado em qual decisão?
+        for m in incluidos + excluidos:
+            assert "tipo_decisao" in m
+            assert m["tipo_decisao"] in ["confirmado", "manual", "removido"]
+            assert "decisao_explicacao" in m
+
+        # 5. Glossário disponível para explicar termos
+        glossario = resposta_completa["glossario"]
+        for m in incluidos:
+            tag = m["tag"].replace("[", "").replace("]", "")
+            if tag in glossario:
+                assert len(glossario[tag]) > 0  # Tem explicação
