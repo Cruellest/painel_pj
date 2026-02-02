@@ -1,6 +1,6 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\sistemas\cumprimento_beta\api.ts
-// Built at: 2026-01-28T13:55:56.080Z
+// Built at: 2026-01-30T21:41:45.549Z
 
 "use strict";
 (() => {

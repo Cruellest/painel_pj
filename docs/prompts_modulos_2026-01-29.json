@@ -1,0 +1,621 @@
+{
+  "versao": "2.0",
+  "exportado_em": "2026-01-29T00:48:01.584949Z",
+  "exportado_por": "admin",
+  "total": 24,
+  "modulos": [
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Cirurgia",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "cirurgia",
+          "nome": "Cirurgia",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_cir_escolha_prof",
+      "titulo": "Não Há Direito à Escolha do Profissional em Face do SUS",
+      "condicao_ativacao": "Quando for requerido custeio de procedimento com profissional específico.",
+      "conteudo": "## NÃO HÁ DIREITO À ESCOLHA DO PROFISSIONAL EM FACE DO SUS\n\nA parte autora requer o custeio de procedimento com profissional específico com honorários de R$ {{ cirurgia_valor }}. Ocorre que o tratamento integral é oferecido pelo SUS. Não há direito subjetivo de escolher o profissional, procedimento e local a serem custeados pelo Poder Público, sob a ótica da isonomia e universalidade. Cabe ao paciente respeitar os meios disponíveis e os critérios de classificação de risco. Portanto, o pedido é improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 1
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_insulina",
+      "titulo": "O SUS Fornece Insulinas Semelhantes",
+      "condicao_ativacao": "Quando for pleiteada insulina.",
+      "conteudo": "## O SUS FORNECE INSULINAS SEMELHANTES\n\nO SUS fornece insulinas. No Componente Básico da Assistência Farmacêutica, estão disponíveis a insulina humana regular e a humana NPH, fornecidas nas unidades básicas de saúde, de responsabilidade municipal.\n\nNo Componente Especializado da Assistência Farmacêutica, são fornecidas insulinas análogas de ação rápida e prolongada, de aquisição centralizada pelo Ministério de Saúde e distribuição pelas Secretarias Estaduais de Saúde.\n\nAs insulinas análogas estão incorporadas por seus gêneros, e não por suas espécies. O gênero de ação rápida é formado pelas insulinas lispro, asparte e glulisina e o de ação prolongada é formado pelas insulinas glargina, detemir e degludeca. Por isso, o NAT explica que as insulinas solicitadas não estão padronizadas na RENAME, especificamente com estes respectivos nomes.\n\nPortanto, apesar da espécie de insulina requerida, o SUS oferece alternativa terapêutica do mesmo gênero e com eficácia similar.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 12
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Procedimentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "cirurgia",
+          "nome": "Cirurgia",
+          "group_slug": "ps"
+        },
+        {
+          "slug": "exame",
+          "nome": "Exame",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_sem_urgencia",
+      "titulo": "Não Há Urgência ou Emergência para o Atendimento",
+      "condicao_ativacao": "Quando for pleiteada cirurgia eletiva  ou exame não urgente ",
+      "conteudo": "## NÃO HÁ URGÊNCIA OU EMERGÊNCIA PARA O ATENDIMENTO\n\nO quadro clínico da parte autora não é uma urgência ou emergência porque não exige atendimento imediato, segundo definições da Portaria nº 354, de 10 de março de 2014, do Ministério da Saúde, e da Resolução nº 1.451/1995, do Conselho Federal de Medicina.\n\nAinda que o fosse, a ordem de atendimento seria orientada pela classificação de risco dos pacientes. Contudo, a alegação de que o atendimento da parte autora mereceria ser preferido não é verossímil porque não há elementos que indiquem grave sofrimento ou risco à vida, motivo pelo qual, o pedido é improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 2
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_med_sem_anvisa",
+      "titulo": "Medicamento Sem Registro na ANVISA - Tema 500",
+      "condicao_ativacao": "Quando for pleiteado medicamento sem registro na ANVISA.",
+      "conteudo": "## DO MEDICAMENTO SEM REGISTRO NA ANVISA (TEMA 500): {{ nome_sem_anvisa }}\n\nEm 2019, o Supremo Tribunal Federal concluiu o julgamento do Recurso Extraordinário nº 657.718/MG. Ao interpretar o Art. 1º, inciso III; Art. 6º; Art. 23, inciso II; Art. 196; Art. 198, inciso II e § 2º; e Art. 204, todos da CRFB, a Corte fixou em repercussão geral (Tema 500) que:\n\n> 1. O Estado não pode ser obrigado a fornecer medicamentos experimentais.\n>\n> 2. A ausência de registro na ANVISA impede, como regra geral, o fornecimento de medicamento por decisão judicial.\n>\n> 3. É possível, excepcionalmente, a concessão judicial de medicamento sem registro sanitário, em caso de mora irrazoável da ANVISA em apreciar o pedido (prazo superior ao previsto na Lei nº 13.411/2016), quando preenchidos três requisitos: (i) a existência de pedido de registro do medicamento no Brasil (salvo no caso de medicamentos órfãos para doenças raras e ultrarraras); (ii) a existência de registro do medicamento em renomadas agências de regulação no exterior; e (iii) a inexistência de substituto terapêutico com registro no Brasil.\n\nNesta demanda, a parte autora não se desincumbiu do ônus da prova de que:\n\n(1) há pedido de registro do medicamento e mora irrazoável da ANVISA em analisá-lo;\n(2) o medicamento é órfão e a sua doença rara ou ultrarrara;\n(3) o medicamento está registrado em renomadas agências de regulação no exterior;\n(iii) não existe substituto terapêutico no Brasil.\n\nPortanto, o pedido é improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 10
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_med_nao_inc_tema1234",
+      "titulo": "Análise de Medicamentos Não Incorporados - Tema 1234",
+      "condicao_ativacao": "Quando for pleiteado medicamento não incorporado ao SUS (naoinc, pat_div, dos_div, for_div, onco não incorporado).",
+      "conteudo": "## ANÁLISE JUDICIAL DE MEDICAMENTOS NÃO INCORPORADOS AO SUS DE ACORDO COM O TEMA 1234 DO STF\n\nO Supremo Tribunal Federal definiu critérios para análise judicial de pedidos de medicamentos não incorporados ao SUS no RE 1.366.243/SC (Tema 1234). Diante da força vinculante do precedente (Art. 927, incisos II e III, do CPC), exige-se análise da legalidade do ato administrativo de indeferimento. Nos termos da decisão:\n\n> 4) Sob pena de nulidade do ato jurisdicional (art. 489, § 1º, V e VI, c/c art. 927, III, §1º, ambos do CPC), o Poder Judiciário, ao apreciar pedido de concessão de medicamentos não incorporados, deverá obrigatoriamente analisar o ato administrativo comissivo ou omissivo da não incorporação pela Conitec e da negativa de fornecimento na via administrativa, tal como acordado entre os Entes Federativos em autocomposição no Supremo Tribunal Federal.\n>\n> 4.1) No exercício do controle de legalidade, o Poder Judiciário não pode substituir a vontade do administrador, mas tão somente verificar se o ato administrativo específico daquele caso concreto está em conformidade com as balizas presentes na Constituição Federal, na legislação de regência e na política pública no SUS.\n>\n> 4.2) A análise jurisdicional do ato administrativo que indefere o fornecimento de medicamento não incorporado restringe-se ao exame da regularidade do procedimento e da legalidade do ato de não incorporação e do ato administrativo questionado, à luz do controle de legalidade e da teoria dos motivos determinantes, não sendo possível incursão no mérito administrativo.\n>\n> 4.3) Tratando-se de medicamento não incorporado, é do autor da ação o ônus de demonstrar, com fundamento na Medicina Baseada em Evidências, a segurança e a eficácia do fármaco, bem como a inexistência de substituto terapêutico incorporado pelo SUS.\n>\n> 4.4) Conforme decisão da STA 175-AgR, não basta a simples alegação de necessidade do medicamento, mesmo que acompanhada de relatório médico, sendo necessária a demonstração de que a opinião do profissional encontra respaldo em evidências científicas de alto nível, ou seja, unicamente ensaios clínicos randomizados, revisão sistemática ou meta-análise.\n\nNesta demanda, a parte autora não se desincumbiu do ônus da prova de que (IMPORTANTE: APRESENTAR ARGUMENTOS COM BASE NOS RESUMOS EXTRAÍDOS DO PROCESSO)\n\nPortanto, o pedido é improcedente.\n---\n**Orientação para a IA**: É terminantemente proibido fundir, resumir ou omitir os tópicos \"Tema 1234/STF\" e \"Tema 6/STF\". Embora ambos versem sobre medicamentos, possuem fundamentos jurídicos e requisitos probatórios distintos.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 8
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_med_pat_div",
+      "titulo": "Medicamento Não Incorporado para Situação Clínica da Parte Autora",
+      "condicao_ativacao": "Quando o medicamento estiver incorporado ao SUS para patologia, dosagem ou forma de dispensação diversa da situação clínica da parte autora.",
+      "conteudo": "## O MEDICAMENTO {% if pat_div %}{{ nome_pat_div }}{% endif %}{% if dos_div %}{{ nome_dos_div }}{% endif %}{% if for_div %}{{ nome_for_div }}{% endif %} NÃO ESTÁ INCORPORADO AO SUS PARA A SITUAÇÃO CLÍNICA DA PARTE AUTORA\n\nDefinir se um medicamento está ou não incorporado ao SUS é relevante para determinar quais os fluxos e critérios aplicáveis ao pedido de medicamento. Segundo conceituação estabelecida pelo STF no Tema 1234, não estão incorporados os medicamentos que se enquadrem na seguinte definição.\n\n> II – Definição de Medicamentos Não Incorporados\n>\n> 2.1) Consideram-se medicamentos não incorporados aqueles que não constam na política pública do SUS; medicamentos previstos nos PCDTs para outras finalidades; medicamentos sem registro na ANVISA; e medicamentos off label sem PCDT ou que não integrem listas do componente básico.\n\nDiante disso, não basta que o medicamento tenha sido \"incorporado\" por uma Portaria do Ministério da Saúde ou que tenha sido incluído em listagem oficial de medicamentos, como a Relação Nacional de Medicamentos (RENAME). É preciso averiguar se ele está incluído na política pública do SUS.\n\n{% if pat_div %}Conforme consta da RENAME, o medicamento {{ nome_pat_div }} está incorporado ao SUS para patologia diversa ({{ patologia_div }}) daquela apresentada pela parte autora ({{ patologia }}), ou seja, a incorporação do medicamento contempla indicação clínica específica que não corresponde à condição de saúde do paciente nos autos.{% endif %}\n\n{% if dos_div %}Conforme consta da RENAME, o medicamento {{ nome_dos_div }} está incorporado ao SUS, porém em dosagem diversa daquela pleiteada pela parte autora. A política pública prevê o fornecimento do medicamento em concentração ou posologia diferente da prescrita.{% endif %}\n\n{% if for_div %}Conforme consta da RENAME, o medicamento {{ nome_for_div }} está incorporado ao SUS, porém com forma de dispensação diversa daquela pleiteada pela parte autora. A política pública prevê o fornecimento do medicamento em apresentação farmacêutica diferente da prescrita.{% endif %}\n\nPortanto, o medicamento não está incorporado para a situação da parte autora, segundo definição vinculante adotada pelo STF, e os critérios de análise judicial do pedido são os seguintes.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 6
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Restituição",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [],
+      "nome": "mer_restituicao",
+      "titulo": "Da Restituição de Eventuais Valores Despendidos",
+      "condicao_ativacao": "Quando for pleiteada restituição de valores eventualmente despendidos pela parte autora.",
+      "conteudo": "## DA RESTITUIÇÃO DE EVENTUAIS VALORES DESPENDIDOS\n\nA parte autora pleiteia a restituição de valores eventualmente despendidos por ela para a compra do objeto da ação. Ocorre que demandas judiciais de saúde pressupõem que o paciente não possa custear o tratamento. Se consegue (e opta por) custeá-lo, não há direito ao ressarcimento pelo Poder Público.\n\nIsso se mantém ainda que a obrigação de dar a providência de saúde em espécie esteja constituída em título executivo judicial porque o juízo pode determinar todas as medidas indutivas, coercitivas, mandamentais ou substitutivas para assegurar o cumprimento de sua decisão, inclusive o sequestro de recursos públicos. Em vista disso, o pedido de ressarcimento é improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 22
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_med_inc_tema1234",
+      "titulo": "Análise de Medicamentos Incorporados ao SUS - Tema 1234",
+      "condicao_ativacao": "Quando for pleiteado medicamento incorporado ao SUS ou insulina tipo análoga rápida ou lenta",
+      "conteudo": "## Instrução de uso para a LLM – Tema 1234 do STF\n\nAo redigir a peça, **utilize exclusivamente o subtópico correspondente ao componente do SUS efetivamente em discussão no caso concreto**.\n\nNão reproduza, mencione ou faça referência a subtópicos relativos a outros componentes que **não guardem relação direta com o medicamento pleiteado**.\n\nEm especial:\n\n- Se o medicamento pertencer ao **CBAF**, utilize **apenas** o subtópico “Medicamentos do CBAF”.\n- Se o medicamento pertencer ao **CEAF – Grupo 1A**, utilize **apenas** o subtópico “Medicamentos do CEAF – Grupo 1A”.\n- Se o medicamento pertencer ao **CEAF – Grupos 1B e 2**, utilize **apenas** o subtópico “Medicamentos do CEAF – Grupos 1B e 2”.\n- Se o medicamento pertencer ao **CESAF**, utilize **apenas** o subtópico “Medicamentos do CESAF”.\n\nOs demais subtópicos devem ser **integralmente ignorados**, como se não existissem para fins de geração do texto.\n\nA análise jurídica, a fundamentação e a conclusão devem se limitar **exclusivamente** ao subtópico aplicável ao caso em discussão.\n\n---\n\n## ANÁLISE JUDICIAL DE MEDICAMENTOS INCORPORADOS AO SUS DE ACORDO COM O TEMA 1234 DO STF\n\nO Supremo Tribunal Federal, no julgamento do Tema 1234, definiu fluxos específicos para a análise judicial de pedidos de medicamentos incorporados ao SUS, conforme o componente ao qual pertencem: Componente Básico da Assistência Farmacêutica (CBAF), Componente Especializado da Assistência Farmacêutica (CEAF) e Componente Estratégico da Assistência Farmacêutica (CESAF).\n\nQuando o medicamento pleiteado integra o Componente Básico da Assistência Farmacêutica (CBAF), o magistrado deve, à luz do controle de legalidade, examinar o ato administrativo em relação à situação apresentada nos autos. Nessa hipótese, o fornecimento deve ser determinado em face do Município ou do Distrito Federal, sendo que eventual responsabilização do Estado depende de prévia pactuação, nos termos dos arts. 39 e 41 da Portaria de Consolidação GM/MS nº 2.\n\nQuando se tratar de medicamento do Grupo 1A do CEAF, o juiz deve analisar qual é a fase do fluxo de distribuição em que se encontra o fármaco, confrontando o ato administrativo com a situação concreta apresentada nos autos. Em regra, o fornecimento é de responsabilidade da União, admitindo-se a atribuição ao Estado apenas nas hipóteses expressamente previstas no próprio fluxo administrativo.\n\nNos casos de medicamentos pertencentes aos Grupos 1B ou 2 do CEAF, cabe ao magistrado verificar a fase do fluxo de distribuição e a legalidade do ato administrativo praticado. A definição do ente responsável deve observar que a responsabilização do Município somente ocorre se houver pactuação prévia, nos termos do art. 67 da Portaria de Consolidação GM/MS nº 2.\n\nQuando o medicamento integrar o Componente Estratégico da Assistência Farmacêutica (CESAF), o exame judicial deve considerar a fase do fluxo de distribuição e o ato administrativo questionado. Em regra, o fornecimento compete à União, podendo ser direcionado ao Estado ou ao Município apenas nas hipóteses previstas no próprio fluxo administrativo.\n\nNo caso concreto, não se verifica ilegalidade em ato administrativo praticado pelo Estado quando, conforme a situação fática demonstrada nos autos, o Estado não é o ente responsável pelo fornecimento do medicamento segundo o componente do SUS aplicável, a parte autora não requereu previamente o cadastro administrativo para acesso a medicamentos do CEAF ou do CESAF, a parte autora não preenche os requisitos previstos nos Protocolos Clínicos e Diretrizes Terapêuticas estabelecidos pelo Ministério da Saúde, ou a eventual indisponibilidade do medicamento decorre de omissão da União, responsável pela compra centralizada de medicamentos do Grupo 1A do CEAF ou do CESAF.\n\nQuando aplicável, o fornecimento de medicamentos do CBAF deve ser direcionado ao Município, enquanto o fornecimento de medicamentos do Grupo 1A do CEAF ou do CESAF deve ser direcionado à União, conforme a repartição de competências definida pelo Supremo Tribunal Federal.\n\nDiante desse cenário, o pedido deve ser julgado improcedente. Subsidiariamente, caso se entenda pelo fornecimento do medicamento, este deve ser direcionado exclusivamente ao ente público competente, de acordo com o componente do SUS e o respectivo fluxo administrativo.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 7
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Dano Moral",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "dano_moral",
+          "nome": "Dano Moral",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_dano_moral",
+      "titulo": "Não Há Dano Moral",
+      "condicao_ativacao": "Quando for pleiteada indenização por danos morais.",
+      "conteudo": "## NÃO HÁ DANO MORAL\n\nA responsabilidade civil exige, no mínimo, conduta, dano e nexo causal. A parte autora não demonstra agravamento de saúde ou sofrimento excepcional relacionado a conduta estatal. Em se tratando de responsabilidade estatal por omissão, exige-se também a culpa, pela Teoria do Risco Administrativo. No caso, não há demora ou falta de atendimento imputável ao Estado de Mato Grosso do Sul. Assim, o pedido de compensação por dano moral é improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 21
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_med_nao_inc_tema6",
+      "titulo": "Análise de Medicamentos Não Incorporados - Tema 6",
+      "condicao_ativacao": "Quando for pleiteado medicamento não incorporado ao SUS com registro na ANVISA.",
+      "conteudo": "# orientação para LLM:\n\nAo elaborar este tópico, a LLM deve analisar cuidadosamente o caso concreto, com especial atenção às informações técnicas constantes dos autos, em particular o parecer do Núcleo de Apoio Técnico do Poder Judiciário (NATJUS), quando existente. A fundamentação não deve ser automática nem meramente abstrata, devendo dialogar com os elementos fáticos e técnicos do processo, inclusive para reconhecer a ausência ou a insuficiência de comprovação dos requisitos exigidos pelo Supremo Tribunal Federal.\n\n---\n\n## ANÁLISE JUDICIAL DE MEDICAMENTOS REGISTRADOS NA ANVISA E NÃO INCORPORADOS AO SUS DE ACORDO COM O TEMA 6 DO STF\n\nEm 2020, o Ministro Gilmar Mendes pediu vista dos autos do RE 566.471/RN (Tema 6), depois de proposta a tese pelo Ministro Relator Marco Aurélio. O julgamento foi retomado em 2024, após a homologação dos acordos no RE 1.366.243/SC (Tema 1234). Em complemento a eles, foram fixadas as seguintes teses.\n\n> 1. A ausência de inclusão de medicamento nas listas de dispensação do Sistema Único de Saúde - SUS (RENAME, RESME, REMUME, entre outras) impede, como regra geral, o fornecimento do fármaco por decisão judicial, independentemente do custo.\n>\n> 2. É possível, excepcionalmente, a concessão judicial de medicamento registrado na ANVISA, mas não incorporado às listas de dispensação do Sistema Único de Saúde, desde que preenchidos, cumulativamente, os seguintes requisitos, cujo ônus probatório incumbe ao autor da ação:\n>\n> (a) negativa de fornecimento do medicamento na via administrativa, nos termos do item '4' do Tema 1234 da repercussão geral;\n>\n> (b) ilegalidade do ato de não incorporação do medicamento pela Conitec, ausência de pedido de incorporação ou da mora na sua apreciação;\n>\n> (c) impossibilidade de substituição por outro medicamento constante das listas do SUS e dos protocolos clínicos e diretrizes terapêuticas;\n>\n> (d) comprovação, à luz da medicina baseada em evidências, da eficácia, acurácia, efetividade e segurança do fármaco, necessariamente respaldadas por evidências científicas de alto nível, ou seja, unicamente ensaios clínicos randomizados e revisão sistemática ou meta-análise;\n>\n> (e) imprescindibilidade clínica do tratamento, comprovada mediante laudo médico fundamentado, descrevendo inclusive qual o tratamento já realizado; e\n>\n> (f) incapacidade financeira de arcar com o custeio do medicamento.\n>\n> 3. Sob pena de nulidade da decisão judicial, o Poder Judiciário, ao apreciar pedido de concessão de medicamentos não incorporados, deverá obrigatoriamente:\n>\n> (a) analisar o ato administrativo comissivo ou omissivo de não incorporação pela Conitec ou da negativa de fornecimento da via administrativa;\n>\n> (b) aferir a presença dos requisitos de dispensação do medicamento, previstos no item 2, a partir da prévia consulta ao Núcleo de Apoio Técnico do Poder Judiciário (NATJUS), sempre que disponível na respectiva jurisdição, não podendo fundamentar a sua decisão unicamente em prescrição, relatório ou laudo médico juntado aos autos pelo autor da ação; e\n>\n> (c) no caso de deferimento judicial do fármaco, oficiar aos órgãos competentes para avaliarem a possibilidade de sua incorporação no âmbito do SUS.\n\nNesta demanda, a parte autora não se desincumbiu do ônus da prova porque:\n\n(1) não apresentou negativa administrativa ilegal;\n(2) não demonstrou a impossibilidade de substituição do medicamento por alternativas terapêuticas do SUS;\n(3) não provou que o medicamento requerido é eficaz, acurado, efetivo e seguro à luz de ensaio clínico randomizado, revisão sistemática ou meta-análise;\n(4) não descreveu os tratamentos realizados.\n\nPortanto, o pedido é improcedente.\n---\n**Orientação para a IA**: É terminantemente proibido fundir, resumir ou omitir os tópicos \"Tema 1234/STF\" e \"Tema 6/STF\". Embora ambos versem sobre medicamentos, possuem fundamentos jurídicos e requisitos probatórios distintos.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 9
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_med_offlabel",
+      "titulo": "Medicamento para Uso Off Label - Tema 106",
+      "condicao_ativacao": "Quando for pleiteado medicamento para uso off label (fora da bula).",
+      "conteudo": "## DO USO OFF LABEL DO MEDICAMENTO (TEMA 106): {{ offlabel_nome }}\n\nÉ proibido fornecer medicamento para uso off label (fora da bula) no SUS (Art. 19-T da Lei nº 8.080/90 e Art. 12 da Lei n.º 6.360/76). Por isso, o Tema 106 do STJ veda o deferimento judicial de medicamento para uso off label. No entanto, a parte autora requer medicamento para uso fora das hipóteses autorizadas na bula aprovada pela ANVISA, motivo pelo qual, o pedido é improcedente.\n\n\nATENÇÃO:\n\nO uso off label caracteriza-se exclusivamente pela prescrição do medicamento em desconformidade com a bula aprovada pela ANVISA, seja quanto à indicação terapêutica, posologia, faixa etária ou forma de administração.\n\nDiversa é a hipótese de desconformidade com os critérios de incorporação no SUS. Nessa situação, o medicamento pode até possuir indicação em bula para determinada patologia, mas não foi incorporado ao SUS para aquele uso específico, por decisão técnica e administrativa no âmbito da política pública de saúde. Tal circunstância, por si só, não configura uso off label, mas apenas ausência de incorporação para aquela indicação.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 11
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Procedimentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "cirurgia",
+          "nome": "Cirurgia",
+          "group_slug": "ps"
+        },
+        {
+          "slug": "consulta",
+          "nome": "Consulta",
+          "group_slug": "ps"
+        },
+        {
+          "slug": "exame",
+          "nome": "Exame",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_dificuldade_gestor",
+      "titulo": "É Preciso Considerar a Dificuldade Real do Gestor Estadual",
+      "condicao_ativacao": "Quando for pleiteada cirurgia, consulta e exame, não houver informação de que o paciente já está inserido no sistema de regulação estadual (CORE)",
+      "conteudo": "## É PRECISO CONSIDERAR A DIFICULDADE REAL DO GESTOR ESTADUAL\n\nHá dois sistemas de regulação: o municipal (SISREG) e o estadual (CORE). O sistema municipal é adotado em todo território estadual para agendamento de procedimentos oferecidos no SUS. Os servidores estaduais não têm meios materiais para agendar consultas, exames, cirurgias ou terapias no SISREG.\n\nEmbora possam fazê-lo no CORE, existem dois pontos de atenção. O primeiro é que o CORE não regula todos os atendimentos do SUS. Somente podem ser inseridos no CORE:\n\n(1) urgências e emergências;\n(2) transferências hospitalares;\n(3) procedimentos oferecidos em hospitais estaduais;\n(4) internações psiquiátricas; e\n(5) procedimentos contemplados no Programa MS Saúde.\n\nO segundo é que o município de residência da pessoa que deve inserir o pedido no sistema estadual.\n\nEm vista da realidade do gestor estadual, não há omissão ou demora do Estado de Mato Grosso do Sul no atendimento (Art. 20 e Art. 22 da LINDB).",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 4
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_custo_efetividade",
+      "titulo": "Custo-Efetividade do Pedido",
+      "condicao_ativacao": "Quando o valor do tratamento com medicamento não incorporado for superior a R$ 100.000,00.",
+      "conteudo": "## CUSTO-EFETIVIDADE DO PEDIDO\n\nO custo-efetividade é a medida do valor das intervenções em saúde. Ele supre a lacuna entre preferências (subjetividade) e ciência (objetividade). Embora a opção terapêutica seja uma questão técnica guiada pelo conhecimento profissional e o estado de arte, o crescimento da demanda em contraposição à escassez de recursos impõe a análise do custo-efetividade. Nesta demanda, o tratamento pleiteado pode custar R$ {{ valor }}.\n\nA situação sob análise do Judiciário é se o gestor deve arcar com o custo desse tratamento ou se esses recursos seriam melhor aplicados em políticas públicas de saúde universalizáveis. Nesse cenário em que o magistrado atua como gestor, ele deve considerar a desproporção entre a possibilidade de benefício ao paciente em face da certeza de prejuízo aos demais usuários do sistema de saúde.\n\nAlém disso, deve-se ponderar que o benefício individual não está previsto em lei, não tem previsão orçamentária ou evidências científicas.\n\nPortanto, o pedido merece ser julgado improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 17
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Fraldas",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "fraldas",
+          "nome": "Fraldas",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_fraldas",
+      "titulo": "Fraldas Descartáveis",
+      "condicao_ativacao": "Quando for pleiteado fornecimento de fraldas descartáveis.",
+      "conteudo": "## FRALDAS DESCARTÁVEIS\n\nO fornecimento de fraldas é política da assistência social, cujas medidas são desenvolvidas pelos municípios, nos termos da Lei n° 8.742/93 (LOAS) e da Norma Operacional Básica do Sistema Único de Assistência Social (NOB/SUAS/2102). Só é legítima a imposição de atuação direta dos estados se os custos ou a ausência de demanda municipal a exigirem (Art. 13, inciso V, da LOAS). Contudo, não estão presentes essas circunstâncias.\n\nAlém disso, por serem insumos de higiene pessoal, seu custeio não deve ser imposto ao SUS, como recomenda o Enunciado nº 10 do CNJ. Não existe previsão legal do dever de fornecê-las nem parece adequado o Judiciário imiscuir-se em atividade própria do legislador e do gestor público, com base na efetivação do direito à saúde.\n\nIsso porque o princípio da seletividade (Art. 194, parágrafo único, inciso III, da CRFB) norteia a atividade do legislador e do administrador para que selecionem (por lei) as prestações aptas a cobrir as contingências sociais mais relevantes. É preciso considerar a escassez financeira frente às necessidades infindáveis da população.\n\nPortanto, fraldas descartáveis são insumos prescindíveis e o pedido de seu fornecimento deve ser julgado improcedente, na forma do inciso I do Art. 487 do CPC.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 14
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Home Care",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "home_care",
+          "nome": "Home Care",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_homecare",
+      "titulo": "Atendimento em Regime de Home Care",
+      "condicao_ativacao": "Quando for pleiteado atendimento domiciliar em regime de home care.",
+      "conteudo": "## ATENDIMENTO EM REGIME DE HOME CARE\n\nNão se deve confundir o home care com a atenção domiciliar. Aquele corresponde ao conjunto de procedimentos hospitalares realizados em domicílio por profissionais da saúde. É uma espécie de internação em casa. Já o Serviço de Atenção Domiciliar (SAD) é um conjunto de ações em domicílio para garantir a continuidade de cuidados. São visitas técnicas pré-programadas com profissionais de saúde para capacitar a família a oferecer cuidados ao usuário e ampliar sua autonomia.\n\nSe deferido o regime de home care, o Estado deverá fornecer todos os equipamentos, insumos, medicamentos e recursos humanos necessários ao atendimento das necessidades do paciente, consoante RDC nº 11 da ANVISA. É obrigação muito ampla, de conteúdo incerto e de repercussões financeiras indeterminadas.\n\nPor essa razão, a prescrição médica deve especificar quais cuidados de natureza hospitalar precisam ser realizados em casa por profissionais da saúde (banho no leito, troca de fraldas, mudança de posição a cada 2 horas, aspiração de vias aéreas, administração de água ou dieta por sonda, etc.), ao invés de sugerir a instalação de um \"hospital em casa\".\n\nPortanto, o pedido de regime de home care merece ser julgado improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 15
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Enfermagem",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "home_care",
+          "nome": "Home Care",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_enf24h",
+      "titulo": "Atendimento de Enfermagem 24 Horas por Dia",
+      "condicao_ativacao": "Quando for pleiteado atendimento de enfermagem 24 horas por dia.",
+      "conteudo": "## ATENDIMENTO DE ENFERMAGEM 24 HORAS POR DIA\n\nO atendimento de enfermagem é disponibilizado no SUS, pelos municípios, embora não pelo período de 24 horas por dia. Isso porque o Poder Público não pode retirar profissionais de hospitais ou locais de atendimento de toda a população para atender apenas um paciente.\n\nAdemais, a pretensão destina-se a cuidados de higiene pessoal, que podem ser realizados pela família (Art. 227 da CRFB), conforme entendimento do TJMS. Em vista disso, o pedido merece ser julgado improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 16
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": null,
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "tea",
+          "nome": "TEA",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "tea_tema_106",
+      "titulo": "Aplicação do tema 106 para TEA",
+      "condicao_ativacao": "",
+      "conteudo": "## APLICAÇÃO DO TEMA 106 DO STJ (REsp nº 1.657.156/RJ):\n\n**ATENÇÃO (ORIENTAÇÃO INTERNA):**  \nEste texto constitui **exclusivamente uma orientação à IA** para análise jurídica do caso concreto.  \n**Não transcreva este conteúdo literalmente na contestação.**  \nUtilize-o apenas como **guia analítico** para identificar, selecionar e redigir argumentos jurídicos adequados ao caso, com base nos documentos dos autos.\n\n**Contexto jurídico a ser considerado pela IA**\n\nAo analisar o caso, considere a tese firmada pelo Superior Tribunal de Justiça no julgamento do Recurso Especial nº 1.657.156/RJ, afetado sob a sistemática dos recursos repetitivos (art. 1.036 do CPC), Tema 106, que trata da obrigação do Poder Público de fornecer medicamentos e tratamentos não incorporados ao Sistema Único de Saúde.\n\nEmbora o precedente tenha sido fixado no contexto de medicamentos, sua lógica jurídica **é aplicável a quaisquer tratamentos de saúde não previstos nas políticas públicas**, inclusive terapias com metodologias específicas, conforme orientação do Enunciado nº 75 da Jornada de Direito da Saúde do CNJ.\n\n**Tese jurídica vinculante (Tema 106 – STJ)**\n\nTenha como premissa que se trata de **precedente vinculante**, de observância obrigatória, segundo o qual a concessão de tratamento não incorporado ao SUS exige a **comprovação cumulativa** dos seguintes requisitos, cujo ônus probatório é da parte autora (art. 373, I, do CPC):\n\n1. Existência de **laudo médico fundamentado e circunstanciado**, emitido por médico assistente, que demonstre:\n   - a imprescindibilidade ou necessidade do tratamento pleiteado; e  \n   - a **ineficácia dos tratamentos disponibilizados pelo SUS** para o caso concreto;\n\n2. **Incapacidade financeira** da parte autora de arcar com o custo do tratamento prescrito;\n\n3. Existência de **registro na ANVISA**, quando aplicável, observados os usos autorizados pela agência reguladora.\n\n**Orientação para análise do laudo médico e do parecer do NAT**\n\nExamine cuidadosamente o **laudo médico/prescrição** e o **parecer técnico do NAT**, buscando identificar elementos que indiquem o **não preenchimento dos requisitos cumulativos do Tema 106**, especialmente:\n\n- ausência de descrição detalhada dos **tratamentos já realizados no SUS**;\n- inexistência de informações sobre a **evolução clínica do paciente**;\n- falta de justificativa técnica clara quanto à **ineficácia das terapias disponibilizadas pela rede pública**;\n- prescrição genérica que apenas afirma a necessidade do tratamento, **sem comparação técnica** com as alternativas existentes no SUS;\n- inexistência de avaliação individualizada que demonstre a inadequação dos procedimentos padronizados constantes da tabela SIGTAP/DATASUS.\n\nCaso o parecer do NAT seja desfavorável ao método específico pleiteado, utilize-o como elemento central da argumentação, destacando que:\n\n- não foram comprovadas tentativas prévias de tratamento na rede pública;\n- não houve demonstração da ineficácia das terapias ofertadas pelo SUS;\n- inexiste fundamentação técnica suficiente, à luz da medicina baseada em evidências, para afastar a política pública vigente.\n\n**Diretriz argumentativa obrigatória**\n\nConsidere que, conforme a tese fixada pelo STJ, **não basta que o tratamento pleiteado seja considerado mais eficaz ou preferível**.  \nÉ indispensável a comprovação de que **os tratamentos disponibilizados pelo SUS são ineficazes no caso concreto**.\n\nNa ausência dessa demonstração, deve ser privilegiada a política pública de saúde estruturada pelo SUS, sob pena de violação aos princípios da legalidade, da isonomia e da racionalidade do sistema público de saúde.\n\n**Orientação para conclusão**\n\nCaso não haja prova robusta e circunstanciada do preenchimento cumulativo dos requisitos do Tema 106, estruture a argumentação no sentido de que **o pedido deve ser julgado improcedente**, em observância ao precedente vinculante do STJ e à deferência devida às políticas públicas de saúde.\n",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 19
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Procedimentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "cirurgia",
+          "nome": "Cirurgia",
+          "group_slug": "ps"
+        },
+        {
+          "slug": "exame",
+          "nome": "Exame",
+          "group_slug": "ps"
+        },
+        {
+          "slug": "consulta",
+          "nome": "Consulta",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_fila_eletivo",
+      "titulo": "É Preciso Respeitar a Fila de Atendimento Eletivo",
+      "condicao_ativacao": "Quando o procedimento for eletivo e a parte autora não estiver inserida no SISREG ou tiver sido inserida recentemente.",
+      "conteudo": "## É PRECISO RESPEITAR A FILA DE ATENDIMENTO ELETIVO\n\nA providência de saúde pretendida é de atendimento eletivo. Nesses casos, a ordem de atendimento no SUS é orientada pela data de solicitação. Ocorre que a parte autora não está inserida no sistema de regulação e não há omissão ou demora do Estado, consoante Enunciado nº 69 do CNJ e entendimento desse Tribunal. Consequentemente, o pedido é improcedente.\n\nOU\n\nA providência de saúde pretendida é de atendimento eletivo. Nesses casos, a ordem de atendimento no SUS é orientada pela data de solicitação. Ocorre que a parte autora foi inserida recentemente no sistema de regulação e não há omissão ou demora do Estado, consoante Enunciado nº 93 do CNJ e entendimento desse Tribunal. Consequentemente, o pedido é improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 3
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": null,
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [],
+      "nome": "tema_106_geral",
+      "titulo": "Da aplicação da tese firmada pelo STJ no Tema 106 aos procedimentos, tratamentos e tecnologias em saúde não incorporados ao SUS (exceto medicamentos)",
+      "condicao_ativacao": "",
+      "conteudo": "### Da aplicação da tese firmada pelo STJ no Tema 106 aos procedimentos, tratamentos e tecnologias em saúde não incorporados ao SUS\n\nNos casos em que a parte autora pleiteia a realização de **procedimentos cirúrgicos, tratamentos especializados, fornecimento de materiais, OPMEs, próteses, órteses, equipamentos ou quaisquer outras tecnologias em saúde não incorporadas às políticas públicas do Sistema Único de Saúde (SUS)**, deve ser aplicada, por analogia e extensão lógica, a tese firmada pelo Superior Tribunal de Justiça no julgamento do Recurso Especial nº 1.657.156/RJ, afetado sob a sistemática dos recursos especiais repetitivos (art. 1.036 do CPC), correspondente ao **Tema 106**.\n\nEmbora o Tema 106 tenha sido originalmente fixado para disciplinar o fornecimento de **medicamentos não incorporados ao SUS**, sua **ratio decidendi** não se limita a essa categoria específica. O precedente estabelece critérios jurídicos gerais para toda e qualquer pretensão que implique o afastamento das escolhas técnicas e administrativas consagradas nas políticas públicas de saúde, sendo plenamente aplicável aos pedidos de procedimentos, tratamentos e tecnologias não padronizadas.\n\nTal compreensão é compatível com o entendimento consolidado no âmbito do Direito Sanitário e encontra respaldo no **Enunciado nº 75 da Jornada de Direito da Saúde do Conselho Nacional de Justiça**, segundo o qual os parâmetros fixados pelo STJ no Tema 106 devem orientar a análise judicial de demandas envolvendo tecnologias em saúde não previstas nas políticas públicas.\n\nA tese firmada pelo STJ possui **eficácia vinculante**, impondo observância obrigatória por juízes e tribunais, e estabelece que a concessão judicial de tecnologia em saúde não incorporada ao SUS exige a **comprovação cumulativa de requisitos específicos**, cujo ônus probatório incumbe à parte autora, nos termos do art. 373, inciso I, do Código de Processo Civil.\n\nNesse contexto, **não basta a simples demonstração da necessidade, conveniência ou potencial superioridade técnica do procedimento ou tecnologia pretendida**. É indispensável a **demonstração concreta e circunstanciada da ineficácia, inadequação ou impossibilidade de utilização das alternativas terapêuticas disponibilizadas pelo SUS** para o caso específico.\n\nO relatório ou laudo médico que instrui a petição inicial deve, portanto:\n- individualizar o quadro clínico do paciente;\n- indicar quais tratamentos, procedimentos ou tecnologias estão disponíveis no âmbito do SUS;\n- descrever as alternativas efetivamente ofertadas pela rede pública;\n- demonstrar, de forma técnica e fundamentada, por que tais alternativas seriam ineficazes, inadequadas ou insuficientes no caso concreto;\n- justificar a imprescindibilidade da tecnologia não incorporada, preferencialmente à luz de evidências científicas.\n\nAlém disso, **a argumentação deve ser corroborada e contextualizada com base nos dados extraídos do Parecer do NAT-Jus**, quando existente. A IA deve utilizar expressamente as informações técnicas constantes do parecer, tais como:\n- a existência ou não de alternativas terapêuticas disponíveis no SUS;\n- a avaliação sobre a eficácia e segurança dessas alternativas;\n- a eventual ausência de recomendação técnica ou científica para a tecnologia pleiteada;\n- a análise de custo-efetividade ou de adequação às diretrizes clínicas vigentes;\n- a conclusão técnica do NAT quanto à pertinência ou não do pedido.\n\nSempre que o Parecer do NAT indicar a **existência de alternativas terapêuticas eficazes no SUS**, a **ausência de evidência científica robusta**, ou a **inadequação da tecnologia pleiteada**, a IA deve utilizar esses elementos de forma articulada para demonstrar que **não restaram preenchidos os requisitos cumulativos exigidos pela tese do Tema 106**.\n\nEsse entendimento está em consonância com os **Enunciados nº 12 e nº 14 das Jornadas de Direito da Saúde do CNJ**, segundo os quais:\n- a inefetividade do tratamento oferecido pelo SUS deve ser demonstrada por relatório médico circunstanciado, fundamentado em medicina baseada em evidências, observados os parâmetros fixados pelo STJ no Tema 106;\n- não comprovada a ineficácia, inefetividade ou insegurança das tecnologias fornecidas pela rede pública, deve ser indeferido o pedido judicial correspondente.\n\nNão se trata de desqualificar a avaliação clínica do profissional assistente, mas de reconhecer que a superação das políticas públicas de saúde, estruturadas para atendimento da coletividade, **exige fundamentação técnica qualificada**, não sendo suficiente a mera indicação médica isolada, ainda que subscrita por profissional integrante do SUS.\n\nAssim, **na ausência de comprovação cumulativa dos requisitos exigidos pela tese firmada no Tema 106**, especialmente quando os dados técnicos constantes do Parecer do NAT corroborarem a adequação das alternativas ofertadas pelo SUS, deve ser privilegiada a política pública vigente, impondo-se o **indeferimento do pedido de fornecimento de procedimento, material, OPME, prótese, equipamento ou tecnologia em saúde não incorporada ao SUS**.\n",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 0
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Oncologia",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_onco_sem_unacon",
+      "titulo": "A Parte Autora Não Buscou o Atendimento Oncológico do SUS",
+      "condicao_ativacao": "Quando for pleiteado medicamento oncológico e a parte autora não buscou atendimento em CACON/UNACON (verificar no parecer do NAT)",
+      "conteudo": "## A PARTE AUTORA NÃO BUSCOU O ATENDIMENTO ONCOLÓGICO DO SUS\n\nO SUS oferece assistência integral em oncologia em instituições habilitadas pelo Ministério da Saúde: Centros de Assistência de Alta Complexidade em Oncologia (CACON) e Unidades de Assistência de Alta Complexidade em Oncologia (UNACON). Em Mato Grosso do Sul, existem sete delas. No entanto, a parte autora não buscou atendimento na rede pública.\n\nAs normas do Ministério da Saúde estabelecem que medicamentos para tratamento do câncer serão fornecidos pelo estabelecimento habilitado apenas para pacientes atendidos na própria unidade. Isso porque o tratamento do câncer é complexo e não exige apenas fármacos, mas também quimio e radioterapias e até cirurgias.\n\nO esquema terapêutico e o acompanhamento são responsabilidades do estabelecimento habilitado para isso. Por essa razão, o paciente precisa ser inserido no sistema de regulação, como orienta o Enunciado nº 07 do CNJ.\n\nNeste caso, o deferimento judicial de medicamento oncológico atribui ao ente público o ônus financeiro, sem a garantia da integralidade do atendimento para o paciente. Portanto, ainda que se reconhecesse a patologia como incontroversa, a pretensão de obter medicamentos isoladamente não procede porque a parte autora não está desassistida.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 13
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Cirurgia",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "cirurgia",
+          "nome": "Cirurgia",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_cir_sem_esp_sus",
+      "titulo": "Não Há Indicação Cirúrgica por Médico Especialista do SUS",
+      "condicao_ativacao": "Quando for pleiteada cirurgia com laudo de médico que não é especialista do SUS.",
+      "conteudo": "## NÃO HÁ INDICAÇÃO CIRÚRGICA POR MÉDICO ESPECIALISTA DO SUS\n\nUm advogado pode atuar em causas de qualquer natureza, assim como um médico pode indicar qualquer tratamento. Não há óbice ao exercício da medicina, ainda que a prescrição de tratamento especializado por profissional não-especialista configure infração disciplinar. No entanto, para realizar o procedimento no SUS, é imprescindível que o paciente seja consultado por especialista da rede pública.\n\nPrimeiro porque o médico do SUS conhece as opções terapêuticas da rede pública, que não admite escolha do tratamento de preferência. Por isso, é comum haver contraindicação cirúrgica pelo profissional público diante de prescrição particular.\n\nSegundo porque o encaminhamento para cirurgia por clínico geral (ainda que vinculado ao SUS) caracteriza uma suspeita de que esse seja o tratamento adequado. Contudo, não confere direito subjetivo à realização do procedimento porque precisa ser confirmada por um especialista.\n\nTerceiro porque nenhum médico-cirurgião realizará procedimento em paciente avaliado por outro profissional. Nesse cenário, a indicação cirúrgica de especialista da rede pública é indispensável à existência do direito subjetivo alegado. Ausente a prova, o pedido é improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 0
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "Medicamentos",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "medicamento",
+          "nome": "Medicamento",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_sv_60_61",
+      "titulo": "Súmulas Vinculantes nº 60 e 61 sobre Medicamentos",
+      "condicao_ativacao": "Quando for pleiteado medicamento.",
+      "conteudo": "## SÚMULAS VINCULANTES Nº 60 E 61 SOBRE MEDICAMENTOS\n\nO Supremo Tribunal Federal concluiu o julgamento do RE 1.366.243/SC e do RE 566.471/RN, afetados à sistemática de repercussão geral (Temas 1234 e 6), que debateram a judicialização de medicamentos. O Tema 1234 é aplicável a qualquer medicamento e o Tema 6 só a medicamentos com registro na ANVISA, mas não incorporados ao SUS. Em ambos os casos, foram aprovados enunciados de súmula vinculante.\n\n> Súmula Vinculante nº 60. O pedido e a análise administrativos de fármacos na rede pública de saúde, a judicialização do caso, bem ainda seus desdobramentos (administrativos e jurisdicionais) devem observar os termos dos 3 (três) acordos interfederativos (e seus fluxos) homologados pelo Supremo Tribunal Federal, em governança judicial colaborativa, no tema 1.234 da sistemática da repercussão geral (RE 1.366.243)\n>\n> Súmula Vinculante nº 61. A concessão judicial de medicamento registrado na ANVISA, mas não incorporado às listas de dispensação do Sistema Único de Saúde, deve observar as teses firmadas no julgamento do Tema 6 da Repercussão Geral (RE 566.471).\n\nNesse cenário, passa-se à análise desta demanda.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 5
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": "TEA",
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "tea",
+          "nome": "TEA",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "mer_autismo",
+      "titulo": "Não É Aconselhável a Predefinição de Método Específico - TEA",
+      "condicao_ativacao": "Quando for pleiteado tratamento específico para TEA (Transtorno do Espectro Autista).",
+      "conteudo": "## NÃO É ACONSELHÁVEL A PREDEFINIÇÃO DE MÉTODO ESPECÍFICO\n\nO SUS oferece uma rede de apoio e assistência a pacientes com autismo em Centros Especializados em Reabilitação (CER) e Centros de Atenção Psicossocial infantil (CAPS IJ). Além disso, existem a Associação de Pais e Amigos dos Excepcionais (APAE) e a Associação de Pais e Amigos do Autista (AMA). Nessa rede, é elaborado e desenvolvido um Projeto Terapêutico Singular (PTS) com ações interdisciplinares para o desenvolvimento e bem-estar do paciente.\n\nSegundo a Sociedade Brasileira de Pediatria (SBP), \"o tratamento padrão-ouro para o TEA é a intervenção precoce\", não um método específico. Igualmente, o PCDT do Comportamento Agressivo no TEA ensina que \"apesar de algumas terapias e técnicas terem sido mais exploradas na literatura científica, revisões sistemáticas reconhecem os benefícios de diversas intervenções, sem sugerir superioridade de qualquer modelo\".\n\nEmbora a escolha da intervenção seja livre ao paciente na rede privada, não há esse direito em face do SUS. Para exigir do Poder Público determinado tratamento, é preciso demonstrar a ineficácia das opções disponíveis na rede pública. Nesta demanda, não há evidência científica de superioridade do método pleiteado, tampouco houve o esgotamento das alternativas disponíveis no SUS.\n\nPortanto, o pedido de metodologia específica é improcedente.",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 18
+    },
+    {
+      "tipo": "conteudo",
+      "categoria": "Mérito",
+      "subcategoria": null,
+      "group_id": 1,
+      "group_slug": "ps",
+      "group_name": "PS",
+      "subgroup_id": 5,
+      "subgroup_slug": "conhecimento",
+      "subgroup_name": "Conhecimento",
+      "subcategorias_associadas": [
+        {
+          "slug": "tea",
+          "nome": "TEA",
+          "group_slug": "ps"
+        }
+      ],
+      "nome": "tea_profissionais",
+      "titulo": "Insuficiência de Profissionais para TEA",
+      "condicao_ativacao": "",
+      "conteudo": "## INSUFICIÊNCIA DE PROFISSIONAIS PARA ATENDIMENTO COM MÉTODO ESPECÍFICO\n\n**ATENÇÃO (ORIENTAÇÃO INTERNA):**  \nEste texto constitui **exclusivamente uma orientação à IA** para análise jurídica e fática do caso concreto.  \n**Não transcreva este conteúdo literalmente na contestação.**  \nUtilize-o apenas como **guia analítico** para construir argumentos adequados a partir dos elementos dos autos.\n\n**Ativar este módulo apenas se houver pedido de terapia com método específico (ex.: ABA) ou indicação de carga horária rígida vinculada a metodologia determinada.**\n\n**Diretriz geral para análise pela IA**\n\nAlém da análise dos requisitos jurídicos do fornecimento de tratamento não padronizado, avalie os **impactos práticos e sistêmicos da decisão judicial sobre a política pública de saúde**, especialmente quanto à **disponibilidade real de profissionais capacitados** para execução de método específico na localidade do paciente.\n\nConsidere que a prescrição médica de um método determinado não necessariamente leva em conta:\n\n- a disponibilidade de profissionais habilitados na região de residência do paciente;\n- a capacidade da rede pública de absorver a demanda com aquela metodologia específica;\n- a rotina familiar, escolar e social da criança ou do paciente;\n- a viabilidade prática de deslocamentos frequentes e extensos para cumprimento da carga horária prescrita.\n\n**Limites da prescrição médica quanto à metodologia e carga horária**\n\nAo analisar o laudo médico, verifique se a prescrição:\n\n- define metodologia específica (ex.: ABA) de forma rígida;\n- impõe carga horária elevada (ex.: 10, 20 ou mais horas semanais);\n- não demonstra conhecimento da realidade local quanto à oferta de profissionais;\n- não considera a adaptação da família, da criança e do contexto social do paciente.\n\nCaso isso ocorra, destaque que **o papel do médico assistente é diagnosticar e indicar a necessidade de acompanhamento multiprofissional**, cabendo aos profissionais da rede pública (psicologia, fonoaudiologia, terapia ocupacional, fisioterapia etc.), no âmbito do SUS, a definição da **metodologia e da carga horária adequadas**, por meio da elaboração do **Projeto Terapêutico Singular (PTS)**.\n\n**Projeto Terapêutico Singular como instrumento adequado**\n\nUtilize como argumento que o Projeto Terapêutico Singular:\n\n- é construído de forma multiprofissional;\n- considera as especificidades clínicas, familiares e sociais do paciente;\n- é elaborado com participação da família;\n- permite definir, de forma individualizada, a carga horária e a abordagem terapêutica mais adequadas;\n- respeita a organização e a capacidade operacional da política pública de saúde.\n\nDestaque que a imposição judicial de método e carga horária específicos **substitui indevidamente a avaliação técnica da equipe multiprofissional do SUS**.\n\n**Insuficiência estrutural e alternativas terapêuticas viáveis**\n\nAvalie se a adoção exclusiva de profissionais altamente especializados para toda a intervenção é **inviável do ponto de vista estrutural**, em razão do número reduzido de profissionais capacitados para determinado método.\n\nNesses casos, utilize como reforço argumentativo que a literatura científica e a prática em saúde pública indicam, como estratégia eficaz e viável, a **capacitação de cuidadores, familiares e professores**, permitindo que a estimulação ocorra:\n\n- no ambiente terapêutico;\n- no ambiente familiar;\n- no ambiente escolar.\n\nRessalte que a intervenção em saúde não se limita ao consultório e que a participação da família e da escola é componente essencial do cuidado contínuo.\n\n**Alerta para riscos de judicialização com viés lucrativo**\n\nCaso haja indícios nos autos, avalie a pertinência de mencionar, de forma técnica e impessoal, o risco de **judicialização com finalidade lucrativa**, especialmente quando:\n\n- o laudo médico é emitido por profissional ou clínica que também presta o serviço na rede privada;\n- o mesmo profissional é o único prestador do método específico na localidade;\n- há apresentação de orçamentos elevados vinculados à prescrição;\n- a judicialização resulta em bloqueio de valores públicos para custeio de tratamento na rede privada com profissionais escolhidos pelo paciente.\n\nNesses casos, destaque a necessidade de cautela judicial para evitar distorções no sistema público de saúde e desvio de recursos públicos.\n\n**Orientação para conclusão**\n\nCom base nos elementos analisados, caso se verifique a inviabilidade prática, estrutural ou sistêmica da imposição de método específico, bem como a ausência de justificativa técnica robusta para afastar o modelo de cuidado do SUS, estruture a argumentação no sentido da **improcedência do pedido**, em respeito à política pública de saúde e à racionalidade do sistema.\n",
+      "palavras_chave": [],
+      "tags": [],
+      "ordem": 20
+    }
+  ]
+}

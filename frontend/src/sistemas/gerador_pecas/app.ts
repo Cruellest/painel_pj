@@ -2246,6 +2246,62 @@ class GeradorPecasApp {
     return labels[opcao || ''] || opcao || 'Nao definido';
   }
 
+  // ============================================
+  // Modo Semi-Automatico (Curadoria)
+  // ============================================
+
+  async iniciarModoSemiAutomatico(): Promise<void> {
+    // Validacoes iniciais
+    const tipoPecaSelect = document.getElementById('tipo-peca') as HTMLSelectElement | null;
+    const tipoPeca = tipoPecaSelect?.value;
+
+    if (!tipoPeca) {
+      this.mostrarErro('Selecione o tipo de peca antes de usar o modo semi-automatico.');
+      tipoPecaSelect?.focus();
+      return;
+    }
+
+    if (this.modoEntrada === 'pdf') {
+      this.mostrarErro('O modo semi-automatico ainda nao suporta PDFs anexados. Use o modo CNJ.');
+      return;
+    }
+
+    const numeroCnjInput = document.getElementById('numero-cnj') as HTMLInputElement | null;
+    const numeroCnj = numeroCnjInput?.value;
+
+    if (!numeroCnj) {
+      this.mostrarErro('Informe o numero do processo.');
+      numeroCnjInput?.focus();
+      return;
+    }
+
+    if (this.requiresGroupSelection && !this.groupId) {
+      this.mostrarErro('Selecione o grupo de conteudo antes de usar o modo semi-automatico.');
+      return;
+    }
+
+    if (!this.groupId) {
+      this.mostrarErro('Nenhum grupo de conteudo disponivel.');
+      return;
+    }
+
+    // Chama o modulo de curadoria (definido em curadoria.js)
+    if (typeof (window as any).curadoria !== 'undefined') {
+      await (window as any).curadoria.iniciarModoSemiAutomatico(
+        numeroCnj,
+        tipoPeca,
+        this.groupId,
+        this.subcategoriaIds
+      );
+    } else {
+      this.mostrarErro('Modulo de curadoria nao carregado. Recarregue a pagina.');
+    }
+  }
+
+  getSubcategoriasIds(): number[] {
+    return this.subcategoriaIds;
+  }
+
   getToken(): string {
     return localStorage.getItem('access_token') || '';
   }

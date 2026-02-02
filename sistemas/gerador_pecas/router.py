@@ -9,7 +9,7 @@ import json
 import uuid
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File, Form, status
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, AsyncGenerator
@@ -2298,3 +2298,544 @@ async def baixar_documento_processo(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# Endpoints do Modo Semi-Automatico (Curadoria)
+# ============================================
+
+class CurationPreviewRequest(BaseModel):
+    """Request para preview de curadoria (Agentes 1+2)"""
+    numero_cnj: str
+    tipo_peca: str
+    group_id: Optional[int] = None
+    subcategoria_ids: Optional[List[int]] = None
+
+
+class CurationSearchRequest(BaseModel):
+    """Request para busca de argumentos adicionais"""
+    query: str
+    tipo_peca: Optional[str] = None
+    modulos_excluir: Optional[List[int]] = None
+    limit: int = 10
+    metodo: str = "hibrido"  # "keyword", "vetorial" ou "hibrido"
+
+
+class CurationGenerateRequest(BaseModel):
+    """Request para gerar peca com modulos curados"""
+    numero_cnj: str
+    tipo_peca: str
+    modulos_ids_curados: List[int]  # IDs dos modulos selecionados pelo usuario
+    modulos_manuais_ids: Optional[List[int]] = None  # IDs dos modulos adicionados manualmente
+    modulos_ordem: Optional[Dict[str, List[int]]] = None  # Ordem de modulos por secao {secao: [id1, id2]}
+    categorias_ordem: Optional[List[str]] = None  # Ordem das categorias/secoes ["Preliminar", "Mérito", ...]
+    observacao_usuario: Optional[str] = None
+    group_id: Optional[int] = None
+    subcategoria_ids: Optional[List[int]] = None
+    # Dados do Agente 1 (para evitar reprocessamento)
+    resumo_consolidado: Optional[str] = None
+    dados_extracao: Optional[Dict] = None
+
+
+@router.post("/curadoria/preview")
+async def curation_preview(
+    req: CurationPreviewRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Executa Agentes 1 e 2 e retorna resultado para curadoria.
+
+    Este endpoint permite o modo semi-automatico:
+    1. Executa Agente 1 (coleta documentos do TJ-MS)
+    2. Executa Agente 2 (detecta modulos relevantes)
+    3. Retorna modulos organizados por secao para curadoria manual
+    4. NAO executa Agente 3 (usuario fara curadoria antes)
+
+    O usuario pode entao:
+    - Revisar os modulos detectados
+    - Adicionar/remover modulos
+    - Reorganizar modulos entre secoes
+    - Buscar argumentos adicionais
+    - Gerar a peca com o endpoint /curadoria/gerar
+    """
+    from sistemas.gerador_pecas.services import GeradorPecasService
+    from sistemas.gerador_pecas.services_curadoria import ServicoCuradoria
+    from sistemas.gerador_pecas.orquestrador_agentes import consolidar_dados_extracao
+
+    try:
+        grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
+            current_user, db, req.group_id, req.subcategoria_ids
+        )
+
+        cnj_limpo = _limpar_cnj(req.numero_cnj)
+
+        # Busca modelo configurado
+        modelo = config_cache.get_config(
+            "gerador_pecas", "modelo_geracao", db,
+            default="google/gemini-2.5-pro-preview-05-06"
+        )
+
+        # Inicializa servico
+        service = GeradorPecasService(
+            modelo=modelo,
+            db=db,
+            group_id=grupo.id,
+            subcategoria_ids=subcategoria_ids
+        )
+
+        if not service.orquestrador:
+            raise HTTPException(status_code=500, detail="Orquestrador nao disponivel")
+
+        orq = service.orquestrador
+
+        # Configura filtro de categorias para o tipo de peca
+        try:
+            from sistemas.gerador_pecas.filtro_categorias import FiltroCategoriasDocumento
+            filtro = FiltroCategoriasDocumento(db)
+            if filtro.tem_configuracao():
+                codigos = filtro.get_codigos_permitidos(req.tipo_peca)
+                codigos_primeiro = filtro.get_codigos_primeiro_documento(req.tipo_peca)
+                if codigos:
+                    orq.agente1.atualizar_codigos_permitidos(codigos, codigos_primeiro)
+        except Exception as e:
+            print(f"[CURADORIA] Aviso: filtro de categorias: {e}")
+
+        # ====== AGENTE 1: Coletor TJ-MS ======
+        print(f"\n[CURADORIA] Iniciando Agente 1 para CNJ {cnj_limpo}...")
+        resultado_agente1 = await orq.agente1.coletar_e_resumir(cnj_limpo)
+
+        if resultado_agente1.erro:
+            raise HTTPException(status_code=400, detail=resultado_agente1.erro)
+
+        print(f"[CURADORIA] Agente 1 concluido: {resultado_agente1.documentos_analisados} docs")
+
+        # Consolida dados extraidos
+        dados_extracao = consolidar_dados_extracao(resultado_agente1)
+
+        # Valida e corrige inconsistencias
+        from sistemas.gerador_pecas.services_extraction_validator import validar_extracao
+        texto_pedidos = dados_extracao.get('peticao_inicial_pedidos', '')
+        dados_extracao = validar_extracao(
+            dados_extracao,
+            texto_pedidos,
+            texto_completo=resultado_agente1.resumo_consolidado
+        )
+
+        # ====== AGENTE 2: Detector de Modulos ======
+        print(f"[CURADORIA] Iniciando Agente 2...")
+        resultado_agente2 = await orq._executar_agente2(
+            resultado_agente1.resumo_consolidado,
+            req.tipo_peca,
+            dados_processo=resultado_agente1.dados_brutos,
+            dados_extracao=dados_extracao
+        )
+
+        if resultado_agente2.erro:
+            raise HTTPException(status_code=400, detail=resultado_agente2.erro)
+
+        print(f"[CURADORIA] Agente 2 concluido: {len(resultado_agente2.modulos_ids)} modulos")
+        print(f"[CURADORIA] Modo: {resultado_agente2.modo_ativacao}")
+        print(f"[CURADORIA] DET: {resultado_agente2.modulos_ativados_det}, LLM: {resultado_agente2.modulos_ativados_llm}")
+
+        # ====== MONTA RESULTADO PARA CURADORIA ======
+        servico_curadoria = ServicoCuradoria(db)
+        resultado_curadoria = servico_curadoria.criar_resultado_curadoria(
+            numero_processo=cnj_limpo,
+            tipo_peca=req.tipo_peca,
+            modulos_ids=resultado_agente2.modulos_ids,
+            ids_det=resultado_agente2.ids_det,
+            ids_llm=resultado_agente2.ids_llm,
+            resumo_consolidado=resultado_agente1.resumo_consolidado,
+            dados_processo=resultado_agente1.dados_brutos.dados_processo.to_json() if resultado_agente1.dados_brutos and resultado_agente1.dados_brutos.dados_processo else None,
+            dados_extracao=dados_extracao,
+            group_id=grupo.id
+        )
+
+        return {
+            "success": True,
+            "modo_ativacao": resultado_agente2.modo_ativacao,
+            "curadoria": resultado_curadoria.to_dict()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/curadoria/buscar")
+async def curation_search(
+    req: CurationSearchRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Busca argumentos adicionais para a curadoria.
+
+    Permite buscar argumentos que nao foram detectados automaticamente,
+    usando busca por palavras-chave, semantica (vetorial) ou hibrida.
+
+    Os argumentos encontrados podem ser adicionados a curadoria
+    e serao marcados como (VALIDADO) no prompt final.
+    """
+    from sistemas.gerador_pecas.services_curadoria import ServicoCuradoria
+
+    try:
+        print(f"\n[CURADORIA-BUSCA] Query: '{req.query}'")
+        print(f"[CURADORIA-BUSCA] Metodo: {req.metodo}")
+        print(f"[CURADORIA-BUSCA] Excluir: {req.modulos_excluir}")
+
+        servico_curadoria = ServicoCuradoria(db)
+        resultados = await servico_curadoria.buscar_argumentos_adicionais(
+            query=req.query,
+            tipo_peca=req.tipo_peca,
+            modulos_excluir=req.modulos_excluir,
+            limit=req.limit,
+            metodo=req.metodo
+        )
+
+        print(f"[CURADORIA-BUSCA] Encontrados: {len(resultados)} argumentos")
+
+        return {
+            "success": True,
+            "query": req.query,
+            "metodo": req.metodo,
+            "total": len(resultados),
+            "argumentos": [r.to_dict() for r in resultados]
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/curadoria/gerar-stream")
+async def curation_generate_stream(
+    req: CurationGenerateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Gera a peca juridica com os modulos curados pelo usuario (streaming).
+
+    Este endpoint:
+    1. Recebe os IDs dos modulos selecionados pelo usuario
+    2. Monta o prompt de conteudo com os modulos curados
+    3. Executa apenas o Agente 3 (gerador) com streaming
+    4. Modulos adicionados manualmente sao marcados como (VALIDADO)
+
+    O Agente 3 permanece INALTERADO - apenas recebe o prompt curado.
+    """
+    from sistemas.gerador_pecas.services import GeradorPecasService
+    from sistemas.gerador_pecas.services_curadoria import ServicoCuradoria, OrigemAtivacao
+
+    grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
+        current_user, db, req.group_id, req.subcategoria_ids
+    )
+
+    tracker = create_tracker(
+        request_id=str(uuid.uuid4())[:8],
+        sistema="gerador_pecas",
+        route="/curadoria/gerar-stream"
+    )
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            cnj_limpo = _limpar_cnj(req.numero_cnj)
+            tracker.set_metadata("numero_cnj", cnj_limpo)
+            tracker.set_metadata("modo", "semi_automatico")
+
+            yield f"data: {json.dumps({'tipo': 'inicio', 'mensagem': 'Iniciando geracao com modulos curados...'})}\n\n"
+
+            # Busca modelo configurado
+            modelo = config_cache.get_config(
+                "gerador_pecas", "modelo_geracao", db,
+                default="google/gemini-2.5-pro-preview-05-06"
+            )
+            tracker.set_metadata("modelo", modelo)
+
+            # Se nao tem resumo_consolidado, precisa executar Agente 1
+            resumo_consolidado = req.resumo_consolidado
+            dados_extracao = req.dados_extracao or {}
+
+            if not resumo_consolidado:
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': 'Coletando documentos...'})}\n\n"
+
+                service = GeradorPecasService(
+                    modelo=modelo,
+                    db=db,
+                    group_id=grupo.id,
+                    subcategoria_ids=subcategoria_ids
+                )
+
+                if not service.orquestrador:
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Orquestrador nao disponivel'})}\n\n"
+                    return
+
+                orq = service.orquestrador
+
+                # Configura filtro
+                try:
+                    from sistemas.gerador_pecas.filtro_categorias import FiltroCategoriasDocumento
+                    filtro = FiltroCategoriasDocumento(db)
+                    if filtro.tem_configuracao():
+                        codigos = filtro.get_codigos_permitidos(req.tipo_peca)
+                        codigos_primeiro = filtro.get_codigos_primeiro_documento(req.tipo_peca)
+                        if codigos:
+                            orq.agente1.atualizar_codigos_permitidos(codigos, codigos_primeiro)
+                except Exception:
+                    pass
+
+                resultado_agente1 = await orq.agente1.coletar_e_resumir(cnj_limpo)
+
+                if resultado_agente1.erro:
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente1.erro})}\n\n"
+                    return
+
+                resumo_consolidado = resultado_agente1.resumo_consolidado
+                dados_extracao = consolidar_dados_extracao(resultado_agente1)
+
+                yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'concluido', 'mensagem': f'{resultado_agente1.documentos_analisados} docs'})}\n\n"
+
+            # ====== MONTA PROMPT CURADO ======
+            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Montando prompt com {len(req.modulos_ids_curados)} modulos curados...'})}\n\n"
+
+            # Carrega prompts base e de peca
+            from admin.models_prompts import PromptModulo
+
+            # Prompt do sistema (modulos base)
+            modulos_base = db.query(PromptModulo).filter(
+                PromptModulo.tipo == "base",
+                PromptModulo.ativo == True
+            ).order_by(PromptModulo.ordem).all()
+            prompt_sistema = "\n\n".join([f"## {m.titulo}\n\n{m.conteudo}" for m in modulos_base])
+
+            # Prompt da peca
+            modulo_peca = db.query(PromptModulo).filter(
+                PromptModulo.tipo == "peca",
+                PromptModulo.nome == req.tipo_peca,
+                PromptModulo.ativo == True
+            ).first()
+            prompt_peca = f"## ESTRUTURA DA PECA: {modulo_peca.titulo}\n\n{modulo_peca.conteudo}" if modulo_peca else ""
+
+            # Carrega modulos de conteudo selecionados
+            modulos_query = db.query(PromptModulo).filter(
+                PromptModulo.id.in_(req.modulos_ids_curados),
+                PromptModulo.tipo == "conteudo",
+                PromptModulo.ativo == True
+            )
+            if grupo.id:
+                modulos_query = modulos_query.filter(PromptModulo.group_id == grupo.id)
+
+            modulos_conteudo = modulos_query.order_by(
+                PromptModulo.categoria, PromptModulo.ordem
+            ).all()
+
+            # Monta prompt de conteudo curado
+            # Todos os modulos selecionados manualmente sao marcados como VALIDADO
+            partes_conteudo = ["## ARGUMENTOS E TESES APLICAVEIS (CURADOS)\n"]
+            partes_conteudo.append("> Os argumentos abaixo foram selecionados e validados pelo usuario.\n")
+
+            # Agrupa por categoria respeitando ordem personalizada
+            modulos_por_cat = {}
+            for m in modulos_conteudo:
+                cat = m.categoria or "Outros"
+                if cat not in modulos_por_cat:
+                    modulos_por_cat[cat] = []
+                modulos_por_cat[cat].append(m)
+
+            # Aplica ordem personalizada se fornecida
+            if req.modulos_ordem:
+                for cat, ids_ordenados in req.modulos_ordem.items():
+                    if cat in modulos_por_cat:
+                        modulos_cat = {m.id: m for m in modulos_por_cat[cat]}
+                        modulos_ordenados = []
+                        for mid in ids_ordenados:
+                            if mid in modulos_cat:
+                                modulos_ordenados.append(modulos_cat[mid])
+                        # Adiciona os que nao estavam na ordem
+                        for m in modulos_por_cat[cat]:
+                            if m not in modulos_ordenados:
+                                modulos_ordenados.append(m)
+                        modulos_por_cat[cat] = modulos_ordenados
+
+            # Ordena categorias - usa ordem do frontend se fornecida, senão usa padrão
+            from sistemas.gerador_pecas.orquestrador_agentes import ORDEM_CATEGORIAS_PADRAO
+            if req.categorias_ordem:
+                # Usa ordem definida pelo usuário no frontend
+                cats_ordenadas = []
+                for cat in req.categorias_ordem:
+                    if cat in modulos_por_cat:
+                        cats_ordenadas.append(cat)
+                # Adiciona categorias que existem mas não estavam na ordem
+                for cat in modulos_por_cat.keys():
+                    if cat not in cats_ordenadas:
+                        cats_ordenadas.append(cat)
+                print(f"[CURADORIA] Usando ordem de categorias do frontend: {cats_ordenadas}")
+            else:
+                # Fallback para ordem padrão
+                cats_ordenadas = sorted(
+                    modulos_por_cat.keys(),
+                    key=lambda c: ORDEM_CATEGORIAS_PADRAO.get(c, 99)
+                )
+                print(f"[CURADORIA] Usando ordem de categorias padrão: {cats_ordenadas}")
+
+            # IDs dos módulos adicionados manualmente
+            modulos_manuais_set = set(req.modulos_manuais_ids or [])
+            total_manuais = 0
+
+            for cat in cats_ordenadas:
+                modulos_cat = modulos_por_cat[cat]
+                if not modulos_cat:
+                    continue
+
+                partes_conteudo.append(f"\n### === {cat.upper()} ===\n")
+
+                for modulo in modulos_cat:
+                    subcat = f" ({modulo.subcategoria})" if modulo.subcategoria else ""
+                    # Marca como VALIDADO - distingue manuais para logging
+                    is_manual = modulo.id in modulos_manuais_set
+                    if is_manual:
+                        total_manuais += 1
+                        print(f"[CURADORIA] Modulo MANUAL selecionado: [{cat}] {modulo.titulo} (ID: {modulo.id})")
+                    partes_conteudo.append(f"#### {modulo.titulo}{subcat} [VALIDADO]\n")
+                    partes_conteudo.append(f"{modulo.conteudo}\n")
+
+            print(f"[CURADORIA] Total de modulos: {len(req.modulos_ids_curados)}, manuais: {total_manuais}")
+
+            prompt_conteudo = "\n".join(partes_conteudo)
+
+            # ====== AGENTE 3: GERACAO (STREAMING) ======
+            yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'ativo', 'mensagem': 'Gerando peca juridica...'})}\n\n"
+
+            if req.observacao_usuario:
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Observacoes do usuario serao consideradas'})}\n\n"
+
+            # Inicializa servico para usar _executar_agente3_stream
+            service = GeradorPecasService(
+                modelo=modelo,
+                db=db,
+                group_id=grupo.id,
+                subcategoria_ids=subcategoria_ids
+            )
+
+            if not service.orquestrador:
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': 'Orquestrador nao disponivel'})}\n\n"
+                return
+
+            orq = service.orquestrador
+
+            # Streaming do Agente 3
+            tracker.mark("llm_call_start")
+            resultado_agente3 = None
+            first_chunk = False
+
+            async for event in orq._executar_agente3_stream(
+                resumo_consolidado=resumo_consolidado,
+                prompt_sistema=prompt_sistema,
+                prompt_peca=prompt_peca,
+                prompt_conteudo=prompt_conteudo,
+                tipo_peca=req.tipo_peca,
+                observacao_usuario=req.observacao_usuario
+            ):
+                if event["tipo"] == "chunk":
+                    if not first_chunk:
+                        tracker.mark("first_token")
+                        first_chunk = True
+                    tracker.record_chunk(event['content'])
+                    yield f"data: {json.dumps({'tipo': 'geracao_chunk', 'content': event['content']})}\n\n"
+                elif event["tipo"] == "done":
+                    tracker.mark("last_token")
+                    resultado_agente3 = event["resultado"]
+                elif event["tipo"] == "error":
+                    tracker.mark("last_token")
+                    resultado_agente3 = event["resultado"]
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': event['error']})}\n\n"
+                    return
+
+            if resultado_agente3 and resultado_agente3.erro:
+                yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': resultado_agente3.erro})}\n\n"
+                return
+
+            yield f"data: {json.dumps({'tipo': 'agente', 'agente': 3, 'status': 'concluido', 'mensagem': 'Peca gerada!'})}\n\n"
+
+            # ====== SALVA NO BANCO ======
+            tracker.mark("db_save_start")
+
+            geracao = GeracaoPeca(
+                numero_cnj=cnj_limpo,
+                numero_cnj_formatado=cnj_limpo,
+                tipo_peca=req.tipo_peca,
+                dados_processo=dados_extracao,
+                conteudo_gerado=resultado_agente3.conteudo_markdown,
+                prompt_enviado=resultado_agente3.prompt_enviado,
+                resumo_consolidado=resumo_consolidado,
+                modelo_usado=modelo,
+                usuario_id=current_user.id
+            )
+
+            try:
+                geracao.modo_ativacao_agente2 = "semi_automatico"
+                geracao.modulos_ativados_det = len(req.modulos_ids_curados) - total_manuais
+                geracao.modulos_ativados_llm = total_manuais  # Usa LLM para armazenar manuais no modo semi-auto
+            except AttributeError:
+                pass
+
+            try:
+                db.add(geracao)
+                db.flush()
+
+                versao = VersaoPeca(
+                    geracao_id=geracao.id,
+                    numero_versao=1,
+                    conteudo=resultado_agente3.conteudo_markdown,
+                    origem='geracao_curada',
+                    descricao_alteracao='Versao inicial gerada com modulos curados pelo usuario',
+                    diff_anterior=None
+                )
+                db.add(versao)
+                db.commit()
+                db.refresh(geracao)
+            except Exception as e:
+                db.rollback()
+                print(f"[CURADORIA] Erro ao salvar: {e}")
+                raise
+
+            tracker.mark("db_save_done")
+            tracker.mark("response_sent")
+            tracker.set_metadata("tipo_peca", req.tipo_peca)
+            tracker.log_summary()
+
+            perf_report = tracker.get_report()
+
+            try:
+                log_request_perf(
+                    report=perf_report,
+                    db=db,
+                    user_id=current_user.id,
+                    username=current_user.username,
+                    success=True
+                )
+            except Exception:
+                pass
+
+            yield f"data: {json.dumps({'tipo': 'sucesso', 'geracao_id': geracao.id, 'tipo_peca': req.tipo_peca, 'modo': 'semi_automatico', 'modulos_curados': len(req.modulos_ids_curados), 'minuta_markdown': resultado_agente3.conteudo_markdown, 'performance': {'ttft_ms': perf_report['metrics'].get('ttft_ms'), 'total_ms': perf_report['total_ms']}})}\n\n"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
