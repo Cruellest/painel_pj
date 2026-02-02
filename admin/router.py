@@ -1427,7 +1427,124 @@ async def dashboard_feedbacks(
         # Ordena por data (mais recentes primeiro)
         pendentes_feedback.sort(key=lambda x: x.get('data') or '', reverse=True)
         pendentes_feedback = pendentes_feedback[:20]
-        
+
+        # ============================================
+        # EVOLUÇÃO TEMPORAL POR SISTEMA (semanas)
+        # ============================================
+        # Calcula taxa de acerto por semana para cada sistema
+        from sqlalchemy import extract
+
+        def calcular_evolucao_semanal(feedback_model, ids_excluir, data_inicio, data_fim):
+            """Calcula taxa de acerto por semana para um modelo de feedback."""
+            query = db.query(
+                extract('year', feedback_model.criado_em).label('ano'),
+                extract('week', feedback_model.criado_em).label('semana'),
+                func.count(feedback_model.id).label('total'),
+                func.sum(case((feedback_model.avaliacao == 'correto', 1), else_=0)).label('corretos'),
+                func.sum(case((feedback_model.avaliacao == 'parcial', 1), else_=0)).label('parciais'),
+                func.sum(case((feedback_model.avaliacao == 'incorreto', 1), else_=0)).label('incorretos')
+            )
+            if ids_excluir:
+                query = query.filter(~feedback_model.usuario_id.in_(ids_excluir))
+            if data_inicio and data_fim:
+                query = query.filter(
+                    feedback_model.criado_em >= data_inicio,
+                    feedback_model.criado_em < data_fim
+                )
+            return query.group_by(
+                extract('year', feedback_model.criado_em),
+                extract('week', feedback_model.criado_em)
+            ).order_by(
+                extract('year', feedback_model.criado_em),
+                extract('week', feedback_model.criado_em)
+            ).all()
+
+        evolucao_por_sistema = {}
+
+        if incluir_aj:
+            dados_aj = calcular_evolucao_semanal(FeedbackAnalise, ids_excluir, data_inicio, data_fim)
+            evolucao_por_sistema['assistencia_judiciaria'] = [
+                {
+                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
+                    'total': r.total,
+                    'corretos': r.corretos or 0,
+                    'parciais': r.parciais or 0,
+                    'incorretos': r.incorretos or 0,
+                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
+                }
+                for r in dados_aj
+            ]
+
+        if incluir_mat:
+            dados_mat = calcular_evolucao_semanal(FeedbackMatricula, ids_excluir, data_inicio, data_fim)
+            evolucao_por_sistema['matriculas'] = [
+                {
+                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
+                    'total': r.total,
+                    'corretos': r.corretos or 0,
+                    'parciais': r.parciais or 0,
+                    'incorretos': r.incorretos or 0,
+                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
+                }
+                for r in dados_mat
+            ]
+
+        if incluir_gp:
+            dados_gp = calcular_evolucao_semanal(FeedbackPeca, ids_excluir, data_inicio, data_fim)
+            evolucao_por_sistema['gerador_pecas'] = [
+                {
+                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
+                    'total': r.total,
+                    'corretos': r.corretos or 0,
+                    'parciais': r.parciais or 0,
+                    'incorretos': r.incorretos or 0,
+                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
+                }
+                for r in dados_gp
+            ]
+
+        if incluir_pc:
+            dados_pc = calcular_evolucao_semanal(FeedbackPedidoCalculo, ids_excluir, data_inicio, data_fim)
+            evolucao_por_sistema['pedido_calculo'] = [
+                {
+                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
+                    'total': r.total,
+                    'corretos': r.corretos or 0,
+                    'parciais': r.parciais or 0,
+                    'incorretos': r.incorretos or 0,
+                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
+                }
+                for r in dados_pc
+            ]
+
+        if incluir_prest:
+            dados_prest = calcular_evolucao_semanal(FeedbackPrestacao, ids_excluir, data_inicio, data_fim)
+            evolucao_por_sistema['prestacao_contas'] = [
+                {
+                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
+                    'total': r.total,
+                    'corretos': r.corretos or 0,
+                    'parciais': r.parciais or 0,
+                    'incorretos': r.incorretos or 0,
+                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
+                }
+                for r in dados_prest
+            ]
+
+        if incluir_rc:
+            dados_rc = calcular_evolucao_semanal(FeedbackRelatorioCumprimento, ids_excluir, data_inicio, data_fim)
+            evolucao_por_sistema['relatorio_cumprimento'] = [
+                {
+                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
+                    'total': r.total,
+                    'corretos': r.corretos or 0,
+                    'parciais': r.parciais or 0,
+                    'incorretos': r.incorretos or 0,
+                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
+                }
+                for r in dados_rc
+            ]
+
         return {
             "total_consultas": total_consultas,
             "total_feedbacks": total_feedbacks,
@@ -1467,7 +1584,8 @@ async def dashboard_feedbacks(
                     "total": total_geracoes_rc,
                     "feedbacks": total_feedbacks_rc
                 }
-            }
+            },
+            "evolucao_por_sistema": evolucao_por_sistema
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

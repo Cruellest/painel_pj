@@ -167,11 +167,36 @@
             
             <!-- Gráfico de Linha - Feedbacks por Dia -->
             <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Feedbacks dos Últimos 7 Dias</h3>
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Feedbacks do Período</h3>
                 <div class="h-64">
                     <canvas id="chart-timeline"></canvas>
                 </div>
             </div>
+        </div>
+
+        <!-- Gráfico de Evolução por Sistema -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-chart-line text-blue-500"></i>
+                    Evolução da Taxa de Acerto por Sistema
+                </h3>
+                <div class="flex items-center gap-2">
+                    <label class="text-xs text-gray-500">Visualização:</label>
+                    <select id="evolucao-tipo" onchange="atualizarGraficoEvolucao()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                        <option value="taxa_acerto">Taxa de Acerto (%)</option>
+                        <option value="total">Total de Feedbacks</option>
+                        <option value="corretos">Feedbacks Corretos</option>
+                    </select>
+                </div>
+            </div>
+            <div class="h-80">
+                <canvas id="chart-evolucao"></canvas>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+                <i class="fas fa-info-circle mr-1"></i>
+                Mostra a evolução semanal das avaliações para cada sistema no período selecionado.
+            </p>
         </div>
 
         <!-- Modelos de IA Configurados -->
@@ -477,9 +502,11 @@
     <script>
         const API_BASE = '/sistema/assistencia-judiciaria';
         let currentPage = 1;
+        let dadosEvolucao = {}; // Armazena dados de evolução para o gráfico
         let totalPages = 1;
         let chartAvaliacoes = null;
         let chartTimeline = null;
+        let chartEvolucao = null;
 
         // Fuso horário de Mato Grosso do Sul (UTC-04:00)
         const TIMEZONE = 'America/Campo_Grande';
@@ -538,16 +565,22 @@
         }
 
         function inicializarFiltroAno() {
-            const select = document.getElementById('filtro-ano');
-            const anoAtual = new Date().getFullYear();
+            const selectAno = document.getElementById('filtro-ano');
+            const selectMes = document.getElementById('filtro-mes');
+            const agora = new Date();
+            const anoAtual = agora.getFullYear();
+            const mesAtual = agora.getMonth() + 1; // getMonth() retorna 0-11
+
+            // Popula anos
             for (let ano = anoAtual; ano >= 2024; ano--) {
                 const option = document.createElement('option');
                 option.value = ano;
                 option.textContent = ano;
-                select.appendChild(option);
+                selectAno.appendChild(option);
             }
-            // Seleciona o ano atual por padrão
-            select.value = anoAtual;
+            // Seleciona o ano e mês atuais por padrão
+            selectAno.value = anoAtual;
+            selectMes.value = mesAtual;
         }
 
         function getFiltros() {
@@ -729,6 +762,10 @@
                     `;
                 }).join('') || '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">Todos os relatórios foram avaliados!</td></tr>';
 
+                // Gráfico de Evolução por Sistema
+                dadosEvolucao = data.evolucao_por_sistema || {};
+                atualizarGraficoEvolucao();
+
             } catch (error) {
                 console.error('Erro ao carregar dashboard:', error);
                 // Mostra erro no card de total
@@ -736,6 +773,124 @@
                 document.getElementById('stat-total-feedbacks').innerHTML = '<span class="text-red-500 text-xs">Erro</span>';
                 alert('Erro ao carregar dashboard: ' + error.message);
             }
+        }
+
+        function atualizarGraficoEvolucao() {
+            const tipoVisualizacao = document.getElementById('evolucao-tipo').value;
+            const ctxEvolucao = document.getElementById('chart-evolucao').getContext('2d');
+
+            if (chartEvolucao) chartEvolucao.destroy();
+
+            // Cores para cada sistema
+            const cores = {
+                'assistencia_judiciaria': { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' },
+                'matriculas': { border: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)' },
+                'gerador_pecas': { border: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' },
+                'pedido_calculo': { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },
+                'prestacao_contas': { border: '#14b8a6', bg: 'rgba(20, 184, 166, 0.1)' },
+                'relatorio_cumprimento': { border: '#6366f1', bg: 'rgba(99, 102, 241, 0.1)' }
+            };
+
+            const nomesSistemas = {
+                'assistencia_judiciaria': 'Assist. Judiciária',
+                'matriculas': 'Matrículas',
+                'gerador_pecas': 'Gerador de Peças',
+                'pedido_calculo': 'Pedido de Cálculo',
+                'prestacao_contas': 'Prestação de Contas',
+                'relatorio_cumprimento': 'Rel. Cumprimento'
+            };
+
+            // Coleta todas as semanas únicas
+            const todasSemanas = new Set();
+            Object.values(dadosEvolucao).forEach(dados => {
+                dados.forEach(d => todasSemanas.add(d.semana));
+            });
+            const semanas = Array.from(todasSemanas).sort();
+
+            // Cria datasets para cada sistema
+            const datasets = [];
+            for (const [sistema, dados] of Object.entries(dadosEvolucao)) {
+                if (dados.length === 0) continue;
+
+                // Mapeia dados por semana
+                const dadosPorSemana = {};
+                dados.forEach(d => { dadosPorSemana[d.semana] = d; });
+
+                // Cria array de valores alinhados com as semanas
+                const valores = semanas.map(semana => {
+                    const d = dadosPorSemana[semana];
+                    if (!d) return null;
+                    return tipoVisualizacao === 'taxa_acerto' ? d.taxa_acerto :
+                           tipoVisualizacao === 'total' ? d.total :
+                           d.corretos;
+                });
+
+                datasets.push({
+                    label: nomesSistemas[sistema] || sistema,
+                    data: valores,
+                    borderColor: cores[sistema]?.border || '#6b7280',
+                    backgroundColor: cores[sistema]?.bg || 'rgba(107, 114, 128, 0.1)',
+                    fill: false,
+                    tension: 0.3,
+                    spanGaps: true
+                });
+            }
+
+            // Labels formatados (S01 -> Semana 1)
+            const labels = semanas.map(s => {
+                const match = s.match(/\d{4}-S(\d{2})/);
+                return match ? `Sem ${parseInt(match[1])}` : s;
+            });
+
+            chartEvolucao = new Chart(ctxEvolucao, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { usePointStyle: true, padding: 15 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) {
+                                        label += tipoVisualizacao === 'taxa_acerto'
+                                            ? context.parsed.y + '%'
+                                            : context.parsed.y;
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: tipoVisualizacao === 'taxa_acerto' ? 100 : undefined,
+                            title: {
+                                display: true,
+                                text: tipoVisualizacao === 'taxa_acerto' ? 'Taxa de Acerto (%)' :
+                                      tipoVisualizacao === 'total' ? 'Total de Feedbacks' : 'Feedbacks Corretos'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Semana'
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         async function carregarFeedbacks() {
