@@ -615,16 +615,18 @@ async def dashboard_feedbacks(
     mes: Optional[int] = None,
     ano: Optional[int] = None,
     sistema: Optional[str] = None,
+    semanas_evolucao: int = 12,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     Retorna estatísticas do dashboard de feedbacks.
-    
+
     Parâmetros:
         - mes: Mês para filtrar (1-12)
         - ano: Ano para filtrar (ex: 2026)
         - sistema: Sistema específico ('assistencia_judiciaria' ou 'matriculas')
+        - semanas_evolucao: Número de semanas para o gráfico de evolução (default: 12)
     
     Exclui feedbacks de usuários admin e teste.
     Apenas para administradores.
@@ -1432,118 +1434,108 @@ async def dashboard_feedbacks(
         # EVOLUÇÃO TEMPORAL POR SISTEMA (semanas)
         # ============================================
         # Calcula taxa de acerto por semana para cada sistema
+        # IMPORTANTE: Usa período independente (últimas N semanas) para garantir visualização útil
         from sqlalchemy import extract
 
-        def calcular_evolucao_semanal(feedback_model, ids_excluir, data_inicio, data_fim):
-            """Calcula taxa de acerto por semana para um modelo de feedback."""
+        # Define período para evolução: últimas N semanas (independente do filtro de mês/ano)
+        data_fim_evolucao = datetime.utcnow()
+        data_inicio_evolucao = data_fim_evolucao - timedelta(weeks=semanas_evolucao)
+
+        # Gera lista de todas as semanas no período para garantir continuidade
+        def gerar_semanas_periodo(data_inicio, data_fim):
+            """Gera lista de todas as semanas (ano-semana) no período."""
+            semanas = []
+            current = data_inicio
+            while current <= data_fim:
+                ano_iso, semana_iso, _ = current.isocalendar()
+                semana_str = f"{ano_iso}-S{semana_iso:02d}"
+                if semana_str not in semanas:
+                    semanas.append(semana_str)
+                current += timedelta(days=7)
+            return semanas
+
+        todas_semanas_evolucao = gerar_semanas_periodo(data_inicio_evolucao, data_fim_evolucao)
+
+        def calcular_evolucao_semanal(feedback_model, ids_excluir):
+            """Calcula taxa de acerto por semana para um modelo de feedback (últimas N semanas)."""
             query = db.query(
-                extract('year', feedback_model.criado_em).label('ano'),
+                extract('isoyear', feedback_model.criado_em).label('ano'),
                 extract('week', feedback_model.criado_em).label('semana'),
                 func.count(feedback_model.id).label('total'),
                 func.sum(case((feedback_model.avaliacao == 'correto', 1), else_=0)).label('corretos'),
                 func.sum(case((feedback_model.avaliacao == 'parcial', 1), else_=0)).label('parciais'),
                 func.sum(case((feedback_model.avaliacao == 'incorreto', 1), else_=0)).label('incorretos')
+            ).filter(
+                feedback_model.criado_em >= data_inicio_evolucao,
+                feedback_model.criado_em <= data_fim_evolucao
             )
             if ids_excluir:
                 query = query.filter(~feedback_model.usuario_id.in_(ids_excluir))
-            if data_inicio and data_fim:
-                query = query.filter(
-                    feedback_model.criado_em >= data_inicio,
-                    feedback_model.criado_em < data_fim
-                )
             return query.group_by(
-                extract('year', feedback_model.criado_em),
+                extract('isoyear', feedback_model.criado_em),
                 extract('week', feedback_model.criado_em)
             ).order_by(
-                extract('year', feedback_model.criado_em),
+                extract('isoyear', feedback_model.criado_em),
                 extract('week', feedback_model.criado_em)
             ).all()
+
+        def formatar_dados_evolucao(dados_raw, todas_semanas):
+            """Formata dados de evolução preenchendo semanas sem dados com zeros."""
+            # Mapeia dados por semana
+            dados_por_semana = {}
+            for r in dados_raw:
+                semana_str = f"{int(r.ano)}-S{int(r.semana):02d}"
+                dados_por_semana[semana_str] = {
+                    'semana': semana_str,
+                    'total': r.total,
+                    'corretos': r.corretos or 0,
+                    'parciais': r.parciais or 0,
+                    'incorretos': r.incorretos or 0,
+                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
+                }
+
+            # Preenche todas as semanas, usando null para semanas sem dados
+            resultado = []
+            for semana in todas_semanas:
+                if semana in dados_por_semana:
+                    resultado.append(dados_por_semana[semana])
+                else:
+                    # Semana sem dados - usar null para não distorcer o gráfico
+                    resultado.append({
+                        'semana': semana,
+                        'total': 0,
+                        'corretos': 0,
+                        'parciais': 0,
+                        'incorretos': 0,
+                        'taxa_acerto': None  # null indica ausência de dados
+                    })
+            return resultado
 
         evolucao_por_sistema = {}
 
         if incluir_aj:
-            dados_aj = calcular_evolucao_semanal(FeedbackAnalise, ids_excluir, data_inicio, data_fim)
-            evolucao_por_sistema['assistencia_judiciaria'] = [
-                {
-                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
-                    'total': r.total,
-                    'corretos': r.corretos or 0,
-                    'parciais': r.parciais or 0,
-                    'incorretos': r.incorretos or 0,
-                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
-                }
-                for r in dados_aj
-            ]
+            dados_aj = calcular_evolucao_semanal(FeedbackAnalise, ids_excluir)
+            evolucao_por_sistema['assistencia_judiciaria'] = formatar_dados_evolucao(dados_aj, todas_semanas_evolucao)
 
         if incluir_mat:
-            dados_mat = calcular_evolucao_semanal(FeedbackMatricula, ids_excluir, data_inicio, data_fim)
-            evolucao_por_sistema['matriculas'] = [
-                {
-                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
-                    'total': r.total,
-                    'corretos': r.corretos or 0,
-                    'parciais': r.parciais or 0,
-                    'incorretos': r.incorretos or 0,
-                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
-                }
-                for r in dados_mat
-            ]
+            dados_mat = calcular_evolucao_semanal(FeedbackMatricula, ids_excluir)
+            evolucao_por_sistema['matriculas'] = formatar_dados_evolucao(dados_mat, todas_semanas_evolucao)
 
         if incluir_gp:
-            dados_gp = calcular_evolucao_semanal(FeedbackPeca, ids_excluir, data_inicio, data_fim)
-            evolucao_por_sistema['gerador_pecas'] = [
-                {
-                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
-                    'total': r.total,
-                    'corretos': r.corretos or 0,
-                    'parciais': r.parciais or 0,
-                    'incorretos': r.incorretos or 0,
-                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
-                }
-                for r in dados_gp
-            ]
+            dados_gp = calcular_evolucao_semanal(FeedbackPeca, ids_excluir)
+            evolucao_por_sistema['gerador_pecas'] = formatar_dados_evolucao(dados_gp, todas_semanas_evolucao)
 
         if incluir_pc:
-            dados_pc = calcular_evolucao_semanal(FeedbackPedidoCalculo, ids_excluir, data_inicio, data_fim)
-            evolucao_por_sistema['pedido_calculo'] = [
-                {
-                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
-                    'total': r.total,
-                    'corretos': r.corretos or 0,
-                    'parciais': r.parciais or 0,
-                    'incorretos': r.incorretos or 0,
-                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
-                }
-                for r in dados_pc
-            ]
+            dados_pc = calcular_evolucao_semanal(FeedbackPedidoCalculo, ids_excluir)
+            evolucao_por_sistema['pedido_calculo'] = formatar_dados_evolucao(dados_pc, todas_semanas_evolucao)
 
         if incluir_prest:
-            dados_prest = calcular_evolucao_semanal(FeedbackPrestacao, ids_excluir, data_inicio, data_fim)
-            evolucao_por_sistema['prestacao_contas'] = [
-                {
-                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
-                    'total': r.total,
-                    'corretos': r.corretos or 0,
-                    'parciais': r.parciais or 0,
-                    'incorretos': r.incorretos or 0,
-                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
-                }
-                for r in dados_prest
-            ]
+            dados_prest = calcular_evolucao_semanal(FeedbackPrestacao, ids_excluir)
+            evolucao_por_sistema['prestacao_contas'] = formatar_dados_evolucao(dados_prest, todas_semanas_evolucao)
 
         if incluir_rc:
-            dados_rc = calcular_evolucao_semanal(FeedbackRelatorioCumprimento, ids_excluir, data_inicio, data_fim)
-            evolucao_por_sistema['relatorio_cumprimento'] = [
-                {
-                    'semana': f"{int(r.ano)}-S{int(r.semana):02d}",
-                    'total': r.total,
-                    'corretos': r.corretos or 0,
-                    'parciais': r.parciais or 0,
-                    'incorretos': r.incorretos or 0,
-                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
-                }
-                for r in dados_rc
-            ]
+            dados_rc = calcular_evolucao_semanal(FeedbackRelatorioCumprimento, ids_excluir)
+            evolucao_por_sistema['relatorio_cumprimento'] = formatar_dados_evolucao(dados_rc, todas_semanas_evolucao)
 
         return {
             "total_consultas": total_consultas,

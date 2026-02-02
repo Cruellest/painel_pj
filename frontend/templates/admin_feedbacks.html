@@ -176,18 +176,30 @@
 
         <!-- Gráfico de Evolução por Sistema -->
         <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
-            <div class="flex items-center justify-between mb-4">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
                     <i class="fas fa-chart-line text-blue-500"></i>
                     Evolução da Taxa de Acerto por Sistema
                 </h3>
-                <div class="flex items-center gap-2">
-                    <label class="text-xs text-gray-500">Visualização:</label>
-                    <select id="evolucao-tipo" onchange="atualizarGraficoEvolucao()" class="text-xs border border-gray-300 rounded px-2 py-1">
-                        <option value="taxa_acerto">Taxa de Acerto (%)</option>
-                        <option value="total">Total de Feedbacks</option>
-                        <option value="corretos">Feedbacks Corretos</option>
-                    </select>
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-gray-500">Período:</label>
+                        <select id="evolucao-semanas" onchange="carregarDashboard()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                            <option value="8">Últimas 8 semanas</option>
+                            <option value="12" selected>Últimas 12 semanas</option>
+                            <option value="16">Últimas 16 semanas</option>
+                            <option value="24">Últimas 24 semanas</option>
+                            <option value="52">Último ano</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-gray-500">Visualização:</label>
+                        <select id="evolucao-tipo" onchange="atualizarGraficoEvolucao()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                            <option value="taxa_acerto">Taxa de Acerto (%)</option>
+                            <option value="total">Total de Feedbacks</option>
+                            <option value="corretos">Feedbacks Corretos</option>
+                        </select>
+                    </div>
                 </div>
             </div>
             <div class="h-80">
@@ -195,7 +207,7 @@
             </div>
             <p class="text-xs text-gray-500 mt-2">
                 <i class="fas fa-info-circle mr-1"></i>
-                Mostra a evolução semanal das avaliações para cada sistema no período selecionado.
+                Evolução independente do filtro de período. Semanas sem avaliações são exibidas como lacunas.
             </p>
         </div>
 
@@ -566,10 +578,8 @@
 
         function inicializarFiltroAno() {
             const selectAno = document.getElementById('filtro-ano');
-            const selectMes = document.getElementById('filtro-mes');
             const agora = new Date();
             const anoAtual = agora.getFullYear();
-            const mesAtual = agora.getMonth() + 1; // getMonth() retorna 0-11
 
             // Popula anos
             for (let ano = anoAtual; ano >= 2024; ano--) {
@@ -578,22 +588,24 @@
                 option.textContent = ano;
                 selectAno.appendChild(option);
             }
-            // Seleciona o ano e mês atuais por padrão
+            // Seleciona apenas o ano atual por padrão (mês fica "Todos")
+            // Isso garante mais dados no dashboard sem limitar a apenas 1 mês
             selectAno.value = anoAtual;
-            selectMes.value = mesAtual;
         }
 
         function getFiltros() {
             const mes = document.getElementById('filtro-mes').value;
             const ano = document.getElementById('filtro-ano').value;
             const sistema = document.getElementById('filtro-sistema').value;
-            
+            const semanasEvolucao = document.getElementById('evolucao-semanas')?.value || '12';
+
             const params = new URLSearchParams();
             if (mes) params.append('mes', mes);
             if (ano) params.append('ano', ano);
             if (sistema) params.append('sistema', sistema);
-            
-            return params.toString() ? '?' + params.toString() : '';
+            params.append('semanas_evolucao', semanasEvolucao);
+
+            return '?' + params.toString();
         }
 
         function aplicarFiltros() {
@@ -800,29 +812,53 @@
                 'relatorio_cumprimento': 'Rel. Cumprimento'
             };
 
-            // Coleta todas as semanas únicas
+            // Coleta todas as semanas únicas (já vêm ordenadas do backend)
             const todasSemanas = new Set();
             Object.values(dadosEvolucao).forEach(dados => {
                 dados.forEach(d => todasSemanas.add(d.semana));
             });
             const semanas = Array.from(todasSemanas).sort();
 
+            // Verifica se há dados
+            if (semanas.length === 0) {
+                // Mostra mensagem de sem dados
+                const ctx = ctxEvolucao;
+                ctx.font = '14px Arial';
+                ctx.fillStyle = '#6b7280';
+                ctx.textAlign = 'center';
+                ctx.fillText('Nenhum dado de evolução disponível no período.', ctx.canvas.width / 2, ctx.canvas.height / 2);
+                return;
+            }
+
             // Cria datasets para cada sistema
             const datasets = [];
             for (const [sistema, dados] of Object.entries(dadosEvolucao)) {
-                if (dados.length === 0) continue;
+                if (!dados || dados.length === 0) continue;
+
+                // Verifica se o sistema tem dados não-nulos
+                const temDados = dados.some(d =>
+                    tipoVisualizacao === 'taxa_acerto' ? d.taxa_acerto !== null :
+                    tipoVisualizacao === 'total' ? d.total > 0 :
+                    d.corretos > 0
+                );
+                if (!temDados) continue;
 
                 // Mapeia dados por semana
                 const dadosPorSemana = {};
                 dados.forEach(d => { dadosPorSemana[d.semana] = d; });
 
                 // Cria array de valores alinhados com as semanas
+                // Usa null para semanas sem dados (cria lacunas no gráfico)
                 const valores = semanas.map(semana => {
                     const d = dadosPorSemana[semana];
                     if (!d) return null;
-                    return tipoVisualizacao === 'taxa_acerto' ? d.taxa_acerto :
-                           tipoVisualizacao === 'total' ? d.total :
-                           d.corretos;
+                    if (tipoVisualizacao === 'taxa_acerto') {
+                        return d.taxa_acerto; // Pode ser null se não houver feedbacks
+                    } else if (tipoVisualizacao === 'total') {
+                        return d.total > 0 ? d.total : null;
+                    } else {
+                        return d.corretos > 0 ? d.corretos : null;
+                    }
                 });
 
                 datasets.push({
@@ -832,14 +868,16 @@
                     backgroundColor: cores[sistema]?.bg || 'rgba(107, 114, 128, 0.1)',
                     fill: false,
                     tension: 0.3,
-                    spanGaps: true
+                    spanGaps: false, // NÃO conecta pontos através de lacunas (mostra gaps)
+                    pointRadius: 4,
+                    pointHoverRadius: 6
                 });
             }
 
-            // Labels formatados (S01 -> Semana 1)
+            // Labels formatados (2026-S05 -> S05)
             const labels = semanas.map(s => {
                 const match = s.match(/\d{4}-S(\d{2})/);
-                return match ? `Sem ${parseInt(match[1])}` : s;
+                return match ? `S${match[1]}` : s;
             });
 
             chartEvolucao = new Chart(ctxEvolucao, {
@@ -862,10 +900,12 @@
                                 label: function(context) {
                                     let label = context.dataset.label || '';
                                     if (label) label += ': ';
-                                    if (context.parsed.y !== null) {
+                                    if (context.parsed.y !== null && context.parsed.y !== undefined) {
                                         label += tipoVisualizacao === 'taxa_acerto'
-                                            ? context.parsed.y + '%'
+                                            ? context.parsed.y.toFixed(1) + '%'
                                             : context.parsed.y;
+                                    } else {
+                                        label += 'Sem avaliações';
                                     }
                                     return label;
                                 }
