@@ -529,6 +529,36 @@ Esta separação é intencional para distinguir claramente entre:
 - `TestHumanValidatedEnforcement` - Verifica que todos os prompts semi-automáticos têm a tag
 - `TestModoAutomaticoInabalterado` - Verifica que modo automático não foi alterado
 
+### Auditoria de Curadoria - Dashboard de Feedbacks
+
+**Data**: 2026-02-02
+**Decisao**: Unificar auditoria de curadoria entre `/admin/feedbacks` e `/admin/gerador-pecas/historico`.
+
+**Arquivos alterados**:
+- `admin/router.py` - Endpoint de listagem agora inclui `total_preview` no `modo_info` e `modo_ativacao` nos pendentes
+- `frontend/templates/admin_feedbacks.html` - Modal de detalhes inclui botão "Ver Auditoria Completa" com seções colapsáveis
+
+**Funcionalidades implementadas**:
+1. **Correção do bug "Sugestões do Sistema = 0"**: O endpoint de listagem não retornava `total_preview` (linha 1631-1637 do router.py)
+2. **Botão "Ver Auditoria Completa"**: Abre modal detalhado usando endpoint `/api/gerador-pecas/admin/geracoes/{id}/curadoria`
+3. **Seções colapsáveis**:
+   - Sugestões Confirmadas (módulos vindos do preview que o usuário aceitou)
+   - Adicionados Manualmente (módulos que o usuário incluiu)
+   - Sugestões Removidas (módulos do preview que o usuário rejeitou)
+4. **Glossário de termos**: Explicação de HUMAN_VALIDATED, confirmado, manual, removido
+5. **Indicador visual nos pendentes**: Badge âmbar indica gerações com modo semi-automático
+
+**Endpoint de auditoria detalhada**:
+```
+GET /api/gerador-pecas/admin/geracoes/{geracao_id}/curadoria
+```
+Retorna:
+- `metadata`: total_preview, total_incluidos, total_confirmados, total_manuais, total_excluidos
+- `modulos_incluidos`: Lista com titulo, categoria, tag, tipo_decisao, conteudo
+- `modulos_excluidos`: Lista com titulo, categoria, motivo_exclusao
+- `glossario`: Definições dos termos
+- `explicacao_processo`: Etapas do modo semi-automático
+
 ## Contato
 
 - **Equipe**: LAB/PGE-MS

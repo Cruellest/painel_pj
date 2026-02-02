@@ -368,37 +368,58 @@
                 </div>
                 <!-- Seção de detalhes do modo semi-automático (aparece apenas quando aplicável) -->
                 <div id="modal-curadoria-info" class="hidden mt-4 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
-                    <div class="flex items-center gap-2 mb-3">
-                        <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
-                            <i class="fas fa-clipboard-check text-white"></i>
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-clipboard-check text-white"></i>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-amber-800">Curadoria Humana</span>
+                                <p class="text-xs text-amber-600">Argumentos validados com tag [HUMAN_VALIDATED]</p>
+                            </div>
                         </div>
-                        <div>
-                            <span class="font-semibold text-amber-800">Curadoria Humana</span>
-                            <p class="text-xs text-amber-600">Argumentos validados com tag [HUMAN_VALIDATED]</p>
-                        </div>
+                        <button id="btn-ver-curadoria" onclick="verDetalhesCuradoria(consultaAtual)"
+                                class="px-3 py-1.5 bg-amber-600 text-white text-xs rounded-lg hover:bg-amber-700 transition-colors flex items-center gap-1.5">
+                            <i class="fas fa-search-plus"></i>
+                            Ver Auditoria Completa
+                        </button>
                     </div>
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                        <div class="bg-blue-100 rounded-lg p-3 text-center" title="Argumentos sugeridos automaticamente pelo sistema antes da revisão humana">
+                        <div class="bg-blue-100 rounded-lg p-3 text-center relative group cursor-help">
                             <p id="modal-curadoria-preview" class="text-2xl font-bold text-blue-600">-</p>
                             <span class="text-blue-700">Sugestões do Sistema</span>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                Argumentos sugeridos automaticamente antes da revisão humana
+                            </div>
                         </div>
-                        <div class="bg-green-100 rounded-lg p-3 text-center" title="Sugestões do sistema que o usuário confirmou">
+                        <div class="bg-green-100 rounded-lg p-3 text-center relative group cursor-help">
                             <p id="modal-curadoria-confirmados" class="text-2xl font-bold text-green-600">-</p>
                             <span class="text-green-700">Confirmados</span>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                Sugestões do sistema que o usuário confirmou
+                            </div>
                         </div>
-                        <div class="bg-amber-100 rounded-lg p-3 text-center" title="Argumentos que o usuário adicionou manualmente (não estavam na sugestão)">
+                        <div class="bg-amber-100 rounded-lg p-3 text-center relative group cursor-help">
                             <p id="modal-curadoria-manuais" class="text-2xl font-bold text-amber-600">-</p>
                             <span class="text-amber-700">Adicionados pelo Usuário</span>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                Argumentos que o usuário adicionou manualmente
+                            </div>
                         </div>
-                        <div class="bg-red-100 rounded-lg p-3 text-center" title="Sugestões do sistema que o usuário removeu">
+                        <div class="bg-red-100 rounded-lg p-3 text-center relative group cursor-help">
                             <p id="modal-curadoria-excluidos" class="text-2xl font-bold text-red-600">-</p>
-                            <span class="text-red-700">Removidos pelo Usuário</span>
+                            <span class="text-red-700">Removidos</span>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                Sugestões do sistema que o usuário removeu
+                            </div>
                         </div>
                     </div>
-                    <p class="mt-3 text-xs text-gray-600 flex items-center gap-1">
-                        <i class="fas fa-info-circle text-amber-500"></i>
-                        <span>Todos os argumentos incluídos foram validados pelo usuário e utilizados integralmente na peça final.</span>
-                    </p>
+                    <div class="mt-3 flex items-center justify-between text-xs">
+                        <p class="text-gray-600 flex items-center gap-1">
+                            <i class="fas fa-shield-alt text-green-500"></i>
+                            <span>Todos os argumentos incluídos foram validados pelo usuário e utilizados integralmente na peça final.</span>
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -685,9 +706,14 @@
                 tabelaPendentes.innerHTML = (data.pendentes_feedback || []).map(p => {
                     const dataFormatada = p.data ? formatarData(p.data) : '-';
                     const horaFormatada = p.data ? formatarHora(p.data) : '';
+                    // Indicador de modo semi-automático para gerador_pecas
+                    let modoBadge = '';
+                    if (p.sistema === 'gerador_pecas' && p.modo_ativacao === 'semi_automatico') {
+                        modoBadge = '<span class="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium" title="Curadoria Humana"><i class="fas fa-clipboard-check"></i></span>';
+                    }
                     return `
                         <tr class="hover:bg-orange-50">
-                            <td class="px-4 py-3 text-xs">${sistemaLabels[p.sistema] || p.sistema}</td>
+                            <td class="px-4 py-3 text-xs">${sistemaLabels[p.sistema] || p.sistema}${modoBadge}</td>
                             <td class="px-4 py-3 font-mono text-xs">${p.identificador || '-'}</td>
                             <td class="px-4 py-3">${p.usuario}</td>
                             <td class="px-4 py-3 text-gray-500">
@@ -1312,8 +1338,318 @@
             if (e.key === 'Escape') {
                 fecharModal();
                 fecharModalComentario();
+                const modalCuradoria = document.getElementById('modal-curadoria-detalhes');
+                if (modalCuradoria) modalCuradoria.remove();
             }
         });
+
+        // ======================================================
+        // AUDITORIA DE CURADORIA - MODO SEMI-AUTOMÁTICO
+        // ======================================================
+
+        async function verDetalhesCuradoria(geracaoId) {
+            try {
+                const response = await fetch(`/api/gerador-pecas/admin/geracoes/${geracaoId}/curadoria`, {
+                    headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        alert('Detalhes de curadoria não disponíveis para esta geração.\n\nIsso pode ocorrer se a geração foi feita antes do sistema de auditoria ou se não há metadados salvos.');
+                        return;
+                    }
+                    throw new Error('Erro ao carregar detalhes de curadoria');
+                }
+
+                const dados = await response.json();
+                mostrarModalCuradoria(dados);
+            } catch (error) {
+                console.error('Erro ao carregar detalhes de curadoria:', error);
+                alert('Erro ao carregar detalhes de curadoria: ' + error.message);
+            }
+        }
+
+        function mostrarModalCuradoria(dados) {
+            // Remove modal existente se houver
+            let modal = document.getElementById('modal-curadoria-detalhes');
+            if (modal) modal.remove();
+
+            modal = document.createElement('div');
+            modal.id = 'modal-curadoria-detalhes';
+            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4';
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+            const metadata = dados.metadata || {};
+            const modulosIncluidos = dados.modulos_incluidos || [];
+            const modulosExcluidos = dados.modulos_excluidos || [];
+            const glossario = dados.glossario || {};
+            const explicacao = dados.explicacao_processo || {};
+
+            // Separa módulos por tipo de decisão
+            const confirmados = modulosIncluidos.filter(m => m.tipo_decisao === 'confirmado');
+            const manuais = modulosIncluidos.filter(m => m.tipo_decisao === 'manual');
+
+            // Função para gerar HTML de um módulo expandível
+            const renderModulo = (m, corBg, corText, corBadge) => `
+                <div class="border ${corBg} rounded-lg mb-2 overflow-hidden">
+                    <div class="p-3 cursor-pointer flex items-start justify-between gap-2 hover:bg-opacity-80"
+                         onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.expand-icon').classList.toggle('fa-chevron-down'); this.querySelector('.expand-icon').classList.toggle('fa-chevron-up');">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-medium ${corText}">${escapeHtml(m.titulo)}</span>
+                                <span class="${corBadge} px-2 py-0.5 rounded text-xs font-mono">${escapeHtml(m.tag || '')}</span>
+                            </div>
+                            <div class="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                                <span class="bg-gray-200 px-2 py-0.5 rounded">${escapeHtml(m.categoria || 'Outros')}</span>
+                                ${m.subcategoria ? `<span class="bg-gray-100 px-2 py-0.5 rounded">${escapeHtml(m.subcategoria)}</span>` : ''}
+                                ${m.ordem ? `<span class="text-gray-400">#${m.ordem}</span>` : ''}
+                            </div>
+                            <p class="text-xs ${corText} mt-1 opacity-75">${escapeHtml(m.decisao_explicacao || '')}</p>
+                        </div>
+                        <i class="fas fa-chevron-down expand-icon text-gray-400 mt-1"></i>
+                    </div>
+                    <div class="hidden border-t border-gray-200 p-3 bg-white">
+                        <div class="mb-2">
+                            <span class="text-xs font-semibold text-gray-600">Por que ${m.status_final === 'incluido' ? 'incluído' : 'excluído'}:</span>
+                            <p class="text-xs text-gray-700 mt-1">${escapeHtml(m.motivo_inclusao || m.motivo_exclusao || '-')}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-gray-600">Conteúdo do argumento:</span>
+                            <div class="mt-1 p-2 bg-gray-50 rounded text-xs text-gray-700 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono">${escapeHtml(m.conteudo || '(Conteúdo não disponível)')}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+                    <!-- Header -->
+                    <div class="p-5 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center shadow-lg">
+                                <i class="fas fa-clipboard-check text-white text-xl"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold text-gray-800">Auditoria da Curadoria</h2>
+                                <p class="text-sm text-amber-700">Modo Semi-Automático — Validação Humana</p>
+                            </div>
+                        </div>
+                        <button onclick="document.getElementById('modal-curadoria-detalhes').remove()" class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-5 overflow-y-auto flex-1">
+                        <!-- Explicação do Processo (colapsável) -->
+                        <div class="mb-5 bg-blue-50 border border-blue-200 rounded-xl overflow-hidden">
+                            <div class="p-4 cursor-pointer flex items-center justify-between hover:bg-blue-100"
+                                 onclick="document.getElementById('explicacao-processo-curadoria').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-info-circle text-blue-600"></i>
+                                    <span class="font-semibold text-blue-800">${escapeHtml(explicacao.titulo || 'Como funciona o Modo Semi-Automático')}</span>
+                                </div>
+                                <i class="fas fa-chevron-down toggle-icon text-blue-400"></i>
+                            </div>
+                            <div id="explicacao-processo-curadoria" class="hidden border-t border-blue-200 p-4 bg-white">
+                                <ol class="space-y-2 text-sm text-gray-700">
+                                    ${(explicacao.etapas || [
+                                        "1. O sistema analisa o processo e sugere argumentos relevantes (Preview)",
+                                        "2. O usuário revisa a sugestão, podendo confirmar, remover ou adicionar argumentos",
+                                        "3. Argumentos confirmados recebem a tag [HUMAN_VALIDATED]",
+                                        "4. Argumentos adicionados manualmente recebem [HUMAN_VALIDATED:MANUAL]",
+                                        "5. A IA recebe instrução de usar estes argumentos integralmente, sem modificação"
+                                    ]).map(e => `<li class="flex items-start gap-2"><i class="fas fa-arrow-right text-blue-400 mt-1"></i><span>${escapeHtml(e)}</span></li>`).join('')}
+                                </ol>
+                                <div class="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                    <p class="text-sm text-green-800 font-medium">
+                                        <i class="fas fa-shield-alt mr-2"></i>${escapeHtml(explicacao.garantia || 'Todos os argumentos marcados como HUMAN_VALIDATED são incluídos na peça final exatamente como validados pelo usuário.')}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Estatísticas Resumidas -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center relative group">
+                                <p class="text-3xl font-bold text-blue-600">${metadata.total_preview || 0}</p>
+                                <p class="text-xs text-blue-700 font-medium">Sugestões do Sistema</p>
+                                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                    Argumentos sugeridos automaticamente pelo sistema antes da revisão
+                                </div>
+                            </div>
+                            <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center relative group">
+                                <p class="text-3xl font-bold text-green-600">${metadata.total_confirmados || 0}</p>
+                                <p class="text-xs text-green-700 font-medium">Confirmados</p>
+                                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                    Sugestões do sistema que o usuário confirmou
+                                </div>
+                            </div>
+                            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center relative group">
+                                <p class="text-3xl font-bold text-amber-600">${metadata.total_manuais || 0}</p>
+                                <p class="text-xs text-amber-700 font-medium">Adicionados pelo Usuário</p>
+                                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                    Argumentos que o usuário adicionou manualmente
+                                </div>
+                            </div>
+                            <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-center relative group">
+                                <p class="text-3xl font-bold text-red-600">${metadata.total_excluidos || 0}</p>
+                                <p class="text-xs text-red-700 font-medium">Removidos pelo Usuário</p>
+                                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                    Sugestões do sistema que o usuário removeu
+                                </div>
+                            </div>
+                        </div>
+
+                        ${metadata.preview_timestamp ? `
+                            <p class="text-xs text-gray-500 mb-4 flex items-center gap-2">
+                                <i class="fas fa-clock"></i>
+                                <span>Sugestões geradas em: <strong>${escapeHtml(formatarDataHora(metadata.preview_timestamp))}</strong></span>
+                            </p>
+                        ` : ''}
+
+                        <!-- Seção: INCLUÍDOS NA PEÇA FINAL -->
+                        <div class="mb-5">
+                            <div class="flex items-center gap-2 mb-3 pb-2 border-b border-green-200">
+                                <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                                    <i class="fas fa-check text-white"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-green-800">INCLUÍDOS NA PEÇA FINAL</h3>
+                                    <p class="text-xs text-green-600">${modulosIncluidos.length} argumento(s) validado(s) pelo usuário</p>
+                                </div>
+                            </div>
+
+                            ${confirmados.length > 0 ? `
+                                <!-- Confirmados (sugestões aceitas) -->
+                                <div class="mb-4">
+                                    <div class="flex items-center gap-2 mb-2 cursor-pointer"
+                                         onclick="document.getElementById('secao-confirmados-fb').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                        <i class="fas fa-thumbs-up text-green-500"></i>
+                                        <span class="text-sm font-semibold text-gray-700">Sugestões Confirmadas (${confirmados.length})</span>
+                                        <span class="text-xs text-gray-400">— O usuário aceitou estas sugestões do sistema</span>
+                                        <i class="fas fa-chevron-up toggle-icon text-gray-400 ml-auto"></i>
+                                    </div>
+                                    <div id="secao-confirmados-fb" class="ml-6">
+                                        ${confirmados.map(m => renderModulo(m, 'border-green-200 bg-green-50', 'text-green-800', 'bg-green-200 text-green-800')).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${manuais.length > 0 ? `
+                                <!-- Adicionados manualmente -->
+                                <div class="mb-4">
+                                    <div class="flex items-center gap-2 mb-2 cursor-pointer"
+                                         onclick="document.getElementById('secao-manuais-fb').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                        <i class="fas fa-plus-circle text-amber-500"></i>
+                                        <span class="text-sm font-semibold text-gray-700">Adicionados Manualmente (${manuais.length})</span>
+                                        <span class="text-xs text-gray-400">— O usuário incluiu estes argumentos que não estavam na sugestão</span>
+                                        <i class="fas fa-chevron-up toggle-icon text-gray-400 ml-auto"></i>
+                                    </div>
+                                    <div id="secao-manuais-fb" class="ml-6">
+                                        ${manuais.map(m => renderModulo(m, 'border-amber-200 bg-amber-50', 'text-amber-800', 'bg-amber-200 text-amber-800')).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${modulosIncluidos.length === 0 ? `
+                                <p class="text-sm text-gray-500 italic ml-6">Nenhum argumento incluído</p>
+                            ` : ''}
+                        </div>
+
+                        <!-- Seção: EXCLUÍDOS DA PEÇA FINAL -->
+                        ${modulosExcluidos.length > 0 ? `
+                            <div class="mb-5">
+                                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-red-200">
+                                    <div class="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-times text-white"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-red-800">EXCLUÍDOS DA PEÇA FINAL</h3>
+                                        <p class="text-xs text-red-600">${modulosExcluidos.length} argumento(s) removido(s) pelo usuário</p>
+                                    </div>
+                                </div>
+
+                                <div class="mb-4">
+                                    <div class="flex items-center gap-2 mb-2 cursor-pointer"
+                                         onclick="document.getElementById('secao-excluidos-fb').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                        <i class="fas fa-ban text-red-500"></i>
+                                        <span class="text-sm font-semibold text-gray-700">Sugestões Removidas (${modulosExcluidos.length})</span>
+                                        <span class="text-xs text-gray-400">— O usuário rejeitou estas sugestões do sistema</span>
+                                        <i class="fas fa-chevron-down toggle-icon text-gray-400 ml-auto"></i>
+                                    </div>
+                                    <div id="secao-excluidos-fb" class="ml-6 hidden">
+                                        ${modulosExcluidos.map(m => renderModulo(m, 'border-red-200 bg-red-50', 'text-red-800', 'bg-red-200 text-red-800')).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <!-- Glossário -->
+                        <div class="mb-4 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
+                            <div class="p-4 cursor-pointer flex items-center justify-between hover:bg-gray-100"
+                                 onclick="document.getElementById('glossario-curadoria').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-book text-gray-600"></i>
+                                    <span class="font-semibold text-gray-800">Glossário de Termos</span>
+                                </div>
+                                <i class="fas fa-chevron-down toggle-icon text-gray-400"></i>
+                            </div>
+                            <div id="glossario-curadoria" class="hidden border-t border-gray-200 p-4 bg-white">
+                                <dl class="space-y-3 text-sm">
+                                    <div>
+                                        <dt class="font-mono text-green-700 font-semibold">[HUMAN_VALIDATED]</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['HUMAN_VALIDATED'] || 'Argumento validado pelo usuário - será incluído integralmente na peça final sem modificação pela IA')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="font-mono text-amber-700 font-semibold">[HUMAN_VALIDATED:MANUAL]</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['HUMAN_VALIDATED:MANUAL'] || 'Argumento adicionado manualmente pelo usuário - não estava na sugestão automática')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="font-semibold text-gray-700">Confirmado</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['confirmado'] || 'Argumento sugerido pelo sistema e confirmado pelo usuário')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="font-semibold text-gray-700">Manual</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['manual'] || 'Argumento adicionado pelo usuário durante a revisão')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="font-semibold text-gray-700">Removido</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['removido'] || 'Argumento sugerido pelo sistema mas removido pelo usuário')}</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </div>
+
+                        <!-- Ordem das Categorias -->
+                        ${metadata.categorias_ordem && metadata.categorias_ordem.length > 0 ? `
+                            <div class="mb-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <i class="fas fa-sort-amount-down text-purple-500"></i>
+                                    <span class="text-sm font-semibold text-gray-700">Ordem das Seções na Peça</span>
+                                </div>
+                                <div class="flex flex-wrap gap-2 ml-6">
+                                    ${metadata.categorias_ordem.map((cat, i) => `
+                                        <span class="bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
+                                            <span class="w-5 h-5 bg-purple-500 text-white rounded-full flex items-center justify-center text-xs font-bold">${i + 1}</span>
+                                            ${escapeHtml(cat)}
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end gap-2">
+                        <button onclick="document.getElementById('modal-curadoria-detalhes').remove()" class="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                            Fechar
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+        }
 
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {

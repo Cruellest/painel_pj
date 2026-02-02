@@ -1238,31 +1238,58 @@ async def dashboard_feedbacks(
                 )
             analises_sem_feedback_mat = query_pendentes_mat.order_by(Analise.analisado_em.desc()).limit(20).all()
 
-        # Gerador de Peças
+        # Gerador de Peças - usa SQL direto para incluir modo_ativacao_agente2 de forma resiliente
         if incluir_gp:
-            query_pendentes_gp = db.query(
-                GeracaoPeca.id,
-                GeracaoPeca.tipo_peca,
-                GeracaoPeca.numero_cnj,
-                GeracaoPeca.criado_em,
-                User.username,
-                User.full_name
-            ).outerjoin(
-                FeedbackPeca, FeedbackPeca.geracao_id == GeracaoPeca.id
-            ).join(
-                User, GeracaoPeca.usuario_id == User.id
-            ).filter(
-                FeedbackPeca.id == None,
-                GeracaoPeca.conteudo_gerado.isnot(None)
-            )
-            if ids_excluir:
-                query_pendentes_gp = query_pendentes_gp.filter(~GeracaoPeca.usuario_id.in_(ids_excluir))
-            if data_inicio and data_fim:
-                query_pendentes_gp = query_pendentes_gp.filter(
-                    GeracaoPeca.criado_em >= data_inicio,
-                    GeracaoPeca.criado_em < data_fim
+            try:
+                # Tenta query com modo_ativacao_agente2
+                from sqlalchemy import text as sql_text
+                sql_pendentes_gp = """
+                    SELECT gp.id, gp.tipo_peca, gp.numero_cnj, gp.criado_em,
+                           u.username, u.full_name, gp.modo_ativacao_agente2
+                    FROM geracoes_pecas gp
+                    LEFT JOIN feedbacks_pecas fp ON fp.geracao_id = gp.id
+                    JOIN users u ON gp.usuario_id = u.id
+                    WHERE fp.id IS NULL
+                      AND gp.conteudo_gerado IS NOT NULL
+                """
+                params = {}
+                if ids_excluir:
+                    sql_pendentes_gp += " AND gp.usuario_id NOT IN :ids_excluir"
+                    params["ids_excluir"] = tuple(ids_excluir)
+                if data_inicio and data_fim:
+                    sql_pendentes_gp += " AND gp.criado_em >= :data_inicio AND gp.criado_em < :data_fim"
+                    params["data_inicio"] = data_inicio
+                    params["data_fim"] = data_fim
+                sql_pendentes_gp += " ORDER BY gp.criado_em DESC LIMIT 20"
+
+                result = db.execute(sql_text(sql_pendentes_gp), params).fetchall()
+                geracoes_sem_feedback_gp = [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in result]
+            except Exception:
+                # Fallback: query sem modo_ativacao_agente2
+                query_pendentes_gp = db.query(
+                    GeracaoPeca.id,
+                    GeracaoPeca.tipo_peca,
+                    GeracaoPeca.numero_cnj,
+                    GeracaoPeca.criado_em,
+                    User.username,
+                    User.full_name
+                ).outerjoin(
+                    FeedbackPeca, FeedbackPeca.geracao_id == GeracaoPeca.id
+                ).join(
+                    User, GeracaoPeca.usuario_id == User.id
+                ).filter(
+                    FeedbackPeca.id == None,
+                    GeracaoPeca.conteudo_gerado.isnot(None)
                 )
-            geracoes_sem_feedback_gp = query_pendentes_gp.order_by(GeracaoPeca.criado_em.desc()).limit(20).all()
+                if ids_excluir:
+                    query_pendentes_gp = query_pendentes_gp.filter(~GeracaoPeca.usuario_id.in_(ids_excluir))
+                if data_inicio and data_fim:
+                    query_pendentes_gp = query_pendentes_gp.filter(
+                        GeracaoPeca.criado_em >= data_inicio,
+                        GeracaoPeca.criado_em < data_fim
+                    )
+                result = query_pendentes_gp.order_by(GeracaoPeca.criado_em.desc()).limit(20).all()
+                geracoes_sem_feedback_gp = [(r[0], r[1], r[2], r[3], r[4], r[5], None) for r in result]
 
         # Pedido de Cálculo
         if incluir_pc:
@@ -1361,13 +1388,16 @@ async def dashboard_feedbacks(
                 "usuario": full_name or username,
                 "data": to_iso_utc(analisado_em)
             })
-        for id, tipo_peca, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_gp:
+        for row in geracoes_sem_feedback_gp:
+            id, tipo_peca, numero_cnj, criado_em, username, full_name = row[:6]
+            modo_ativacao = row[6] if len(row) > 6 else None
             pendentes_feedback.append({
                 "id": id,
                 "sistema": "gerador_pecas",
                 "identificador": numero_cnj or tipo_peca,
                 "usuario": full_name or username,
-                "data": to_iso_utc(criado_em)
+                "data": to_iso_utc(criado_em),
+                "modo_ativacao": modo_ativacao
             })
         for id, numero_cnj_fmt, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_pc:
             pendentes_feedback.append({
@@ -1628,8 +1658,17 @@ async def listar_feedbacks(
                 modo_info = None
                 if modo_ativacao == 'semi_automatico':
                     curadoria_data = curadoria_meta or {}
+                    # Calcula total_preview: usa o valor salvo ou estima pela soma de curados + excluídos
+                    preview_ids = curadoria_data.get("modulos_preview_ids", [])
+                    total_preview_saved = curadoria_data.get("total_preview", 0)
+                    # Se não tiver total_preview salvo, estima pelo tamanho da lista de preview_ids
+                    # ou pela soma de curados (que vieram do preview) + excluídos
+                    total_preview = total_preview_saved if total_preview_saved else len(preview_ids) if preview_ids else (
+                        curadoria_data.get("total_curados", 0) - curadoria_data.get("total_manuais", 0) + curadoria_data.get("total_excluidos", 0)
+                    )
                     modo_info = {
                         "modo": "semi_automatico",
+                        "total_preview": total_preview,
                         "total_curados": curadoria_data.get("total_curados", (modulos_det or 0) + (modulos_llm or 0)),
                         "total_manuais": curadoria_data.get("total_manuais", modulos_llm or 0),
                         "total_excluidos": curadoria_data.get("total_excluidos", 0),
