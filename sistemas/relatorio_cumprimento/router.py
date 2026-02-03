@@ -258,25 +258,39 @@ async def processar_stream(
             yield f"data: {json.dumps({'tipo': 'etapa', 'etapa': 3, 'status': 'concluido', 'mensagem': 'Download de documentos concluído'})}\n\n"
 
             # ============================================================
-            # ETAPA 3.5: DETECTAR AGRAVO DE INSTRUMENTO (se aplicável)
+            # ETAPA 3.5: DETECTAR AGRAVO DE INSTRUMENTO
             # ============================================================
-            # Só executa se:
-            # 1. É cumprimento autônomo
-            # 2. O processo de origem foi identificado
-            if documentos_info.is_cumprimento_autonomo and numero_principal:
-                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Verificando Agravo de Instrumento no processo de origem...'})}\n\n"
+            # Busca agravos em dois cenários:
+            # 1. Cumprimento autônomo: busca no XML do processo de ORIGEM
+            # 2. Processo evoluído (conhecimento): busca no XML do PRÓPRIO processo
+            #
+            # IMPORTANTE: Mesmo que não seja cumprimento autônomo, o processo
+            # de conhecimento pode ter agravos pendentes que devem ser analisados
+            # para identificar liminares e decisões relevantes.
+            yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Verificando Agravo de Instrumento...'})}\n\n"
 
-                # NOTA: Usa request_id do escopo externo (linha 120)
-                # NÃO redefinir aqui para evitar shadowing/UnboundLocalError
+            # NOTA: Usa request_id do escopo externo (linha 120)
+            # NÃO redefinir aqui para evitar shadowing/UnboundLocalError
 
-                try:
+            try:
+                xml_para_detectar_agravo = None
+                fonte_agravo = None
+
+                if documentos_info.is_cumprimento_autonomo and numero_principal:
+                    # Cenário 1: Cumprimento autônomo - busca no processo de ORIGEM
+                    logger.info(
+                        f"{log_prefix} AGRAVO_DETECTION_MODE | "
+                        f"modo=cumprimento_autonomo | "
+                        f"processo_origem={numero_principal}"
+                    )
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Buscando agravos no processo de origem: {numero_principal}'})}\n\n"
+
                     # Obtém XML do processo principal para análise (com retry para erros de proxy)
-                    xml_processo_principal = None
                     max_retries = 3
                     for attempt in range(max_retries):
                         try:
                             async with DocumentDownloader() as downloader:
-                                xml_processo_principal = await downloader.consultar_processo(numero_principal)
+                                xml_para_detectar_agravo = await downloader.consultar_processo(numero_principal)
                             break
                         except Exception as e:
                             error_msg = str(e)
@@ -288,10 +302,37 @@ async def processar_stream(
                             import asyncio
                             await asyncio.sleep(delay)
 
-                    # Detecta e valida agravos
+                    fonte_agravo = "processo_origem"
+                else:
+                    # Cenário 2: Processo evoluído - busca no PRÓPRIO processo
+                    # O cumprimento está no mesmo processo do conhecimento, então
+                    # agravos podem estar mencionados nos movimentos deste processo.
+                    logger.info(
+                        f"{log_prefix} AGRAVO_DETECTION_MODE | "
+                        f"modo=processo_evoluido | "
+                        f"processo={numero_cnj}"
+                    )
+                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Buscando agravos no próprio processo (conhecimento evoluído)'})}\n\n"
+
+                    # Usa o XML já consultado na etapa 1
+                    xml_para_detectar_agravo = dados_consulta["xml_texto"]
+                    fonte_agravo = "processo_atual"
+
+                # Detecta e valida agravos
+                if xml_para_detectar_agravo:
                     resultado_agravo, docs_agravo = await service.detectar_agravos_processo_origem(
-                        xml_processo_principal,
+                        xml_para_detectar_agravo,
                         request_id
+                    )
+
+                    # Log estruturado
+                    logger.info(
+                        f"{log_prefix} AGRAVO_DETECTION_RESULT | "
+                        f"fonte={fonte_agravo} | "
+                        f"candidatos={len(resultado_agravo.candidatos_detectados)} | "
+                        f"validados={len(resultado_agravo.agravos_validados)} | "
+                        f"rejeitados={len(resultado_agravo.agravos_rejeitados)} | "
+                        f"docs_baixados={len(docs_agravo)}"
                     )
 
                     # Informa resultado
@@ -316,11 +357,12 @@ async def processar_stream(
                         if resultado_agravo.agravos_rejeitados:
                             yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'  - Agravos rejeitados (partes incompatíveis): {len(resultado_agravo.agravos_rejeitados)}'})}\n\n"
                     else:
-                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Nenhum Agravo de Instrumento detectado no processo de origem'})}\n\n"
+                        yield f"data: {json.dumps({'tipo': 'info', 'mensagem': 'Nenhum Agravo de Instrumento detectado'})}\n\n"
 
-                except Exception as e:
-                    # Erro na detecção de agravo não interrompe o fluxo
-                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Aviso: não foi possível verificar agravos ({str(e)[:100]})'})}\n\n"
+            except Exception as e:
+                # Erro na detecção de agravo não interrompe o fluxo
+                logger.warning(f"{log_prefix} AGRAVO_DETECTION_ERROR | error={str(e)[:200]}")
+                yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Aviso: não foi possível verificar agravos ({str(e)[:100]})'})}\n\n"
 
             # ============================================================
             # ETAPA 4: LOCALIZAR TRÂNSITO EM JULGADO
