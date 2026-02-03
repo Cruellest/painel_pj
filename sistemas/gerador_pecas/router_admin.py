@@ -5,6 +5,7 @@ Router de administração do Gerador de Peças
 - Histórico detalhado de gerações
 """
 
+import logging
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -16,6 +17,8 @@ from auth.models import User
 from database.connection import get_db
 from utils.timezone import to_iso_utc
 from sistemas.gerador_pecas.models import GeracaoPeca, VersaoPeca
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gerador-pecas-admin", tags=["Gerador de Peças - Admin"])
 
@@ -203,13 +206,17 @@ async def obter_curadoria_geracao(
     """
     from admin.models_prompts import PromptModulo
 
+    logger.info(f"[Curadoria] Requisição de auditoria: geracao_id={geracao_id}, usuario={current_user.username}")
+
     geracao = db.query(GeracaoPeca).filter(GeracaoPeca.id == geracao_id).first()
     if not geracao:
+        logger.warning(f"[Curadoria] Geração não encontrada: id={geracao_id}")
         raise HTTPException(status_code=404, detail="Geração não encontrada")
 
     # Verifica se é modo semi-automático
     modo = _safe_get_attr(geracao, 'modo_ativacao_agente2')
     if modo != 'semi_automatico':
+        logger.info(f"[Curadoria] Geração {geracao_id} não é semi-automático: modo={modo}")
         raise HTTPException(
             status_code=404,
             detail="Esta geração não foi feita no modo semi-automático"
@@ -307,6 +314,12 @@ async def obter_curadoria_geracao(
     total_confirmados = len([m for m in modulos_incluidos if m["tipo_decisao"] == "confirmado"])
     total_manuais = len([m for m in modulos_incluidos if m["tipo_decisao"] == "manual"])
     total_excluidos = len(modulos_excluidos)
+
+    logger.info(
+        f"[Curadoria] Auditoria carregada: geracao_id={geracao_id}, "
+        f"preview={total_preview}, incluidos={len(modulos_incluidos)}, "
+        f"confirmados={total_confirmados}, manuais={total_manuais}, excluidos={total_excluidos}"
+    )
 
     return {
         "geracao_id": geracao_id,

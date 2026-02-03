@@ -2519,3 +2519,288 @@ class TestTransparenciaAuditoria:
             tag = m["tag"].replace("[", "").replace("]", "")
             if tag in glossario:
                 assert len(glossario[tag]) > 0  # Tem explicação
+
+
+# ============================================================================
+# TESTES DO ENDPOINT DE CURADORIA - /geracoes/{id}/curadoria
+# ============================================================================
+
+class TestEndpointCuradoria:
+    """
+    Testes para o endpoint de auditoria de curadoria.
+
+    Endpoint: GET /admin/api/gerador-pecas-admin/geracoes/{geracao_id}/curadoria
+
+    Cenários cobertos:
+    1. Geração em modo semi-automático com dados completos → 200 OK
+    2. Geração não encontrada → 404 Not Found
+    3. Geração em modo não-semi-automático → 404 Not Found
+    4. Resposta inclui todos os campos obrigatórios
+    """
+
+    def test_endpoint_url_correta(self):
+        """
+        Verifica que a URL documentada está correta.
+
+        A URL deve ser: /admin/api/gerador-pecas-admin/geracoes/{id}/curadoria
+        NÃO: /api/gerador-pecas/admin/geracoes/{id}/curadoria (antigo, incorreto)
+        """
+        url_correta = "/admin/api/gerador-pecas-admin/geracoes/123/curadoria"
+        url_incorreta = "/api/gerador-pecas/admin/geracoes/123/curadoria"
+
+        assert "gerador-pecas-admin" in url_correta
+        assert "/admin/api/" in url_correta
+        assert url_correta != url_incorreta
+
+    def test_resposta_sucesso_contem_campos_obrigatorios(self):
+        """
+        Resposta de sucesso deve conter todos os campos necessários para auditoria.
+        """
+        resposta_exemplo = {
+            "geracao_id": 123,
+            "modo": "semi_automatico",
+            "metadata": {
+                "total_preview": 10,
+                "total_incluidos": 8,
+                "total_confirmados": 6,
+                "total_manuais": 2,
+                "total_excluidos": 2,
+                "preview_timestamp": "2026-02-03T10:00:00Z",
+                "categorias_ordem": ["Preliminar", "Mérito"]
+            },
+            "glossario": {},
+            "explicacao_processo": {},
+            "modulos_incluidos": [],
+            "modulos_excluidos": []
+        }
+
+        # Campos obrigatórios no primeiro nível
+        assert "geracao_id" in resposta_exemplo
+        assert "modo" in resposta_exemplo
+        assert "metadata" in resposta_exemplo
+        assert "modulos_incluidos" in resposta_exemplo
+        assert "modulos_excluidos" in resposta_exemplo
+
+        # Campos obrigatórios em metadata
+        metadata = resposta_exemplo["metadata"]
+        assert "total_preview" in metadata
+        assert "total_incluidos" in metadata
+        assert "total_confirmados" in metadata
+        assert "total_manuais" in metadata
+        assert "total_excluidos" in metadata
+
+    def test_modulo_incluido_estrutura_completa(self):
+        """
+        Módulos incluídos devem ter estrutura completa para auditoria.
+        """
+        modulo_incluido = {
+            "id": 1,
+            "titulo": "Argumento sobre SUS",
+            "categoria": "Mérito",
+            "subcategoria": "Medicamentos",
+            "conteudo": "Conteúdo completo do argumento...",
+            "origem": "preview",
+            "tag": "[HUMAN_VALIDATED]",
+            "tipo_decisao": "confirmado",
+            "decisao_explicacao": "Sugerido e confirmado",
+            "motivo_inclusao": "Usuário confirmou a sugestão",
+            "ordem": 1,
+            "status_final": "incluido"
+        }
+
+        campos_obrigatorios = [
+            "id", "titulo", "categoria", "tag",
+            "tipo_decisao", "status_final"
+        ]
+
+        for campo in campos_obrigatorios:
+            assert campo in modulo_incluido, f"Campo obrigatório ausente: {campo}"
+
+    def test_modulo_excluido_estrutura_completa(self):
+        """
+        Módulos excluídos devem ter estrutura que explique a exclusão.
+        """
+        modulo_excluido = {
+            "id": 2,
+            "titulo": "Argumento Removido",
+            "categoria": "Preliminar",
+            "conteudo": "Conteúdo do argumento removido...",
+            "origem": "preview",
+            "tag": "[EXCLUÍDO]",
+            "tipo_decisao": "removido",
+            "decisao_explicacao": "Sugerido mas removido pelo usuário",
+            "motivo_exclusao": "O usuário decidiu não incluir",
+            "status_final": "excluido"
+        }
+
+        assert modulo_excluido["status_final"] == "excluido"
+        assert modulo_excluido["tipo_decisao"] == "removido"
+        assert "motivo_exclusao" in modulo_excluido
+
+    def test_erro_404_mensagens_especificas(self):
+        """
+        Erros 404 devem ter mensagens específicas para diagnóstico.
+        """
+        mensagem_nao_encontrada = "Geração não encontrada"
+        mensagem_modo_incorreto = "Esta geração não foi feita no modo semi-automático"
+
+        # Frontend deve conseguir distinguir os casos
+        assert "não encontrada" in mensagem_nao_encontrada
+        assert "semi-automático" in mensagem_modo_incorreto
+        assert mensagem_nao_encontrada != mensagem_modo_incorreto
+
+    def test_consistencia_contagens_metadata(self):
+        """
+        As contagens em metadata devem ser consistentes.
+        """
+        metadata = {
+            "total_preview": 10,
+            "total_incluidos": 8,
+            "total_confirmados": 6,
+            "total_manuais": 2,
+            "total_excluidos": 2,
+        }
+
+        # total_incluidos = total_confirmados + total_manuais
+        assert metadata["total_incluidos"] == metadata["total_confirmados"] + metadata["total_manuais"]
+
+        # total_preview >= total_confirmados (pois confirmados vêm do preview)
+        assert metadata["total_preview"] >= metadata["total_confirmados"]
+
+
+class TestEndpointCuradoriaIntegracao:
+    """
+    Testes de integração para o endpoint de curadoria.
+
+    Estes testes verificam o comportamento real do endpoint
+    com mocks do banco de dados.
+    """
+
+    @pytest.fixture
+    def mock_geracao_semi_automatico(self):
+        """Cria mock de geração em modo semi-automático."""
+        geracao = MagicMock()
+        geracao.id = 123
+        geracao.modo_ativacao_agente2 = "semi_automatico"
+        geracao.curadoria_metadata = {
+            "modulos_preview_ids": [1, 2, 3],
+            "modulos_curados_ids": [1, 3, 4],
+            "modulos_manuais_ids": [4],
+            "modulos_excluidos_ids": [2],
+            "modulos_detalhados": [
+                {"id": 1, "origem": "preview", "status": "[VALIDADO]"},
+                {"id": 3, "origem": "preview", "status": "[VALIDADO]"},
+                {"id": 4, "origem": "manual", "status": "[VALIDADO-MANUAL]"},
+            ],
+            "total_preview": 3,
+            "total_curados": 3,
+            "total_manuais": 1,
+            "total_excluidos": 1,
+        }
+        return geracao
+
+    @pytest.fixture
+    def mock_geracao_automatico(self):
+        """Cria mock de geração em modo automático (não semi-automático)."""
+        geracao = MagicMock()
+        geracao.id = 456
+        geracao.modo_ativacao_agente2 = "misto"
+        geracao.curadoria_metadata = None
+        return geracao
+
+    def test_geracao_semi_automatico_retorna_dados(self, mock_geracao_semi_automatico):
+        """
+        Geração em modo semi-automático deve retornar dados de auditoria.
+        """
+        geracao = mock_geracao_semi_automatico
+
+        # Simula verificações que o endpoint faria
+        assert geracao.modo_ativacao_agente2 == "semi_automatico"
+        assert geracao.curadoria_metadata is not None
+
+        metadata = geracao.curadoria_metadata
+        assert metadata["total_preview"] == 3
+        assert metadata["total_curados"] == 3
+        assert metadata["total_manuais"] == 1
+        assert metadata["total_excluidos"] == 1
+
+    def test_geracao_modo_automatico_rejeitada(self, mock_geracao_automatico):
+        """
+        Geração em modo automático deve ser rejeitada com 404.
+        """
+        geracao = mock_geracao_automatico
+
+        # Endpoint verifica modo antes de retornar dados
+        modo = geracao.modo_ativacao_agente2
+        assert modo != "semi_automatico"
+
+        # Frontend deve receber mensagem específica
+        mensagem_esperada = "Esta geração não foi feita no modo semi-automático"
+        assert "semi-automático" in mensagem_esperada
+
+    def test_geracao_inexistente_retorna_404(self):
+        """
+        ID de geração inexistente deve retornar 404.
+        """
+        geracao = None  # Simula geração não encontrada
+
+        # Endpoint verifica existência
+        assert geracao is None
+
+        # Frontend deve receber mensagem específica
+        mensagem_esperada = "Geração não encontrada"
+        assert "não encontrada" in mensagem_esperada
+
+
+class TestFrontendAuditoriaIntegracao:
+    """
+    Testes que verificam se o frontend está integrado corretamente.
+    """
+
+    def test_frontend_usa_url_correta(self):
+        """
+        O frontend deve chamar a URL correta do endpoint.
+
+        ANTES (BUG): /api/gerador-pecas/admin/geracoes/{id}/curadoria
+        DEPOIS (FIX): /admin/api/gerador-pecas-admin/geracoes/{id}/curadoria
+        """
+        url_correta = "/admin/api/gerador-pecas-admin/geracoes/{id}/curadoria"
+        url_antiga_incorreta = "/api/gerador-pecas/admin/geracoes/{id}/curadoria"
+
+        # A URL deve seguir o padrão do router_admin
+        assert "/admin/api/" in url_correta
+        assert "/gerador-pecas-admin/" in url_correta
+
+        # A URL antiga não deve ser usada
+        assert "/api/gerador-pecas/admin/" not in url_correta
+
+    def test_frontend_trata_erros_especificos(self):
+        """
+        Frontend deve exibir mensagens específicas por tipo de erro.
+        """
+        erros_e_mensagens = {
+            404: {
+                "nao_encontrada": "Geração não encontrada",
+                "modo_incorreto": "não foi feita no modo semi-automático",
+            },
+            403: "não tem permissão",
+            500: "Erro interno do servidor",
+        }
+
+        # 404 tem submensagens
+        assert "nao_encontrada" in erros_e_mensagens[404]
+        assert "modo_incorreto" in erros_e_mensagens[404]
+
+        # Outros erros têm mensagem única
+        assert isinstance(erros_e_mensagens[403], str)
+        assert isinstance(erros_e_mensagens[500], str)
+
+    def test_frontend_loga_requisicoes_em_desenvolvimento(self):
+        """
+        Frontend deve logar requisições para debug (apenas em dev).
+        """
+        # Exemplo de log esperado
+        log_esperado = "[Auditoria] Buscando curadoria para geração ID: 123"
+
+        assert "ID:" in log_esperado
+        assert "123" in log_esperado

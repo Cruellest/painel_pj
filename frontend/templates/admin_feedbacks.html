@@ -1583,24 +1583,55 @@
         // ======================================================
 
         async function verDetalhesCuradoria(geracaoId) {
+            // Endpoint correto: /admin/api/gerador-pecas-admin/geracoes/{id}/curadoria
+            const endpoint = `/admin/api/gerador-pecas-admin/geracoes/${geracaoId}/curadoria`;
+
             try {
-                const response = await fetch(`/api/gerador-pecas/admin/geracoes/${geracaoId}/curadoria`, {
+                console.log(`[Auditoria] Buscando curadoria para geração ID: ${geracaoId}`);
+                const response = await fetch(endpoint, {
                     headers: { 'Authorization': `Bearer ${getAuthToken()}` }
                 });
 
                 if (!response.ok) {
+                    let errorDetail = '';
+                    try {
+                        const errorData = await response.json();
+                        errorDetail = errorData.detail || '';
+                    } catch { /* ignore parse error */ }
+
                     if (response.status === 404) {
-                        alert('Detalhes de curadoria não disponíveis para esta geração.\n\nIsso pode ocorrer se a geração foi feita antes do sistema de auditoria ou se não há metadados salvos.');
+                        // Mensagem específica baseada no detalhe retornado
+                        if (errorDetail.includes('não foi feita no modo semi-automático')) {
+                            alert(`Esta geração (ID: ${geracaoId}) não foi feita no modo semi-automático.\n\nA auditoria de curadoria está disponível apenas para gerações com curadoria humana ativa.`);
+                        } else if (errorDetail.includes('não encontrada')) {
+                            alert(`Geração não encontrada (ID: ${geracaoId}).\n\nVerifique se a geração ainda existe no sistema.`);
+                        } else {
+                            alert(`Auditoria não disponível para esta geração (ID: ${geracaoId}).\n\n${errorDetail || 'Detalhes de curadoria não encontrados.'}`);
+                        }
+                        console.warn(`[Auditoria] 404 para geração ${geracaoId}: ${errorDetail}`);
                         return;
                     }
-                    throw new Error('Erro ao carregar detalhes de curadoria');
+
+                    if (response.status === 403) {
+                        alert('Você não tem permissão para ver a auditoria desta geração.');
+                        return;
+                    }
+
+                    if (response.status === 500) {
+                        console.error(`[Auditoria] Erro 500 ao buscar curadoria: ${errorDetail}`);
+                        alert(`Erro interno do servidor ao buscar auditoria (ID: ${geracaoId}).\n\nTente novamente em alguns instantes.`);
+                        return;
+                    }
+
+                    throw new Error(`Status ${response.status}: ${errorDetail || 'Erro desconhecido'}`);
                 }
 
                 const dados = await response.json();
+                console.log(`[Auditoria] Curadoria carregada: ${dados.modulos_incluidos?.length || 0} incluídos, ${dados.modulos_excluidos?.length || 0} excluídos`);
                 mostrarModalCuradoria(dados);
             } catch (error) {
-                console.error('Erro ao carregar detalhes de curadoria:', error);
-                alert('Erro ao carregar detalhes de curadoria: ' + error.message);
+                console.error('[Auditoria] Erro ao carregar detalhes de curadoria:', error);
+                alert(`Erro ao carregar auditoria (ID: ${geracaoId}):\n${error.message}`);
             }
         }
 
