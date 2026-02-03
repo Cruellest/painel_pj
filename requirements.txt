@@ -58,6 +58,7 @@ openpyxl>=3.1.0
 
 # Scrapper de Subconta (Prestação de Contas)
 playwright>=1.40.0
+pytest-playwright>=0.4.0  # Para testes E2E de frontend
 rich>=13.0.0
 
 # ==================================================
