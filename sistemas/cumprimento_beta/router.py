@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from database.connection import get_db
 from auth.models import User
 from auth.dependencies import get_current_active_user
+from utils.security_sanitizer import sanitize_html
 from sistemas.cumprimento_beta.dependencies import require_beta_access, get_user_pode_acessar_beta
 from sistemas.cumprimento_beta.models import (
     SessaoCumprimentoBeta, DocumentoBeta, JSONResumoBeta,
@@ -410,6 +411,9 @@ async def enviar_mensagem(
             status_code=400,
             detail="Sessão não está no modo chatbot"
         )
+
+    # Sanitiza conteúdo da mensagem
+    request.conteudo = sanitize_html(request.conteudo)
 
     if streaming:
         return StreamingResponse(

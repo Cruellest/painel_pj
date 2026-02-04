@@ -11,6 +11,19 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/static/js/timezone.js"></script>
     <script>
+        // Função para escapar HTML e evitar XSS
+        function escapeHtml(text) {
+            if (!text) return '';
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
         tailwind.config = {
             theme: {
                 extend: {
@@ -1373,10 +1386,10 @@
             return `
                 <tr class="hover:bg-gray-50">
                     <td class="px-3 py-2 text-gray-500">${time}</td>
-                    <td class="px-3 py-2 font-medium ${sistemaClass}">${log.sistema || 'unknown'}</td>
-                    <td class="px-3 py-2 text-gray-500 text-xs" title="${routeTitle}">${route}</td>
-                    <td class="px-3 py-2 text-gray-600 text-xs">${log.model || '-'}</td>
-                    <td class="px-3 py-2"><span class="px-2 py-0.5 rounded text-xs ${thinkingClass}">${thinkingLevel}</span></td>
+                    <td class="px-3 py-2 font-medium ${sistemaClass}">${escapeHtml(log.sistema || 'unknown')}</td>
+                    <td class="px-3 py-2 text-gray-500 text-xs" title="${escapeHtml(routeTitle)}">${escapeHtml(route)}</td>
+                    <td class="px-3 py-2 text-gray-600 text-xs">${escapeHtml(log.model || '-')}</td>
+                    <td class="px-3 py-2"><span class="px-2 py-0.5 rounded text-xs ${thinkingClass}">${escapeHtml(thinkingLevel)}</span></td>
                     <td class="px-3 py-2 text-gray-600">
                         <span class="text-purple-600">${log.prompt_tokens_estimated || '-'}</span> /
                         <span class="text-blue-600">${log.response_tokens || '-'}</span>
@@ -1385,7 +1398,7 @@
                     <td class="px-3 py-2 text-gray-500">${log.time_ttft_ms ? Math.round(log.time_ttft_ms) + ' ms' : '-'}</td>
                     <td class="px-3 py-2"><span class="px-2 py-1 rounded-full text-xs ${cacheClass}">${log.cached ? 'Sim' : 'Nao'}</span></td>
                     <td class="px-3 py-2"><span class="px-2 py-1 rounded-full text-xs ${statusClass}">${log.success ? 'OK' : 'Erro'}</span></td>
-                    <td class="px-3 py-2 text-gray-500 text-xs">${log.username || '-'}</td>
+                    <td class="px-3 py-2 text-gray-500 text-xs">${escapeHtml(log.username || '-')}</td>
                 </tr>
             `;
         }).join('');

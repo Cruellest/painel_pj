@@ -1849,7 +1849,9 @@
     }
     renderMarkdown(content) {
       if (typeof marked !== "undefined") {
-        return marked.parse(content);
+        // SECURITY: Sanitizando HTML gerado pelo Markdown
+        const html = marked.parse(content);
+        return typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(html) : html;
       }
       return `<pre>${this.escapeHtml(content)}</pre>`;
     }
@@ -3407,7 +3409,9 @@
         for await (const chunk of api.streamChat(this.state.sessaoId, message)) {
           response += chunk;
           if (contentEl && typeof marked !== "undefined") {
-            contentEl.innerHTML = marked.parse(response);
+            // SECURITY: Sanitizando conteúdo do chat
+            const html = marked.parse(response);
+            contentEl.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(html) : html;
           }
           const container = document.getElementById("chat-messages");
           if (container) {

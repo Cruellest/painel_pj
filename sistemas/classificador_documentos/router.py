@@ -50,6 +50,7 @@ from .schemas import (
 from .services import ClassificadorService
 from .services_export import get_export_service
 from .services_openrouter import get_openrouter_service
+from utils.security_sanitizer import sanitize_html
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Classificador de Documentos"])
@@ -139,11 +140,11 @@ async def criar_prompt(
     service = ClassificadorService(db)
     try:
         prompt = service.criar_prompt(
-            nome=req.nome,
-            conteudo=req.conteudo,
-            descricao=req.descricao,
+            nome=sanitize_html(req.nome),
+            conteudo=req.conteudo,  # Conteúdo do prompt não deve ser sanitizado para não quebrar a lógica da IA, mas deve ser tratado no frontend
+            descricao=sanitize_html(req.descricao) if req.descricao else None,
             usuario_id=current_user.id,
-            codigos_documento=req.codigos_documento
+            codigos_documento=sanitize_html(req.codigos_documento) if req.codigos_documento else None
         )
         return {"id": prompt.id, "mensagem": "Prompt criado com sucesso"}
     except Exception as e:
@@ -182,7 +183,17 @@ async def atualizar_prompt(
 ):
     """Atualiza um prompt existente"""
     service = ClassificadorService(db)
-    prompt = service.atualizar_prompt(prompt_id, **req.model_dump(exclude_unset=True))
+    
+    # Sanitiza campos de texto se presentes
+    update_data = req.model_dump(exclude_unset=True)
+    if "nome" in update_data:
+        update_data["nome"] = sanitize_html(update_data["nome"])
+    if "descricao" in update_data:
+        update_data["descricao"] = sanitize_html(update_data["descricao"])
+    if "codigos_documento" in update_data:
+        update_data["codigos_documento"] = sanitize_html(update_data["codigos_documento"])
+    
+    prompt = service.atualizar_prompt(prompt_id, **update_data)
     if not prompt:
         raise HTTPException(status_code=404, detail="Prompt não encontrado")
     return {"mensagem": "Prompt atualizado com sucesso"}
@@ -246,9 +257,9 @@ async def criar_projeto(
     service = ClassificadorService(db)
     try:
         projeto = service.criar_projeto(
-            nome=req.nome,
+            nome=sanitize_html(req.nome),
             usuario_id=current_user.id,
-            descricao=req.descricao,
+            descricao=sanitize_html(req.descricao) if req.descricao else None,
             prompt_id=req.prompt_id,
             modelo=req.modelo,
             modo_processamento=req.modo_processamento,
@@ -317,7 +328,14 @@ async def atualizar_projeto(
     if projeto.usuario_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Acesso negado")
 
-    service.atualizar_projeto(projeto_id, **req.model_dump(exclude_unset=True))
+    # Sanitiza campos de texto se presentes
+    update_data = req.model_dump(exclude_unset=True)
+    if "nome" in update_data:
+        update_data["nome"] = sanitize_html(update_data["nome"])
+    if "descricao" in update_data:
+        update_data["descricao"] = sanitize_html(update_data["descricao"])
+
+    service.atualizar_projeto(projeto_id, **update_data)
     return {"mensagem": "Projeto atualizado com sucesso"}
 
 
@@ -1067,8 +1085,18 @@ async def classificar_documento_avulso(
     else:
         raise HTTPException(status_code=400, detail="Informe prompt_id ou prompt_texto")
 
+    # SECURITY: Validação de assinatura binária (Magic Number)
+    from utils.security_sanitizer import validate_file_signature
+    
     # Lê arquivo
     pdf_bytes = await arquivo.read()
+    
+    # Valida se é realmente um PDF
+    if not validate_file_signature(pdf_bytes, 'pdf'):
+        raise HTTPException(
+            status_code=400, 
+            detail="Arquivo inválido. Por favor, envie um documento PDF válido."
+        )
 
     # Classifica
     resultado = await service.classificar_documento_avulso(

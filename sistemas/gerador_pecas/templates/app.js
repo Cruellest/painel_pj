@@ -958,11 +958,16 @@
       if (marked) {
         marked.setOptions({
           breaks: true,
-          gfm: true
+          gfm: true,
+          headerIds: false,
+          mangle: false
         });
-        container.innerHTML = marked.parse(this.minutaMarkdown || "");
+        // SECURITY: Sanitizando a minuta markdown ANTES de inserir no DOM
+        const cleanMarkdown = typeof sanitizeHtml === 'function' ? sanitizeHtml(this.minutaMarkdown || "") : (this.minutaMarkdown || "");
+        container.innerHTML = marked.parse(cleanMarkdown);
       } else {
-        container.innerHTML = (this.minutaMarkdown || "").replace(/## (.*)/g, "<h2>$1</h2>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\*(.*?)\*/g, "<em>$1</em>").replace(/\n/g, "<br>");
+        const cleanFallbackMarkdown = typeof sanitizeHtml === 'function' ? sanitizeHtml(this.minutaMarkdown || "") : (this.minutaMarkdown || "");
+        container.innerHTML = cleanFallbackMarkdown.replace(/## (.*)/g, "<h2>$1</h2>").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\*(.*?)\*/g, "<em>$1</em>").replace(/\n/g, "<br>");
       }
       const minutaStatus = document.getElementById("minuta-status");
       if (minutaStatus) minutaStatus.textContent = "Atualizado agora";
@@ -2183,11 +2188,13 @@
       const contentEl = document.getElementById("streaming-content");
       if (contentEl && this.streamingContent) {
         const marked = window.marked;
+        // SECURITY: Sanitizando conteúdo de streaming
+        const sanitizedStreaming = typeof sanitizeHtml === 'function' ? sanitizeHtml(this.streamingContent) : this.streamingContent;
         if (marked) {
-          marked.setOptions({ breaks: true, gfm: true });
-          contentEl.innerHTML = marked.parse(this.streamingContent);
+          marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false });
+          contentEl.innerHTML = marked.parse(sanitizedStreaming);
         } else {
-          contentEl.innerHTML = this.streamingContent.replace(/## (.*)/g, '<h2 class="text-lg font-semibold mt-4 mb-2">$1</h2>').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\*(.*?)\*/g, "<em>$1</em>").replace(/\n/g, "<br>");
+          contentEl.innerHTML = sanitizedStreaming.replace(/## (.*)/g, '<h2 class="text-lg font-semibold mt-4 mb-2">$1</h2>').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\*(.*?)\*/g, "<em>$1</em>").replace(/\n/g, "<br>");
         }
         const container = document.getElementById("minuta-content");
         if (container) {

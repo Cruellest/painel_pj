@@ -59,7 +59,14 @@ def load_model(model_path: Path) -> Optional[Dict[str, Any]]:
     try:
         # Carrega checkpoint
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        # SECURITY: Bloqueia execução de código arbitrário durante o loading usando weights_only=True
+        # Isso impede vulnerabilidades de desserialização insegura via pickle.
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        except TypeError:
+            # Fallback para versões mais antigas do torch que não suportam weights_only
+            logger.warning("weights_only=True não suportado nesta versão do torch. Use com cautela.")
+            checkpoint = torch.load(checkpoint_path, map_location=device)
 
         # Carrega tokenizer
         base_model = checkpoint.get("base_model", "neuralmind/bert-base-portuguese-cased")

@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
+from utils.security_sanitizer import sanitize_html
 from sistemas.prestacao_contas.models import GeracaoAnalise, FeedbackPrestacao
 from sistemas.prestacao_contas.schemas import (
     AnalisarProcessoRequest,
@@ -107,6 +108,10 @@ async def responder_duvida(
     Processa respostas do usuário às perguntas de dúvida da IA.
     Reavalia a prestação de contas com as novas informações.
     """
+    # SECURITY: Sanitização de respostas de texto livre
+    if request.respostas:
+        request.respostas = {k: sanitize_html(v) for k, v in request.respostas.items()}
+
     orquestrador = OrquestradorPrestacaoContas(
         db=db,
         usuario_id=current_user.id
@@ -159,7 +164,7 @@ async def registrar_feedback(
         usuario_id=current_user.id,
         avaliacao=request.avaliacao,
         nota=request.nota,
-        comentario=request.comentario,
+        comentario=sanitize_html(request.comentario),  # SECURITY: Sanitização de XSS
         parecer_correto=request.parecer_correto,
         valores_corretos=request.valores_corretos,
         medicamento_correto=request.medicamento_correto,
@@ -286,8 +291,19 @@ async def upload_documentos_faltantes(
         docs_anexos = geracao.documentos_anexos or []
         arquivos_processados = []
 
+        # SECURITY: Validação de assinatura binária (Magic Number)
+        from utils.security_sanitizer import validate_file_signature
+
         for i, arquivo in enumerate(todos_arquivos):
             pdf_bytes = await arquivo.read()
+            
+            # Valida se é realmente um PDF
+            if not validate_file_signature(pdf_bytes, 'pdf'):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Arquivo inválido: {arquivo.filename}. Apenas documentos PDF são permitidos."
+                )
+
             filename = arquivo.filename or f"documento_{i+1}.pdf"
 
             # Tenta extrair texto

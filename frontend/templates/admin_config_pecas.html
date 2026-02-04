@@ -278,6 +278,19 @@
     </div>
 
     <script>
+        // Função para escapar HTML e evitar XSS
+        function escapeHtml(text) {
+            if (!text) return '';
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
         const API_BASE = '/api/gerador-pecas/config';
         let categoriasCache = [];
         let tiposCache = [];
@@ -388,7 +401,7 @@
                     <div class="flex items-center justify-between mb-3">
                         <div class="flex items-center gap-2">
                             <span class="w-4 h-4 rounded-full" style="background: ${cat.cor || '#3498db'}"></span>
-                            <h3 class="font-semibold text-gray-800">${cat.titulo}</h3>
+                            <h3 class="font-semibold text-gray-800">${escapeHtml(cat.titulo)}</h3>
                         </div>
                         <div class="flex gap-2">
                             <button onclick="editarCategoria(${cat.id})" class="text-blue-600 hover:text-blue-800">
@@ -399,13 +412,13 @@
                             </button>
                         </div>
                     </div>
-                    <p class="text-sm text-gray-500 mb-2">${cat.descricao || ''}</p>
+                    <p class="text-sm text-gray-500 mb-2">${escapeHtml(cat.descricao || '')}</p>
                     <div class="text-xs text-gray-400 mb-2">
-                        <span class="font-mono bg-gray-100 px-1 rounded">${cat.nome}</span>
+                        <span class="font-mono bg-gray-100 px-1 rounded">${escapeHtml(cat.nome)}</span>
                     </div>
                     <div class="flex flex-wrap gap-1">
                         ${(cat.codigos_documento || []).slice(0, 8).map(cod => 
-                            `<span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs">${cod}</span>`
+                            `<span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-xs">${escapeHtml(cod)}</span>`
                         ).join('')}
                         ${(cat.codigos_documento || []).length > 8 ? 
                             `<span class="text-gray-400 text-xs">+${cat.codigos_documento.length - 8}</span>` : ''}

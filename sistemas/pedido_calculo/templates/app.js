@@ -264,13 +264,17 @@
     renderizarMinuta() {
       const container = document.getElementById("minuta-content");
       if (container && this.pedidoMarkdown && typeof marked !== "undefined") {
-        container.innerHTML = marked.parse(this.pedidoMarkdown);
+        // SECURITY: Sanitizando conteúdo da minuta
+        const rawHtml = marked.parse(this.pedidoMarkdown);
+        container.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(rawHtml) : rawHtml;
       }
     }
     renderizarPedido() {
       const container = document.getElementById("pedido-content");
       if (container && this.pedidoMarkdown && typeof marked !== "undefined") {
-        container.innerHTML = marked.parse(this.pedidoMarkdown);
+        // SECURITY: Sanitizando conteúdo do pedido
+        const rawHtml = marked.parse(this.pedidoMarkdown);
+        container.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(rawHtml) : rawHtml;
       }
     }
     resetarChat() {
@@ -1073,9 +1077,12 @@
       if (contentEl && this.streamingContent) {
         if (typeof marked !== "undefined") {
           marked.setOptions({ breaks: true, gfm: true });
-          contentEl.innerHTML = marked.parse(this.streamingContent);
+          // SECURITY: Sanitizando conteúdo markdown em tempo real
+          const rawHtml = marked.parse(this.streamingContent);
+          contentEl.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(rawHtml) : rawHtml;
         } else {
-          contentEl.innerHTML = this.streamingContent.replace(/## (.*)/g, '<h2 class="text-lg font-semibold mt-4 mb-2">$1</h2>').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\*(.*?)\*/g, "<em>$1</em>").replace(/\n/g, "<br>");
+          const rawHtml = this.streamingContent.replace(/## (.*)/g, '<h2 class="text-lg font-semibold mt-4 mb-2">$1</h2>').replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/\*(.*?)\*/g, "<em>$1</em>").replace(/\n/g, "<br>");
+          contentEl.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(rawHtml) : rawHtml;
         }
         const container = document.getElementById("pedido-content");
         if (container) {

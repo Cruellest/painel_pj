@@ -30,6 +30,7 @@ from auth.dependencies import get_current_active_user, get_current_user_from_tok
 from auth.models import User
 from database.connection import get_db
 from utils.timezone import to_iso_utc
+from utils.security_sanitizer import sanitize_html
 
 from .models import (
     GeracaoRelatorioCumprimento,
@@ -548,6 +549,9 @@ async def exportar_docx(
     - Remove recuo de primeira linha dos parágrafos (first_line_indent_cm=0)
     """
     try:
+        # Sanitiza markdown para evitar XSS se for renderizado
+        req.markdown = sanitize_html(req.markdown)
+        
         # Gera nome do arquivo
         file_id = str(uuid.uuid4())[:8]
         if req.numero_processo:
@@ -828,6 +832,9 @@ async def editar_relatorio(
 ):
     """Edita relatório via chat com IA."""
     try:
+        # Sanitiza mensagem do usuário
+        req.mensagem_usuario = sanitize_html(req.mensagem_usuario)
+        
         service = RelatorioCumprimentoService(db)
         novo_markdown, erro = await service.editar_relatorio(
             req.geracao_id,
@@ -981,12 +988,14 @@ async def enviar_feedback(
                 detail="Feedback já foi enviado para esta geração"
             )
 
+        from utils.security_sanitizer import sanitize_html
+        
         feedback = FeedbackRelatorioCumprimento(
             geracao_id=req.geracao_id,
             usuario_id=current_user.id,
             avaliacao=req.avaliacao,
             nota=req.nota,
-            comentario=req.comentario,
+            comentario=sanitize_html(req.comentario), # SECURITY: Sanitização de XSS
             campos_incorretos=req.campos_incorretos
         )
         db.add(feedback)

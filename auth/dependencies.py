@@ -9,6 +9,7 @@ SECURITY: Implementa autenticação híbrida que aceita token de:
 """
 
 from fastapi import Depends, HTTPException, status, Query, Request, Cookie
+from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -20,6 +21,80 @@ from auth.schemas import TokenData
 
 # SECURITY: Token blacklist para revogação
 from utils.token_blacklist import is_token_revoked
+
+
+async def get_current_user_html(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    SECURITY: Versão da dependency para páginas HTML.
+    Em vez de retornar 401, redireciona para a página de login.
+    """
+    cookie_token = request.cookies.get(AUTH_COOKIE_NAME)
+    query_token = request.query_params.get("token")
+    
+    token = extract_token_from_sources(
+        cookie_token=cookie_token,
+        query_token=query_token
+    )
+
+    if not token or is_token_revoked(token):
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/login?msg=unauthorized"}
+        )
+
+    payload = decode_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/login?msg=unauthorized"}
+        )
+
+    username: str = payload.get("sub")
+    user = db.query(User).filter(User.username == username).first()
+
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/login?msg=unauthorized"}
+        )
+
+    return user
+
+
+async def require_admin_html(
+    current_user: User = Depends(get_current_user_html)
+) -> User:
+    """
+    SECURITY: Versão da dependency require_admin para páginas HTML.
+    """
+    if current_user.role != "admin":
+        # Para admins, talvez redirecionar para o dashboard comum se não for admin
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/dashboard?msg=forbidden"}
+        )
+    return current_user
+
+
+def require_system_access_html(sistema: str):
+    """
+    SECURITY: Verifica se o usuário tem acesso a um sistema específico (via HTML).
+    """
+    async def _dependency(user: User = Depends(get_current_user_html)) -> User:
+        if user.role == "admin":
+            return user
+            
+        if user.sistemas_permitidos is None or sistema in user.sistemas_permitidos:
+            return user
+            
+        raise HTTPException(
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers={"Location": "/dashboard?msg=no_access&system=" + sistema}
+        )
+    return _dependency
 
 # OAuth2 scheme - define o endpoint de login
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)

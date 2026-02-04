@@ -708,6 +708,19 @@
     </div>
 
     <script>
+        // Função para escapar HTML e evitar XSS
+        function escapeHtml(text) {
+            if (!text) return '';
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
         const API_URL = '';
         let currentPrompts = [];
 
@@ -876,12 +889,12 @@
                                         </span>
                                         ${statusBadge}
                                     </div>
-                                    <h4 class="font-medium text-gray-800">${prompt.nome}</h4>
-                                    <p class="text-sm text-gray-500 mt-1">${prompt.descricao || ''}</p>
-                                    <p class="text-xs text-gray-400 mt-2 font-mono truncate">${previewContent}...</p>
+                                    <h4 class="font-medium text-gray-800">${escapeHtml(prompt.nome)}</h4>
+                                    <p class="text-sm text-gray-500 mt-1">${escapeHtml(prompt.descricao || '')}</p>
+                                    <p class="text-xs text-gray-400 mt-2 font-mono truncate">${escapeHtml(previewContent)}...</p>
                                     <p class="text-xs text-gray-400 mt-2">
                                         <i class="fas fa-clock"></i> Atualizado em ${updatedAt}
-                                        ${prompt.updated_by ? ' por ' + prompt.updated_by : ''}
+                                        ${prompt.updated_by ? ' por ' + escapeHtml(prompt.updated_by) : ''}
                                     </p>
                                 </div>
                                 <div class="flex-shrink-0">

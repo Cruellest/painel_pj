@@ -16,6 +16,7 @@ from auth.security import get_password_hash
 from auth.dependencies import require_admin
 from config import DEFAULT_USER_PASSWORD
 from admin.models_prompt_groups import PromptGroup
+from utils.security_sanitizer import sanitize_html
 
 # SECURITY: Audit Logging
 from utils.audit import (
@@ -114,16 +115,27 @@ async def create_user(
     # Define senha (padrão ou informada)
     password = user_data.password if user_data.password else DEFAULT_USER_PASSWORD
     
+    # SECURITY: Sanitização de inputs para prevenir XSS
+    clean_full_name = sanitize_html(user_data.full_name)
+    clean_setor = sanitize_html(user_data.setor)
+
+    # Validar se o nome ainda é válido após sanitização
+    if not clean_full_name or len(clean_full_name) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nome completo inválido após sanitização (mínimo 2 caracteres reais)"
+        )
+
     # Cria usuário
     new_user = User(
         username=user_data.username,
         email=user_data.email,
-        full_name=user_data.full_name,
+        full_name=clean_full_name,
         hashed_password=get_password_hash(password),
         role=user_data.role,
         sistemas_permitidos=user_data.sistemas_permitidos,
         permissoes_especiais=user_data.permissoes_especiais,
-        setor=user_data.setor,
+        setor=clean_setor,
         default_group_id=default_group.id if default_group else None,
         allowed_groups=allowed_groups,
         must_change_password=True,  # Força troca no primeiro acesso
@@ -269,6 +281,15 @@ async def update_user(
     # Atualiza campos informados
     update_data = user_data.model_dump(exclude_unset=True, exclude={"allowed_group_ids", "default_group_id"})
     for field, value in update_data.items():
+        if field in ["full_name", "setor"] and value is not None:
+            value = sanitize_html(str(value)) # SECURITY: Sanitização de XSS
+            
+            # Validar se o nome ainda é válido após sanitização
+            if field == "full_name" and (not value or len(value) < 2):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Nome completo inválido após sanitização (mínimo 2 caracteres reais)"
+                )
         setattr(user, field, value)
     
     db.commit()

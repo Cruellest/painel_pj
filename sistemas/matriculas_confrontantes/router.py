@@ -22,6 +22,7 @@ from database.connection import get_db
 from utils.timezone import to_iso_utc, now_utc
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
 from auth.models import User
+from utils.security_sanitizer import validate_file_signature # SECURITY: Magic numbers
 from config import UPLOAD_FOLDER, ALLOWED_EXTENSIONS, DEFAULT_MODEL, FULL_REPORT_MODEL
 
 from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise, ArquivoUpload
@@ -277,6 +278,27 @@ async def upload_file(
     
     # Salva o arquivo
     content = await file.read()
+    
+    # SECURITY: Validação de Magic Number (Assinatura Binária)
+    # Impede upload de scripts maliciosos disfarçados de imagem/PDF
+    # Mapeia extensões para mimes conhecidos
+    ext = original_name.rsplit('.', 1)[1].lower() if '.' in original_name else ''
+    mime_map = {
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'pdf': 'application/pdf',
+        'zip': 'application/zip',
+        'gif': 'image/gif'
+    }
+    
+    if ext in mime_map:
+        if not validate_file_signature(content, mime_map[ext]):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Assinatura binária do arquivo inválida. O conteúdo não corresponde a um arquivo .{ext} real."
+            )
+
     with open(filepath, "wb") as f:
         f.write(content)
     
@@ -1395,10 +1417,12 @@ async def enviar_feedback_matricula(
             FeedbackMatricula.analise_id == req.analise_id
         ).first()
         
+        from utils.security_sanitizer import sanitize_html
+        
         if feedback_existente:
             # Atualiza feedback existente
             feedback_existente.avaliacao = req.avaliacao
-            feedback_existente.comentario = req.comentario
+            feedback_existente.comentario = sanitize_html(req.comentario) # SECURITY: Sanitização de XSS
             feedback_existente.campos_incorretos = req.campos_incorretos
         else:
             # Cria novo feedback
@@ -1406,7 +1430,7 @@ async def enviar_feedback_matricula(
                 analise_id=req.analise_id,
                 usuario_id=current_user.id,
                 avaliacao=req.avaliacao,
-                comentario=req.comentario,
+                comentario=sanitize_html(req.comentario), # SECURITY: Sanitização de XSS
                 campos_incorretos=req.campos_incorretos
             )
             db.add(feedback)

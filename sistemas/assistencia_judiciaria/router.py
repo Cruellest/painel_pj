@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
+from utils.security_sanitizer import sanitize_html # SECURITY: Sanitização de XSS
 from utils.timezone import to_iso_utc
 from sistemas.assistencia_judiciaria.core.logic import full_flow, DEFAULT_MODEL
 from sistemas.assistencia_judiciaria.core.document import markdown_to_docx, docx_to_pdf
@@ -377,6 +378,10 @@ async def generate_document(
     - **format**: 'docx' ou 'pdf'
     """
     try:
+        # Sanitizar entradas
+        req.markdown_text = sanitize_html(req.markdown_text)
+        req.cnj = sanitize_html(req.cnj)
+
         # Criar arquivo temporário
         with tempfile.NamedTemporaryFile(delete=False, suffix=f".{req.format}") as tmp:
             output_path = tmp.name
@@ -449,7 +454,7 @@ async def enviar_feedback(
         if feedback_existente:
             # Atualiza feedback existente
             feedback_existente.avaliacao = req.avaliacao
-            feedback_existente.comentario = req.comentario
+            feedback_existente.comentario = sanitize_html(req.comentario) # SECURITY: Sanitização de XSS
             feedback_existente.campos_incorretos = req.campos_incorretos
         else:
             # Cria novo feedback
@@ -457,7 +462,7 @@ async def enviar_feedback(
                 consulta_id=req.consulta_id,
                 usuario_id=current_user.id,
                 avaliacao=req.avaliacao,
-                comentario=req.comentario,
+                comentario=sanitize_html(req.comentario), # SECURITY: Sanitização de XSS
                 campos_incorretos=req.campos_incorretos
             )
             db.add(feedback)

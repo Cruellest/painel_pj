@@ -256,9 +256,12 @@
       if (relatorioContainer) {
         if (relatorio) {
           if (typeof window.marked?.parse === "function") {
-            relatorioContainer.innerHTML = window.marked.parse(relatorio);
+            // SECURITY: Sanitizando relatório markdown
+            const rawHtml = window.marked.parse(relatorio);
+            relatorioContainer.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(rawHtml) : rawHtml;
           } else {
-            relatorioContainer.innerHTML = markdownToHtml(relatorio);
+            const rawHtml = markdownToHtml(relatorio);
+            relatorioContainer.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(rawHtml) : rawHtml;
           }
         } else {
           relatorioContainer.innerHTML = '<p class="text-gray-400 italic">Relat\xF3rio n\xE3o dispon\xEDvel</p>';

@@ -359,7 +359,9 @@
     atualizarEditorStreaming() {
       const content = document.getElementById("minuta-content");
       if (content && typeof marked !== "undefined") {
-        content.innerHTML = marked.parse(this.streamingContent);
+        // SECURITY: Sanitizando conteúdo markdown em tempo real
+        const rawHtml = marked.parse(this.streamingContent);
+        content.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(rawHtml) : rawHtml;
       }
       const container = document.getElementById("minuta-container");
       if (container) {
@@ -408,9 +410,11 @@
         return;
       }
       if (typeof marked !== "undefined") {
-        content.innerHTML = marked.parse(conteudo);
+        // SECURITY: Sanitizando conteúdo markdown da minuta
+        const rawHtml = marked.parse(conteudo);
+        content.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(rawHtml) : rawHtml;
       } else {
-        content.innerHTML = conteudo;
+        content.innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(conteudo) : conteudo;
       }
       const minutaStatus = document.getElementById("minuta-status");
       if (minutaStatus) minutaStatus.textContent = "Atualizado agora";

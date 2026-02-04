@@ -8,6 +8,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Security Utils -->
+    <script src="/static/js/security.js"></script>
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         tailwind.config = {
@@ -1273,7 +1277,11 @@
 
                 // Renderiza o relatório em Markdown
                 if (data.relatorio) {
-                    conteudo.innerHTML = marked.parse(data.relatorio);
+                    if (typeof SecurityUtils !== "undefined") {
+                        conteudo.innerHTML = SecurityUtils.sanitizeHtml(marked.parse(data.relatorio));
+                    } else {
+                        conteudo.innerHTML = marked.parse(data.relatorio);
+                    }
                 } else {
                     conteudo.innerHTML = '<p class="text-gray-400 italic text-center py-8">Relatório não disponível para esta consulta.</p>';
                 }
@@ -1516,7 +1524,7 @@
                             <i class="fas fa-arrow-left mr-1"></i>Voltar para versão atual
                         </button>
                     </div>
-                ` + marked.parse(conteudo);
+                ` + (typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(marked.parse(conteudo)) : marked.parse(conteudo));
 
                 mostrarTabRelatorio('relatorio');
 
@@ -1530,7 +1538,8 @@
             if (consultaAtual && sistemaAtual) {
                 const data = await api(`/admin/feedbacks/consulta/${consultaAtual}?sistema=${sistemaAtual}`);
                 if (data && data.relatorio) {
-                    document.getElementById('modal-conteudo').innerHTML = marked.parse(data.relatorio);
+                    const html = marked.parse(data.relatorio);
+                    document.getElementById('modal-conteudo').innerHTML = typeof SecurityUtils !== "undefined" ? SecurityUtils.sanitizeHtml(html) : html;
                 }
             }
         }

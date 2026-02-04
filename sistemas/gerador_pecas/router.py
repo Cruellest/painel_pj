@@ -40,6 +40,7 @@ from sistemas.gerador_pecas.versoes import (
 )
 from admin.models import ConfiguracaoIA, PromptConfig
 from admin.models_prompt_groups import PromptGroup, PromptSubgroup
+from utils.security_sanitizer import sanitize_html
 
 router = APIRouter(tags=["Gerador de Peças"])
 
@@ -252,6 +253,10 @@ async def buscar_argumentos(
     """
     from sistemas.gerador_pecas.services_busca_argumentos import buscar_argumentos_relevantes
 
+    # SECURITY: Sanitização de entrada para prevenir XSS
+    if req.query:
+        req.query = sanitize_html(req.query)
+
     print(f"\n{'='*60}")
     print(f"[ENDPOINT] 🔎 Busca de argumentos solicitada")
     print(f"[ENDPOINT] 👤 Usuário: {current_user.username}")
@@ -335,6 +340,12 @@ async def processar_processo(
         - Se status == "erro": {"mensagem": "..."}
     """
     try:
+        # SECURITY: Sanitização de entradas do usuário para prevenir XSS
+        if req.resposta_usuario:
+            req.resposta_usuario = sanitize_html(req.resposta_usuario)
+        if req.observacao_usuario:
+            req.observacao_usuario = sanitize_html(req.observacao_usuario)
+
         # Normaliza o CNJ
         cnj_limpo = _limpar_cnj(req.numero_cnj)
 
@@ -411,6 +422,12 @@ async def processar_processo_stream(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Tipo de peça é obrigatório. Selecione o tipo de peça antes de gerar."
         )
+
+    # SECURITY: Sanitização de entradas do usuário para prevenir XSS
+    if req.resposta_usuario:
+        req.resposta_usuario = sanitize_html(req.resposta_usuario)
+    if req.observacao_usuario:
+        req.observacao_usuario = sanitize_html(req.observacao_usuario)
 
     grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
         current_user,
@@ -856,6 +873,10 @@ async def processar_pdfs_stream(
             detail="Tipo de peça é obrigatório. Selecione o tipo de peça antes de gerar."
         )
 
+    # SECURITY: Sanitização de entradas do usuário para prevenir XSS
+    if observacao_usuario:
+        observacao_usuario = sanitize_html(observacao_usuario)
+
     subcategoria_ids = _parse_subcategoria_ids_form(subcategoria_ids_json)
     grupo, subcategoria_ids = _resolver_grupo_e_subcategorias(
         current_user,
@@ -875,14 +896,19 @@ async def processar_pdfs_stream(
             # ==================================================================
             yield f"data: {json.dumps({'tipo': 'agente', 'agente': 1, 'status': 'ativo', 'mensagem': f'Lendo {len(arquivos)} arquivo(s)...'})}\n\n"
 
+            # SECURITY: Validação de assinatura binária (Magic Number)
+            from utils.security_sanitizer import validate_file_signature
+
             # Lê bytes de todos os PDFs
             documentos_bytes = []
             for i, arquivo in enumerate(arquivos):
-                if not arquivo.filename.lower().endswith('.pdf'):
-                    yield f"data: {json.dumps({'tipo': 'info', 'mensagem': f'Ignorando arquivo não-PDF: {arquivo.filename}'})}\n\n"
-                    continue
-
                 conteudo = await arquivo.read()
+                
+                # Valida se é realmente um PDF (assinatura binária)
+                if not validate_file_signature(conteudo, 'pdf'):
+                    yield f"data: {json.dumps({'tipo': 'erro', 'mensagem': f'Arquivo inválido: {arquivo.filename}. Apenas PDFs válidos são permitidos.'})}\n\n"
+                    return # Encerra o stream se detectar fraude
+
                 documentos_bytes.append({
                     "nome": arquivo.filename,
                     "id": f"pdf_{i+1}",
@@ -1420,6 +1446,12 @@ async def editar_minuta(
     Retorna a minuta atualizada em markdown.
     """
     try:
+        # SECURITY: Sanitização de entrada para prevenir XSS
+        if req.minuta_atual:
+            req.minuta_atual = sanitize_html(req.minuta_atual)
+        if req.mensagem:
+            req.mensagem = sanitize_html(req.mensagem)
+
         # Logging de tamanho para diagnóstico
         minuta_len = len(req.minuta_atual) if req.minuta_atual else 0
         mensagem_len = len(req.mensagem) if req.mensagem else 0
@@ -1494,6 +1526,12 @@ async def editar_minuta_stream(
     from fastapi.responses import StreamingResponse
     from services.gemini_service import stream_to_sse
     import json
+
+    # SECURITY: Sanitização de entrada para prevenir XSS
+    if req.minuta_atual:
+        req.minuta_atual = sanitize_html(req.minuta_atual)
+    if req.mensagem:
+        req.mensagem = sanitize_html(req.mensagem)
 
     try:
         tipo_peca = req.tipo_peca
@@ -2026,12 +2064,14 @@ async def enviar_feedback(
                 detail="Feedback já foi enviado para esta geração"
             )
 
+        from utils.security_sanitizer import sanitize_html
+        
         feedback = FeedbackPeca(
             geracao_id=req.geracao_id,
             usuario_id=current_user.id,
             avaliacao=req.avaliacao,
             nota=req.nota,
-            comentario=req.comentario,
+            comentario=sanitize_html(req.comentario), # SECURITY: Sanitização de XSS
             campos_incorretos=req.campos_incorretos
         )
         db.add(feedback)

@@ -10,6 +10,21 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <!-- Marked.js para renderizar markdown -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/static/js/security.js"></script>
+    <script>
+        // Fallback para sanitizeHtml se o script não carregar ou se estivermos em ambiente de desenvolvimento sem static
+        if (typeof window.sanitizeHtml !== 'function') {
+            window.sanitizeHtml = function(html) {
+                if (!html) return '';
+                return html
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
+        }
+    </script>
     <script>
         tailwind.config = {
             theme: {

@@ -25,6 +25,7 @@ from sqlalchemy import desc
 from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
+from utils.security_sanitizer import validate_file_signature # SECURITY: Validação de Magic Number
 
 from sistemas.bert_training.models import (
     BertDataset, BertRun, BertJob, BertMetric, BertLog, BertWorker, BertTestHistory,
@@ -224,6 +225,21 @@ async def upload_dataset(
 
     # Lê conteúdo e calcula hash
     content = await file.read()
+    
+    # SECURITY: Validação de Magic Number (Assinatura Binária)
+    # Impede upload de scripts maliciosos disfarçados de Excel
+    is_valid_signature = False
+    if file.filename.endswith('.xlsx'):
+        is_valid_signature = validate_file_signature(content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    elif file.filename.endswith('.xls'):
+        is_valid_signature = validate_file_signature(content, "application/vnd.ms-excel")
+    
+    if not is_valid_signature:
+        raise HTTPException(
+            status_code=400,
+            detail="Assinatura binária do arquivo inválida. O conteúdo não corresponde a um arquivo Excel real."
+        )
+
     sha256_hash = hashlib.sha256(content).hexdigest()
 
     # Verifica se já existe

@@ -10,7 +10,7 @@ Com autenticação centralizada via JWT.
 """
 
 import logging
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -41,11 +41,21 @@ class StatusPollingFilter(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(StatusPollingFilter())
 
 from database.init_db import init_database
+from auth.models import User
+from auth.dependencies import (
+    get_current_user, 
+    get_current_active_user, 
+    require_admin,
+    require_admin_html,
+    get_current_user_html,
+    require_system_access_html
+)
 from auth.router import router as auth_router
 from users.router import router as users_router
 
 # SECURITY: Rate Limiting
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware  # Adicionado middleware
 from utils.rate_limit import limiter, rate_limit_exceeded_handler
 
 # SECURITY: Exception handling
@@ -325,6 +335,7 @@ app.add_middleware(
 
 # SECURITY: Rate Limiting
 app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)  # Registra middleware global
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # PERFORMANCE: Middleware de timing (apenas para admin quando ativado)
@@ -515,17 +526,11 @@ async def liveness_check():
     summary="Métricas Prometheus",
     response_description="Métricas em formato Prometheus text"
 )
-async def prometheus_metrics():
+async def prometheus_metrics(admin: User = Depends(require_admin)):
     """
     Endpoint de métricas em formato Prometheus.
-
-    Retorna métricas de:
-    - Contagem de requests por endpoint e status
-    - Latência (histograma)
-    - Erros por tipo
-    - Uptime do serviço
-
-    Pode ser usado diretamente por Prometheus para scraping.
+    
+    SECURITY: Acesso restrito a administradores.
     """
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(
@@ -535,16 +540,11 @@ async def prometheus_metrics():
 
 
 @app.get("/metrics/json")
-async def metrics_json():
+async def metrics_json(admin: User = Depends(require_admin)):
     """
     Endpoint de métricas em formato JSON.
-
-    Retorna resumo das métricas em formato legível:
-    - Uptime
-    - Total de requests/erros
-    - Top endpoints
-    - Endpoints mais lentos
-    - Taxa de erro
+    
+    SECURITY: Acesso restrito a administradores.
     """
     return get_metrics_summary()
 
@@ -723,14 +723,14 @@ def safe_serve_static(base_dir: Path, filename: str, no_cache: bool = False):
 @app.get("/assistencia/{filename:path}")
 @app.get("/assistencia/")
 @app.get("/assistencia")
-async def serve_assistencia_static(filename: str = ""):
+async def serve_assistencia_static(filename: str = "", user: User = Depends(require_system_access_html("assistencia_judiciaria"))):
     """Serve arquivos do frontend Assistência Judiciária"""
     return safe_serve_static(ASSISTENCIA_TEMPLATES, filename)
 
 
 # Matrículas Confrontantes - Servir arquivos estáticos (JS, CSS)
 @app.get("/matriculas/{filename:path}")
-async def serve_matriculas_static(filename: str = ""):
+async def serve_matriculas_static(filename: str = "", user: User = Depends(require_system_access_html("matriculas"))):
     """Serve arquivos do frontend Matrículas Confrontantes"""
     return safe_serve_static(MATRICULAS_TEMPLATES, filename)
 
@@ -739,7 +739,7 @@ async def serve_matriculas_static(filename: str = ""):
 @app.get("/gerador-pecas/{filename:path}")
 @app.get("/gerador-pecas/")
 @app.get("/gerador-pecas")
-async def serve_gerador_pecas_static(filename: str = ""):
+async def serve_gerador_pecas_static(filename: str = "", user: User = Depends(require_system_access_html("gerador_pecas"))):
     """Serve arquivos do frontend Gerador de Peças Jurídicas"""
     return safe_serve_static(GERADOR_PECAS_TEMPLATES, filename, no_cache=True)
 
@@ -748,7 +748,7 @@ async def serve_gerador_pecas_static(filename: str = ""):
 @app.get("/pedido-calculo/{filename:path}")
 @app.get("/pedido-calculo/")
 @app.get("/pedido-calculo")
-async def serve_pedido_calculo_static(filename: str = ""):
+async def serve_pedido_calculo_static(filename: str = "", user: User = Depends(require_system_access_html("pedido_calculo"))):
     """Serve arquivos do frontend Pedido de Cálculo"""
     return safe_serve_static(PEDIDO_CALCULO_TEMPLATES, filename, no_cache=True)
 
@@ -757,7 +757,7 @@ async def serve_pedido_calculo_static(filename: str = ""):
 @app.get("/prestacao-contas/{filename:path}")
 @app.get("/prestacao-contas/")
 @app.get("/prestacao-contas")
-async def serve_prestacao_contas_static(filename: str = ""):
+async def serve_prestacao_contas_static(filename: str = "", user: User = Depends(require_system_access_html("prestacao_contas"))):
     """Serve arquivos do frontend Prestação de Contas"""
     return safe_serve_static(PRESTACAO_CONTAS_TEMPLATES, filename, no_cache=True)
 
@@ -766,7 +766,7 @@ async def serve_prestacao_contas_static(filename: str = ""):
 @app.get("/relatorio-cumprimento/{filename:path}")
 @app.get("/relatorio-cumprimento/")
 @app.get("/relatorio-cumprimento")
-async def serve_relatorio_cumprimento_static(filename: str = ""):
+async def serve_relatorio_cumprimento_static(filename: str = "", user: User = Depends(require_system_access_html("relatorio_cumprimento"))):
     """Serve arquivos do frontend Relatório de Cumprimento"""
     return safe_serve_static(RELATORIO_CUMPRIMENTO_TEMPLATES, filename, no_cache=True)
 
@@ -775,7 +775,7 @@ async def serve_relatorio_cumprimento_static(filename: str = ""):
 @app.get("/cumprimento-beta/{filename:path}")
 @app.get("/cumprimento-beta/")
 @app.get("/cumprimento-beta")
-async def serve_cumprimento_beta_static(filename: str = ""):
+async def serve_cumprimento_beta_static(filename: str = "", user: User = Depends(require_system_access_html("cumprimento_beta"))):
     """Serve arquivos do frontend Cumprimento de Sentença Beta"""
     return safe_serve_static(CUMPRIMENTO_BETA_TEMPLATES, filename, no_cache=True)
 
@@ -784,7 +784,7 @@ async def serve_cumprimento_beta_static(filename: str = ""):
 @app.get("/classificador/{filename:path}")
 @app.get("/classificador/")
 @app.get("/classificador")
-async def serve_classificador_static(filename: str = ""):
+async def serve_classificador_static(filename: str = "", user: User = Depends(require_system_access_html("classificador"))):
     """Serve arquivos do frontend Classificador de Documentos"""
     return safe_serve_static(CLASSIFICADOR_DOCUMENTOS_TEMPLATES, filename, no_cache=True)
 
@@ -793,7 +793,7 @@ async def serve_classificador_static(filename: str = ""):
 @app.get("/bert-training/templates/{filename:path}")
 @app.get("/bert-training/")
 @app.get("/bert-training")
-async def serve_bert_training_static(filename: str = ""):
+async def serve_bert_training_static(filename: str = "", user: User = Depends(require_system_access_html("bert_training"))):
     """Serve arquivos do frontend BERT Training"""
     return safe_serve_static(BERT_TRAINING_TEMPLATES, filename, no_cache=True)
 
@@ -809,9 +809,9 @@ async def login_page(request: Request):
 
 
 @app.get("/dashboard")
-async def dashboard_page(request: Request):
+async def dashboard_page(request: Request, user: User = Depends(get_current_user_html)):
     """Página do dashboard - seleção de sistemas"""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse("dashboard.html", {"request": request, "user": user})
 
 
 @app.get("/change-password")
@@ -828,7 +828,13 @@ async def change_password_page(request: Request):
 # mas adicionamos verificação básica de token no backend
 # para evitar acesso direto por crawlers/bots.
 
-from auth.dependencies import get_current_active_user, require_admin
+from auth.dependencies import (
+    get_current_active_user, 
+    require_admin,
+    get_current_user_html,
+    require_admin_html,
+    require_system_access_html
+)
 from auth.models import User
 from fastapi import Depends
 from sqlalchemy.orm import Session
@@ -856,97 +862,97 @@ async def verify_admin_token_optional(request: Request) -> bool:
 
 
 @app.get("/admin/prompts-config")
-async def admin_prompts_page(request: Request):
+async def admin_prompts_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de administração de prompts"""
-    return templates.TemplateResponse("admin_prompts.html", {"request": request})
+    return templates.TemplateResponse("admin_prompts.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/prompts-modulos")
-async def admin_prompts_modulos_page(request: Request):
+async def admin_prompts_modulos_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de gerenciamento de prompts modulares"""
-    return templates.TemplateResponse("admin_prompts_modulos.html", {"request": request})
+    return templates.TemplateResponse("admin_prompts_modulos.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/modulos-tipo-peca")
-async def admin_modulos_tipo_peca_page(request: Request):
+async def admin_modulos_tipo_peca_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de configuração de módulos por tipo de peça"""
-    return templates.TemplateResponse("admin_modulos_tipo_peca.html", {"request": request})
+    return templates.TemplateResponse("admin_modulos_tipo_peca.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/gerador-pecas/historico")
-async def admin_gerador_historico_page(request: Request):
+async def admin_gerador_historico_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de histórico de gerações com prompts"""
-    return templates.TemplateResponse("admin_gerador_historico.html", {"request": request})
+    return templates.TemplateResponse("admin_gerador_historico.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/pedido-calculo/debug")
-async def admin_pedido_calculo_debug_page(request: Request):
+async def admin_pedido_calculo_debug_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de debug do Pedido de Cálculo - visualiza chamadas de IA"""
-    return templates.TemplateResponse("admin_pedido_calculo_historico.html", {"request": request})
+    return templates.TemplateResponse("admin_pedido_calculo_historico.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/prestacao-contas/debug")
-async def admin_prestacao_contas_debug_page(request: Request):
+async def admin_prestacao_contas_debug_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de debug da Prestação de Contas - visualiza chamadas de IA"""
-    return templates.TemplateResponse("admin_prestacao_contas_historico.html", {"request": request})
+    return templates.TemplateResponse("admin_prestacao_contas_historico.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/users")
-async def admin_users_page(request: Request):
+async def admin_users_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de administração de usuários"""
-    return templates.TemplateResponse("admin_users.html", {"request": request})
+    return templates.TemplateResponse("admin_users.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/feedbacks")
-async def admin_feedbacks_page(request: Request):
+async def admin_feedbacks_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de dashboard de feedbacks"""
-    return templates.TemplateResponse("admin_feedbacks.html", {"request": request})
+    return templates.TemplateResponse("admin_feedbacks.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/categorias-resumo-json")
-async def admin_categorias_json_page(request: Request):
+async def admin_categorias_json_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de gerenciamento de categorias de formato de resumo JSON"""
-    return templates.TemplateResponse("admin_categorias_json.html", {"request": request})
+    return templates.TemplateResponse("admin_categorias_json.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/categorias-resumo-json/teste")
-async def admin_teste_categorias_json_page(request: Request):
+async def admin_teste_categorias_json_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de teste/validação de categorias de resumo JSON"""
-    return templates.TemplateResponse("admin_teste_categorias_json.html", {"request": request})
+    return templates.TemplateResponse("admin_teste_categorias_json.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/prompts-modulos/teste")
-async def admin_teste_ativacao_modulos_page(request: Request):
+async def admin_teste_ativacao_modulos_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de teste de ativação de prompts modulares"""
-    return templates.TemplateResponse("admin_teste_ativacao_modulos.html", {"request": request})
+    return templates.TemplateResponse("admin_teste_ativacao_modulos.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/variaveis")
-async def admin_variaveis_page(request: Request):
+async def admin_variaveis_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página do painel de variáveis de extração"""
-    return templates.TemplateResponse("admin_variaveis.html", {"request": request})
+    return templates.TemplateResponse("admin_variaveis.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/restaurar-slugs")
-async def admin_restaurar_slugs_page(request: Request):
+async def admin_restaurar_slugs_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página para restaurar slugs de variáveis a partir de backup"""
-    return templates.TemplateResponse("admin_restaurar_slugs.html", {"request": request})
+    return templates.TemplateResponse("admin_restaurar_slugs.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/performance")
-async def admin_performance_page(request: Request):
+async def admin_performance_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página para gerenciar logs de performance (diagnóstico de latência)"""
-    return templates.TemplateResponse("admin_performance.html", {"request": request})
+    return templates.TemplateResponse("admin_performance.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/tjms-docs")
-async def admin_tjms_docs_page(request: Request):
+async def admin_tjms_docs_page(request: Request, admin: User = Depends(require_admin_html)):
     """Página de documentação da integração TJMS - explica como cada sistema consome do TJ-MS"""
-    return templates.TemplateResponse("admin_tjms_docs.html", {"request": request})
+    return templates.TemplateResponse("admin_tjms_docs.html", {"request": request, "user": admin})
 
 
 @app.get("/admin/tjms-docs/plano")
-async def admin_tjms_plano_page():
+async def admin_tjms_plano_page(request: Request, admin: User = Depends(require_admin_html)):
     """Retorna o plano de unificação TJMS em markdown"""
     import os
     plano_path = os.path.join(BASE_DIR, "docs", "PLANO_UNIFICACAO_TJMS.md")
