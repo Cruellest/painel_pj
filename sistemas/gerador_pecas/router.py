@@ -1671,7 +1671,9 @@ async def download_documento(
 ):
     """Download do documento gerado (aceita token via header, cookie ou query param)"""
     
-    filepath = os.path.join(TEMP_DIR, filename)
+    # Prevenção de Path Traversal: Garante que apenas o nome do arquivo seja usado
+    safe_filename = os.path.basename(filename)
+    filepath = os.path.join(TEMP_DIR, safe_filename)
     
     if not os.path.exists(filepath):
         raise HTTPException(

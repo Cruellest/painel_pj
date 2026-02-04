@@ -760,7 +760,9 @@ async def download_documento(
     current_user: User = Depends(get_current_user_from_token_or_query)
 ):
     """Download do documento gerado"""
-    filepath = os.path.join(TEMP_DIR, filename)
+    # Prevenção de Path Traversal
+    safe_filename = os.path.basename(filename)
+    filepath = os.path.join(TEMP_DIR, safe_filename)
 
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Documento não encontrado")
