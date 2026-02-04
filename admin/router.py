@@ -615,16 +615,18 @@ async def dashboard_feedbacks(
     mes: Optional[int] = None,
     ano: Optional[int] = None,
     sistema: Optional[str] = None,
+    semanas_evolucao: int = 12,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db)
 ):
     """
     Retorna estatísticas do dashboard de feedbacks.
-    
+
     Parâmetros:
         - mes: Mês para filtrar (1-12)
         - ano: Ano para filtrar (ex: 2026)
         - sistema: Sistema específico ('assistencia_judiciaria' ou 'matriculas')
+        - semanas_evolucao: Número de semanas para o gráfico de evolução (default: 12)
     
     Exclui feedbacks de usuários admin e teste.
     Apenas para administradores.
@@ -1238,31 +1240,58 @@ async def dashboard_feedbacks(
                 )
             analises_sem_feedback_mat = query_pendentes_mat.order_by(Analise.analisado_em.desc()).limit(20).all()
 
-        # Gerador de Peças
+        # Gerador de Peças - usa SQL direto para incluir modo_ativacao_agente2 de forma resiliente
         if incluir_gp:
-            query_pendentes_gp = db.query(
-                GeracaoPeca.id,
-                GeracaoPeca.tipo_peca,
-                GeracaoPeca.numero_cnj,
-                GeracaoPeca.criado_em,
-                User.username,
-                User.full_name
-            ).outerjoin(
-                FeedbackPeca, FeedbackPeca.geracao_id == GeracaoPeca.id
-            ).join(
-                User, GeracaoPeca.usuario_id == User.id
-            ).filter(
-                FeedbackPeca.id == None,
-                GeracaoPeca.conteudo_gerado.isnot(None)
-            )
-            if ids_excluir:
-                query_pendentes_gp = query_pendentes_gp.filter(~GeracaoPeca.usuario_id.in_(ids_excluir))
-            if data_inicio and data_fim:
-                query_pendentes_gp = query_pendentes_gp.filter(
-                    GeracaoPeca.criado_em >= data_inicio,
-                    GeracaoPeca.criado_em < data_fim
+            try:
+                # Tenta query com modo_ativacao_agente2
+                from sqlalchemy import text as sql_text
+                sql_pendentes_gp = """
+                    SELECT gp.id, gp.tipo_peca, gp.numero_cnj, gp.criado_em,
+                           u.username, u.full_name, gp.modo_ativacao_agente2
+                    FROM geracoes_pecas gp
+                    LEFT JOIN feedbacks_pecas fp ON fp.geracao_id = gp.id
+                    JOIN users u ON gp.usuario_id = u.id
+                    WHERE fp.id IS NULL
+                      AND gp.conteudo_gerado IS NOT NULL
+                """
+                params = {}
+                if ids_excluir:
+                    sql_pendentes_gp += " AND gp.usuario_id NOT IN :ids_excluir"
+                    params["ids_excluir"] = tuple(ids_excluir)
+                if data_inicio and data_fim:
+                    sql_pendentes_gp += " AND gp.criado_em >= :data_inicio AND gp.criado_em < :data_fim"
+                    params["data_inicio"] = data_inicio
+                    params["data_fim"] = data_fim
+                sql_pendentes_gp += " ORDER BY gp.criado_em DESC LIMIT 20"
+
+                result = db.execute(sql_text(sql_pendentes_gp), params).fetchall()
+                geracoes_sem_feedback_gp = [(r[0], r[1], r[2], r[3], r[4], r[5], r[6]) for r in result]
+            except Exception:
+                # Fallback: query sem modo_ativacao_agente2
+                query_pendentes_gp = db.query(
+                    GeracaoPeca.id,
+                    GeracaoPeca.tipo_peca,
+                    GeracaoPeca.numero_cnj,
+                    GeracaoPeca.criado_em,
+                    User.username,
+                    User.full_name
+                ).outerjoin(
+                    FeedbackPeca, FeedbackPeca.geracao_id == GeracaoPeca.id
+                ).join(
+                    User, GeracaoPeca.usuario_id == User.id
+                ).filter(
+                    FeedbackPeca.id == None,
+                    GeracaoPeca.conteudo_gerado.isnot(None)
                 )
-            geracoes_sem_feedback_gp = query_pendentes_gp.order_by(GeracaoPeca.criado_em.desc()).limit(20).all()
+                if ids_excluir:
+                    query_pendentes_gp = query_pendentes_gp.filter(~GeracaoPeca.usuario_id.in_(ids_excluir))
+                if data_inicio and data_fim:
+                    query_pendentes_gp = query_pendentes_gp.filter(
+                        GeracaoPeca.criado_em >= data_inicio,
+                        GeracaoPeca.criado_em < data_fim
+                    )
+                result = query_pendentes_gp.order_by(GeracaoPeca.criado_em.desc()).limit(20).all()
+                geracoes_sem_feedback_gp = [(r[0], r[1], r[2], r[3], r[4], r[5], None) for r in result]
 
         # Pedido de Cálculo
         if incluir_pc:
@@ -1361,13 +1390,16 @@ async def dashboard_feedbacks(
                 "usuario": full_name or username,
                 "data": to_iso_utc(analisado_em)
             })
-        for id, tipo_peca, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_gp:
+        for row in geracoes_sem_feedback_gp:
+            id, tipo_peca, numero_cnj, criado_em, username, full_name = row[:6]
+            modo_ativacao = row[6] if len(row) > 6 else None
             pendentes_feedback.append({
                 "id": id,
                 "sistema": "gerador_pecas",
                 "identificador": numero_cnj or tipo_peca,
                 "usuario": full_name or username,
-                "data": to_iso_utc(criado_em)
+                "data": to_iso_utc(criado_em),
+                "modo_ativacao": modo_ativacao
             })
         for id, numero_cnj_fmt, numero_cnj, criado_em, username, full_name in geracoes_sem_feedback_pc:
             pendentes_feedback.append({
@@ -1397,7 +1429,114 @@ async def dashboard_feedbacks(
         # Ordena por data (mais recentes primeiro)
         pendentes_feedback.sort(key=lambda x: x.get('data') or '', reverse=True)
         pendentes_feedback = pendentes_feedback[:20]
-        
+
+        # ============================================
+        # EVOLUÇÃO TEMPORAL POR SISTEMA (semanas)
+        # ============================================
+        # Calcula taxa de acerto por semana para cada sistema
+        # IMPORTANTE: Usa período independente (últimas N semanas) para garantir visualização útil
+        from sqlalchemy import extract
+
+        # Define período para evolução: últimas N semanas (independente do filtro de mês/ano)
+        data_fim_evolucao = datetime.utcnow()
+        data_inicio_evolucao = data_fim_evolucao - timedelta(weeks=semanas_evolucao)
+
+        # Gera lista de todas as semanas no período para garantir continuidade
+        def gerar_semanas_periodo(data_inicio, data_fim):
+            """Gera lista de todas as semanas (ano-semana) no período."""
+            semanas = []
+            current = data_inicio
+            while current <= data_fim:
+                ano_iso, semana_iso, _ = current.isocalendar()
+                semana_str = f"{ano_iso}-S{semana_iso:02d}"
+                if semana_str not in semanas:
+                    semanas.append(semana_str)
+                current += timedelta(days=7)
+            return semanas
+
+        todas_semanas_evolucao = gerar_semanas_periodo(data_inicio_evolucao, data_fim_evolucao)
+
+        def calcular_evolucao_semanal(feedback_model, ids_excluir):
+            """Calcula taxa de acerto por semana para um modelo de feedback (últimas N semanas)."""
+            query = db.query(
+                extract('isoyear', feedback_model.criado_em).label('ano'),
+                extract('week', feedback_model.criado_em).label('semana'),
+                func.count(feedback_model.id).label('total'),
+                func.sum(case((feedback_model.avaliacao == 'correto', 1), else_=0)).label('corretos'),
+                func.sum(case((feedback_model.avaliacao == 'parcial', 1), else_=0)).label('parciais'),
+                func.sum(case((feedback_model.avaliacao == 'incorreto', 1), else_=0)).label('incorretos')
+            ).filter(
+                feedback_model.criado_em >= data_inicio_evolucao,
+                feedback_model.criado_em <= data_fim_evolucao
+            )
+            if ids_excluir:
+                query = query.filter(~feedback_model.usuario_id.in_(ids_excluir))
+            return query.group_by(
+                extract('isoyear', feedback_model.criado_em),
+                extract('week', feedback_model.criado_em)
+            ).order_by(
+                extract('isoyear', feedback_model.criado_em),
+                extract('week', feedback_model.criado_em)
+            ).all()
+
+        def formatar_dados_evolucao(dados_raw, todas_semanas):
+            """Formata dados de evolução preenchendo semanas sem dados com zeros."""
+            # Mapeia dados por semana
+            dados_por_semana = {}
+            for r in dados_raw:
+                semana_str = f"{int(r.ano)}-S{int(r.semana):02d}"
+                dados_por_semana[semana_str] = {
+                    'semana': semana_str,
+                    'total': r.total,
+                    'corretos': r.corretos or 0,
+                    'parciais': r.parciais or 0,
+                    'incorretos': r.incorretos or 0,
+                    'taxa_acerto': round((r.corretos or 0) / r.total * 100, 1) if r.total > 0 else 0
+                }
+
+            # Preenche todas as semanas, usando null para semanas sem dados
+            resultado = []
+            for semana in todas_semanas:
+                if semana in dados_por_semana:
+                    resultado.append(dados_por_semana[semana])
+                else:
+                    # Semana sem dados - usar null para não distorcer o gráfico
+                    resultado.append({
+                        'semana': semana,
+                        'total': 0,
+                        'corretos': 0,
+                        'parciais': 0,
+                        'incorretos': 0,
+                        'taxa_acerto': None  # null indica ausência de dados
+                    })
+            return resultado
+
+        evolucao_por_sistema = {}
+
+        if incluir_aj:
+            dados_aj = calcular_evolucao_semanal(FeedbackAnalise, ids_excluir)
+            evolucao_por_sistema['assistencia_judiciaria'] = formatar_dados_evolucao(dados_aj, todas_semanas_evolucao)
+
+        if incluir_mat:
+            dados_mat = calcular_evolucao_semanal(FeedbackMatricula, ids_excluir)
+            evolucao_por_sistema['matriculas'] = formatar_dados_evolucao(dados_mat, todas_semanas_evolucao)
+
+        if incluir_gp:
+            dados_gp = calcular_evolucao_semanal(FeedbackPeca, ids_excluir)
+            evolucao_por_sistema['gerador_pecas'] = formatar_dados_evolucao(dados_gp, todas_semanas_evolucao)
+
+        if incluir_pc:
+            dados_pc = calcular_evolucao_semanal(FeedbackPedidoCalculo, ids_excluir)
+            evolucao_por_sistema['pedido_calculo'] = formatar_dados_evolucao(dados_pc, todas_semanas_evolucao)
+
+        if incluir_prest:
+            dados_prest = calcular_evolucao_semanal(FeedbackPrestacao, ids_excluir)
+            evolucao_por_sistema['prestacao_contas'] = formatar_dados_evolucao(dados_prest, todas_semanas_evolucao)
+
+        if incluir_rc:
+            dados_rc = calcular_evolucao_semanal(FeedbackRelatorioCumprimento, ids_excluir)
+            evolucao_por_sistema['relatorio_cumprimento'] = formatar_dados_evolucao(dados_rc, todas_semanas_evolucao)
+
         return {
             "total_consultas": total_consultas,
             "total_feedbacks": total_feedbacks,
@@ -1437,7 +1576,8 @@ async def dashboard_feedbacks(
                     "total": total_geracoes_rc,
                     "feedbacks": total_feedbacks_rc
                 }
-            }
+            },
+            "evolucao_por_sistema": evolucao_por_sistema
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1580,11 +1720,13 @@ async def listar_feedbacks(
 
         # Feedbacks de Gerador de Peças
         if sistema is None or sistema == 'gerador_pecas':
+            # Query básica sem colunas de curadoria (que podem não existir no banco)
             query_gp = db.query(
                 FeedbackPeca,
                 GeracaoPeca.tipo_peca,
                 GeracaoPeca.numero_cnj,
                 GeracaoPeca.modelo_usado,
+                GeracaoPeca.id.label('geracao_id_ref'),
                 User.username,
                 User.full_name
             ).join(
@@ -1605,7 +1747,50 @@ async def listar_feedbacks(
             if usuario_id:
                 query_gp = query_gp.filter(FeedbackPeca.usuario_id == usuario_id)
 
-            for fb, tipo_peca, numero_cnj, modelo_usado, username, full_name in query_gp.all():
+            for fb, tipo_peca, numero_cnj, modelo_usado, geracao_id_ref, username, full_name in query_gp.all():
+                # Busca dados de curadoria usando SQL direto (evita erro se colunas não existem)
+                modo_ativacao = None
+                modulos_det = None
+                modulos_llm = None
+                curadoria_meta = None
+                try:
+                    from sqlalchemy import text
+                    result = db.execute(text("""
+                        SELECT modo_ativacao_agente2, modulos_ativados_det, modulos_ativados_llm, curadoria_metadata
+                        FROM geracoes_pecas WHERE id = :id
+                    """), {"id": geracao_id_ref}).fetchone()
+                    if result:
+                        modo_ativacao, modulos_det, modulos_llm, curadoria_meta = result
+                except Exception:
+                    # Colunas não existem no banco - ignora silenciosamente
+                    pass
+                # Dados específicos do modo semi-automático
+                modo_info = None
+                if modo_ativacao == 'semi_automatico':
+                    curadoria_data = curadoria_meta or {}
+                    # Calcula total_preview: usa o valor salvo ou estima pela soma de curados + excluídos
+                    preview_ids = curadoria_data.get("modulos_preview_ids", [])
+                    total_preview_saved = curadoria_data.get("total_preview", 0)
+                    # Se não tiver total_preview salvo, estima pelo tamanho da lista de preview_ids
+                    # ou pela soma de curados (que vieram do preview) + excluídos
+                    total_preview = total_preview_saved if total_preview_saved else len(preview_ids) if preview_ids else (
+                        curadoria_data.get("total_curados", 0) - curadoria_data.get("total_manuais", 0) + curadoria_data.get("total_excluidos", 0)
+                    )
+                    modo_info = {
+                        "modo": "semi_automatico",
+                        "total_preview": total_preview,
+                        "total_curados": curadoria_data.get("total_curados", (modulos_det or 0) + (modulos_llm or 0)),
+                        "total_manuais": curadoria_data.get("total_manuais", modulos_llm or 0),
+                        "total_excluidos": curadoria_data.get("total_excluidos", 0),
+                        "categorias_ordem": curadoria_data.get("categorias_ordem", [])
+                    }
+                elif modo_ativacao:
+                    modo_info = {
+                        "modo": modo_ativacao,
+                        "modulos_det": modulos_det,
+                        "modulos_llm": modulos_llm
+                    }
+
                 feedbacks_combinados.append({
                     "id": fb.id,
                     "consulta_id": fb.geracao_id,
@@ -1619,7 +1804,8 @@ async def listar_feedbacks(
                     "comentario": fb.comentario,
                     "campos_incorretos": fb.campos_incorretos,
                     "criado_em": to_iso_utc(fb.criado_em),
-                    "criado_em_dt": fb.criado_em
+                    "criado_em_dt": fb.criado_em,
+                    "modo_ativacao": modo_info
                 })
 
         # Feedbacks de Pedido de Cálculo
@@ -1879,8 +2065,21 @@ async def obter_consulta_detalhes(
             }
 
         elif sistema == "gerador_pecas":
+            # Query apenas com colunas que sempre existem (evita erro de coluna inexistente)
+            from sqlalchemy import text as sql_text
             geracao = db.query(
-                GeracaoPeca,
+                GeracaoPeca.id,
+                GeracaoPeca.numero_cnj,
+                GeracaoPeca.numero_cnj_formatado,
+                GeracaoPeca.tipo_peca,
+                GeracaoPeca.dados_processo,
+                GeracaoPeca.conteudo_gerado,
+                GeracaoPeca.prompt_enviado,
+                GeracaoPeca.resumo_consolidado,
+                GeracaoPeca.historico_chat,
+                GeracaoPeca.modelo_usado,
+                GeracaoPeca.tempo_processamento,
+                GeracaoPeca.criado_em,
                 User.username,
                 User.full_name
             ).join(
@@ -1892,7 +2091,8 @@ async def obter_consulta_detalhes(
             if not geracao:
                 raise HTTPException(status_code=404, detail="Geração não encontrada")
 
-            g, username, full_name = geracao
+            (g_id, g_cnj, g_cnj_fmt, g_tipo, g_dados, g_conteudo, g_prompt, g_resumo,
+             g_historico, g_modelo, g_tempo, g_criado, username, full_name) = geracao
 
             # Busca feedback se existir
             feedback = db.query(FeedbackPeca).filter(
@@ -1906,26 +2106,66 @@ async def obter_consulta_detalhes(
 
             # Formata histórico de chat filtrando apenas mensagens do usuário (role: user)
             # para evitar contagem duplicada (respostas do assistente não são edições)
-            historico_chat = g.historico_chat or []
+            historico_chat = g_historico or []
             edicoes_chat = [
                 msg for msg in historico_chat
                 if isinstance(msg, dict) and msg.get('role') == 'user'
             ]
 
+            # Obtém dados de curadoria usando SQL direto (colunas podem não existir no banco)
+            modo_ativacao = None
+            modulos_det = None
+            modulos_llm = None
+            curadoria_meta = None
+            try:
+                result = db.execute(sql_text("""
+                    SELECT modo_ativacao_agente2, modulos_ativados_det, modulos_ativados_llm, curadoria_metadata
+                    FROM geracoes_pecas WHERE id = :id
+                """), {"id": consulta_id}).fetchone()
+                if result:
+                    modo_ativacao, modulos_det, modulos_llm, curadoria_meta = result
+            except Exception:
+                pass
+
+            # Monta informações do modo
+            modo_info = None
+            if modo_ativacao == 'semi_automatico':
+                curadoria_data = curadoria_meta or {}
+                modo_info = {
+                    "modo": "semi_automatico",
+                    "total_preview": curadoria_data.get("total_preview", 0),
+                    "total_curados": curadoria_data.get("total_curados", (modulos_det or 0) + (modulos_llm or 0)),
+                    "total_manuais": curadoria_data.get("total_manuais", modulos_llm or 0),
+                    "total_excluidos": curadoria_data.get("total_excluidos", 0),
+                    "modulos_preview_ids": curadoria_data.get("modulos_preview_ids", []),
+                    "modulos_curados_ids": curadoria_data.get("modulos_curados_ids", []),
+                    "modulos_manuais_ids": curadoria_data.get("modulos_manuais_ids", []),
+                    "modulos_excluidos_ids": curadoria_data.get("modulos_excluidos_ids", []),
+                    "categorias_ordem": curadoria_data.get("categorias_ordem", []),
+                    "preview_timestamp": curadoria_data.get("preview_timestamp")
+                }
+            elif modo_ativacao:
+                modo_info = {
+                    "modo": modo_ativacao,
+                    "modulos_det": modulos_det,
+                    "modulos_llm": modulos_llm
+                }
+
             return {
-                "id": g.id,
+                "id": g_id,
                 "sistema": "gerador_pecas",
-                "identificador": g.numero_cnj_formatado or g.numero_cnj or g.tipo_peca,
-                "cnj": g.numero_cnj,
-                "tipo_peca": g.tipo_peca,
-                "dados": g.dados_processo,
-                "relatorio": g.conteudo_gerado,
-                "modelo": g.modelo_usado,
+                "identificador": g_cnj_fmt or g_cnj or g_tipo,
+                "cnj": g_cnj,
+                "tipo_peca": g_tipo,
+                "dados": g_dados,
+                "relatorio": g_conteudo,
+                "modelo": g_modelo,
                 "usuario": full_name or username,
-                "criado_em": to_iso_utc(g.criado_em),
+                "criado_em": to_iso_utc(g_criado),
                 "historico_chat": historico_chat,  # Histórico completo de chat
                 "edicoes_chat": edicoes_chat,  # Apenas mensagens do usuário (pedidos de revisão)
                 "total_edicoes_chat": len(edicoes_chat),  # Contagem correta
+                "modo_ativacao": modo_info,  # Informações do modo de ativação (automático/semi-automático)
                 "versoes": [
                     {
                         "id": v.id,

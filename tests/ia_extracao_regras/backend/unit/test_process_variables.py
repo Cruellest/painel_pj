@@ -461,7 +461,12 @@ class TestProcessVariableDefinition(unittest.TestCase):
 
 
 class TestMunicipioPoloPassivo(unittest.TestCase):
-    """Testes para a variavel municipio_polo_passivo."""
+    """
+    Testes para a variavel municipio_polo_passivo.
+
+    Lógica simplificada: Se a parte tem 'Município' ou 'Prefeitura Municipal'
+    no nome e é pessoa jurídica, então é um município no polo passivo.
+    """
 
     def test_polo_passivo_vazio_retorna_none(self):
         """Polo passivo vazio deve retornar None."""
@@ -527,8 +532,8 @@ class TestMunicipioPoloPassivo(unittest.TestCase):
         resultado = _resolver_municipio_polo_passivo(dados)
         self.assertFalse(resultado)
 
-    def test_municipio_outro_estado_retorna_false(self):
-        """Municipio de outro estado deve retornar False."""
+    def test_municipio_outro_estado_retorna_true(self):
+        """Município de outro estado também deve retornar True (lógica simplificada)."""
         dados = MockDadosProcesso(
             numero_processo="0001234-56.2024.8.12.0001",
             polo_passivo=[
@@ -536,7 +541,7 @@ class TestMunicipioPoloPassivo(unittest.TestCase):
             ]
         )
         resultado = _resolver_municipio_polo_passivo(dados)
-        self.assertFalse(resultado)
+        self.assertTrue(resultado)
 
     def test_municipio_entre_multiplas_partes_retorna_true(self):
         """Municipio entre multiplas partes deve retornar True."""
@@ -560,6 +565,124 @@ class TestMunicipioPoloPassivo(unittest.TestCase):
         )
         resultado = _resolver_municipio_polo_passivo(dados)
         self.assertTrue(resultado)
+
+    def test_municipio_qualquer_nome_retorna_true(self):
+        """Qualquer município (não só de MS) deve retornar True."""
+        dados = MockDadosProcesso(
+            numero_processo="0001234-56.2024.8.12.0001",
+            polo_passivo=[
+                MockParteProcesso(nome="Município de São Paulo", tipo_pessoa="juridica", polo="PA")
+            ]
+        )
+        resultado = _resolver_municipio_polo_passivo(dados)
+        self.assertTrue(resultado)
+
+    def test_municipio_com_variacao_preposicao_retorna_true(self):
+        """'Município de/do X' deve retornar True independente da preposição."""
+        # Com "do"
+        dados_do = MockDadosProcesso(
+            numero_processo="0001234-56.2024.8.12.0001",
+            polo_passivo=[
+                MockParteProcesso(nome="Município do Rio de Janeiro", tipo_pessoa="juridica", polo="PA")
+            ]
+        )
+        self.assertTrue(_resolver_municipio_polo_passivo(dados_do))
+
+        # Com "de"
+        dados_de = MockDadosProcesso(
+            numero_processo="0001234-56.2024.8.12.0001",
+            polo_passivo=[
+                MockParteProcesso(nome="Município de São Paulo", tipo_pessoa="juridica", polo="PA")
+            ]
+        )
+        self.assertTrue(_resolver_municipio_polo_passivo(dados_de))
+
+    def test_municipio_pessoa_fisica_retorna_false(self):
+        """Pessoa física com 'Município' no nome não deve retornar True."""
+        dados = MockDadosProcesso(
+            numero_processo="0001234-56.2024.8.12.0001",
+            polo_passivo=[
+                MockParteProcesso(nome="João do Município", tipo_pessoa="fisica", polo="PA")
+            ]
+        )
+        resultado = _resolver_municipio_polo_passivo(dados)
+        self.assertFalse(resultado)
+
+    def test_prefeitura_sem_municipal_nao_retorna_true(self):
+        """'Prefeitura' sem 'Municipal' não deve retornar True."""
+        dados = MockDadosProcesso(
+            numero_processo="0001234-56.2024.8.12.0001",
+            polo_passivo=[
+                MockParteProcesso(nome="Prefeitura da Universidade", tipo_pessoa="juridica", polo="PA")
+            ]
+        )
+        resultado = _resolver_municipio_polo_passivo(dados)
+        self.assertFalse(resultado)
+
+    def test_caso_real_dois_irmaos_buriti_com_estado(self):
+        """
+        Caso real: processo 08006930520258120053
+        'Município de Dois Irmãos de Buriti /MS' com Estado no polo passivo.
+        Deve retornar True pois município está presente.
+        """
+        dados = MockDadosProcesso(
+            numero_processo="08006930520258120053",
+            polo_passivo=[
+                MockParteProcesso(
+                    nome="Município de Dois Irmãos de Buriti /MS",
+                    tipo_pessoa="juridica",
+                    polo="PA"
+                ),
+                MockParteProcesso(
+                    nome="Estado de Mato Grosso do Sul",
+                    tipo_pessoa="juridica",
+                    polo="PA"
+                )
+            ]
+        )
+        resultado = _resolver_municipio_polo_passivo(dados)
+        self.assertTrue(resultado, "Município de Dois Irmãos de Buriti /MS deve ser reconhecido")
+
+    def test_caso_real_brasilandia_sem_municipio(self):
+        """
+        Caso real da primeira mensagem: processo 08007543220258120030
+        Sem município no polo passivo (só Estado) deve retornar False.
+        """
+        dados = MockDadosProcesso(
+            numero_processo="08007543220258120030",
+            polo_passivo=[
+                MockParteProcesso(
+                    nome="Estado de Mato Grosso do Sul",
+                    tipo_pessoa="juridica",
+                    polo="PA"
+                )
+            ]
+        )
+        resultado = _resolver_municipio_polo_passivo(dados)
+        self.assertFalse(resultado, "Sem município no polo passivo deve retornar False")
+
+    def test_caso_real_brasilandia_com_municipio(self):
+        """
+        Se o processo 08007543220258120030 tivesse município,
+        deveria retornar True (teste de correção do bug).
+        """
+        dados = MockDadosProcesso(
+            numero_processo="08007543220258120030",
+            polo_passivo=[
+                MockParteProcesso(
+                    nome="Município de Brasilândia/MS",
+                    tipo_pessoa="juridica",
+                    polo="PA"
+                ),
+                MockParteProcesso(
+                    nome="Estado de Mato Grosso do Sul",
+                    tipo_pessoa="juridica",
+                    polo="PA"
+                )
+            ]
+        )
+        resultado = _resolver_municipio_polo_passivo(dados)
+        self.assertTrue(resultado, "Com Município de Brasilândia deve retornar True")
 
 
 if __name__ == "__main__":

@@ -41,6 +41,20 @@ logger = logging.getLogger(__name__)
 _tjms_circuit_breaker: CircuitBreaker = None
 
 
+def _limpar_numero_processo(numero: str) -> str:
+    """
+    Remove formatação do número do processo para enviar ao TJ-MS.
+
+    O TJ-MS espera exatamente 20 dígitos sem pontos, traços ou barras.
+    Ex: '0808281-22.2025.8.12.0002' -> '08082812220258120002'
+    """
+    if not numero:
+        return ""
+    if '/' in numero:
+        numero = numero.split('/')[0]
+    return ''.join(c for c in numero if c.isdigit())
+
+
 def get_circuit_breaker() -> CircuitBreaker:
     """Obtém o Circuit Breaker do TJ-MS (singleton)."""
     global _tjms_circuit_breaker
@@ -543,6 +557,9 @@ class TJMSClient:
         ids_documentos: List[str]
     ) -> str:
         """Constroi envelope SOAP para download de documentos."""
+        # Limpa número do processo (TJ-MS espera 20 dígitos sem formatação)
+        numero_limpo = _limpar_numero_processo(numero_processo)
+
         docs_xml = "".join(
             f"<tip:documento>{doc_id}</tip:documento>"
             for doc_id in ids_documentos
@@ -557,7 +574,7 @@ class TJMSClient:
         <ser:consultarProcesso>
             <tip:idConsultante>{self.config.soap_user}</tip:idConsultante>
             <tip:senhaConsultante>{self.config.soap_pass}</tip:senhaConsultante>
-            <tip:numeroProcesso>{numero_processo}</tip:numeroProcesso>
+            <tip:numeroProcesso>{numero_limpo}</tip:numeroProcesso>
             {docs_xml}
         </ser:consultarProcesso>
     </soapenv:Body>

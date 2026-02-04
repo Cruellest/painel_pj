@@ -5,6 +5,7 @@ Router de administração do Gerador de Peças
 - Histórico detalhado de gerações
 """
 
+import logging
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -16,6 +17,8 @@ from auth.models import User
 from database.connection import get_db
 from utils.timezone import to_iso_utc
 from sistemas.gerador_pecas.models import GeracaoPeca, VersaoPeca
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gerador-pecas-admin", tags=["Gerador de Peças - Admin"])
 
@@ -35,9 +38,9 @@ class GeracaoDetalhadaResponse(BaseModel):
     resumo_consolidado: Optional[str]
     conteudo_gerado: Optional[str] = None  # Markdown string
     historico_chat: Optional[List[Any]] = None  # Histórico de edições via chat
-    modo_ativacao_agente2: Optional[str] = None  # 'fast_path', 'misto', 'llm'
-    modulos_ativados_det: Optional[int] = None  # Ativados por regra determinística
-    modulos_ativados_llm: Optional[int] = None  # Ativados por LLM
+    modo_ativacao_agente2: Optional[str] = None  # 'fast_path', 'misto', 'llm', 'semi_automatico'
+    modulos_ativados_det: Optional[int] = None  # Ativados por regra determinística (ou total-manuais no semi_automatico)
+    modulos_ativados_llm: Optional[int] = None  # Ativados por LLM (ou manuais no semi_automatico)
     criado_em: datetime
 
     class Config:
@@ -182,4 +185,177 @@ async def obter_versao_geracao(
         "descricao": versao.descricao_alteracao,  # Campo correto do modelo
         "conteudo_markdown": versao.conteudo,  # Campo correto do modelo
         "criado_em": to_iso_utc(versao.criado_em)
+    }
+
+
+@router.get("/geracoes/{geracao_id}/curadoria")
+async def obter_curadoria_geracao(
+    geracao_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtém detalhes completos de curadoria de uma geração no modo semi-automático.
+
+    Retorna informações detalhadas para auditoria e transparência:
+    - Metadados de curadoria (IDs, contagens, timestamp)
+    - Lista completa de módulos incluídos com: título, categoria, conteúdo, origem, decisão
+    - Lista de módulos excluídos com: título, categoria, conteúdo, motivo
+    - Ordem das categorias definida pelo usuário
+    - Explicações semânticas de cada status/decisão
+    """
+    from admin.models_prompts import PromptModulo
+
+    logger.info(f"[Curadoria] Requisição de auditoria: geracao_id={geracao_id}, usuario={current_user.username}")
+
+    geracao = db.query(GeracaoPeca).filter(GeracaoPeca.id == geracao_id).first()
+    if not geracao:
+        logger.warning(f"[Curadoria] Geração não encontrada: id={geracao_id}")
+        raise HTTPException(status_code=404, detail="Geração não encontrada")
+
+    # Verifica se é modo semi-automático
+    modo = _safe_get_attr(geracao, 'modo_ativacao_agente2')
+    if modo != 'semi_automatico':
+        logger.info(f"[Curadoria] Geração {geracao_id} não é semi-automático: modo={modo}")
+        raise HTTPException(
+            status_code=404,
+            detail="Esta geração não foi feita no modo semi-automático"
+        )
+
+    # Obtém metadados de curadoria
+    metadata = _safe_get_attr(geracao, 'curadoria_metadata') or {}
+
+    # IDs dos módulos
+    modulos_curados_ids = metadata.get('modulos_curados_ids', [])
+    modulos_manuais_ids = metadata.get('modulos_manuais_ids', [])
+    modulos_excluidos_ids = metadata.get('modulos_excluidos_ids', [])
+    modulos_preview_ids = metadata.get('modulos_preview_ids', [])
+
+    # Busca dados completos dos módulos no banco (incluindo conteúdo)
+    todos_ids = set(modulos_curados_ids + modulos_manuais_ids + modulos_excluidos_ids + modulos_preview_ids)
+    modulos_db = {}
+    if todos_ids:
+        modulos = db.query(PromptModulo).filter(PromptModulo.id.in_(todos_ids)).all()
+        modulos_db = {
+            m.id: {
+                "id": m.id,
+                "titulo": m.titulo,
+                "categoria": m.categoria or "Outros",
+                "subcategoria": m.subcategoria,
+                "conteudo": m.conteudo,  # Conteúdo completo para transparência
+                "modo_ativacao_modulo": m.modo_ativacao or "llm"  # Como o módulo é normalmente ativado
+            }
+            for m in modulos
+        }
+
+    # Usa modulos_detalhados se disponível (nova estrutura), senão reconstrói
+    modulos_detalhados = metadata.get('modulos_detalhados', [])
+    manuais_set = set(modulos_manuais_ids)
+    preview_set = set(modulos_preview_ids)
+
+    # Monta listas com informações completas de auditoria
+    modulos_incluidos = []
+    for i, mid in enumerate(modulos_curados_ids):
+        base_info = modulos_db.get(mid, {
+            "id": mid,
+            "titulo": f"Módulo {mid}",
+            "categoria": "Desconhecido",
+            "subcategoria": None,
+            "conteudo": "(Conteúdo não disponível)",
+            "modo_ativacao_modulo": "desconhecido"
+        })
+        info = base_info.copy()
+
+        # Determina origem e tipo de decisão
+        if modulos_detalhados and i < len(modulos_detalhados):
+            detalhe = modulos_detalhados[i]
+            info["origem"] = detalhe.get("origem", "desconhecido")
+        else:
+            info["origem"] = "manual" if mid in manuais_set else ("preview" if mid in preview_set else "automatico")
+
+        # Define status com tag HUMAN_VALIDATED e explicação semântica
+        if info["origem"] == "manual":
+            info["tag"] = "[HUMAN_VALIDATED:MANUAL]"
+            info["tipo_decisao"] = "manual"
+            info["decisao_explicacao"] = "Adicionado manualmente pelo usuário durante a curadoria"
+            info["motivo_inclusao"] = "O usuário escolheu incluir este argumento que não estava na sugestão automática"
+        else:
+            info["tag"] = "[HUMAN_VALIDATED]"
+            info["tipo_decisao"] = "confirmado"
+            info["decisao_explicacao"] = "Sugerido automaticamente e confirmado pelo usuário"
+            info["motivo_inclusao"] = "O sistema sugeriu este argumento e o usuário confirmou sua inclusão"
+
+        info["ordem"] = i + 1  # Posição na ordem final
+        info["status_final"] = "incluido"
+        modulos_incluidos.append(info)
+
+    # Módulos excluídos com explicação
+    modulos_excluidos = []
+    for mid in modulos_excluidos_ids:
+        base_info = modulos_db.get(mid, {
+            "id": mid,
+            "titulo": f"Módulo {mid}",
+            "categoria": "Desconhecido",
+            "subcategoria": None,
+            "conteudo": "(Conteúdo não disponível)",
+            "modo_ativacao_modulo": "desconhecido"
+        })
+        info = base_info.copy()
+        info["origem"] = "preview"  # Excluídos sempre vêm do preview
+        info["tag"] = "[EXCLUÍDO]"
+        info["tipo_decisao"] = "removido"
+        info["decisao_explicacao"] = "Sugerido automaticamente mas removido pelo usuário"
+        info["motivo_exclusao"] = "O sistema sugeriu este argumento, mas o usuário decidiu não incluí-lo na peça final"
+        info["status_final"] = "excluido"
+        modulos_excluidos.append(info)
+
+    # Calcula estatísticas detalhadas
+    total_preview = metadata.get('total_preview', len(modulos_preview_ids))
+    total_confirmados = len([m for m in modulos_incluidos if m["tipo_decisao"] == "confirmado"])
+    total_manuais = len([m for m in modulos_incluidos if m["tipo_decisao"] == "manual"])
+    total_excluidos = len(modulos_excluidos)
+
+    logger.info(
+        f"[Curadoria] Auditoria carregada: geracao_id={geracao_id}, "
+        f"preview={total_preview}, incluidos={len(modulos_incluidos)}, "
+        f"confirmados={total_confirmados}, manuais={total_manuais}, excluidos={total_excluidos}"
+    )
+
+    return {
+        "geracao_id": geracao_id,
+        "modo": "semi_automatico",
+        "metadata": {
+            "total_preview": total_preview,
+            "total_incluidos": len(modulos_incluidos),
+            "total_confirmados": total_confirmados,
+            "total_manuais": total_manuais,
+            "total_excluidos": total_excluidos,
+            "preview_timestamp": metadata.get('preview_timestamp'),
+            "categorias_ordem": metadata.get('categorias_ordem', [])
+        },
+        # Glossário de termos para a UI exibir
+        "glossario": {
+            "HUMAN_VALIDATED": "Argumento validado pelo usuário - será incluído integralmente na peça final sem modificação pela IA",
+            "HUMAN_VALIDATED:MANUAL": "Argumento adicionado manualmente pelo usuário - não estava na sugestão automática",
+            "confirmado": "Argumento sugerido pelo sistema e confirmado pelo usuário",
+            "manual": "Argumento adicionado pelo usuário durante a revisão",
+            "removido": "Argumento sugerido pelo sistema mas removido pelo usuário",
+            "preview": "Sugestão automática do sistema (Agente 2) antes da revisão humana",
+            "incluido": "Este argumento FAZ PARTE da peça final gerada",
+            "excluido": "Este argumento NÃO FAZ PARTE da peça final gerada"
+        },
+        # Explicação do processo para transparência
+        "explicacao_processo": {
+            "titulo": "Como funciona o Modo Semi-Automático",
+            "etapas": [
+                "1. O sistema analisa o processo e sugere argumentos relevantes (Preview)",
+                "2. O usuário revisa a sugestão, podendo confirmar, remover ou adicionar argumentos",
+                "3. Argumentos confirmados recebem a tag [HUMAN_VALIDATED]",
+                "4. Argumentos adicionados manualmente recebem [HUMAN_VALIDATED:MANUAL]",
+                "5. A IA recebe instrução de usar estes argumentos integralmente, sem modificação"
+            ],
+            "garantia": "Todos os argumentos marcados como HUMAN_VALIDATED são incluídos na peça final exatamente como validados pelo usuário."
+        },
+        "modulos_incluidos": modulos_incluidos,
+        "modulos_excluidos": modulos_excluidos
     }

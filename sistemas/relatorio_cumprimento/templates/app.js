@@ -1,6 +1,6 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\sistemas\relatorio_cumprimento\app.ts
-// Built at: 2026-01-24T19:56:06.876Z
+// Built at: 2026-01-30T21:41:45.528Z
 
 "use strict";
 (() => {
@@ -754,8 +754,6 @@
       }
     }
     async carregarHistoricoRecente() {
-      const containerCards = document.getElementById("historico-cards");
-      const containerLista = document.getElementById("lista-historico");
       try {
         const response = await fetch(`${API_URL}/historico`, {
           headers: {
@@ -766,24 +764,9 @@
           const historico = await response.json();
           this.renderizarHistoricoCards(historico.slice(0, 5));
           this.renderizarListaHistorico(historico);
-        } else {
-          // Erro na API - mostrar mensagem vazia
-          if (containerCards) {
-            containerCards.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">Nenhum relatorio gerado ainda</p>';
-          }
-          if (containerLista) {
-            containerLista.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">Nenhum relatorio no historico</p>';
-          }
         }
       } catch (error) {
         console.error("Erro ao carregar historico:", error);
-        // Erro de rede - mostrar mensagem
-        if (containerCards) {
-          containerCards.innerHTML = '<p class="text-gray-500 text-sm text-center py-4">Nenhum relatorio gerado ainda</p>';
-        }
-        if (containerLista) {
-          containerLista.innerHTML = '<p class="text-gray-500 text-sm text-center py-8">Nenhum relatorio no historico</p>';
-        }
       }
     }
     renderizarHistoricoCards(historico) {

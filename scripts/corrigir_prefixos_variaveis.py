@@ -23,10 +23,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from dotenv import load_dotenv
 
+# Carrega variáveis de ambiente do .env
+load_dotenv()
 
-# URL do banco PostgreSQL (Railway)
-DATABASE_URL = "postgresql://postgres:dfDpTUMqyxdZAHAPMOEAhaRBkCVxuJws@yamanote.proxy.rlwy.net:48085/railway"
+# URL do banco PostgreSQL (de variável de ambiente)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL não definida. Configure no .env ou nas variáveis de ambiente.")
 
 
 def normalizar_nome_para_namespace(nome: str) -> str:
@@ -245,7 +250,15 @@ def diagnosticar_banco(session) -> Dict[str, Any]:
 
 def corrigir_prefixos(session, dry_run: bool = True) -> int:
     """
-    Corrige os prefixos das variáveis.
+    Corrige os prefixos das variáveis e atualiza todas as referências.
+
+    Esta função:
+    1. Identifica variáveis sem o prefixo correto da categoria
+    2. Aplica o prefixo (sem tentar remover prefixos existentes - apenas adiciona)
+    3. Atualiza nome_variavel_sugerido na pergunta associada
+    4. Atualiza depends_on_variable em outras perguntas que referenciam esta
+    5. Atualiza depends_on_variable em outras variáveis que referenciam esta
+    6. Atualiza referências em prompts modulares (placeholders {{variavel}})
 
     Args:
         session: Sessão do SQLAlchemy
@@ -264,6 +277,7 @@ def corrigir_prefixos(session, dry_run: bool = True) -> int:
             v.id,
             v.slug,
             v.categoria_id,
+            v.source_question_id,
             c.nome as categoria_nome,
             c.namespace_prefix
         FROM extraction_variables v
@@ -274,29 +288,20 @@ def corrigir_prefixos(session, dry_run: bool = True) -> int:
     """)).fetchall()
 
     correcoes = []
+    dependencias_atualizadas = 0
+    prompts_atualizados = 0
 
     for var in variaveis:
-        var_id, slug, cat_id, cat_nome, ns_prefix = var
+        var_id, slug, cat_id, source_q_id, cat_nome, ns_prefix = var
 
         # Calcula namespace esperado
         namespace = ns_prefix if ns_prefix else normalizar_nome_para_namespace(cat_nome or '')
         prefixo_esperado = f"{namespace}_"
 
-        # Verifica se precisa de correção
+        # Verifica se precisa de correção (NÃO tem o prefixo correto)
         if not slug.startswith(prefixo_esperado):
-            # Remove prefixo incorreto se houver (evita duplicação)
-            slug_base = slug
-            # Se já tem algum prefixo que termina em _, remove
-            if '_' in slug:
-                partes = slug.split('_')
-                # Tenta identificar se é um namespace incorreto
-                # Verifica se a primeira parte é um namespace de outra categoria
-                possivel_namespace = partes[0]
-                if len(partes) > 1 and len(possivel_namespace) > 2:
-                    # Provavelmente é um namespace - remove
-                    slug_base = '_'.join(partes[1:])
-
-            slug_corrigido = f"{prefixo_esperado}{slug_base}"
+            # Aplica o prefixo SEM remover nada (idempotente)
+            slug_corrigido = f"{prefixo_esperado}{slug}"
 
             # Verifica se o slug corrigido já existe
             existe = session.execute(text("""
@@ -312,35 +317,78 @@ def corrigir_prefixos(session, dry_run: bool = True) -> int:
                 "id": var_id,
                 "slug_antigo": slug,
                 "slug_novo": slug_corrigido,
-                "categoria": cat_nome
+                "categoria": cat_nome,
+                "source_question_id": source_q_id
             })
 
             if dry_run:
                 print(f"  [DRY RUN] ID={var_id}: '{slug}' -> '{slug_corrigido}'")
             else:
-                # Atualiza a variável
+                # 1. Atualiza a variável
                 session.execute(text("""
                     UPDATE extraction_variables
                     SET slug = :novo_slug
                     WHERE id = :id
                 """), {"novo_slug": slug_corrigido, "id": var_id})
+                print(f"  [OK] Variável ID={var_id}: '{slug}' -> '{slug_corrigido}'")
 
-                # Atualiza a pergunta correspondente se existir
-                session.execute(text("""
+                # 2. Atualiza a pergunta correspondente (se existir)
+                if source_q_id:
+                    session.execute(text("""
+                        UPDATE extraction_questions
+                        SET nome_variavel_sugerido = :novo_slug
+                        WHERE id = :q_id
+                    """), {"novo_slug": slug_corrigido, "q_id": source_q_id})
+                    print(f"       -> Pergunta ID={source_q_id} atualizada")
+
+                # 3. Atualiza depends_on_variable em OUTRAS perguntas
+                deps_perguntas = session.execute(text("""
                     UPDATE extraction_questions
-                    SET nome_variavel_sugerido = :novo_slug
-                    WHERE id = (
-                        SELECT source_question_id
-                        FROM extraction_variables
-                        WHERE id = :var_id
-                    )
-                """), {"novo_slug": slug_corrigido, "var_id": var_id})
+                    SET depends_on_variable = :novo_slug
+                    WHERE depends_on_variable = :antigo_slug
+                    RETURNING id
+                """), {"novo_slug": slug_corrigido, "antigo_slug": slug}).fetchall()
+                if deps_perguntas:
+                    dependencias_atualizadas += len(deps_perguntas)
+                    print(f"       -> {len(deps_perguntas)} pergunta(s) dependente(s) atualizada(s)")
 
-                print(f"  [OK] ID={var_id}: '{slug}' -> '{slug_corrigido}'")
+                # 4. Atualiza depends_on_variable em OUTRAS variáveis
+                deps_variaveis = session.execute(text("""
+                    UPDATE extraction_variables
+                    SET depends_on_variable = :novo_slug
+                    WHERE depends_on_variable = :antigo_slug
+                    RETURNING id
+                """), {"novo_slug": slug_corrigido, "antigo_slug": slug}).fetchall()
+                if deps_variaveis:
+                    dependencias_atualizadas += len(deps_variaveis)
+                    print(f"       -> {len(deps_variaveis)} variável(is) dependente(s) atualizada(s)")
+
+                # 5. Atualiza referências em prompts modulares (placeholders {{variavel}})
+                # Busca prompts que contêm o slug antigo
+                prompts = session.execute(text("""
+                    SELECT id, conteudo FROM prompts_modulares
+                    WHERE conteudo LIKE :pattern
+                """), {"pattern": f"%{{{{{slug}}}}}%"}).fetchall()
+
+                for prompt_id, conteudo in prompts:
+                    # Substitui {{slug_antigo}} por {{slug_novo}}
+                    novo_conteudo = conteudo.replace(f"{{{{{slug}}}}}", f"{{{{{slug_corrigido}}}}}")
+                    session.execute(text("""
+                        UPDATE prompts_modulares
+                        SET conteudo = :conteudo
+                        WHERE id = :id
+                    """), {"conteudo": novo_conteudo, "id": prompt_id})
+                    prompts_atualizados += 1
+                    print(f"       -> Prompt ID={prompt_id} atualizado")
 
     if not dry_run and correcoes:
         session.commit()
-        print(f"\n{len(correcoes)} correções aplicadas com sucesso!")
+        print(f"\n" + "="*70)
+        print(f"RESUMO DA CORREÇÃO:")
+        print(f"  - {len(correcoes)} variável(is) corrigida(s)")
+        print(f"  - {dependencias_atualizadas} dependência(s) atualizada(s)")
+        print(f"  - {prompts_atualizados} prompt(s) atualizado(s)")
+        print("="*70)
     elif not correcoes:
         print("\nNenhuma correção necessária.")
     else:

@@ -273,17 +273,26 @@ async def gerar_variaveis(
         variaveis_extracao_disponiveis = []
 
         # Variáveis de extração (de documentos)
-        query = db.query(ExtractionVariable).filter(ExtractionVariable.ativo == True)
+        # Usa LEFT OUTER JOIN para buscar o título da categoria
+        # (ExtractionVariable não tem relacionamento direto com CategoriaResumoJSON)
+        query = db.query(
+            ExtractionVariable,
+            CategoriaResumoJSON.titulo.label("categoria_titulo")
+        ).outerjoin(
+            CategoriaResumoJSON,
+            ExtractionVariable.categoria_id == CategoriaResumoJSON.id
+        ).filter(ExtractionVariable.ativo == True)
+
         if request.categorias_ids:
             query = query.filter(ExtractionVariable.categoria_id.in_(request.categorias_ids))
 
-        for v in query.all():
+        for v, categoria_titulo in query.all():
             variaveis_extracao_disponiveis.append({
                 "slug": v.slug,
                 "label": v.label,
                 "tipo": v.tipo,
                 "descricao": v.descricao,
-                "categoria": v.categoria.titulo if v.categoria else None
+                "categoria": categoria_titulo
             })
 
         # Variáveis de processo

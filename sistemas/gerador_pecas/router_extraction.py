@@ -531,10 +531,15 @@ def ensure_variable_for_question(
 
     if variavel_existente:
         # PRESERVA variável existente - NÃO altera o slug!
-        # Apenas sincroniza nome_variavel_sugerido da pergunta para exibição na UI
-        if not pergunta.nome_variavel_sugerido or pergunta.nome_variavel_sugerido != variavel_existente.slug:
-            pergunta.nome_variavel_sugerido = variavel_existente.slug
-            logger.info(f"Pergunta {pergunta.id}: sincronizado nome_variavel_sugerido = '{variavel_existente.slug}'")
+        # IMPORTANTE: Nao sobrescrever nome_variavel_sugerido da pergunta aqui!
+        # A renomeacao de slug eh tratada no endpoint PUT /perguntas/{id}
+        # Aqui apenas logamos se houver divergencia (nao sobrescrevemos)
+        if pergunta.nome_variavel_sugerido and pergunta.nome_variavel_sugerido != variavel_existente.slug:
+            logger.warning(
+                f"Pergunta {pergunta.id}: slug divergente detectado - "
+                f"pergunta='{pergunta.nome_variavel_sugerido}', variavel='{variavel_existente.slug}'. "
+                f"Use o endpoint PUT /perguntas/{pergunta.id} para renomear."
+            )
 
         # Atualiza apenas campos não-identificadores da variável (tipo, opções, dependências)
         variavel_existente.tipo = tipo_variavel
@@ -743,24 +748,33 @@ async def criar_pergunta(
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
 
-    # Valida slug duplicado na mesma categoria
+    # NORMALIZA nome_variavel_sugerido COM PREFIXO DA CATEGORIA
+    # Esta é a fonte de verdade - o prefixo é SEMPRE aplicado pelo backend
+    nome_variavel_normalizado = None
     if data.nome_variavel_sugerido and data.nome_variavel_sugerido.strip():
+        slug_input = data.nome_variavel_sugerido.strip()
+        namespace = categoria.namespace
+        nome_variavel_normalizado = _aplicar_namespace(slug_input, namespace)
+        logger.debug(f"[PREFIXO] Normalizado: '{slug_input}' -> '{nome_variavel_normalizado}' (namespace={namespace})")
+
+    # Valida slug duplicado na mesma categoria (usando slug JÁ normalizado)
+    if nome_variavel_normalizado:
         slug_existente = db.query(ExtractionQuestion).filter(
             ExtractionQuestion.categoria_id == data.categoria_id,
-            ExtractionQuestion.nome_variavel_sugerido == data.nome_variavel_sugerido.strip(),
+            ExtractionQuestion.nome_variavel_sugerido == nome_variavel_normalizado,
             ExtractionQuestion.ativo == True
         ).first()
         if slug_existente:
             raise HTTPException(
                 status_code=400,
-                detail=f"Já existe uma pergunta ativa com o slug '{data.nome_variavel_sugerido}' nesta categoria"
+                detail=f"Já existe uma pergunta ativa com o slug '{nome_variavel_normalizado}' nesta categoria"
             )
 
-    # Cria a pergunta
+    # Cria a pergunta com nome_variavel_sugerido JÁ normalizado
     pergunta = ExtractionQuestion(
         categoria_id=data.categoria_id,
         pergunta=data.pergunta,
-        nome_variavel_sugerido=data.nome_variavel_sugerido,
+        nome_variavel_sugerido=nome_variavel_normalizado,
         tipo_sugerido=data.tipo_sugerido,
         opcoes_sugeridas=data.opcoes_sugeridas,
         descricao=data.descricao,
@@ -910,11 +924,23 @@ async def criar_perguntas_lote(
                     tipo_sugerido = p.tipo_sugerido
                     opcoes_sugeridas = p.opcoes_sugeridas
 
+                # NORMALIZA nome_variavel COM PREFIXO DA CATEGORIA
+                # Esta é a fonte de verdade - o prefixo é SEMPRE aplicado pelo backend
+                namespace = categoria.namespace
+                if nome_variavel and nome_variavel.strip():
+                    nome_variavel_normalizado = _aplicar_namespace(nome_variavel.strip(), namespace)
+                    logger.debug(f"[PREFIXO-LOTE] Normalizado: '{nome_variavel}' -> '{nome_variavel_normalizado}'")
+                    nome_variavel = nome_variavel_normalizado
+
                 # Busca dependência inferida para esta pergunta
                 dep_info = dependencias_map.get(str(i), {})
                 depends_on = dep_info.get("depends_on_variable")
                 dep_operator = dep_info.get("operator", "equals") if depends_on else None
                 dep_value = dep_info.get("value") if depends_on else None
+
+                # Também normaliza depends_on com prefixo
+                if depends_on and depends_on.strip():
+                    depends_on = _aplicar_namespace(depends_on.strip(), namespace)
 
                 pergunta = ExtractionQuestion(
                     categoria_id=data.categoria_id,
@@ -1375,16 +1401,20 @@ async def obter_pergunta(
     """Obtém uma pergunta específica"""
     perf_ctx.set_action("obter_pergunta")
 
-    # PERFORMANCE: Usa joinedload para evitar N+1 query
-    pergunta = db.query(ExtractionQuestion).options(
-        joinedload(ExtractionQuestion.categoria)
+    # PERFORMANCE: Usa LEFT JOIN para buscar categoria em uma única query
+    # (ExtractionQuestion não tem relacionamento direto com CategoriaResumoJSON)
+    result = db.query(
+        ExtractionQuestion,
+        CategoriaResumoJSON.nome.label("categoria_nome")
+    ).outerjoin(
+        CategoriaResumoJSON,
+        ExtractionQuestion.categoria_id == CategoriaResumoJSON.id
     ).filter(ExtractionQuestion.id == pergunta_id).first()
 
-    if not pergunta:
+    if not result:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
 
-    # Usa o relacionamento já carregado (sem query adicional)
-    categoria_nome = pergunta.categoria.nome if pergunta.categoria else None
+    pergunta, categoria_nome = result
 
     return ExtractionQuestionResponse(
         id=pergunta.id,
@@ -1425,13 +1455,29 @@ async def atualizar_pergunta(
     if not pergunta:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada")
 
-    # Valida slug duplicado na mesma categoria (se está sendo alterado)
-    update_data_check = data.model_dump(exclude_unset=True)
-    novo_slug = update_data_check.get("nome_variavel_sugerido")
-    if novo_slug and novo_slug.strip() and novo_slug != pergunta.nome_variavel_sugerido:
+    # Busca categoria ANTES para poder normalizar o slug
+    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == pergunta.categoria_id).first()
+    namespace = categoria.namespace if categoria else ""
+
+    # Guarda slug antigo ANTES de atualizar
+    slug_antigo = pergunta.nome_variavel_sugerido
+
+    # NORMALIZA nome_variavel_sugerido COM PREFIXO DA CATEGORIA
+    # Esta é a fonte de verdade - o prefixo é SEMPRE aplicado pelo backend
+    update_data = data.model_dump(exclude_unset=True)
+    if "nome_variavel_sugerido" in update_data:
+        novo_slug_input = update_data.get("nome_variavel_sugerido")
+        if novo_slug_input and novo_slug_input.strip():
+            novo_slug_normalizado = _aplicar_namespace(novo_slug_input.strip(), namespace)
+            update_data["nome_variavel_sugerido"] = novo_slug_normalizado
+            logger.debug(f"[PREFIXO-UPDATE] Normalizado: '{novo_slug_input}' -> '{novo_slug_normalizado}' (namespace={namespace})")
+
+    # Valida slug duplicado na mesma categoria (usando slug JÁ normalizado)
+    novo_slug = update_data.get("nome_variavel_sugerido")
+    if novo_slug and novo_slug.strip() and novo_slug != slug_antigo:
         slug_existente = db.query(ExtractionQuestion).filter(
             ExtractionQuestion.categoria_id == pergunta.categoria_id,
-            ExtractionQuestion.nome_variavel_sugerido == novo_slug.strip(),
+            ExtractionQuestion.nome_variavel_sugerido == novo_slug,
             ExtractionQuestion.id != pergunta_id,
             ExtractionQuestion.ativo == True
         ).first()
@@ -1441,19 +1487,59 @@ async def atualizar_pergunta(
                 detail=f"Já existe uma pergunta ativa com o slug '{novo_slug}' nesta categoria"
             )
 
-    # Atualiza campos fornecidos
-    update_data = data.model_dump(exclude_unset=True)
+    # Atualiza campos fornecidos (com nome_variavel_sugerido JÁ normalizado)
     for field, value in update_data.items():
         setattr(pergunta, field, value)
 
     pergunta.atualizado_por = current_user.id
     pergunta.atualizado_em = datetime.utcnow()
 
-    # Busca categoria para criar/atualizar variável
-    categoria = db.query(CategoriaResumoJSON).filter(CategoriaResumoJSON.id == pergunta.categoria_id).first()
+    # Nota: categoria já foi buscada acima para normalizar o slug
 
-    # Cria/atualiza variável correspondente (se pergunta tiver campos mínimos)
-    variavel = ensure_variable_for_question(db, pergunta, categoria) if categoria else None
+    # =========================================================================
+    # DETECCAO DE MUDANCA DE SLUG - PROPAGACAO AUTOMATICA
+    # =========================================================================
+    # Se o slug mudou, precisamos RENOMEAR a variavel existente (nao sobrescrever)
+    novo_slug_final = pergunta.nome_variavel_sugerido
+    variavel = None
+
+    if slug_antigo and novo_slug_final and slug_antigo != novo_slug_final:
+        # Slug foi alterado pelo usuario - RENOMEAR a variavel
+        variavel_existente = db.query(ExtractionVariable).filter(
+            ExtractionVariable.source_question_id == pergunta.id
+        ).first()
+
+        if variavel_existente:
+            from .services_slug_rename import SlugRenameService
+
+            service = SlugRenameService(db)
+            result = service.renomear(
+                variavel_id=variavel_existente.id,
+                novo_slug=novo_slug_final,
+                normalizar=False,  # Slug ja esta no formato desejado
+                skip_pergunta=True  # Pergunta ja foi atualizada acima
+            )
+
+            if result.success:
+                variavel = variavel_existente
+                logger.info(
+                    f"[SLUG-RENAME-PERGUNTA] Slug renomeado: {result.old_slug} -> {result.new_slug} "
+                    f"(pergunta_id={pergunta.id}, prompts={result.prompts_atualizados}, "
+                    f"deps={result.variaveis_dependentes_atualizadas + result.perguntas_dependentes_atualizadas})"
+                )
+            else:
+                # Falha na renomeacao - reverte slug da pergunta e lanca erro
+                pergunta.nome_variavel_sugerido = slug_antigo
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Erro ao renomear slug: {result.error}"
+                )
+        else:
+            # Nao existe variavel vinculada - cria nova com o novo slug
+            variavel = ensure_variable_for_question(db, pergunta, categoria) if categoria else None
+    else:
+        # Slug nao mudou - comportamento normal
+        variavel = ensure_variable_for_question(db, pergunta, categoria) if categoria else None
 
     db.commit()
     db.refresh(pergunta)
@@ -4044,6 +4130,190 @@ async def reativar_variavel(
     logger.info(f"Variável reativada: slug={variavel.slug}")
 
     return {"success": True, "message": "Variável reativada com sucesso"}
+
+
+# ============================================================================
+# ENDPOINTS - RENOMEACAO DE SLUG
+# ============================================================================
+
+
+class RenomearSlugRequest(BaseModel):
+    """Schema para requisicao de renomeacao de slug"""
+    novo_slug: str = Field(..., description="Novo slug desejado")
+    normalizar: bool = Field(True, description="Se deve normalizar o slug (remover acentos, etc)")
+
+
+class RenomearSlugResponse(BaseModel):
+    """Schema de resposta para renomeacao de slug"""
+    success: bool
+    old_slug: str
+    new_slug: str
+    error: Optional[str] = None
+    categoria_json_atualizada: bool = False
+    perguntas_atualizadas: int = 0
+    prompts_atualizados: int = 0
+    regras_tipo_peca_atualizadas: int = 0
+    prompt_usages_atualizados: int = 0
+    variaveis_dependentes_atualizadas: int = 0
+    perguntas_dependentes_atualizadas: int = 0
+    detalhes: List[str] = []
+
+
+@router.put("/variaveis/{variavel_id}/renomear-slug", response_model=RenomearSlugResponse)
+async def renomear_slug_variavel(
+    variavel_id: int,
+    data: RenomearSlugRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Renomeia o slug de uma variavel de forma transacional.
+
+    Esta operacao propaga a mudanca automaticamente para:
+    - JSON da categoria (formato_json)
+    - Perguntas de extracao (nome_variavel_sugerido)
+    - Regras deterministicas de prompts modulares
+    - Regras deterministicas por tipo de peca
+    - PromptVariableUsage
+    - Dependencias de outras variaveis e perguntas
+
+    IMPORTANTE: Use este endpoint para renomear slugs. Nao edite
+    diretamente o JSON da categoria pois isso causa inconsistencias.
+    """
+    # Verifica permissao
+    if current_user.role != "admin" and not current_user.tem_permissao("edit_prompts"):
+        raise HTTPException(status_code=403, detail="Sem permissao para renomear variaveis")
+
+    from .services_slug_rename import SlugRenameService
+
+    service = SlugRenameService(db)
+    result = service.renomear(
+        variavel_id=variavel_id,
+        novo_slug=data.novo_slug,
+        normalizar=data.normalizar
+    )
+
+    if result.success:
+        db.commit()
+        logger.info(
+            f"[SLUG-RENAME] Renomeacao concluida por {current_user.username}: "
+            f"{result.old_slug} -> {result.new_slug}"
+        )
+    else:
+        db.rollback()
+
+    return RenomearSlugResponse(
+        success=result.success,
+        old_slug=result.old_slug,
+        new_slug=result.new_slug,
+        error=result.error,
+        categoria_json_atualizada=result.categoria_json_atualizada,
+        perguntas_atualizadas=result.perguntas_atualizadas,
+        prompts_atualizados=result.prompts_atualizados,
+        regras_tipo_peca_atualizadas=result.regras_tipo_peca_atualizadas,
+        prompt_usages_atualizados=result.prompt_usages_atualizados,
+        variaveis_dependentes_atualizadas=result.variaveis_dependentes_atualizadas,
+        perguntas_dependentes_atualizadas=result.perguntas_dependentes_atualizadas,
+        detalhes=result.detalhes
+    )
+
+
+class ConsistenciaSlugResponse(BaseModel):
+    """Schema de resposta para verificacao de consistencia de slugs"""
+    consistente: bool
+    categoria_id: Optional[int] = None
+    categoria_nome: Optional[str] = None
+    total_slugs_json: int = 0
+    total_variaveis_ativas: int = 0
+    slugs_orfaos_json: List[str] = []
+    slugs_orfaos_variaveis: List[str] = []
+    mensagem: str = ""
+    erro: Optional[str] = None
+
+
+@router.get("/variaveis/{variavel_id}/verificar-consistencia", response_model=ConsistenciaSlugResponse)
+async def verificar_consistencia_variavel(
+    variavel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Verifica consistencia entre o slug da variavel e suas referencias.
+
+    Retorna:
+    - Se a variavel esta no JSON da categoria
+    - Se ha slugs orfaos no JSON
+    - Se ha variaveis sem entrada no JSON
+    """
+    variavel = db.query(ExtractionVariable).filter(ExtractionVariable.id == variavel_id).first()
+    if not variavel:
+        raise HTTPException(status_code=404, detail="Variavel nao encontrada")
+
+    if not variavel.categoria_id:
+        return ConsistenciaSlugResponse(
+            consistente=True,
+            mensagem="Variavel nao pertence a nenhuma categoria"
+        )
+
+    from .services_slug_rename import SlugConsistencyChecker
+
+    checker = SlugConsistencyChecker(db)
+    resultado = checker.verificar_categoria(variavel.categoria_id)
+
+    if resultado.get("erro"):
+        return ConsistenciaSlugResponse(
+            consistente=False,
+            erro=resultado["erro"]
+        )
+
+    return ConsistenciaSlugResponse(
+        consistente=resultado["consistente"],
+        categoria_id=resultado["categoria_id"],
+        categoria_nome=resultado["categoria_nome"],
+        total_slugs_json=resultado["total_slugs_json"],
+        total_variaveis_ativas=resultado["total_variaveis_ativas"],
+        slugs_orfaos_json=resultado["slugs_orfaos_json"],
+        slugs_orfaos_variaveis=resultado["slugs_orfaos_variaveis"],
+        mensagem=resultado["mensagem"]
+    )
+
+
+class ReferenciasSlugResponse(BaseModel):
+    """Schema de resposta para referencias de um slug"""
+    slug: str
+    total_prompts: int = 0
+    total_regras_tipo_peca: int = 0
+    prompts: List[dict] = []
+    regras_tipo_peca: List[dict] = []
+
+
+@router.get("/variaveis/{variavel_id}/referencias", response_model=ReferenciasSlugResponse)
+async def verificar_referencias_variavel(
+    variavel_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Verifica onde o slug da variavel esta sendo usado em regras deterministicas.
+
+    Util para saber quais prompts serao afetados antes de renomear.
+    """
+    variavel = db.query(ExtractionVariable).filter(ExtractionVariable.id == variavel_id).first()
+    if not variavel:
+        raise HTTPException(status_code=404, detail="Variavel nao encontrada")
+
+    from .services_slug_rename import SlugConsistencyChecker
+
+    checker = SlugConsistencyChecker(db)
+    resultado = checker.verificar_referencias_prompts(variavel.slug)
+
+    return ReferenciasSlugResponse(
+        slug=resultado["slug"],
+        total_prompts=resultado["total_prompts"],
+        total_regras_tipo_peca=resultado["total_regras_tipo_peca"],
+        prompts=resultado["prompts"],
+        regras_tipo_peca=resultado["regras_tipo_peca"]
+    )
 
 
 @router.delete("/variaveis/{variavel_id}/permanente")

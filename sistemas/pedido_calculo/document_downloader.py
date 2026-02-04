@@ -24,6 +24,10 @@ import pymupdf4llm
 # Esses warnings não afetam a extração de texto, apenas indicam imagens problemáticas
 fitz.TOOLS.mupdf_warnings(False)
 
+# IMPORTANTE: PyMuPDF/MuPDF NÃO é thread-safe!
+# Usar lock centralizado para TODAS as operações com fitz/pymupdf4llm
+from utils.pymupdf_lock import pymupdf_lock
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -126,9 +130,11 @@ async def baixar_documentos_async(
 def extrair_texto_pdf(pdf_bytes: bytes) -> str:
     """
     Extrai texto de PDF usando PyMuPDF.
-    
+
     Tenta usar pymupdf4llm para extração otimizada,
     com fallback para extração padrão.
+
+    IMPORTANTE: Usa lock global pois PyMuPDF NÃO é thread-safe.
     """
     try:
         if hasattr(fitz, "TOOLS"):
@@ -139,30 +145,32 @@ def extrair_texto_pdf(pdf_bytes: bytes) -> str:
             if callable(display_warnings):
                 display_warnings(False)
 
-        # Verifica se é RTF disfarçado
+        # Verifica se é RTF disfarçado (não precisa de lock)
         if pdf_bytes.startswith(b'{\\rtf'):
             texto = pdf_bytes.decode('latin-1', errors='ignore')
             return _normalizar_texto_pdf(texto)
-        
-        # Abre PDF
-        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            num_paginas = len(doc)
-            
-            # Tenta extração otimizada
-            try:
-                md_text = pymupdf4llm.to_markdown(doc)
-                if md_text and len(md_text.strip()) > 100:
-                    return md_text
-            except Exception:
-                pass
-            
-            # Fallback para extração padrão
-            texto_completo = ""
-            for page in doc:
-                texto_completo += page.get_text()
-            
-            return _normalizar_texto_pdf(texto_completo)
-            
+
+        # LOCK OBRIGATÓRIO: PyMuPDF/MuPDF não é thread-safe!
+        with pymupdf_lock:
+            # Abre PDF
+            with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+                num_paginas = len(doc)
+
+                # Tenta extração otimizada
+                try:
+                    md_text = pymupdf4llm.to_markdown(doc)
+                    if md_text and len(md_text.strip()) > 100:
+                        return md_text
+                except Exception:
+                    pass
+
+                # Fallback para extração padrão
+                texto_completo = ""
+                for page in doc:
+                    texto_completo += page.get_text()
+
+                return _normalizar_texto_pdf(texto_completo)
+
     except Exception as e:
         return f"[Erro na extração: {str(e)}]"
 

@@ -83,3 +83,4 @@ run_teste.bat
 
 # Claude local settings
 .claude/settings.local.json
+.playwright-mcp/

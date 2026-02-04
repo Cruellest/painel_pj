@@ -17,10 +17,13 @@ from .models import ProcessoTJMS, Parte, Movimento, DocumentoMetadata
 logger = logging.getLogger(__name__)
 
 # Namespaces usados pelo TJ-MS
+# NOTA: TJ-MS usa intercomunicacao-2.2.2 para documentos, não tipos-servico
 NS = {
     "soap": "http://schemas.xmlsoap.org/soap/envelope/",
-    "ns2": "http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2",
+    "ns2": "http://www.cnj.jus.br/intercomunicacao-2.2.2",
     "ns3": "http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/",
+    # Namespace alternativo (tipos) - alguns endpoints usam este
+    "tip": "http://www.cnj.jus.br/tipos-servico-intercomunicacao-2.2.2",
 }
 
 

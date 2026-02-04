@@ -15,8 +15,9 @@ Autor: LAB/PGE-MS
 import logging
 import asyncio
 import time
+import traceback
 from datetime import datetime
-from typing import Optional, List, Dict, Any, AsyncGenerator, Tuple
+from typing import Optional, List, Dict, Any, AsyncGenerator, Tuple, Set
 from sqlalchemy.orm import Session
 
 from utils.timezone import get_utc_now
@@ -241,10 +242,15 @@ class ClassificadorService:
         Yields:
             Eventos de progresso: {tipo, mensagem, dados}
         """
+        logger.info(f"[CLASSIFICADOR] Iniciando execução do projeto {projeto_id} para usuário {usuario_id}")
+
         projeto = self.obter_projeto(projeto_id)
         if not projeto:
+            logger.warning(f"[CLASSIFICADOR] Projeto {projeto_id} não encontrado")
             yield {"tipo": "erro", "mensagem": "Projeto não encontrado"}
             return
+
+        logger.info(f"[CLASSIFICADOR] Projeto encontrado: {projeto.nome}, modelo: {projeto.modelo}")
 
         # Carrega prompt
         prompt_texto = None
@@ -252,8 +258,10 @@ class ClassificadorService:
             prompt = self.obter_prompt(projeto.prompt_id)
             if prompt:
                 prompt_texto = prompt.conteudo
+                logger.info(f"[CLASSIFICADOR] Prompt carregado: {prompt.nome} ({len(prompt_texto)} chars)")
 
         if not prompt_texto:
+            logger.warning(f"[CLASSIFICADOR] Prompt não configurado para projeto {projeto_id}")
             yield {"tipo": "erro", "mensagem": "Prompt não configurado para o projeto"}
             return
 
@@ -263,14 +271,18 @@ class ClassificadorService:
                 CodigoDocumentoProjeto.id.in_(codigos_ids),
                 CodigoDocumentoProjeto.projeto_id == projeto_id
             ).all()
+            logger.info(f"[CLASSIFICADOR] Carregados {len(codigos)} códigos específicos (de {len(codigos_ids)} solicitados)")
         else:
             codigos = self.listar_codigos(projeto_id)
+            logger.info(f"[CLASSIFICADOR] Carregados {len(codigos)} códigos do projeto")
 
         if not codigos:
-            yield {"tipo": "erro", "mensagem": "Nenhum código de documento configurado"}
+            logger.warning(f"[CLASSIFICADOR] Nenhum código encontrado para projeto {projeto_id}")
+            yield {"tipo": "erro", "mensagem": "Nenhum código de documento configurado. Faça upload de arquivos primeiro."}
             return
 
-        # Cria execução
+        # Cria execução (ADR-0010: com campos de heartbeat e rota)
+        agora = get_utc_now()
         execucao = ExecucaoClassificacao(
             projeto_id=projeto_id,
             status=StatusExecucao.EM_ANDAMENTO.value,
@@ -284,7 +296,9 @@ class ClassificadorService:
                 "max_concurrent": projeto.max_concurrent
             },
             usuario_id=usuario_id,
-            iniciado_em=get_utc_now()
+            iniciado_em=agora,
+            ultimo_heartbeat=agora,  # ADR-0010: heartbeat inicial
+            rota_origem="/classificador/"  # ADR-0010: rota de origem
         )
         self.db.add(execucao)
         self.db.commit()
@@ -292,7 +306,8 @@ class ClassificadorService:
         yield {
             "tipo": "inicio",
             "mensagem": f"Iniciando classificação de {len(codigos)} documentos",
-            "execucao_id": execucao.id
+            "execucao_id": execucao.id,
+            "rota_origem": execucao.rota_origem
         }
 
         # Processa documentos com paralelismo controlado
@@ -319,6 +334,10 @@ class ClassificadorService:
             else:
                 execucao.arquivos_erro += 1
 
+            # ADR-0010: Atualiza heartbeat a cada documento processado
+            execucao.ultimo_heartbeat = get_utc_now()
+            execucao.ultimo_codigo_processado = resultado.codigo_documento
+
             self.db.commit()
 
             yield {
@@ -327,7 +346,8 @@ class ClassificadorService:
                 "processados": execucao.arquivos_processados,
                 "total": execucao.total_arquivos,
                 "sucesso": resultado.sucesso,
-                "resultado": resultado.to_dict()
+                "resultado": resultado.to_dict(),
+                "ultimo_heartbeat": execucao.ultimo_heartbeat.isoformat()
             }
 
         # Finaliza execução
@@ -340,7 +360,8 @@ class ClassificadorService:
             "mensagem": f"Classificação concluída: {execucao.arquivos_sucesso} sucessos, {execucao.arquivos_erro} erros",
             "execucao_id": execucao.id,
             "sucesso": execucao.arquivos_sucesso,
-            "erros": execucao.arquivos_erro
+            "erros": execucao.arquivos_erro,
+            "rota_origem": execucao.rota_origem
         }
 
     async def _processar_codigo_com_semaforo(
@@ -365,6 +386,8 @@ class ClassificadorService:
         prompt_texto: str
     ) -> ResultadoClassificacaoDTO:
         """Processa um único código de documento"""
+        logger.info(f"[CLASSIFICADOR] Processando código {codigo.codigo} (fonte: {codigo.fonte}, arquivo: {codigo.arquivo_nome})")
+
         # Cria registro de resultado
         resultado_db = ResultadoClassificacao(
             execucao_id=execucao.id,
@@ -377,8 +400,28 @@ class ClassificadorService:
         self.db.commit()
 
         try:
-            # 1. Baixa documento do TJ-MS
-            if codigo.fonte == FonteDocumento.TJMS.value and codigo.numero_processo:
+            texto_documento = None
+            via_ocr = False
+
+            # 1. Obtém texto do documento baseado na fonte
+            if codigo.fonte == FonteDocumento.UPLOAD.value:
+                logger.debug(f"[CLASSIFICADOR] Fonte UPLOAD - usando texto extraído cached")
+                # Upload: usa texto já extraído no momento do upload
+                if codigo.texto_extraido and len(codigo.texto_extraido.strip()) >= 50:
+                    texto_documento = codigo.texto_extraido
+                    via_ocr = False  # Já foi extraído antes
+                else:
+                    resultado_db.status = StatusArquivo.ERRO.value
+                    resultado_db.erro_mensagem = "Texto do upload vazio ou muito curto"
+                    self.db.commit()
+                    return ResultadoClassificacaoDTO(
+                        codigo_documento=codigo.codigo,
+                        nome_arquivo=codigo.arquivo_nome,
+                        erro="Texto do upload vazio ou muito curto"
+                    )
+
+            elif codigo.fonte == FonteDocumento.TJMS.value and codigo.numero_processo:
+                # TJ-MS: baixa documento e extrai texto
                 doc = await self.tjms.baixar_documento(
                     codigo.numero_processo,
                     codigo.codigo
@@ -393,42 +436,44 @@ class ClassificadorService:
                         erro=doc.erro
                     )
 
-                pdf_bytes = doc.conteudo_bytes
+                # Extrai texto do PDF baixado
+                extraction = self.extractor.extrair_texto(doc.conteudo_bytes)
+
+                if not extraction.texto or len(extraction.texto.strip()) < 50:
+                    resultado_db.status = StatusArquivo.ERRO.value
+                    resultado_db.erro_mensagem = "Texto extraído vazio ou muito curto"
+                    self.db.commit()
+                    return ResultadoClassificacaoDTO(
+                        codigo_documento=codigo.codigo,
+                        numero_processo=codigo.numero_processo,
+                        erro="Texto extraído vazio"
+                    )
+
+                texto_documento = extraction.texto
+                via_ocr = extraction.via_ocr
+                resultado_db.tokens_extraidos = extraction.tokens_total
+
             else:
-                # Documento não é do TJ-MS ou não tem processo - erro
+                # Fonte desconhecida ou sem dados necessários
                 resultado_db.status = StatusArquivo.ERRO.value
-                resultado_db.erro_mensagem = "Documento sem processo associado"
+                resultado_db.erro_mensagem = "Documento sem fonte válida ou processo associado"
                 self.db.commit()
                 return ResultadoClassificacaoDTO(
                     codigo_documento=codigo.codigo,
-                    erro="Documento sem processo associado"
+                    erro="Documento sem fonte válida"
                 )
 
-            # 2. Extrai texto (com OCR fallback)
-            extraction = self.extractor.extrair_texto(pdf_bytes)
+            resultado_db.texto_extraido_via = "ocr" if via_ocr else "pdf"
 
-            if not extraction.texto or len(extraction.texto.strip()) < 50:
-                resultado_db.status = StatusArquivo.ERRO.value
-                resultado_db.erro_mensagem = "Texto extraído vazio ou muito curto"
-                self.db.commit()
-                return ResultadoClassificacaoDTO(
-                    codigo_documento=codigo.codigo,
-                    numero_processo=codigo.numero_processo,
-                    erro="Texto extraído vazio"
-                )
-
-            resultado_db.texto_extraido_via = "ocr" if extraction.via_ocr else "pdf"
-            resultado_db.tokens_extraidos = extraction.tokens_total
-
-            # 3. Extrai chunk para classificação
+            # 2. Extrai chunk para classificação
             if projeto.modo_processamento == "chunk":
                 chunk = self.extractor.extrair_chunk(
-                    extraction.texto,
+                    texto_documento,
                     projeto.tamanho_chunk,
                     projeto.posicao_chunk
                 )
             else:
-                chunk = extraction.texto
+                chunk = texto_documento
 
             resultado_db.chunk_usado = chunk[:5000]  # Limita para auditoria
 
@@ -458,6 +503,9 @@ class ClassificadorService:
             )
             self.db.add(log_ia)
 
+            # Estima tokens (aproximadamente 4 chars por token)
+            tokens_estimados = resultado_db.tokens_extraidos or len(texto_documento) // 4
+
             if not openrouter_result.sucesso:
                 resultado_db.status = StatusArquivo.ERRO.value
                 resultado_db.erro_mensagem = openrouter_result.erro
@@ -465,12 +513,13 @@ class ClassificadorService:
                 return ResultadoClassificacaoDTO(
                     codigo_documento=codigo.codigo,
                     numero_processo=codigo.numero_processo,
+                    nome_arquivo=codigo.arquivo_nome,
                     erro=openrouter_result.erro,
-                    texto_via="ocr" if extraction.via_ocr else "pdf",
-                    tokens_usados=extraction.tokens_total
+                    texto_via="ocr" if via_ocr else "pdf",
+                    tokens_usados=tokens_estimados
                 )
 
-            # 5. Salva resultado
+            # 3. Salva resultado
             resultado = openrouter_result.resultado
             resultado_db.categoria = resultado.get("categoria")
             resultado_db.subcategoria = resultado.get("subcategoria")
@@ -485,13 +534,14 @@ class ClassificadorService:
             return ResultadoClassificacaoDTO(
                 codigo_documento=codigo.codigo,
                 numero_processo=codigo.numero_processo,
+                nome_arquivo=codigo.arquivo_nome,
                 categoria=resultado.get("categoria"),
                 subcategoria=resultado.get("subcategoria"),
                 confianca=resultado.get("confianca"),
                 justificativa=resultado.get("justificativa_breve"),
                 sucesso=True,
-                texto_via="ocr" if extraction.via_ocr else "pdf",
-                tokens_usados=extraction.tokens_total,
+                texto_via="ocr" if via_ocr else "pdf",
+                tokens_usados=tokens_estimados,
                 chunk_usado=chunk[:500],
                 resultado_completo=resultado
             )
@@ -500,6 +550,10 @@ class ClassificadorService:
             logger.exception(f"Erro ao processar código {codigo.codigo}: {e}")
             resultado_db.status = StatusArquivo.ERRO.value
             resultado_db.erro_mensagem = str(e)
+            # ADR-0010: Captura stack trace para debug
+            resultado_db.erro_stack = traceback.format_exc()
+            resultado_db.ultimo_erro_em = get_utc_now()
+            resultado_db.tentativas = (resultado_db.tentativas or 0) + 1
             self.db.commit()
 
             return ResultadoClassificacaoDTO(
@@ -617,3 +671,279 @@ class ClassificadorService:
             query = query.filter(ResultadoClassificacao.status == StatusArquivo.ERRO.value)
 
         return query.order_by(ResultadoClassificacao.criado_em).all()
+
+    # ============================================
+    # Retomada e Recuperação (ADR-0010)
+    # ============================================
+
+    async def retomar_execucao(
+        self,
+        execucao_id: int,
+        usuario_id: int
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Retoma uma execução travada ou com erro de onde parou.
+
+        Comportamento idempotente:
+        - Pula documentos já processados com sucesso
+        - Reprocessa apenas documentos pendentes ou com erro
+
+        Args:
+            execucao_id: ID da execução a retomar
+            usuario_id: ID do usuário
+
+        Yields:
+            Eventos de progresso: {tipo, mensagem, dados}
+        """
+        logger.info(f"[CLASSIFICADOR] Retomando execução {execucao_id}")
+
+        execucao = self.obter_execucao(execucao_id)
+        if not execucao:
+            yield {"tipo": "erro", "mensagem": "Execução não encontrada"}
+            return
+
+        # Valida se pode retomar
+        if execucao.status not in [StatusExecucao.TRAVADO.value, StatusExecucao.ERRO.value]:
+            yield {
+                "tipo": "erro",
+                "mensagem": f"Execução com status '{execucao.status}' não pode ser retomada. "
+                           f"Apenas execuções TRAVADO ou ERRO podem ser retomadas."
+            }
+            return
+
+        if not execucao.pode_retomar:
+            yield {
+                "tipo": "erro",
+                "mensagem": f"Limite de retomadas atingido ({execucao.tentativas_retry}/{execucao.max_retries})"
+            }
+            return
+
+        projeto = self.obter_projeto(execucao.projeto_id)
+        if not projeto:
+            yield {"tipo": "erro", "mensagem": "Projeto não encontrado"}
+            return
+
+        # Carrega prompt
+        prompt_texto = execucao.prompt_usado
+        if not prompt_texto:
+            yield {"tipo": "erro", "mensagem": "Prompt da execução não encontrado"}
+            return
+
+        # Identifica códigos que precisam ser processados
+        codigos_processados_sucesso: Set[str] = set()
+        resultados_existentes = self.db.query(ResultadoClassificacao).filter(
+            ResultadoClassificacao.execucao_id == execucao_id
+        ).all()
+
+        for r in resultados_existentes:
+            if r.status == StatusArquivo.CONCLUIDO.value:
+                codigos_processados_sucesso.add(r.codigo_documento)
+
+        # Busca códigos do projeto que ainda precisam ser processados
+        todos_codigos = self.listar_codigos(projeto.id)
+        codigos_a_processar = [
+            c for c in todos_codigos
+            if c.codigo not in codigos_processados_sucesso
+        ]
+
+        if not codigos_a_processar:
+            yield {
+                "tipo": "concluido",
+                "mensagem": "Todos os documentos já foram processados com sucesso",
+                "execucao_id": execucao_id
+            }
+            return
+
+        # Atualiza execução para retomada
+        agora = get_utc_now()
+        execucao.status = StatusExecucao.EM_ANDAMENTO.value
+        execucao.tentativas_retry += 1
+        execucao.ultimo_heartbeat = agora
+        execucao.erro_mensagem = None
+        self.db.commit()
+
+        yield {
+            "tipo": "retomada",
+            "mensagem": f"Retomando execução: {len(codigos_a_processar)} documentos pendentes "
+                       f"(tentativa {execucao.tentativas_retry}/{execucao.max_retries})",
+            "execucao_id": execucao.id,
+            "ja_processados": len(codigos_processados_sucesso),
+            "pendentes": len(codigos_a_processar),
+            "rota_origem": execucao.rota_origem
+        }
+
+        # Processa documentos pendentes
+        semaforo = asyncio.Semaphore(projeto.max_concurrent)
+        tarefas = []
+
+        for codigo in codigos_a_processar:
+            tarefa = self._processar_codigo_com_semaforo(
+                semaforo,
+                execucao,
+                codigo,
+                projeto,
+                prompt_texto
+            )
+            tarefas.append(tarefa)
+
+        # Processa e emite eventos de progresso
+        for tarefa in asyncio.as_completed(tarefas):
+            resultado = await tarefa
+
+            execucao.arquivos_processados += 1
+            if resultado.sucesso:
+                execucao.arquivos_sucesso += 1
+            else:
+                execucao.arquivos_erro += 1
+
+            # Atualiza heartbeat
+            execucao.ultimo_heartbeat = get_utc_now()
+            execucao.ultimo_codigo_processado = resultado.codigo_documento
+
+            self.db.commit()
+
+            yield {
+                "tipo": "progresso",
+                "mensagem": f"Processado: {resultado.codigo_documento}",
+                "processados": execucao.arquivos_processados,
+                "total": execucao.total_arquivos,
+                "sucesso": resultado.sucesso,
+                "resultado": resultado.to_dict(),
+                "ultimo_heartbeat": execucao.ultimo_heartbeat.isoformat()
+            }
+
+        # Finaliza execução
+        execucao.status = StatusExecucao.CONCLUIDO.value
+        execucao.finalizado_em = get_utc_now()
+        self.db.commit()
+
+        yield {
+            "tipo": "concluido",
+            "mensagem": f"Retomada concluída: {execucao.arquivos_sucesso} sucessos, {execucao.arquivos_erro} erros",
+            "execucao_id": execucao.id,
+            "sucesso": execucao.arquivos_sucesso,
+            "erros": execucao.arquivos_erro,
+            "rota_origem": execucao.rota_origem
+        }
+
+    async def reprocessar_erros(
+        self,
+        execucao_id: int,
+        usuario_id: int
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        Reprocessa apenas os documentos que tiveram erro.
+
+        Args:
+            execucao_id: ID da execução
+            usuario_id: ID do usuário
+
+        Yields:
+            Eventos de progresso: {tipo, mensagem, dados}
+        """
+        logger.info(f"[CLASSIFICADOR] Reprocessando erros da execução {execucao_id}")
+
+        execucao = self.obter_execucao(execucao_id)
+        if not execucao:
+            yield {"tipo": "erro", "mensagem": "Execução não encontrada"}
+            return
+
+        projeto = self.obter_projeto(execucao.projeto_id)
+        if not projeto:
+            yield {"tipo": "erro", "mensagem": "Projeto não encontrado"}
+            return
+
+        prompt_texto = execucao.prompt_usado
+        if not prompt_texto:
+            yield {"tipo": "erro", "mensagem": "Prompt da execução não encontrado"}
+            return
+
+        # Busca resultados com erro que podem ser reprocessados
+        resultados_erro = self.db.query(ResultadoClassificacao).filter(
+            ResultadoClassificacao.execucao_id == execucao_id,
+            ResultadoClassificacao.status == StatusArquivo.ERRO.value
+        ).all()
+
+        # Filtra apenas os que podem ser reprocessados (< max tentativas)
+        codigos_reprocessar = []
+        for r in resultados_erro:
+            if r.pode_reprocessar:
+                # Busca o código correspondente
+                codigo = self.db.query(CodigoDocumentoProjeto).filter(
+                    CodigoDocumentoProjeto.projeto_id == projeto.id,
+                    CodigoDocumentoProjeto.codigo == r.codigo_documento
+                ).first()
+                if codigo:
+                    codigos_reprocessar.append((codigo, r))
+
+        if not codigos_reprocessar:
+            yield {
+                "tipo": "erro",
+                "mensagem": "Nenhum documento com erro pode ser reprocessado "
+                           "(limite de tentativas atingido ou todos processados com sucesso)"
+            }
+            return
+
+        # Atualiza execução
+        agora = get_utc_now()
+        execucao.status = StatusExecucao.EM_ANDAMENTO.value
+        execucao.ultimo_heartbeat = agora
+        self.db.commit()
+
+        yield {
+            "tipo": "reprocessamento",
+            "mensagem": f"Reprocessando {len(codigos_reprocessar)} documentos com erro",
+            "execucao_id": execucao.id,
+            "total_erros": len(resultados_erro),
+            "reprocessaveis": len(codigos_reprocessar),
+            "rota_origem": execucao.rota_origem
+        }
+
+        # Reseta status dos resultados que serão reprocessados
+        for codigo, resultado_antigo in codigos_reprocessar:
+            resultado_antigo.status = StatusArquivo.PENDENTE.value
+            self.db.commit()
+
+        # Processa documentos
+        semaforo = asyncio.Semaphore(projeto.max_concurrent)
+        sucesso_count = 0
+        erro_count = 0
+
+        for codigo, resultado_antigo in codigos_reprocessar:
+            async with semaforo:
+                resultado = await self._processar_codigo(
+                    execucao, codigo, projeto, prompt_texto
+                )
+
+                if resultado.sucesso:
+                    sucesso_count += 1
+                    execucao.arquivos_erro -= 1
+                    execucao.arquivos_sucesso += 1
+                else:
+                    erro_count += 1
+
+                execucao.ultimo_heartbeat = get_utc_now()
+                execucao.ultimo_codigo_processado = resultado.codigo_documento
+                self.db.commit()
+
+                yield {
+                    "tipo": "progresso",
+                    "mensagem": f"Reprocessado: {resultado.codigo_documento}",
+                    "sucesso": resultado.sucesso,
+                    "resultado": resultado.to_dict(),
+                    "ultimo_heartbeat": execucao.ultimo_heartbeat.isoformat()
+                }
+
+        # Finaliza
+        execucao.status = StatusExecucao.CONCLUIDO.value
+        execucao.finalizado_em = get_utc_now()
+        self.db.commit()
+
+        yield {
+            "tipo": "concluido",
+            "mensagem": f"Reprocessamento concluído: {sucesso_count} recuperados, {erro_count} ainda com erro",
+            "execucao_id": execucao.id,
+            "recuperados": sucesso_count,
+            "ainda_com_erro": erro_count,
+            "rota_origem": execucao.rota_origem
+        }

@@ -23,7 +23,11 @@ from sistemas.gerador_pecas.models_extraction import (
     PromptVariableUsage, PromptActivationLog
 )
 from sistemas.gerador_pecas.models_teste_categorias import TesteDocumento, TesteObservacao
-from sistemas.gerador_pecas.models_teste_ativacao import CenarioTesteAtivacao
+# TEMPORÁRIO: import condicional até redeploy com arquivo correto
+try:
+    from sistemas.gerador_pecas.models_teste_ativacao import CenarioTesteAtivacao
+except ImportError:
+    CenarioTesteAtivacao = None  # Tabela não será criada automaticamente
 from sistemas.pedido_calculo.models import GeracaoPedidoCalculo, FeedbackPedidoCalculo, LogChamadaIA
 from sistemas.prestacao_contas.models import GeracaoAnalise, LogChamadaIAPrestacao, FeedbackPrestacao
 from sistemas.relatorio_cumprimento.models import GeracaoRelatorioCumprimento, LogChamadaIARelatorioCumprimento, FeedbackRelatorioCumprimento
@@ -1492,22 +1496,41 @@ def run_migrations():
             db.rollback()
             print(f"[WARN] Criação de índice gemini_api_logs request_id: {e}")
 
-    # Migração: Adicionar colunas de modo de ativação do Agente 2 em geracoes_pecas
+    # Migração: Adicionar colunas de modo de ativação do Agente 2 e curadoria em geracoes_pecas
+    # IMPORTANTE: Usa SQL direto para evitar problemas com cache de colunas
     if table_exists('geracoes_pecas'):
+        # Limpa cache para garantir verificação correta
+        _columns_cache.pop('geracoes_pecas', None)
+
         colunas_modo_ativacao = [
             ("modo_ativacao_agente2", "VARCHAR(30)"),
             ("modulos_ativados_det", "INTEGER"),
             ("modulos_ativados_llm", "INTEGER"),
+            ("curadoria_metadata", "JSONB" if not is_sqlite else "JSON"),
         ]
 
         for coluna, tipo in colunas_modo_ativacao:
-            if not column_exists('geracoes_pecas', coluna):
-                try:
+            # Usa SQL direto para verificar se coluna existe (mais confiável que cache)
+            try:
+                if is_sqlite:
+                    check_result = db.execute(text(f"PRAGMA table_info(geracoes_pecas)"))
+                    existing_cols = {row[1] for row in check_result.fetchall()}
+                    col_exists = coluna in existing_cols
+                else:
+                    check_result = db.execute(text("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_name = 'geracoes_pecas' AND column_name = :col_name
+                    """), {"col_name": coluna})
+                    col_exists = check_result.fetchone() is not None
+
+                if not col_exists:
                     db.execute(text(f"ALTER TABLE geracoes_pecas ADD COLUMN {coluna} {tipo}"))
                     db.commit()
                     print(f"[OK] Migração: coluna {coluna} adicionada em geracoes_pecas")
-                except Exception as e:
-                    db.rollback()
+            except Exception as e:
+                db.rollback()
+                # Ignora erro "column already exists" (pode acontecer em race condition)
+                if 'already exists' not in str(e).lower() and 'duplicate column' not in str(e).lower():
                     print(f"[WARN] Migração {coluna} geracoes_pecas: {e}")
 
     # ============================================================
@@ -1703,41 +1726,10 @@ def seed_prompt_groups(db: Session):
         PromptModuloHistorico.group_id.is_(None)
     ).update({PromptModuloHistorico.group_id: grupo_ps.id}, synchronize_session=False)
 
-    # Cria subgrupos a partir das categorias existentes (PS)
-    # Apenas modulos ativos sao considerados para criar subgrupos
-    categorias = db.query(PromptModulo.categoria).filter(
-        PromptModulo.tipo == "conteudo",
-        PromptModulo.categoria.isnot(None),
-        PromptModulo.group_id == grupo_ps.id,
-        PromptModulo.ativo == True
-    ).distinct().all()
-
-    for (categoria,) in categorias:
-        slug = slugify(categoria)
-        if not slug:
-            continue
-        subgrupo = db.query(PromptSubgroup).filter(
-            PromptSubgroup.group_id == grupo_ps.id,
-            PromptSubgroup.slug == slug
-        ).first()
-        if not subgrupo:
-            subgrupo = PromptSubgroup(
-                group_id=grupo_ps.id,
-                name=categoria,
-                slug=slug,
-                active=True,
-                order=0
-            )
-            db.add(subgrupo)
-            db.flush()
-
-        db.query(PromptModulo).filter(
-            PromptModulo.tipo == "conteudo",
-            PromptModulo.group_id == grupo_ps.id,
-            PromptModulo.subgroup_id.is_(None),
-            PromptModulo.categoria == categoria,
-            PromptModulo.ativo == True
-        ).update({PromptModulo.subgroup_id: subgrupo.id}, synchronize_session=False)
+    # NOTA: Subgrupos foram removidos da logica de seed.
+    # Categorias (Preliminar, Merito, Eventualidade) sao usadas diretamente no campo 'categoria'
+    # dos modulos e nao devem ser duplicadas como subgrupos.
+    # A funcionalidade de subgrupo foi descontinuada para evitar confusao conceitual.
 
     # Garante grupos permitidos e grupo padrao para usuarios
     usuarios = db.query(User).all()

@@ -103,6 +103,11 @@
             background-color: #fee2e2;
             color: #991b1b;
         }
+
+        .status-travado {
+            background-color: #fef3c7;
+            color: #92400e;
+        }
     </style>
 </head>
 
@@ -193,7 +198,7 @@
                             <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
                             <p class="text-gray-600 font-medium">Arraste arquivos aqui</p>
                             <p class="text-gray-500 mt-1">ou clique para selecionar</p>
-                            <p class="text-sm text-gray-400 mt-2">PDF, TXT ou ZIP (max 500 arquivos, 50MB cada)</p>
+                            <p class="text-sm text-gray-400 mt-2">PDF, TXT ou ZIP (max 2.000 arquivos, 50MB cada)</p>
                             <input type="file" id="arquivosLote" accept=".pdf,.txt,.zip" multiple class="hidden">
                         </div>
                         <div id="listaArquivosLote" class="mt-4 hidden">
@@ -301,12 +306,8 @@
                         <!-- Modelo -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">Modelo</label>
-                            <select id="modeloLote" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                <option value="google/gemini-2.5-flash-lite">google/gemini-2.5-flash-lite (Recomendado)</option>
-                                <option value="google/gemini-2.0-flash-001">google/gemini-2.0-flash-001</option>
-                                <option value="anthropic/claude-sonnet-4">anthropic/claude-sonnet-4</option>
-                                <option value="openai/gpt-4o-mini">openai/gpt-4o-mini</option>
-                            </select>
+                            <input type="text" id="modeloLote" value="google/gemini-2.5-flash-lite" placeholder="Ex: google/gemini-2.5-flash-lite" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <p class="text-xs text-gray-500 mt-1">Formato: provedor/modelo (ex: anthropic/claude-sonnet-4, openai/gpt-4o-mini)</p>
                         </div>
                     </div>
 
@@ -404,6 +405,21 @@
 
         <!-- Tab: Meus Lotes (antigo Projetos) -->
         <div id="content-meusLotes" class="tab-content hidden">
+            <!-- Execuções em Andamento (mostrado dinamicamente) -->
+            <div id="execucoesEmAndamentoContainer" class="mb-6 hidden">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="animate-pulse">
+                            <i class="fas fa-cog fa-spin text-yellow-600 text-xl"></i>
+                        </div>
+                        <h3 class="font-semibold text-yellow-800">Classificação em Andamento</h3>
+                    </div>
+                    <div id="execucoesEmAndamentoLista">
+                        <!-- Lista de execuções em andamento será inserida aqui -->
+                    </div>
+                </div>
+            </div>
+
             <!-- Header da lista de lotes -->
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-xl font-semibold text-gray-900">Meus Lotes</h2>
@@ -420,6 +436,79 @@
                 <div class="text-center py-12 text-gray-500">
                     <i class="fas fa-spinner fa-spin text-2xl mb-4"></i>
                     <p>Carregando lotes...</p>
+                </div>
+            </div>
+
+            <!-- Area de Progresso (Meus Lotes) -->
+            <div id="areaProgressoMeusLotes" class="mt-6 hidden">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-medium text-gray-900">Progresso da Classificacao</h3>
+                        <span id="rotaOrigemMeusLotes" class="text-xs text-gray-400 font-mono"></span>
+                    </div>
+                    <div class="mb-4">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span id="statusProgressoMeusLotes">Processando...</span>
+                            <span id="contadorProgressoMeusLotes">0 / 0</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3">
+                            <div id="barraProgressoMeusLotes" class="bg-blue-600 h-3 rounded-full transition-all" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <!-- Alerta de Travamento (ADR-0010) -->
+                    <div id="alertaTravamentoMeusLotes" class="hidden mb-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-exclamation-triangle text-amber-500 text-lg mt-0.5"></i>
+                            <div class="flex-1">
+                                <h4 class="font-medium text-amber-800">Execucao Travada</h4>
+                                <p id="mensagemTravamentoMeusLotes" class="text-sm text-amber-700 mt-1">A execucao parou de responder. O progresso foi salvo.</p>
+                                <div class="flex gap-2 mt-3">
+                                    <button onclick="retomarExecucaoMeusLotes()" id="btnRetomarMeusLotes" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition-colors">
+                                        <i class="fas fa-play mr-2"></i>Continuar de onde parou
+                                    </button>
+                                    <button onclick="reprocessarErrosMeusLotes()" id="btnReprocessarErrosMeusLotes" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+                                        <i class="fas fa-redo mr-2"></i>Reprocessar apenas erros
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Alerta de Erro (ADR-0010) -->
+                    <div id="alertaErroMeusLotes" class="hidden mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-times-circle text-red-500 text-lg mt-0.5"></i>
+                            <div class="flex-1">
+                                <h4 class="font-medium text-red-800">Erro na Execucao</h4>
+                                <p id="mensagemErroMeusLotes" class="text-sm text-red-700 mt-1"></p>
+                                <div class="flex gap-2 mt-3">
+                                    <button onclick="verErrosExecucaoMeusLotes()" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors">
+                                        <i class="fas fa-list mr-2"></i>Ver detalhes dos erros
+                                    </button>
+                                    <button onclick="reprocessarErrosMeusLotes()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+                                        <i class="fas fa-redo mr-2"></i>Reprocessar erros
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="logProgressoMeusLotes" class="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-gray-50 font-mono text-xs">
+                        <!-- Logs em tempo real -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Area de Resultados (Meus Lotes) -->
+            <div id="areaResultadosMeusLotes" class="mt-6 hidden">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-medium text-gray-900">Resultados</h3>
+                    </div>
+                    <div id="resumoResultadosMeusLotes" class="mb-4 p-4 bg-gray-50 rounded-lg">
+                        <!-- Resumo -->
+                    </div>
+                    <div id="tabelaResultadosMeusLotes" class="overflow-x-auto hidden">
+                        <!-- Tabela de resultados -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -561,12 +650,7 @@
                                 <!-- Modelo -->
                                 <div>
                                     <label class="block text-xs font-medium text-gray-700 mb-1">Modelo</label>
-                                    <select id="modeloAvulso" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                        <option value="google/gemini-2.5-flash-lite">google/gemini-2.5-flash-lite</option>
-                                        <option value="google/gemini-2.0-flash-001">google/gemini-2.0-flash-001</option>
-                                        <option value="anthropic/claude-sonnet-4">anthropic/claude-sonnet-4</option>
-                                        <option value="openai/gpt-4o-mini">openai/gpt-4o-mini</option>
-                                    </select>
+                                    <input type="text" id="modeloAvulso" value="google/gemini-2.5-flash-lite" placeholder="provedor/modelo" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                 </div>
 
                                 <!-- Modo e Tokens em linha -->
@@ -603,24 +687,61 @@
                     <div class="space-y-4">
                         <!-- Card: Visualizacao PDF -->
                         <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                            <div class="flex justify-between items-center mb-3">
+                            <!-- Header com controles -->
+                            <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
                                 <h3 class="text-sm font-medium text-gray-900">Visualizacao do Documento</h3>
-                                <div id="pdfNavegacao" class="hidden flex items-center gap-2">
-                                    <button onclick="pdfPaginaAnterior()" class="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">
-                                        <i class="fas fa-chevron-left"></i>
-                                    </button>
-                                    <span id="pdfPaginaInfo" class="text-xs text-gray-600">1 / 1</span>
-                                    <button onclick="pdfProximaPagina()" class="px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-xs">
-                                        <i class="fas fa-chevron-right"></i>
-                                    </button>
+
+                                <!-- Controles do PDF (aparecem quando ha documento) -->
+                                <div id="pdfControles" class="hidden flex flex-wrap items-center gap-1 sm:gap-2">
+                                    <!-- Navegacao de paginas -->
+                                    <div class="flex items-center gap-1 border-r border-gray-200 pr-2">
+                                        <button onclick="pdfPaginaAnterior()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Pagina anterior">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <span id="pdfPaginaInfo" class="text-xs text-gray-600 min-w-[40px] text-center">1 / 1</span>
+                                        <button onclick="pdfProximaPagina()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Proxima pagina">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Controles de zoom -->
+                                    <div class="flex items-center gap-1 border-r border-gray-200 pr-2">
+                                        <button onclick="pdfZoomOut()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Diminuir zoom">
+                                            <i class="fas fa-search-minus"></i>
+                                        </button>
+                                        <span id="pdfZoomInfo" class="text-xs text-gray-600 min-w-[45px] text-center">100%</span>
+                                        <button onclick="pdfZoomIn()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Aumentar zoom">
+                                            <i class="fas fa-search-plus"></i>
+                                        </button>
+                                        <button onclick="pdfZoomFit()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Ajustar ao container">
+                                            <i class="fas fa-compress-arrows-alt"></i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Acoes extras -->
+                                    <div class="flex items-center gap-1">
+                                        <button onclick="pdfFullscreen()" class="p-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-xs" title="Tela cheia">
+                                            <i class="fas fa-expand"></i>
+                                        </button>
+                                        <button onclick="pdfAbrirNovaAba()" class="p-1.5 bg-gray-100 hover:bg-gray-200 rounded text-xs" title="Abrir em nova aba">
+                                            <i class="fas fa-external-link-alt"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div id="pdfViewer" class="border border-gray-200 rounded-lg bg-gray-100 flex items-center justify-center" style="height: 400px;">
+
+                            <!-- Container do PDF com altura maior -->
+                            <div id="pdfViewer" class="border border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center overflow-auto cursor-grab active:cursor-grabbing" style="height: 500px;">
                                 <div class="text-center text-gray-400">
                                     <i class="fas fa-file-pdf text-4xl mb-2"></i>
                                     <p class="text-sm">Nenhum documento carregado</p>
                                 </div>
                             </div>
+
+                            <!-- Dica de uso (aparece quando ha documento) -->
+                            <p id="pdfDica" class="hidden text-xs text-gray-400 mt-2 text-center">
+                                <i class="fas fa-lightbulb mr-1"></i>Use scroll do mouse para zoom, arraste para mover
+                            </p>
                         </div>
 
                         <!-- Card: Resultado da Classificacao -->
@@ -809,6 +930,46 @@
                     </button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal: PDF Fullscreen -->
+    <div id="modalPdfFullscreen" class="fixed inset-0 bg-black/90 hidden z-[60] flex flex-col">
+        <!-- Header do modal -->
+        <div class="flex justify-between items-center p-4 bg-gray-900/80 backdrop-blur">
+            <div class="flex items-center gap-4">
+                <h3 class="text-white font-medium">Visualizacao do Documento</h3>
+                <!-- Navegacao -->
+                <div class="flex items-center gap-2">
+                    <button onclick="pdfFullscreenPaginaAnterior()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-sm">
+                        <i class="fas fa-chevron-left mr-1"></i>Anterior
+                    </button>
+                    <span id="pdfFullscreenPaginaInfo" class="text-white text-sm min-w-[60px] text-center">1 / 1</span>
+                    <button onclick="pdfFullscreenProximaPagina()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded text-sm">
+                        Proxima<i class="fas fa-chevron-right ml-1"></i>
+                    </button>
+                </div>
+                <!-- Zoom -->
+                <div class="flex items-center gap-2 border-l border-white/20 pl-4">
+                    <button onclick="pdfFullscreenZoomOut()" class="p-2 bg-white/10 hover:bg-white/20 text-white rounded" title="Diminuir">
+                        <i class="fas fa-search-minus"></i>
+                    </button>
+                    <span id="pdfFullscreenZoomInfo" class="text-white text-sm min-w-[50px] text-center">100%</span>
+                    <button onclick="pdfFullscreenZoomIn()" class="p-2 bg-white/10 hover:bg-white/20 text-white rounded" title="Aumentar">
+                        <i class="fas fa-search-plus"></i>
+                    </button>
+                    <button onclick="pdfFullscreenZoomFit()" class="p-2 bg-white/10 hover:bg-white/20 text-white rounded" title="Ajustar">
+                        <i class="fas fa-compress-arrows-alt"></i>
+                    </button>
+                </div>
+            </div>
+            <button onclick="fecharPdfFullscreen()" class="p-2 bg-white/10 hover:bg-red-500 text-white rounded transition-colors" title="Fechar (ESC)">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <!-- Container do PDF fullscreen -->
+        <div id="pdfFullscreenViewer" class="flex-1 overflow-auto flex items-center justify-center p-4 cursor-grab active:cursor-grabbing">
+            <!-- Canvas sera inserido aqui -->
         </div>
     </div>
 
@@ -1033,6 +1194,178 @@
         }
 
         // ====================================
+        // Execuções em Andamento
+        // ====================================
+        let execucoesEmAndamento = [];
+        let intervaloAtualizacaoExecucoes = null;
+
+        async function verificarExecucoesEmAndamento() {
+            try {
+                const response = await fetchAPI('/classificador/api/execucoes-em-andamento');
+                if (!response.ok) return;
+
+                execucoesEmAndamento = await response.json();
+                renderizarExecucoesEmAndamento();
+
+                // Se há execuções em andamento, inicia polling para atualização
+                if (execucoesEmAndamento.length > 0 && !intervaloAtualizacaoExecucoes) {
+                    intervaloAtualizacaoExecucoes = setInterval(verificarExecucoesEmAndamento, 3000);
+                } else if (execucoesEmAndamento.length === 0 && intervaloAtualizacaoExecucoes) {
+                    clearInterval(intervaloAtualizacaoExecucoes);
+                    intervaloAtualizacaoExecucoes = null;
+                    // Recarrega a lista de projetos para atualizar contadores
+                    carregarProjetos();
+                }
+            } catch (e) {
+                console.error('[EXEC] Erro ao verificar execuções em andamento:', e);
+            }
+        }
+
+        function renderizarExecucoesEmAndamento() {
+            const container = document.getElementById('execucoesEmAndamentoContainer');
+            const lista = document.getElementById('execucoesEmAndamentoLista');
+
+            if (!container || !lista) return;
+
+            if (execucoesEmAndamento.length === 0) {
+                container.classList.add('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+
+            lista.innerHTML = execucoesEmAndamento.map(e => {
+                const pct = e.total_arquivos > 0 ? Math.round((e.arquivos_processados / e.total_arquivos) * 100) : 0;
+                // Detecta se está travada (status TRAVADO ou esta_travada=true)
+                const estaTravada = e.status === 'travado' || e.esta_travada;
+                // Cores baseadas no status
+                const borderColor = estaTravada ? 'border-orange-300' : 'border-yellow-100';
+                const bgColor = estaTravada ? 'bg-orange-50' : 'bg-white';
+                const barColor = estaTravada ? 'bg-orange-500' : 'bg-yellow-500';
+                const statusText = estaTravada ? 'Travada' : 'Em andamento';
+                const statusColor = estaTravada ? 'text-orange-700' : 'text-yellow-700';
+
+                return `
+                    <div class="${bgColor} rounded-lg p-3 mb-2 last:mb-0 border ${borderColor}">
+                        <div class="flex justify-between items-center mb-2">
+                            <div>
+                                <span class="font-medium text-gray-900">${SecurityUtils.escapeHtml(e.projeto_nome || 'Lote #' + e.projeto_id)}</span>
+                                <span class="text-sm text-gray-500 ml-2">(Execução #${e.id})</span>
+                                ${estaTravada ? '<span class="ml-2 px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full"><i class="fas fa-exclamation-triangle mr-1"></i>Travada</span>' : ''}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm ${statusColor} font-medium">${e.arquivos_processados} / ${e.total_arquivos} arquivos</span>
+                            </div>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="${barColor} h-2 rounded-full transition-all" style="width: ${pct}%"></div>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span><i class="fas fa-check-circle text-green-500 mr-1"></i>${e.arquivos_sucesso || 0} sucesso</span>
+                            <span><i class="fas fa-times-circle text-red-500 mr-1"></i>${e.arquivos_erro || 0} erros</span>
+                            <span>${pct}%</span>
+                        </div>
+                        <!-- Botões de ação -->
+                        <div class="flex items-center gap-2 mt-3 pt-2 border-t border-gray-100">
+                            <button onclick="acompanharExecucao(${e.projeto_id}, ${e.id})" class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm">
+                                <i class="fas fa-eye mr-1"></i>Ver Detalhes
+                            </button>
+                            ${estaTravada && e.pode_retomar ? `
+                                <button onclick="retomarExecucaoCard(${e.id})" class="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm">
+                                    <i class="fas fa-play mr-1"></i>Retomar
+                                </button>
+                            ` : ''}
+                            ${estaTravada || e.status === 'em_andamento' ? `
+                                <button onclick="cancelarExecucaoCard(${e.id})" class="px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded text-sm">
+                                    <i class="fas fa-times mr-1"></i>Cancelar
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Cancela uma execução diretamente do card
+        async function cancelarExecucaoCard(execucaoId) {
+            if (!confirm('Tem certeza que deseja cancelar esta execução?')) {
+                return;
+            }
+
+            try {
+                const response = await fetchAPI(`/classificador/api/execucoes/${execucaoId}/cancelar`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const erro = await response.json();
+                    throw new Error(erro.detail || 'Erro ao cancelar execução');
+                }
+
+                alert('Execução cancelada com sucesso!');
+                // Atualiza a lista
+                await verificarExecucoesEmAndamento();
+            } catch (e) {
+                console.error('[CANCELAR] Erro:', e);
+                alert('Erro ao cancelar execução: ' + e.message);
+            }
+        }
+
+        // Retoma uma execução diretamente do card
+        async function retomarExecucaoCard(execucaoId) {
+            // Busca a execução para obter o projeto_id
+            const exec = execucoesEmAndamento.find(e => e.id === execucaoId);
+            if (!exec) {
+                alert('Execução não encontrada na lista');
+                return;
+            }
+
+            // Abre o modal do projeto e inicia a retomada
+            await abrirProjeto(exec.projeto_id);
+
+            // Mostra a área de progresso
+            const areaProgresso = document.getElementById('areaProgressoMeusLotes');
+            if (areaProgresso) {
+                areaProgresso.classList.remove('hidden');
+            }
+
+            // Chama a função de retomada existente
+            retomarExecucaoMeusLotes(execucaoId);
+        }
+
+        async function acompanharExecucao(projetoId, execucaoId) {
+            // Abre o modal de detalhes do projeto
+            await abrirProjeto(projetoId);
+
+            // Mostra a área de progresso
+            const areaProgresso = document.getElementById('areaProgressoMeusLotes');
+            if (areaProgresso) {
+                areaProgresso.classList.remove('hidden');
+
+                // Busca status atual da execução
+                try {
+                    const response = await fetchAPI(`/classificador/api/execucoes/${execucaoId}`);
+                    if (response.ok) {
+                        const exec = await response.json();
+                        const pct = exec.total_arquivos > 0 ? Math.round((exec.arquivos_processados / exec.total_arquivos) * 100) : 0;
+
+                        document.getElementById('statusProgressoMeusLotes').textContent = 'Em andamento...';
+                        document.getElementById('contadorProgressoMeusLotes').textContent = `${exec.arquivos_processados} / ${exec.total_arquivos}`;
+                        document.getElementById('barraProgressoMeusLotes').style.width = `${pct}%`;
+                        document.getElementById('logProgressoMeusLotes').innerHTML = `
+                            <div class="text-gray-600">[${new Date().toLocaleTimeString()}] Reconectado à execução #${execucaoId}</div>
+                            <div class="text-gray-600">[${new Date().toLocaleTimeString()}] Progresso: ${exec.arquivos_processados}/${exec.total_arquivos} (${pct}%)</div>
+                            <div class="text-green-600">[${new Date().toLocaleTimeString()}] ${exec.arquivos_sucesso || 0} arquivos classificados com sucesso</div>
+                            ${exec.arquivos_erro > 0 ? `<div class="text-red-600">[${new Date().toLocaleTimeString()}] ${exec.arquivos_erro} arquivos com erro</div>` : ''}
+                        `;
+                    }
+                } catch (e) {
+                    console.error('[EXEC] Erro ao buscar status da execução:', e);
+                }
+            }
+        }
+
+        // ====================================
         // Projetos
         // ====================================
         async function carregarProjetos() {
@@ -1163,10 +1496,20 @@
             }
         }
 
+        // Variável para armazenar execuções do projeto atual
+        let execucoesProjetoAtual = [];
+
         async function abrirProjeto(id) {
             try {
-                const response = await fetchAPI(`/classificador/api/projetos/${id}`);
-                projetoAtual = await response.json();
+                // Carrega projeto e execuções em paralelo
+                const [projetoResponse, execucoesResponse] = await Promise.all([
+                    fetchAPI(`/classificador/api/projetos/${id}`),
+                    fetchAPI(`/classificador/api/projetos/${id}/execucoes`)
+                ]);
+
+                projetoAtual = await projetoResponse.json();
+                execucoesProjetoAtual = await execucoesResponse.json();
+
                 document.getElementById('detalheTitulo').textContent = projetoAtual.nome;
                 renderizarDetalheProjeto();
                 document.getElementById('modalDetalheProjeto').classList.remove('hidden');
@@ -1254,8 +1597,147 @@
                             <i class="fas fa-history mr-2"></i>Historico
                         </button>
                     </div>
+
+                    ${renderizarUltimaExecucao()}
                 </div>
             `;
+        }
+
+        // Renderiza seção da última execução concluída (se houver)
+        function renderizarUltimaExecucao() {
+            // Filtra execuções concluídas e pega a mais recente
+            const execucoesConcluidas = execucoesProjetoAtual.filter(e => e.status === 'concluido');
+
+            if (execucoesConcluidas.length === 0) {
+                return '';
+            }
+
+            // Ordena por ID decrescente (mais recente primeiro)
+            execucoesConcluidas.sort((a, b) => b.id - a.id);
+            const ultimaExecucao = execucoesConcluidas[0];
+
+            return `
+                <!-- Última Execução Concluída -->
+                <div class="border-t pt-4 mt-4">
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <i class="fas fa-check-circle text-green-600"></i>
+                                <span class="font-medium text-green-800">Última Classificação (Execução #${ultimaExecucao.id})</span>
+                            </div>
+                            <span class="text-xs text-green-600">
+                                ${ultimaExecucao.arquivos_sucesso || 0} sucesso, ${ultimaExecucao.arquivos_erro || 0} erros
+                            </span>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="verResultadosExecucaoModal(${ultimaExecucao.id})" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
+                                <i class="fas fa-eye mr-2"></i>Visualizar Classificação
+                            </button>
+                            <button onclick="exportarResultados(${ultimaExecucao.id}, 'excel')" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors">
+                                <i class="fas fa-file-excel mr-2"></i>Baixar Excel
+                            </button>
+                            <button onclick="exportarResultados(${ultimaExecucao.id}, 'csv')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+                                <i class="fas fa-file-csv mr-2"></i>CSV
+                            </button>
+                            <button onclick="exportarResultados(${ultimaExecucao.id}, 'json')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-sm font-medium transition-colors">
+                                <i class="fas fa-file-code mr-2"></i>JSON
+                            </button>
+                        </div>
+                        ${execucoesConcluidas.length > 1 ? `
+                            <p class="text-xs text-green-600 mt-2">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                Há ${execucoesConcluidas.length} execuções concluídas. Clique em "Histórico" para ver todas.
+                            </p>
+                        ` : ''}
+                    </div>
+                </div>
+
+                <!-- Área para exibir resultados inline -->
+                <div id="resultadosInlineModal" class="hidden mt-4">
+                    <div class="border border-gray-200 rounded-lg">
+                        <div class="flex justify-between items-center p-3 bg-gray-50 border-b">
+                            <h4 class="font-semibold text-gray-900">Resultados da Classificação</h4>
+                            <button onclick="ocultarResultadosInlineModal()" class="text-gray-500 hover:text-gray-700">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div id="tabelaResultadosInlineModal" class="p-3 max-h-80 overflow-auto">
+                            <!-- Tabela de resultados será inserida aqui -->
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Mostra resultados inline no modal de detalhes do lote
+        async function verResultadosExecucaoModal(execucaoId) {
+            const area = document.getElementById('resultadosInlineModal');
+            const tabela = document.getElementById('tabelaResultadosInlineModal');
+
+            if (!area || !tabela) return;
+
+            area.classList.remove('hidden');
+            tabela.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando resultados...</div>';
+
+            try {
+                const response = await fetchAPI(`/classificador/api/execucoes/${execucaoId}/resultados`);
+                if (!response.ok) throw new Error('Erro ao carregar resultados');
+
+                const resultados = await response.json();
+
+                if (!resultados || resultados.length === 0) {
+                    tabela.innerHTML = '<div class="text-center py-4 text-gray-500">Nenhum resultado encontrado.</div>';
+                    return;
+                }
+
+                tabela.innerHTML = `
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Documento</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Categoria</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Subcategoria</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Confiança</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Justificativa</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${resultados.map(r => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-3 py-2 text-gray-900">
+                                        <div class="max-w-[120px] truncate" title="${SecurityUtils.escapeHtml(r.nome_arquivo || r.codigo_documento || '-')}">
+                                            ${SecurityUtils.escapeHtml(r.nome_arquivo || r.codigo_documento || '-')}
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-700">${SecurityUtils.escapeHtml(r.categoria || '-')}</td>
+                                    <td class="px-3 py-2 text-gray-700">${SecurityUtils.escapeHtml(r.subcategoria || '-')}</td>
+                                    <td class="px-3 py-2">
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-medium confianca-${r.confianca || 'baixa'}">
+                                            ${SecurityUtils.escapeHtml(r.confianca || '-')}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2 text-gray-600">
+                                        <div class="max-w-[180px] truncate" title="${SecurityUtils.escapeHtml(r.justificativa || '-')}">
+                                            ${SecurityUtils.escapeHtml(r.justificativa || '-')}
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="mt-2 text-xs text-gray-500 text-right">${resultados.length} resultado(s)</div>
+                `;
+
+                // Scroll para a área de resultados
+                area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } catch (e) {
+                tabela.innerHTML = `<div class="text-center py-4 text-red-500"><i class="fas fa-exclamation-circle mr-2"></i>Erro: ${SecurityUtils.escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function ocultarResultadosInlineModal() {
+            const area = document.getElementById('resultadosInlineModal');
+            if (area) area.classList.add('hidden');
         }
 
         async function removerCodigo(id) {
@@ -1403,12 +1885,533 @@
             }
         }
 
+        // Variaveis de estado para recuperacao (ADR-0010)
+        let execucaoAtualId = null;
+        let projetoExecucaoAtualId = null;
+        let timeoutTravamento = null;
+        const TIMEOUT_TRAVAMENTO_MS = 60000; // 60 segundos sem eventos = travamento
+
         async function executarProjeto() {
-            alert('Funcionalidade de execucao sera implementada na proxima fase. Por enquanto, use a classificacao avulsa.');
+            if (!projetoAtual) return;
+
+            // IMPORTANTE: Salva o ID ANTES de fechar o modal (hideModal seta projetoAtual = null)
+            const projetoId = projetoAtual.id;
+            const projetoNome = projetoAtual.nome;
+            projetoExecucaoAtualId = projetoId;
+
+            // Fecha o modal de detalhes
+            hideModalDetalheProjeto();
+
+            // Mostra area de progresso e esconde alertas
+            iniciarAreaProgresso();
+
+            // Inicia SSE
+            iniciarSSEClassificacao(`/classificador/api/projetos/${projetoId}/executar`, projetoId);
+        }
+
+        function iniciarAreaProgresso() {
+            const areaProgresso = document.getElementById('areaProgressoMeusLotes');
+            if (areaProgresso) {
+                areaProgresso.classList.remove('hidden');
+                document.getElementById('logProgressoMeusLotes').innerHTML = '';
+                document.getElementById('barraProgressoMeusLotes').style.width = '0%';
+                document.getElementById('contadorProgressoMeusLotes').textContent = '0 / 0';
+                document.getElementById('statusProgressoMeusLotes').textContent = 'Iniciando...';
+                document.getElementById('rotaOrigemMeusLotes').textContent = '';
+                // Esconde alertas de erro/travamento
+                document.getElementById('alertaTravamentoMeusLotes').classList.add('hidden');
+                document.getElementById('alertaErroMeusLotes').classList.add('hidden');
+            }
+        }
+
+        function iniciarSSEClassificacao(url, projetoId) {
+            const eventSource = new EventSource(`${url}?token=${token}`);
+            let ultimoErro = null;
+            let recebeuEvento = false;
+
+            // Timer de timeout para detectar travamento (ADR-0010)
+            function resetarTimeoutTravamento() {
+                if (timeoutTravamento) clearTimeout(timeoutTravamento);
+                timeoutTravamento = setTimeout(() => {
+                    console.warn('[SSE] Timeout: sem eventos por 60s - possivel travamento');
+                    eventSource.close();
+                    mostrarAlertaTravamento('A execucao parou de responder. Sem eventos por mais de 60 segundos.');
+                }, TIMEOUT_TRAVAMENTO_MS);
+            }
+
+            resetarTimeoutTravamento();
+
+            eventSource.onmessage = (event) => {
+                recebeuEvento = true;
+                resetarTimeoutTravamento();
+
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.mensagem) {
+                        adicionarLogMeusLotes(data.mensagem, data.tipo === 'erro' ? 'error' : 'info');
+                    }
+
+                    // Salva ID da execucao
+                    if (data.execucao_id) {
+                        execucaoAtualId = data.execucao_id;
+                    }
+
+                    // Mostra rota de origem
+                    if (data.rota_origem) {
+                        document.getElementById('rotaOrigemMeusLotes').textContent = `Rota: ${data.rota_origem}`;
+                    }
+
+                    if (data.processados !== undefined && data.total !== undefined) {
+                        atualizarBarraProgressoMeusLotes(data.processados, data.total);
+                    }
+
+                    if (data.tipo === 'concluido') {
+                        clearTimeout(timeoutTravamento);
+                        adicionarLogMeusLotes(`Sucesso: ${data.sucesso || 0} | Erros: ${data.erros || 0}`, 'success');
+                        eventSource.close();
+                        document.getElementById('statusProgressoMeusLotes').textContent = 'Concluido!';
+                        // Se teve erros, mostra alerta com opcao de reprocessar
+                        if (data.erros > 0) {
+                            mostrarAlertaComErros(data.erros);
+                        }
+                        // Mostra resultados
+                        if (data.execucao_id) {
+                            mostrarResultadosMeusLotes(projetoId, data.execucao_id);
+                        }
+                    } else if (data.tipo === 'erro') {
+                        clearTimeout(timeoutTravamento);
+                        ultimoErro = data.mensagem;
+                        eventSource.close();
+                        document.getElementById('statusProgressoMeusLotes').textContent = 'Erro';
+                        mostrarAlertaErro(data.mensagem);
+                    } else if (data.tipo === 'inicio' || data.tipo === 'retomada' || data.tipo === 'reprocessamento') {
+                        document.getElementById('statusProgressoMeusLotes').textContent = 'Processando...';
+                    }
+                } catch (e) {
+                    console.error('[SSE MeusLotes] Erro ao processar evento:', e);
+                }
+            };
+
+            eventSource.onerror = (e) => {
+                console.error('[SSE MeusLotes] Erro na conexao:', e);
+                clearTimeout(timeoutTravamento);
+                eventSource.close();
+                if (!recebeuEvento) {
+                    adicionarLogMeusLotes('Erro: Conexao falhou. Verifique autenticacao.', 'error');
+                    mostrarAlertaErro('Conexao falhou. Verifique se esta autenticado.');
+                } else if (ultimoErro) {
+                    adicionarLogMeusLotes(`Conexao encerrada: ${ultimoErro}`, 'error');
+                } else {
+                    // Conexao fechada sem erro explicito - possivel travamento
+                    mostrarAlertaTravamento('A conexao foi interrompida inesperadamente. O progresso foi salvo.');
+                }
+            };
+
+            eventSource.onopen = () => {
+                console.log('[SSE MeusLotes] Conexao aberta');
+                adicionarLogMeusLotes('Conexao estabelecida, processando...', 'info');
+            };
+        }
+
+        function mostrarAlertaTravamento(mensagem) {
+            document.getElementById('statusProgressoMeusLotes').textContent = 'Travado';
+            document.getElementById('barraProgressoMeusLotes').classList.remove('bg-blue-600');
+            document.getElementById('barraProgressoMeusLotes').classList.add('bg-amber-500');
+            document.getElementById('mensagemTravamentoMeusLotes').textContent = mensagem;
+            document.getElementById('alertaTravamentoMeusLotes').classList.remove('hidden');
+            adicionarLogMeusLotes('TRAVAMENTO DETECTADO: ' + mensagem, 'error');
+        }
+
+        function mostrarAlertaErro(mensagem) {
+            document.getElementById('statusProgressoMeusLotes').textContent = 'Erro';
+            document.getElementById('barraProgressoMeusLotes').classList.remove('bg-blue-600');
+            document.getElementById('barraProgressoMeusLotes').classList.add('bg-red-500');
+            document.getElementById('mensagemErroMeusLotes').textContent = mensagem;
+            document.getElementById('alertaErroMeusLotes').classList.remove('hidden');
+        }
+
+        function mostrarAlertaComErros(qtdErros) {
+            document.getElementById('mensagemErroMeusLotes').textContent =
+                `${qtdErros} documento(s) falharam. Voce pode tentar reprocessar os erros.`;
+            document.getElementById('alertaErroMeusLotes').classList.remove('hidden');
+        }
+
+        async function retomarExecucaoMeusLotes(execId = null) {
+            // Usa parâmetro ou variável global
+            const idRetomar = execId || execucaoAtualId;
+            if (!idRetomar) {
+                alert('Nenhuma execucao para retomar');
+                return;
+            }
+
+            // Se passou execId explícito, atualiza a variável global
+            if (execId) {
+                execucaoAtualId = execId;
+            }
+
+            adicionarLogMeusLotes('Retomando execucao...', 'info');
+            document.getElementById('alertaTravamentoMeusLotes').classList.add('hidden');
+            document.getElementById('barraProgressoMeusLotes').classList.remove('bg-amber-500', 'bg-red-500');
+            document.getElementById('barraProgressoMeusLotes').classList.add('bg-blue-600');
+            document.getElementById('statusProgressoMeusLotes').textContent = 'Retomando...';
+
+            iniciarSSEClassificacao(`/classificador/api/execucoes/${idRetomar}/retomar`, projetoExecucaoAtualId);
+        }
+
+        async function reprocessarErrosMeusLotes() {
+            if (!execucaoAtualId) {
+                alert('Nenhuma execucao para reprocessar');
+                return;
+            }
+
+            adicionarLogMeusLotes('Reprocessando erros...', 'info');
+            document.getElementById('alertaTravamentoMeusLotes').classList.add('hidden');
+            document.getElementById('alertaErroMeusLotes').classList.add('hidden');
+            document.getElementById('barraProgressoMeusLotes').classList.remove('bg-amber-500', 'bg-red-500');
+            document.getElementById('barraProgressoMeusLotes').classList.add('bg-blue-600');
+            document.getElementById('statusProgressoMeusLotes').textContent = 'Reprocessando erros...';
+
+            iniciarSSEClassificacao(`/classificador/api/execucoes/${execucaoAtualId}/reprocessar-erros`, projetoExecucaoAtualId);
+        }
+
+        async function verErrosExecucaoMeusLotes() {
+            if (!execucaoAtualId) {
+                alert('Nenhuma execucao selecionada');
+                return;
+            }
+
+            try {
+                const response = await fetchAPI(`/classificador/api/execucoes/${execucaoAtualId}/erros`);
+                if (!response.ok) throw new Error('Erro ao buscar erros');
+
+                const data = await response.json();
+
+                // Mostra erros no log
+                adicionarLogMeusLotes(`--- Detalhes dos ${data.total_erros} erro(s) ---`, 'error');
+                for (const erro of data.erros) {
+                    const msg = `[${erro.codigo_documento}] ${erro.erro_mensagem} (tentativas: ${erro.tentativas})`;
+                    adicionarLogMeusLotes(msg, 'error');
+                }
+            } catch (e) {
+                console.error('Erro ao buscar erros:', e);
+                alert('Erro ao buscar detalhes dos erros');
+            }
+        }
+
+        function adicionarLogMeusLotes(msg, tipo = 'info') {
+            const log = document.getElementById('logProgressoMeusLotes');
+            if (!log) return;
+            const timestamp = new Date().toLocaleTimeString();
+            const cor = tipo === 'error' ? 'text-red-600' : (tipo === 'success' ? 'text-green-600' : 'text-gray-600');
+            log.innerHTML += `<div class="${cor}">[${timestamp}] ${SecurityUtils.escapeHtml(msg)}</div>`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function atualizarBarraProgressoMeusLotes(atual, total) {
+            const barra = document.getElementById('barraProgressoMeusLotes');
+            const contador = document.getElementById('contadorProgressoMeusLotes');
+            if (!barra || !contador) return;
+            const pct = total > 0 ? (atual / total * 100) : 0;
+            barra.style.width = `${pct}%`;
+            contador.textContent = `${atual} / ${total}`;
+        }
+
+        async function mostrarResultadosMeusLotes(projetoId, execucaoId) {
+            const areaResultados = document.getElementById('areaResultadosMeusLotes');
+            if (!areaResultados) return;
+
+            areaResultados.classList.remove('hidden');
+
+            document.getElementById('resumoResultadosMeusLotes').innerHTML = `
+                <p class="text-gray-600 mb-3">Execucao #${execucaoId} concluida.</p>
+                <div class="flex gap-3 flex-wrap">
+                    <button onclick="exportarResultados(${execucaoId}, 'excel')" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
+                        <i class="fas fa-file-excel mr-2"></i>Exportar Excel
+                    </button>
+                    <button onclick="toggleTabelaResultadosMeusLotes(${execucaoId})" id="btnToggleTabelaMeusLotes" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors">
+                        <i class="fas fa-table mr-2"></i>Ver Classificacoes
+                    </button>
+                    <button onclick="exportarResultados(${execucaoId}, 'csv')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors">
+                        <i class="fas fa-file-csv mr-2"></i>CSV
+                    </button>
+                    <button onclick="exportarResultados(${execucaoId}, 'json')" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors">
+                        <i class="fas fa-file-code mr-2"></i>JSON
+                    </button>
+                </div>
+            `;
+
+            // Pre-carrega resultados
+            await carregarResultadosTabelaMeusLotes(execucaoId);
+        }
+
+        let tabelaResultadosMeusLotesVisivel = false;
+        let execucaoIdMeusLotesAtual = null;
+
+        async function toggleTabelaResultadosMeusLotes(execucaoId) {
+            const tabela = document.getElementById('tabelaResultadosMeusLotes');
+            const btn = document.getElementById('btnToggleTabelaMeusLotes');
+            if (!tabela) return;
+
+            tabelaResultadosMeusLotesVisivel = !tabelaResultadosMeusLotesVisivel;
+
+            if (tabelaResultadosMeusLotesVisivel) {
+                if (execucaoIdMeusLotesAtual !== execucaoId) {
+                    await carregarResultadosTabelaMeusLotes(execucaoId);
+                }
+                tabela.classList.remove('hidden');
+                btn.innerHTML = '<i class="fas fa-table mr-2"></i>Ocultar Classificacoes';
+            } else {
+                tabela.classList.add('hidden');
+                btn.innerHTML = '<i class="fas fa-table mr-2"></i>Ver Classificacoes';
+            }
+        }
+
+        async function carregarResultadosTabelaMeusLotes(execucaoId) {
+            execucaoIdMeusLotesAtual = execucaoId;
+            const tabela = document.getElementById('tabelaResultadosMeusLotes');
+            if (!tabela) return;
+
+            tabela.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando resultados...</div>';
+
+            try {
+                const response = await fetchAPI(`/classificador/api/execucoes/${execucaoId}/resultados`);
+                if (!response.ok) throw new Error('Erro ao carregar resultados');
+
+                const resultados = await response.json();
+
+                if (!resultados || resultados.length === 0) {
+                    tabela.innerHTML = '<div class="text-center py-4 text-gray-500">Nenhum resultado encontrado.</div>';
+                    return;
+                }
+
+                tabela.innerHTML = `
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Documento</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subcategoria</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confianca</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Justificativa</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${resultados.map(r => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-3 text-sm text-gray-900">
+                                        <div class="max-w-xs truncate" title="${SecurityUtils.escapeHtml(r.nome_arquivo || r.codigo_documento || '-')}">
+                                            ${SecurityUtils.escapeHtml(r.nome_arquivo || r.codigo_documento || '-')}
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-700">${SecurityUtils.escapeHtml(r.categoria || '-')}</td>
+                                    <td class="px-4 py-3 text-sm text-gray-700">${SecurityUtils.escapeHtml(r.subcategoria || '-')}</td>
+                                    <td class="px-4 py-3 text-sm">
+                                        <span class="px-2 py-1 rounded-full text-xs font-medium confianca-${r.confianca || 'baixa'}">
+                                            ${SecurityUtils.escapeHtml(r.confianca || '-')}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-600">
+                                        <div class="max-w-md truncate" title="${SecurityUtils.escapeHtml(r.justificativa || '-')}">
+                                            ${SecurityUtils.escapeHtml(r.justificativa || '-')}
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="mt-2 text-xs text-gray-500 text-right">${resultados.length} resultado(s)</div>
+                `;
+            } catch (e) {
+                tabela.innerHTML = `<div class="text-center py-4 text-red-500"><i class="fas fa-exclamation-circle mr-2"></i>Erro ao carregar: ${SecurityUtils.escapeHtml(e.message)}</div>`;
+            }
         }
 
         async function verExecucoes() {
-            alert('Funcionalidade de historico sera implementada na proxima fase.');
+            if (!projetoAtual) return;
+
+            try {
+                const response = await fetchAPI(`/classificador/api/projetos/${projetoAtual.id}/execucoes`);
+                if (!response.ok) throw new Error('Erro ao carregar execucoes');
+
+                const execucoes = await response.json();
+
+                // Mostra modal com lista de execucoes
+                mostrarListaExecucoes(execucoes);
+            } catch (e) {
+                alert('Erro ao carregar historico: ' + e.message);
+            }
+        }
+
+        function mostrarListaExecucoes(execucoes) {
+            const container = document.getElementById('detalheContent');
+            if (!container) return;
+
+            const p = projetoAtual;
+
+            // Monta HTML com lista de execucoes
+            let execucoesHTML = '';
+            if (execucoes.length === 0) {
+                execucoesHTML = '<p class="text-center py-8 text-gray-500">Nenhuma execucao realizada ainda.</p>';
+            } else {
+                execucoesHTML = `
+                    <div class="space-y-3">
+                        ${execucoes.map(e => `
+                            <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                                <div class="flex justify-between items-start">
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-medium text-gray-900">Execucao #${e.id}</span>
+                                            <span class="px-2 py-0.5 rounded-full text-xs font-medium status-${e.status}">${e.status}</span>
+                                        </div>
+                                        <div class="text-sm text-gray-500 mt-1">
+                                            <span><i class="fas fa-file-alt mr-1"></i>${e.arquivos_processados || 0}/${e.total_arquivos || 0} arquivos</span>
+                                            <span class="ml-3"><i class="fas fa-check-circle text-green-500 mr-1"></i>${e.arquivos_sucesso || 0} sucesso</span>
+                                            <span class="ml-3"><i class="fas fa-times-circle text-red-500 mr-1"></i>${e.arquivos_erro || 0} erros</span>
+                                        </div>
+                                        <div class="text-xs text-gray-400 mt-1">
+                                            ${e.iniciado_em ? `Iniciado: ${new Date(e.iniciado_em).toLocaleString()}` : ''}
+                                            ${e.finalizado_em ? ` | Finalizado: ${new Date(e.finalizado_em).toLocaleString()}` : ''}
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button onclick="verResultadosExecucao(${e.id})" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded text-sm" title="Ver resultados">
+                                            <i class="fas fa-eye mr-1"></i>Ver
+                                        </button>
+                                        <button onclick="exportarResultados(${e.id}, 'excel')" class="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded text-sm" title="Exportar Excel">
+                                            <i class="fas fa-file-excel"></i>
+                                        </button>
+                                        <button onclick="exportarResultados(${e.id}, 'csv')" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm" title="Exportar CSV">
+                                            <i class="fas fa-file-csv"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                ${e.progresso_percentual !== null && e.progresso_percentual !== undefined ? `
+                                    <div class="mt-2">
+                                        <div class="w-full bg-gray-200 rounded-full h-1.5">
+                                            <div class="bg-blue-600 h-1.5 rounded-full" style="width: ${e.progresso_percentual}%"></div>
+                                        </div>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <!-- Botao Voltar -->
+                    <div class="flex items-center gap-3">
+                        <button onclick="abrirProjeto(${p.id})" class="text-blue-600 hover:text-blue-800">
+                            <i class="fas fa-arrow-left mr-2"></i>Voltar aos detalhes
+                        </button>
+                        <span class="text-gray-400">|</span>
+                        <h4 class="font-semibold text-gray-900">Historico de Execucoes</h4>
+                    </div>
+
+                    <!-- Lista de Execucoes -->
+                    <div>
+                        ${execucoesHTML}
+                    </div>
+
+                    <!-- Area de Resultados (inicialmente oculta) -->
+                    <div id="areaResultadosExecucao" class="hidden">
+                        <div class="border-t pt-4">
+                            <div class="flex justify-between items-center mb-3">
+                                <h4 class="font-semibold text-gray-900">Resultados da Classificacao</h4>
+                                <button onclick="ocultarResultadosExecucao()" class="text-gray-500 hover:text-gray-700">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <div id="tabelaResultadosExecucao" class="overflow-x-auto max-h-96">
+                                <!-- Tabela de resultados -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function verResultadosExecucao(execucaoId) {
+            const area = document.getElementById('areaResultadosExecucao');
+            const tabela = document.getElementById('tabelaResultadosExecucao');
+
+            if (!area || !tabela) return;
+
+            area.classList.remove('hidden');
+            tabela.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando resultados...</div>';
+
+            try {
+                const response = await fetchAPI(`/classificador/api/execucoes/${execucaoId}/resultados`);
+                if (!response.ok) throw new Error('Erro ao carregar resultados');
+
+                const resultados = await response.json();
+
+                if (!resultados || resultados.length === 0) {
+                    tabela.innerHTML = '<div class="text-center py-4 text-gray-500">Nenhum resultado encontrado.</div>';
+                    return;
+                }
+
+                tabela.innerHTML = `
+                    <div class="mb-3 flex gap-2">
+                        <button onclick="exportarResultados(${execucaoId}, 'excel')" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-sm">
+                            <i class="fas fa-file-excel mr-1"></i>Excel
+                        </button>
+                        <button onclick="exportarResultados(${execucaoId}, 'csv')" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm">
+                            <i class="fas fa-file-csv mr-1"></i>CSV
+                        </button>
+                        <button onclick="exportarResultados(${execucaoId}, 'json')" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-sm">
+                            <i class="fas fa-file-code mr-1"></i>JSON
+                        </button>
+                    </div>
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Documento</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Categoria</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Subcategoria</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Confianca</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Justificativa</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${resultados.map(r => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-3 py-2 text-sm text-gray-900">
+                                        <div class="max-w-[150px] truncate" title="${SecurityUtils.escapeHtml(r.nome_arquivo || r.codigo_documento || '-')}">
+                                            ${SecurityUtils.escapeHtml(r.nome_arquivo || r.codigo_documento || '-')}
+                                        </div>
+                                    </td>
+                                    <td class="px-3 py-2 text-sm text-gray-700">${SecurityUtils.escapeHtml(r.categoria || '-')}</td>
+                                    <td class="px-3 py-2 text-sm text-gray-700">${SecurityUtils.escapeHtml(r.subcategoria || '-')}</td>
+                                    <td class="px-3 py-2 text-sm">
+                                        <span class="px-2 py-0.5 rounded-full text-xs font-medium confianca-${r.confianca || 'baixa'}">
+                                            ${SecurityUtils.escapeHtml(r.confianca || '-')}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2 text-sm text-gray-600">
+                                        <div class="max-w-[200px] truncate" title="${SecurityUtils.escapeHtml(r.justificativa || '-')}">
+                                            ${SecurityUtils.escapeHtml(r.justificativa || '-')}
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="mt-2 text-xs text-gray-500 text-right">${resultados.length} resultado(s)</div>
+                `;
+
+                // Scroll para a area de resultados
+                area.scrollIntoView({ behavior: 'smooth' });
+            } catch (e) {
+                tabela.innerHTML = `<div class="text-center py-4 text-red-500"><i class="fas fa-exclamation-circle mr-2"></i>Erro: ${SecurityUtils.escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        function ocultarResultadosExecucao() {
+            const area = document.getElementById('areaResultadosExecucao');
+            if (area) area.classList.add('hidden');
         }
 
         // ====================================
@@ -1463,11 +2466,15 @@
                 const arrayBuffer = await file.arrayBuffer();
                 const pdfData = new Uint8Array(arrayBuffer);
 
+                // Armazena como base64 para poder abrir em nova aba
+                pdfBase64Data = btoa(String.fromCharCode.apply(null, pdfData));
+
                 pdfDoc = await pdfjsLib.getDocument({ data: pdfData }).promise;
                 pdfTotalPaginas = pdfDoc.numPages;
                 pdfPaginaAtual = 1;
+                pdfZoomLevel = 0; // Fit inicial
 
-                document.getElementById('pdfNavegacao').classList.remove('hidden');
+                mostrarControlesPdf();
                 atualizarInfoPagina();
                 await renderizarPagina(pdfPaginaAtual);
 
@@ -1638,7 +2645,7 @@
         function adicionarArquivosLote(files) {
             const validExtensions = ['.pdf', '.txt', '.zip'];
             const maxFileSize = 50 * 1024 * 1024; // 50MB
-            const maxFiles = 500;
+            const maxFiles = 2000;
 
             for (const file of files) {
                 const ext = '.' + file.name.split('.').pop().toLowerCase();
@@ -1886,12 +2893,42 @@
         }
 
         async function uploadArquivosParaLote(loteId) {
-            // TODO: Implementar upload em lote no backend
-            // Por enquanto, simula sucesso
+            // Upload real dos arquivos para o backend
+            const formData = new FormData();
             for (const file of arquivosParaLote) {
+                formData.append('arquivos', file);
                 adicionarLogLote(`  - ${file.name}`);
             }
-            adicionarLogLote(`${arquivosParaLote.length} arquivos enviados.`);
+
+            try {
+                const response = await fetch(`/classificador/api/lotes/${loteId}/upload`, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'  // Inclui cookie de autenticacao
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || `Erro HTTP ${response.status}`);
+                }
+
+                const result = await response.json();
+                adicionarLogLote(`${result.adicionados || arquivosParaLote.length} arquivos enviados com sucesso.`, 'success');
+
+                if (result.erros && result.erros > 0) {
+                    adicionarLogLote(`${result.erros} arquivo(s) com erro.`, 'error');
+                    if (result.detalhes_erros) {
+                        result.detalhes_erros.forEach(e => {
+                            adicionarLogLote(`  ! ${e.arquivo}: ${e.erro}`, 'error');
+                        });
+                    }
+                }
+
+                return result;
+            } catch (e) {
+                adicionarLogLote(`Erro no upload: ${e.message}`, 'error');
+                throw e;
+            }
         }
 
         async function adicionarProcessosTJMS(loteId, processos) {
@@ -1917,26 +2954,68 @@
 
         async function executarClassificacaoLote(loteId) {
             // Usa SSE para progresso em tempo real
-            const eventSource = new EventSource(`/classificador/api/projetos/${loteId}/executar?token=${localStorage.getItem('token')}`);
+            // IMPORTANTE: O token é armazenado como 'access_token' no localStorage
+            const eventSource = new EventSource(`/classificador/api/projetos/${loteId}/executar?token=${localStorage.getItem('access_token')}`);
+            let recebeuEvento = false;
+            let ultimoErro = null;
 
             eventSource.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                adicionarLogLote(data.mensagem || JSON.stringify(data));
+                recebeuEvento = true;
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[SSE] Evento recebido:', data);
 
-                if (data.tipo === 'concluido' || data.tipo === 'erro') {
-                    eventSource.close();
-                    mostrarResultadosLote(loteId);
-                }
+                    // Log da mensagem
+                    if (data.mensagem) {
+                        const tipo = data.tipo === 'erro' ? 'error' : (data.tipo === 'concluido' ? 'success' : 'info');
+                        adicionarLogLote(data.mensagem, tipo);
+                    }
 
-                if (data.progresso) {
-                    atualizarBarraProgresso(data.progresso.atual, data.progresso.total);
+                    // Atualiza progresso - backend envia processados/total diretamente
+                    if (data.processados !== undefined && data.total !== undefined) {
+                        atualizarBarraProgresso(data.processados, data.total);
+                    }
+
+                    // Eventos de conclusao ou erro
+                    if (data.tipo === 'concluido') {
+                        adicionarLogLote(`Sucesso: ${data.sucesso || 0} | Erros: ${data.erros || 0}`, 'success');
+                        eventSource.close();
+                        document.getElementById('statusProgressoLote').textContent = 'Concluido!';
+                        mostrarResultadosLote(loteId, data.execucao_id);
+                    } else if (data.tipo === 'erro') {
+                        ultimoErro = data.mensagem;
+                        eventSource.close();
+                        document.getElementById('statusProgressoLote').textContent = 'Erro';
+                        mostrarResultadosLote(loteId);
+                    } else if (data.tipo === 'inicio') {
+                        // Inicializa o total na barra de progresso
+                        document.getElementById('statusProgressoLote').textContent = 'Processando...';
+                    }
+                } catch (e) {
+                    console.error('[SSE] Erro ao processar evento:', e, event.data);
+                    adicionarLogLote(`Erro ao processar evento: ${e.message}`, 'error');
                 }
             };
 
-            eventSource.onerror = () => {
+            eventSource.onerror = (e) => {
+                console.error('[SSE] Erro na conexao:', e);
                 eventSource.close();
-                adicionarLogLote('Conexao encerrada.', 'info');
+
+                if (!recebeuEvento) {
+                    // Conexao falhou antes de receber qualquer evento - provavelmente erro de auth ou servidor
+                    adicionarLogLote('Erro: Conexao falhou antes de iniciar. Verifique se voce esta autenticado.', 'error');
+                    document.getElementById('statusProgressoLote').textContent = 'Erro de conexao';
+                } else if (ultimoErro) {
+                    adicionarLogLote(`Conexao encerrada: ${ultimoErro}`, 'error');
+                } else {
+                    adicionarLogLote('Conexao encerrada.', 'info');
+                }
                 mostrarResultadosLote(loteId);
+            };
+
+            eventSource.onopen = () => {
+                console.log('[SSE] Conexao aberta com sucesso');
+                adicionarLogLote('Conexao estabelecida, aguardando eventos...', 'info');
             };
         }
 
@@ -1956,13 +3035,137 @@
             contador.textContent = `${atual} / ${total}`;
         }
 
-        function mostrarResultadosLote(loteId) {
+        async function mostrarResultadosLote(loteId, execucaoId = null) {
             const areaResultados = document.getElementById('areaResultadosLote');
             areaResultados.classList.remove('hidden');
-            // TODO: Carregar e exibir resultados
-            document.getElementById('resumoResultadosLote').innerHTML = `
-                <p class="text-gray-600">Lote #${loteId} concluido. Veja os resultados em "Meus Lotes".</p>
-            `;
+            document.getElementById('btnIniciarLote').disabled = false;
+
+            // Armazena o execucaoId para exportacao
+            execucaoIdAtual = execucaoId;
+
+            if (execucaoId) {
+                document.getElementById('resumoResultadosLote').innerHTML = `
+                    <p class="text-gray-600 mb-3">Lote #${loteId} concluido (execucao #${execucaoId}).</p>
+                    <div class="flex gap-3 flex-wrap">
+                        <button onclick="showTab('meusLotes'); carregarProjetos();" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                            <i class="fas fa-folder-open mr-2"></i>Ver em Meus Lotes
+                        </button>
+                        <button onclick="exportarResultados(${execucaoId}, 'excel')" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors">
+                            <i class="fas fa-file-excel mr-2"></i>Exportar Excel
+                        </button>
+                        <button onclick="toggleTabelaResultados()" id="btnToggleTabela" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors">
+                            <i class="fas fa-table mr-2"></i>Ver Classificacoes
+                        </button>
+                    </div>
+                `;
+                // Carrega os resultados para a tabela
+                await carregarResultadosTabela(execucaoId);
+            } else {
+                document.getElementById('resumoResultadosLote').innerHTML = `
+                    <p class="text-gray-600">Lote #${loteId} processado. Veja os resultados em "Meus Lotes".</p>
+                    <button onclick="showTab('meusLotes'); carregarProjetos();" class="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
+                        <i class="fas fa-folder-open mr-2"></i>Ver em Meus Lotes
+                    </button>
+                `;
+            }
+        }
+
+        let tabelaResultadosVisivel = false;
+
+        function toggleTabelaResultados() {
+            const tabela = document.getElementById('tabelaResultadosLote');
+            const btn = document.getElementById('btnToggleTabela');
+            tabelaResultadosVisivel = !tabelaResultadosVisivel;
+
+            if (tabelaResultadosVisivel) {
+                tabela.classList.remove('hidden');
+                btn.innerHTML = '<i class="fas fa-table mr-2"></i>Ocultar Classificacoes';
+            } else {
+                tabela.classList.add('hidden');
+                btn.innerHTML = '<i class="fas fa-table mr-2"></i>Ver Classificacoes';
+            }
+        }
+
+        async function carregarResultadosTabela(execucaoId) {
+            const tabela = document.getElementById('tabelaResultadosLote');
+            tabela.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando resultados...</div>';
+            tabela.classList.add('hidden'); // Comeca oculta
+            tabelaResultadosVisivel = false;
+
+            try {
+                const response = await fetch(`/classificador/api/execucoes/${execucaoId}/resultados`, {
+                    credentials: 'include'
+                });
+                if (!response.ok) throw new Error('Erro ao carregar resultados');
+
+                const resultados = await response.json();
+
+                if (!resultados || resultados.length === 0) {
+                    tabela.innerHTML = '<div class="text-center py-4 text-gray-500">Nenhum resultado encontrado.</div>';
+                    return;
+                }
+
+                // Monta a tabela
+                tabela.innerHTML = `
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Documento</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoria</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subcategoria</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confianca</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Justificativa</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${resultados.map(r => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-3 text-sm text-gray-900">
+                                        <div class="max-w-xs truncate" title="${SecurityUtils.escapeHtml(r.nome_arquivo || r.codigo_documento || '-')}">
+                                            ${SecurityUtils.escapeHtml(r.nome_arquivo || r.codigo_documento || '-')}
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-700">${SecurityUtils.escapeHtml(r.categoria || '-')}</td>
+                                    <td class="px-4 py-3 text-sm text-gray-700">${SecurityUtils.escapeHtml(r.subcategoria || '-')}</td>
+                                    <td class="px-4 py-3 text-sm">
+                                        <span class="px-2 py-1 rounded-full text-xs font-medium confianca-${r.confianca || 'baixa'}">
+                                            ${SecurityUtils.escapeHtml(r.confianca || '-')}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-600">
+                                        <div class="max-w-md truncate" title="${SecurityUtils.escapeHtml(r.justificativa || '-')}">
+                                            ${SecurityUtils.escapeHtml(r.justificativa || '-')}
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="mt-2 text-xs text-gray-500 text-right">${resultados.length} resultado(s)</div>
+                `;
+            } catch (e) {
+                tabela.innerHTML = `<div class="text-center py-4 text-red-500"><i class="fas fa-exclamation-circle mr-2"></i>Erro ao carregar: ${SecurityUtils.escapeHtml(e.message)}</div>`;
+            }
+        }
+
+        async function exportarResultados(execucaoId, formato) {
+            try {
+                const response = await fetch(`/classificador/api/execucoes/${execucaoId}/exportar/${formato}`, {
+                    credentials: 'include'
+                });
+                if (!response.ok) throw new Error('Erro ao exportar');
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `classificacao_${execucaoId}.${formato === 'excel' ? 'xlsx' : formato}`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                a.remove();
+            } catch (e) {
+                alert('Erro ao exportar: ' + e.message);
+            }
         }
 
         function pausarLote() {
@@ -1976,8 +3179,15 @@
             }
         }
 
+        // Armazena o ID da execucao atual para exportacao
+        let execucaoIdAtual = null;
+
         function exportarResultadosLote(formato) {
-            alert(`Exportar ${formato} - Use a aba "Meus Lotes" para exportar resultados completos.`);
+            if (!execucaoIdAtual) {
+                alert('Nenhuma execucao disponivel para exportar. Execute uma classificacao primeiro.');
+                return;
+            }
+            exportarResultados(execucaoIdAtual, formato);
         }
 
         // ====================================
@@ -2017,6 +3227,12 @@
         let pdfDoc = null;
         let pdfPaginaAtual = 1;
         let pdfTotalPaginas = 0;
+        let pdfZoomLevel = 1.0;           // Nivel de zoom atual (1.0 = 100%)
+        let pdfZoomMin = 0.5;             // Zoom minimo (50%)
+        let pdfZoomMax = 3.0;             // Zoom maximo (300%)
+        let pdfZoomStep = 0.25;           // Incremento do zoom
+        let pdfFullscreenZoomLevel = 1.0; // Zoom separado para fullscreen
+        let pdfBase64Data = null;         // Armazena o PDF em base64 para abrir em nova aba
         let testeDocumentoSelecionado = null;  // {id_documento, numero_processo, tipo, base64}
         let testeDocumentosTJMS = [];  // Lista de documentos encontrados
 
@@ -2177,6 +3393,9 @@
             const viewer = document.getElementById('pdfViewer');
 
             try {
+                // Armazena base64 para poder abrir em nova aba
+                pdfBase64Data = base64;
+
                 // Decodifica base64 para Uint8Array
                 const pdfData = atob(base64);
                 const pdfArray = new Uint8Array(pdfData.length);
@@ -2188,9 +3407,10 @@
                 pdfDoc = await pdfjsLib.getDocument({ data: pdfArray }).promise;
                 pdfTotalPaginas = pdfDoc.numPages;
                 pdfPaginaAtual = 1;
+                pdfZoomLevel = 0; // Fit inicial
 
-                // Mostra navegacao
-                document.getElementById('pdfNavegacao').classList.remove('hidden');
+                // Mostra controles
+                mostrarControlesPdf();
                 atualizarInfoPagina();
 
                 // Renderiza primeira pagina
@@ -2205,23 +3425,46 @@
             }
         }
 
-        async function renderizarPagina(numPagina) {
-            const viewer = document.getElementById('pdfViewer');
-
-            if (!pdfDoc) return;
+        async function renderizarPagina(numPagina, targetViewer = 'pdfViewer', customZoom = null) {
+            const viewer = document.getElementById(targetViewer);
+            if (!pdfDoc || !viewer) return;
 
             try {
                 const page = await pdfDoc.getPage(numPagina);
-                const scale = 1.2;
-                const viewport = page.getViewport({ scale });
+                const originalViewport = page.getViewport({ scale: 1 });
+
+                // Determina o zoom a usar
+                let zoom = customZoom;
+                if (zoom === null) {
+                    zoom = targetViewer === 'pdfFullscreenViewer' ? pdfFullscreenZoomLevel : pdfZoomLevel;
+                }
+
+                // Se zoom = 0, calcula para ajustar ao container (fit)
+                if (zoom === 0) {
+                    const containerWidth = viewer.clientWidth - 32;
+                    const containerHeight = viewer.clientHeight - 32;
+                    const scaleWidth = containerWidth / originalViewport.width;
+                    const scaleHeight = containerHeight / originalViewport.height;
+                    zoom = Math.min(scaleWidth, scaleHeight);
+
+                    // Atualiza o nivel de zoom para refletir o fit
+                    if (targetViewer === 'pdfFullscreenViewer') {
+                        pdfFullscreenZoomLevel = zoom;
+                    } else {
+                        pdfZoomLevel = zoom;
+                    }
+                }
+
+                const viewport = page.getViewport({ scale: zoom });
 
                 // Cria canvas
                 const canvas = document.createElement('canvas');
                 const context = canvas.getContext('2d');
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
-                canvas.style.maxWidth = '100%';
-                canvas.style.height = 'auto';
+                canvas.style.display = 'block';
+                canvas.style.margin = 'auto';
+                canvas.style.maxWidth = 'none'; // Permite que ultrapasse o container com zoom
 
                 viewer.innerHTML = '';
                 viewer.appendChild(canvas);
@@ -2232,6 +3475,9 @@
                     viewport: viewport
                 }).promise;
 
+                // Atualiza indicador de zoom
+                atualizarInfoZoom(targetViewer);
+
             } catch (e) {
                 console.error('Erro ao renderizar pagina:', e);
             }
@@ -2239,6 +3485,20 @@
 
         function atualizarInfoPagina() {
             document.getElementById('pdfPaginaInfo').textContent = `${pdfPaginaAtual} / ${pdfTotalPaginas}`;
+            const fullscreenInfo = document.getElementById('pdfFullscreenPaginaInfo');
+            if (fullscreenInfo) {
+                fullscreenInfo.textContent = `${pdfPaginaAtual} / ${pdfTotalPaginas}`;
+            }
+        }
+
+        function atualizarInfoZoom(targetViewer = 'pdfViewer') {
+            const zoom = targetViewer === 'pdfFullscreenViewer' ? pdfFullscreenZoomLevel : pdfZoomLevel;
+            const percentage = Math.round(zoom * 100);
+            const infoId = targetViewer === 'pdfFullscreenViewer' ? 'pdfFullscreenZoomInfo' : 'pdfZoomInfo';
+            const info = document.getElementById(infoId);
+            if (info) {
+                info.textContent = `${percentage}%`;
+            }
         }
 
         function pdfPaginaAnterior() {
@@ -2257,12 +3517,143 @@
             }
         }
 
+        // ====================================
+        // Controles de Zoom
+        // ====================================
+        function pdfZoomIn() {
+            if (pdfZoomLevel < pdfZoomMax) {
+                pdfZoomLevel = Math.min(pdfZoomLevel + pdfZoomStep, pdfZoomMax);
+                renderizarPagina(pdfPaginaAtual);
+            }
+        }
+
+        function pdfZoomOut() {
+            if (pdfZoomLevel > pdfZoomMin) {
+                pdfZoomLevel = Math.max(pdfZoomLevel - pdfZoomStep, pdfZoomMin);
+                renderizarPagina(pdfPaginaAtual);
+            }
+        }
+
+        function pdfZoomFit() {
+            pdfZoomLevel = 0; // 0 = fit to container
+            renderizarPagina(pdfPaginaAtual);
+        }
+
+        // ====================================
+        // Fullscreen
+        // ====================================
+        function pdfFullscreen() {
+            if (!pdfDoc) return;
+
+            const modal = document.getElementById('modalPdfFullscreen');
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            // Reseta zoom do fullscreen e renderiza
+            pdfFullscreenZoomLevel = 0; // Fit inicial
+            atualizarInfoPagina();
+            renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+
+            // Listener para tecla ESC
+            document.addEventListener('keydown', fecharPdfFullscreenEsc);
+        }
+
+        function fecharPdfFullscreen() {
+            const modal = document.getElementById('modalPdfFullscreen');
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+            document.removeEventListener('keydown', fecharPdfFullscreenEsc);
+        }
+
+        function fecharPdfFullscreenEsc(e) {
+            if (e.key === 'Escape') {
+                fecharPdfFullscreen();
+            }
+        }
+
+        function pdfFullscreenPaginaAnterior() {
+            if (pdfPaginaAtual > 1) {
+                pdfPaginaAtual--;
+                atualizarInfoPagina();
+                renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+                renderizarPagina(pdfPaginaAtual, 'pdfViewer'); // Sincroniza viewer principal
+            }
+        }
+
+        function pdfFullscreenProximaPagina() {
+            if (pdfPaginaAtual < pdfTotalPaginas) {
+                pdfPaginaAtual++;
+                atualizarInfoPagina();
+                renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+                renderizarPagina(pdfPaginaAtual, 'pdfViewer'); // Sincroniza viewer principal
+            }
+        }
+
+        function pdfFullscreenZoomIn() {
+            if (pdfFullscreenZoomLevel < pdfZoomMax) {
+                pdfFullscreenZoomLevel = Math.min(pdfFullscreenZoomLevel + pdfZoomStep, pdfZoomMax);
+                renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+            }
+        }
+
+        function pdfFullscreenZoomOut() {
+            if (pdfFullscreenZoomLevel > pdfZoomMin) {
+                pdfFullscreenZoomLevel = Math.max(pdfFullscreenZoomLevel - pdfZoomStep, pdfZoomMin);
+                renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+            }
+        }
+
+        function pdfFullscreenZoomFit() {
+            pdfFullscreenZoomLevel = 0;
+            renderizarPagina(pdfPaginaAtual, 'pdfFullscreenViewer');
+        }
+
+        // ====================================
+        // Abrir em nova aba
+        // ====================================
+        function pdfAbrirNovaAba() {
+            if (!pdfBase64Data) {
+                alert('Nenhum documento carregado');
+                return;
+            }
+
+            // Cria blob a partir do base64
+            const byteCharacters = atob(pdfBase64Data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+
+            window.open(url, '_blank');
+        }
+
+        // ====================================
+        // Mostrar controles do PDF
+        // ====================================
+        function mostrarControlesPdf() {
+            document.getElementById('pdfControles').classList.remove('hidden');
+            document.getElementById('pdfDica').classList.remove('hidden');
+            // Remove navegacao antiga se existir
+            const navAntiga = document.getElementById('pdfNavegacao');
+            if (navAntiga) navAntiga.classList.add('hidden');
+        }
+
+        function esconderControlesPdf() {
+            document.getElementById('pdfControles').classList.add('hidden');
+            document.getElementById('pdfDica').classList.add('hidden');
+        }
+
         function limparPdfViewer() {
             pdfDoc = null;
             pdfPaginaAtual = 1;
             pdfTotalPaginas = 0;
+            pdfZoomLevel = 1.0;
+            pdfBase64Data = null;
             testeDocumentoSelecionado = null;
-            document.getElementById('pdfNavegacao').classList.add('hidden');
+            esconderControlesPdf();
             document.getElementById('pdfViewer').innerHTML = `
                 <div class="text-center text-gray-400">
                     <i class="fas fa-file-pdf text-4xl mb-2"></i>
@@ -2270,6 +3661,42 @@
                 </div>
             `;
         }
+
+        // ====================================
+        // Scroll para zoom (mouse wheel)
+        // ====================================
+        function setupPdfWheelZoom() {
+            const viewer = document.getElementById('pdfViewer');
+            if (viewer) {
+                viewer.addEventListener('wheel', (e) => {
+                    if (e.ctrlKey && pdfDoc) {
+                        e.preventDefault();
+                        if (e.deltaY < 0) {
+                            pdfZoomIn();
+                        } else {
+                            pdfZoomOut();
+                        }
+                    }
+                }, { passive: false });
+            }
+
+            const fullscreenViewer = document.getElementById('pdfFullscreenViewer');
+            if (fullscreenViewer) {
+                fullscreenViewer.addEventListener('wheel', (e) => {
+                    if (e.ctrlKey && pdfDoc) {
+                        e.preventDefault();
+                        if (e.deltaY < 0) {
+                            pdfFullscreenZoomIn();
+                        } else {
+                            pdfFullscreenZoomOut();
+                        }
+                    }
+                }, { passive: false });
+            }
+        }
+
+        // Inicializa wheel zoom quando DOM estiver pronto
+        document.addEventListener('DOMContentLoaded', setupPdfWheelZoom);
 
         async function classificarTesteRapido() {
             const promptId = document.getElementById('promptAvulso').value;
@@ -2479,7 +3906,8 @@
                 await Promise.all([
                     withTimeout(verificarStatusAPI(), 15000, 'Timeout ao verificar status da API'),
                     withTimeout(carregarPrompts(), 15000, 'Timeout ao carregar prompts'),
-                    withTimeout(carregarProjetos(), 15000, 'Timeout ao carregar lotes')
+                    withTimeout(carregarProjetos(), 15000, 'Timeout ao carregar lotes'),
+                    withTimeout(verificarExecucoesEmAndamento(), 15000, 'Timeout ao verificar execuções')
                 ]);
             } catch (e) {
                 console.error('[INIT] Erro ao carregar dados:', e);

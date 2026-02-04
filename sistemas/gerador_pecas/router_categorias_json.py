@@ -445,69 +445,139 @@ async def atualizar_categoria(
     categoria.atualizado_por = current_user.id
     categoria.atualizado_em = datetime.utcnow()
 
-    # Sincroniza variáveis APENAS se explicitamente solicitado (flag de segurança)
-    # IMPORTANTE: Por padrão NÃO desativa variáveis ao atualizar JSON
-    # Use "Aplicar JSON nas Perguntas" para sincronização completa
-    if categoria_data.formato_json is not None and categoria_data.sincronizar_variaveis:
+    # ==========================================================================
+    # DETECCAO E PROPAGACAO AUTOMATICA DE RENOMEACAO DE SLUGS
+    # ==========================================================================
+    # Quando o usuario edita o JSON da categoria e muda uma chave (slug),
+    # o sistema detecta e propaga automaticamente para todas as referencias:
+    # - ExtractionVariable (fonte de verdade)
+    # - Regras deterministicas em prompts
+    # - Dependencias de outras variaveis/perguntas
+    # ==========================================================================
+    if categoria_data.formato_json is not None:
         try:
-            import json
             from .models_extraction import ExtractionVariable, ExtractionQuestion
+            from .services_slug_rename import SlugRenameService
 
-            schema = json.loads(categoria_data.formato_json)
+            # Parse JSON antigo e novo
+            schema_antigo = json.loads(categoria.formato_json) if categoria.formato_json else {}
+            schema_novo = json.loads(categoria_data.formato_json)
 
-            # Extrai slugs do novo JSON
-            slugs_no_json = set()
-            for slug, campo_info in schema.items():
-                if isinstance(campo_info, dict):
-                    slugs_no_json.add(slug)
+            slugs_antigos = set(k for k, v in schema_antigo.items() if isinstance(v, dict))
+            slugs_novos = set(k for k, v in schema_novo.items() if isinstance(v, dict))
 
-            # Busca todas as variáveis ativas da categoria
+            # Detecta slugs removidos e adicionados
+            slugs_removidos = slugs_antigos - slugs_novos
+            slugs_adicionados = slugs_novos - slugs_antigos
+
+            # Busca variaveis ativas da categoria
             variaveis_categoria = db.query(ExtractionVariable).filter(
                 ExtractionVariable.categoria_id == categoria_id,
                 ExtractionVariable.ativo == True
             ).all()
+            variaveis_por_slug = {v.slug: v for v in variaveis_categoria}
 
-            # Desativa variáveis que não estão mais no JSON (órfãs)
-            # SEGURANÇA: Só executa se sincronizar_variaveis=True
-            for variavel in variaveis_categoria:
-                if variavel.slug not in slugs_no_json:
-                    variavel.ativo = False
-                    variavel.atualizado_em = datetime.utcnow()
-                    logger.info(f"Variável órfã desativada: slug={variavel.slug} (removida do JSON)")
+            # DETECCAO DE RENOMEACAO:
+            # Se um slug foi removido E um novo foi adicionado, pode ser renomeacao
+            # Criterio: slug removido existe como variavel ativa
+            renomeacoes_detectadas = []
 
-                    # Desativa a pergunta associada, se existir
-                    if variavel.source_question_id:
-                        pergunta = db.query(ExtractionQuestion).filter(
-                            ExtractionQuestion.id == variavel.source_question_id
+            for slug_antigo in slugs_removidos:
+                if slug_antigo in variaveis_por_slug:
+                    variavel = variaveis_por_slug[slug_antigo]
+
+                    # Tenta encontrar o novo slug correspondente
+                    # Heuristica: mesmo tipo ou descricao similar
+                    for slug_novo in slugs_adicionados:
+                        info_nova = schema_novo.get(slug_novo, {})
+                        info_antiga = schema_antigo.get(slug_antigo, {})
+
+                        # Se tem o mesmo tipo, provavelmente eh renomeacao
+                        mesmo_tipo = info_nova.get("type") == info_antiga.get("type")
+
+                        if mesmo_tipo or len(slugs_adicionados) == 1:
+                            renomeacoes_detectadas.append({
+                                "variavel_id": variavel.id,
+                                "slug_antigo": slug_antigo,
+                                "slug_novo": slug_novo
+                            })
+                            slugs_adicionados.discard(slug_novo)
+                            break
+
+            # Executa renomeacoes detectadas
+            if renomeacoes_detectadas:
+                service = SlugRenameService(db)
+
+                for rename in renomeacoes_detectadas:
+                    result = service.renomear(
+                        variavel_id=rename["variavel_id"],
+                        novo_slug=rename["slug_novo"],
+                        normalizar=False  # Slug ja esta no formato desejado
+                    )
+
+                    if result.success:
+                        logger.info(
+                            f"[AUTO-RENAME] Slug renomeado automaticamente: "
+                            f"{rename['slug_antigo']} -> {rename['slug_novo']} "
+                            f"(prompts={result.prompts_atualizados}, "
+                            f"regras_tipo_peca={result.regras_tipo_peca_atualizadas}, "
+                            f"deps_vars={result.variaveis_dependentes_atualizadas}, "
+                            f"deps_pergs={result.perguntas_dependentes_atualizadas})"
+                        )
+                    else:
+                        logger.warning(
+                            f"[AUTO-RENAME] Falha ao renomear {rename['slug_antigo']}: {result.error}"
+                        )
+
+            # Sincroniza variaveis APENAS se explicitamente solicitado
+            if categoria_data.sincronizar_variaveis:
+                # Recalcula slugs apos renomeacoes
+                slugs_no_json = set(k for k, v in schema_novo.items() if isinstance(v, dict))
+
+                # Recarrega variaveis (podem ter sido atualizadas)
+                variaveis_categoria = db.query(ExtractionVariable).filter(
+                    ExtractionVariable.categoria_id == categoria_id,
+                    ExtractionVariable.ativo == True
+                ).all()
+
+                # Desativa variaveis orfas
+                for variavel in variaveis_categoria:
+                    if variavel.slug not in slugs_no_json:
+                        variavel.ativo = False
+                        variavel.atualizado_em = datetime.utcnow()
+                        logger.info(f"Variavel orfa desativada: slug={variavel.slug}")
+
+                        if variavel.source_question_id:
+                            pergunta = db.query(ExtractionQuestion).filter(
+                                ExtractionQuestion.id == variavel.source_question_id
+                            ).first()
+                            if pergunta and pergunta.ativo:
+                                pergunta.ativo = False
+                                pergunta.atualizado_por = current_user.id
+                                pergunta.atualizado_em = datetime.utcnow()
+
+                # Atualiza tipo/descricao de variaveis existentes
+                for slug, campo_info in schema_novo.items():
+                    if isinstance(campo_info, dict):
+                        variavel = db.query(ExtractionVariable).filter(
+                            ExtractionVariable.slug == slug,
+                            ExtractionVariable.categoria_id == categoria_id
                         ).first()
-                        if pergunta and pergunta.ativo:
-                            pergunta.ativo = False
-                            pergunta.atualizado_por = current_user.id
-                            pergunta.atualizado_em = datetime.utcnow()
-                            logger.info(f"Pergunta órfã desativada: id={pergunta.id}")
 
-            # Atualiza variáveis existentes no JSON
-            for slug, campo_info in schema.items():
-                if isinstance(campo_info, dict):
-                    variavel = db.query(ExtractionVariable).filter(
-                        ExtractionVariable.slug == slug,
-                        ExtractionVariable.categoria_id == categoria_id
-                    ).first()
+                        if variavel:
+                            tipo_json = campo_info.get("type")
+                            descricao_json = campo_info.get("description")
 
-                    if variavel:
-                        tipo_json = campo_info.get("type")
-                        descricao_json = campo_info.get("description")
+                            if tipo_json and variavel.tipo != tipo_json:
+                                variavel.tipo = tipo_json
+                                variavel.atualizado_em = datetime.utcnow()
 
-                        if tipo_json and variavel.tipo != tipo_json:
-                            variavel.tipo = tipo_json
-                            variavel.atualizado_em = datetime.utcnow()
-
-                        if descricao_json and variavel.descricao != descricao_json:
-                            variavel.descricao = descricao_json
-                            variavel.atualizado_em = datetime.utcnow()
+                            if descricao_json and variavel.descricao != descricao_json:
+                                variavel.descricao = descricao_json
+                                variavel.atualizado_em = datetime.utcnow()
 
         except Exception as e:
-            logger.warning(f"Não foi possível sincronizar variáveis com JSON: {e}")
+            logger.warning(f"Erro ao processar mudancas de slug: {e}")
 
     db.commit()
     db.refresh(categoria)
@@ -731,3 +801,176 @@ async def update_codigos_ignorados(
         "codigos": codigos_unicos,
         "mensagem": f"{len(codigos_unicos)} código(s) configurado(s) para ignorar"
     }
+
+
+# ==========================================
+# Endpoints de Consistencia de Slugs
+# ==========================================
+
+class ConsistenciaCategoriaSlugsResponse(BaseModel):
+    """Schema de resposta para verificacao de consistencia de slugs da categoria"""
+    consistente: bool
+    categoria_id: int
+    categoria_nome: str
+    total_slugs_json: int = 0
+    total_variaveis_ativas: int = 0
+    slugs_orfaos_json: List[str] = []
+    slugs_orfaos_variaveis: List[str] = []
+    mensagem: str = ""
+    erro: Optional[str] = None
+
+
+@router.get("/{categoria_id}/consistencia-slugs", response_model=ConsistenciaCategoriaSlugsResponse)
+async def verificar_consistencia_slugs(
+    categoria_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Verifica consistencia entre o JSON da categoria e as variaveis de extracao.
+
+    Este endpoint DEVE ser usado pelo frontend para verificar se o JSON esta
+    realmente atualizado antes de mostrar "Atualizado" ao usuario.
+
+    Retorna:
+    - consistente: True se nao ha divergencias
+    - slugs_orfaos_json: slugs no JSON que nao tem variavel correspondente
+    - slugs_orfaos_variaveis: variaveis ativas que nao estao no JSON
+
+    IMPORTANTE: Se consistente=False, o sistema NAO deve dizer que esta "Atualizado".
+    """
+    from .services_slug_rename import SlugConsistencyChecker
+
+    checker = SlugConsistencyChecker(db)
+    resultado = checker.verificar_categoria(categoria_id)
+
+    if resultado.get("erro"):
+        raise HTTPException(status_code=400, detail=resultado["erro"])
+
+    return ConsistenciaCategoriaSlugsResponse(
+        consistente=resultado["consistente"],
+        categoria_id=resultado["categoria_id"],
+        categoria_nome=resultado["categoria_nome"],
+        total_slugs_json=resultado["total_slugs_json"],
+        total_variaveis_ativas=resultado["total_variaveis_ativas"],
+        slugs_orfaos_json=resultado["slugs_orfaos_json"],
+        slugs_orfaos_variaveis=resultado["slugs_orfaos_variaveis"],
+        mensagem=resultado["mensagem"]
+    )
+
+
+class RepararConsistenciaResponse(BaseModel):
+    """Schema de resposta para reparo de consistencia"""
+    success: bool
+    categoria_id: int
+    correcoes_aplicadas: int = 0
+    correcoes: List[str] = []
+    erro: Optional[str] = None
+
+
+@router.post("/{categoria_id}/reparar-consistencia", response_model=RepararConsistenciaResponse)
+async def reparar_consistencia_slugs(
+    categoria_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Repara inconsistencias entre o JSON da categoria e as variaveis.
+
+    Este endpoint corrige automaticamente:
+    - Remove do JSON slugs que nao tem variavel correspondente
+    - Adiciona ao JSON variaveis ativas que estao faltando
+
+    ATENCAO: Esta operacao modifica o JSON da categoria.
+    Recomenda-se verificar consistencia antes com GET /{categoria_id}/consistencia-slugs.
+    """
+    verificar_permissao(current_user)
+
+    from .services_slug_rename import SlugConsistencyChecker
+
+    checker = SlugConsistencyChecker(db)
+    resultado = checker.reparar_categoria(categoria_id, user_id=current_user.id)
+
+    if not resultado.get("success"):
+        raise HTTPException(status_code=400, detail=resultado.get("erro", "Erro ao reparar"))
+
+    if resultado.get("correcoes_aplicadas", 0) > 0:
+        db.commit()
+        logger.info(
+            f"[CONSISTENCIA] Categoria {categoria_id} reparada por {current_user.username}: "
+            f"{resultado['correcoes_aplicadas']} correcoes"
+        )
+    else:
+        logger.info(f"[CONSISTENCIA] Categoria {categoria_id} ja estava consistente")
+
+    return RepararConsistenciaResponse(
+        success=True,
+        categoria_id=categoria_id,
+        correcoes_aplicadas=resultado.get("correcoes_aplicadas", 0),
+        correcoes=resultado.get("correcoes", [])
+    )
+
+
+class RepararTodasResponse(BaseModel):
+    """Schema de resposta para reparo de todas as categorias"""
+    success: bool
+    categorias_verificadas: int = 0
+    categorias_reparadas: int = 0
+    total_correcoes: int = 0
+    detalhes: List[Dict[str, Any]] = []
+
+
+@router.post("/reparar-todas-consistencias", response_model=RepararTodasResponse)
+async def reparar_todas_consistencias(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Repara inconsistencias de TODAS as categorias ativas.
+
+    Util para migracao/limpeza de dados legados.
+    Apenas administradores podem executar esta operacao.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas administradores podem reparar todas as categorias"
+        )
+
+    from .services_slug_rename import SlugConsistencyChecker
+
+    categorias = db.query(CategoriaResumoJSON).filter(
+        CategoriaResumoJSON.ativo == True
+    ).all()
+
+    checker = SlugConsistencyChecker(db)
+    detalhes = []
+    categorias_reparadas = 0
+    total_correcoes = 0
+
+    for categoria in categorias:
+        resultado = checker.reparar_categoria(categoria.id, user_id=current_user.id)
+
+        if resultado.get("correcoes_aplicadas", 0) > 0:
+            categorias_reparadas += 1
+            total_correcoes += resultado["correcoes_aplicadas"]
+            detalhes.append({
+                "categoria_id": categoria.id,
+                "categoria_nome": categoria.nome,
+                "correcoes": resultado.get("correcoes", [])
+            })
+
+    if total_correcoes > 0:
+        db.commit()
+        logger.info(
+            f"[CONSISTENCIA] Reparo em massa por {current_user.username}: "
+            f"{categorias_reparadas} categorias, {total_correcoes} correcoes"
+        )
+
+    return RepararTodasResponse(
+        success=True,
+        categorias_verificadas=len(categorias),
+        categorias_reparadas=categorias_reparadas,
+        total_correcoes=total_correcoes,
+        detalhes=detalhes
+    )

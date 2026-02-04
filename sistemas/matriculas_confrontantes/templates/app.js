@@ -1,10 +1,16 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\sistemas\matriculas_confrontantes\app.ts
-// Built at: 2026-01-24T19:56:06.817Z
+// Built at: 2026-01-30T21:41:45.485Z
 
 "use strict";
 (() => {
   // src/sistemas/matriculas_confrontantes/app.ts
+  function escapeHtml(text) {
+    if (!text) return "";
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
   var API_BASE = "/matriculas/api";
   function getAuthToken() {
     return localStorage.getItem("access_token");
@@ -245,12 +251,17 @@
     }
   }
   async function uploadFile(file, replace = false) {
-    if (!checkAuth()) return;
+    console.log("[uploadFile] Iniciando upload:", file.name);
+    if (!checkAuth()) {
+      console.log("[uploadFile] Falha na autentica\xE7\xE3o");
+      return;
+    }
     const token = getAuthToken();
     const formData = new FormData();
     formData.append("file", file);
     try {
       const url = replace ? `${API_BASE}/files/upload?replace=true` : `${API_BASE}/files/upload`;
+      console.log("[uploadFile] Enviando para:", url);
       const response = await fetch(url, {
         method: "POST",
         headers: {
@@ -258,12 +269,14 @@
         },
         body: formData
       });
+      console.log("[uploadFile] Response status:", response.status);
       if (response.status === 401) {
         localStorage.removeItem("access_token");
         window.location.href = "/login";
         return;
       }
       const result = await response.json();
+      console.log("[uploadFile] Resultado:", result);
       if (result.success) {
         await loadFiles();
         showToast(`Arquivo ${file.name} importado com sucesso!`, "success");
@@ -272,7 +285,8 @@
       } else {
         showToast(result.error || "Erro ao importar arquivo", "error");
       }
-    } catch {
+    } catch (error) {
+      console.error("[uploadFile] Erro:", error);
       showToast("Erro de conexao ao importar arquivo", "error");
     }
   }
@@ -1183,13 +1197,26 @@
     document.body.appendChild(fileInput);
   }
   function triggerFileUpload() {
-    document.getElementById("file-input")?.click();
+    console.log("[triggerFileUpload] Bot\xE3o importar clicado");
+    const fileInput = document.getElementById("file-input");
+    console.log("[triggerFileUpload] Input encontrado:", !!fileInput);
+    if (fileInput) {
+      fileInput.click();
+    } else {
+      console.error("[triggerFileUpload] Input file n\xE3o encontrado no DOM!");
+    }
   }
   async function handleFileSelect(event) {
+    console.log("[handleFileSelect] Evento disparado", event);
     const target = event.target;
     const files = target.files;
-    if (!files || files.length === 0) return;
+    console.log("[handleFileSelect] Arquivos selecionados:", files?.length || 0);
+    if (!files || files.length === 0) {
+      console.log("[handleFileSelect] Nenhum arquivo selecionado, retornando");
+      return;
+    }
     for (const file of Array.from(files)) {
+      console.log("[handleFileSelect] Iniciando upload de:", file.name, file.type, file.size);
       await uploadFile(file);
     }
     target.value = "";

@@ -140,6 +140,10 @@ def configure_stdlib_logging():
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("hpack").setLevel(logging.WARNING)  # HTTP/2 header compression
+    logging.getLogger("hpack.hpack").setLevel(logging.WARNING)
+    logging.getLogger("hpack.table").setLevel(logging.WARNING)
+    logging.getLogger("h2").setLevel(logging.WARNING)  # HTTP/2 protocol
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
 

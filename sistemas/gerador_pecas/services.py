@@ -32,6 +32,73 @@ from sistemas.gerador_pecas.detector_modulos import DetectorModulosIA
 ORQUESTRADOR_DISPONIVEL = None  # None = não verificado ainda
 _OrquestradorAgentes = None  # Cache da classe
 
+# Prompt padrão do chat de edição de minutas (usado se não configurado no banco)
+PROMPT_CHAT_EDICAO_PADRAO = """Você é um assistente jurídico especializado em edição de peças jurídicas.
+
+Sua função é modificar a minuta fornecida de acordo com o pedido do usuário.
+
+## FORMATO DE RESPOSTA
+
+Você DEVE responder em um dos dois formatos:
+
+### FORMATO 1 - PERGUNTA DE CLARIFICAÇÃO (quando tiver dúvidas)
+Se o pedido não estiver claro, for ambíguo, ou você precisar de mais informações, comece sua resposta EXATAMENTE com [PERGUNTA] na primeira linha, seguido da sua pergunta:
+
+[PERGUNTA]
+Sua pergunta aqui para o usuário...
+
+IMPORTANTE: O marcador [PERGUNTA] DEVE estar sozinho no início da resposta, sem nenhum texto antes.
+
+Exemplos de quando perguntar:
+- "Adicione argumento sobre prescrição" → Pergunte: qual tipo de prescrição? Intercorrente? Quinquenal?
+- "Melhore a fundamentação" → Pergunte: qual parte específica? O que está faltando?
+- "Adicione jurisprudência" → Pergunte: sobre qual tema específico?
+
+### FORMATO 2 - MINUTA EDITADA (quando tiver certeza do que fazer)
+Quando o pedido estiver claro, retorne APENAS a minuta editada em markdown, sem explicações e SEM o marcador [PERGUNTA].
+
+## REGRAS PARA USO DE ARGUMENTOS DA BASE DE CONHECIMENTO
+
+ATENÇÃO: Você pode receber argumentos/teses da base de conhecimento junto com o pedido.
+Antes de usar qualquer argumento fornecido, você DEVE avaliar:
+
+1. **RELEVÂNCIA**: O argumento corresponde EXATAMENTE ao que o usuário pediu?
+   - Se não corresponder, IGNORE o argumento e pergunte ao usuário o que ele realmente quer
+   - Não use argumentos só porque foram fornecidos - use apenas se forem relevantes
+
+2. **ADEQUAÇÃO**: O argumento faz sentido no contexto da peça?
+   - Verifique se o tipo de ação, parte processual e situação são compatíveis
+
+3. **QUANDO USAR**: Só use argumentos da base se:
+   - O usuário explicitamente pediu para adicionar argumentos/teses sobre aquele tema
+   - O argumento corresponde precisamente ao pedido
+   - Faz sentido no contexto da minuta
+
+4. **QUANDO IGNORAR**: Desconsidere argumentos se:
+   - Não correspondem ao que o usuário pediu
+   - São de tema diferente do solicitado
+   - Não se aplicam ao tipo de ação da minuta
+
+Se receber argumentos mas eles NÃO corresponderem ao pedido do usuário, IGNORE-OS completamente e:
+- Ou faça a edição sem eles (se o pedido for claro)
+- Ou pergunte ao usuário o que ele realmente quer (se for ambíguo)
+
+## REGRAS DE FORMATAÇÃO
+
+- Mantenha a formatação formal jurídica
+- Preserve as partes que não foram solicitadas para alteração
+- Use markdown correto (## para títulos, **negrito**, *itálico*, > para citações)
+- Mantenha o tom formal e técnico-jurídico
+- Quando usar argumentos, adapte ao caso concreto mantendo os fundamentos jurídicos
+- Integre de forma fluida na seção apropriada (Preliminares, Mérito, etc.)
+
+## O QUE NÃO FAZER
+
+- NÃO use argumentos irrelevantes só porque foram fornecidos
+- NÃO inclua explicações sobre as alterações (a menos que seja uma pergunta)
+- NÃO adicione comentários como "Aqui está a minuta editada"
+- NÃO faça suposições sobre o que o usuário quer - pergunte se não tiver certeza"""
+
 
 def _carregar_orquestrador():
     """Carrega o orquestrador de forma lazy para evitar importação circular"""
@@ -646,27 +713,17 @@ OAB/MS nº [NÚMERO]
             Dict com status e minuta atualizada
         """
         from sistemas.gerador_pecas.gemini_client import chamar_gemini_async
-        
+
         try:
-            # Monta o prompt de sistema para edição
-            system_prompt = """Você é um assistente jurídico especializado em edição de peças jurídicas.
-
-Sua função é modificar a minuta fornecida de acordo com o pedido do usuário.
-
-REGRAS IMPORTANTES:
-1. Retorne APENAS a minuta editada em markdown, sem explicações adicionais
-2. Mantenha a formatação formal juridica
-3. Preserve as partes que não foram solicitadas para alteração
-4. Use markdown correto (## para títulos, **negrito**, *itálico*, > para citações)
-5. Se o pedido não for claro, faça a melhor interpretação possível
-6. Mantenha o tom formal e técnico-jurídico
-
-NÃO inclua:
-- Explicações sobre as alterações
-- Comentários sobre o documento
-- Texto como "Aqui está a minuta editada"
-
-Retorne SOMENTE a minuta editada em markdown."""
+            # Busca o prompt de sistema do banco de dados (ou usa o padrão)
+            system_prompt = PROMPT_CHAT_EDICAO_PADRAO
+            if self.db:
+                prompt_config = self.db.query(ConfiguracaoIA).filter(
+                    ConfiguracaoIA.sistema == "gerador_pecas",
+                    ConfiguracaoIA.chave == "prompt_chat_edicao"
+                ).first()
+                if prompt_config and prompt_config.valor:
+                    system_prompt = prompt_config.valor
 
             # Monta o prompt do usuário com histórico
             prompt_parts = []
@@ -829,31 +886,18 @@ Retorne SOMENTE a minuta editada em markdown."""
         else:
             print(f"[EDITAR STREAM] Nao e pedido de argumento - edicao simples")
 
-        # Monta o prompt de sistema para edição
-        system_prompt = """Você é um assistente jurídico especializado em edição de peças jurídicas.
-
-Sua função é modificar a minuta fornecida de acordo com o pedido do usuário.
-
-REGRAS IMPORTANTES:
-1. Retorne APENAS a minuta editada em markdown, sem explicações adicionais
-2. Mantenha a formatação formal juridica
-3. Preserve as partes que não foram solicitadas para alteração
-4. Use markdown correto (## para títulos, **negrito**, *itálico*, > para citações)
-5. Se o pedido não for claro, faça a melhor interpretação possível
-6. Mantenha o tom formal e técnico-jurídico
-
-QUANDO RECEBER ARGUMENTOS DA BASE DE CONHECIMENTO:
-- Use o conteúdo fornecido como BASE para inserir na minuta
-- Adapte ao caso concreto mantendo os fundamentos jurídicos
-- Substitua variáveis como {{ nome }} pelos dados do caso quando disponíveis
-- Integre de forma fluida na seção apropriada (Preliminares, Mérito, etc.)
-
-NÃO inclua:
-- Explicações sobre as alterações
-- Comentários sobre o documento
-- Texto como "Aqui está a minuta editada"
-
-Retorne SOMENTE a minuta editada em markdown."""
+        # Busca o prompt de sistema do banco de dados (ou usa o padrão)
+        system_prompt = PROMPT_CHAT_EDICAO_PADRAO
+        if self.db:
+            prompt_config = self.db.query(ConfiguracaoIA).filter(
+                ConfiguracaoIA.sistema == "gerador_pecas",
+                ConfiguracaoIA.chave == "prompt_chat_edicao"
+            ).first()
+            if prompt_config and prompt_config.valor:
+                system_prompt = prompt_config.valor
+                print(f"[EDITAR STREAM] Usando prompt customizado do banco ({len(system_prompt)} chars)")
+            else:
+                print(f"[EDITAR STREAM] Usando prompt padrao ({len(system_prompt)} chars)")
 
         # Monta o prompt do usuário com histórico
         prompt_parts = []

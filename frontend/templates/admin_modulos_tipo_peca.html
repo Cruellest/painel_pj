@@ -188,6 +188,32 @@
         let grupos = [];
         let selectedGroupId = null;
 
+        // Gera um slug seguro para usar como ID HTML (sem espaços, acentos, etc.)
+        function slugify(str) {
+            if (!str) return 'sem-categoria';
+            return str
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+                .replace(/[^a-z0-9]+/g, '-')     // Substitui caracteres especiais por hífen
+                .replace(/^-+|-+$/g, '');        // Remove hífens do início/fim
+        }
+
+        // Escapa string para uso seguro em atributos HTML
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+        }
+
+        // Mapeia categoria original para seu slug (para lookup reverso)
+        let categoriaParaSlug = {};
+        let slugParaCategoria = {};
+
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {
             checkAuth();
@@ -271,13 +297,23 @@
                     })
                 ]);
 
+                // Verifica erros de resposta
+                if (!resumoRes.ok) {
+                    const errData = await resumoRes.json().catch(() => ({}));
+                    throw new Error(`Erro ao carregar resumo: ${resumoRes.status} - ${errData.detail || resumoRes.statusText}`);
+                }
+                if (!tiposRes.ok) {
+                    const errData = await tiposRes.json().catch(() => ({}));
+                    throw new Error(`Erro ao carregar tipos: ${tiposRes.status} - ${errData.detail || tiposRes.statusText}`);
+                }
+
                 const resumo = await resumoRes.json();
                 tiposPeca = await tiposRes.json();
 
                 // Atualiza estatísticas
                 document.getElementById('stat-tipos').textContent = tiposPeca.length;
                 document.getElementById('stat-modulos').textContent = resumo.total_modulos_conteudo || 0;
-                
+
                 let totalConfigurados = 0;
                 resumo.tipos_peca?.forEach(t => totalConfigurados += t.modulos_configurados || 0);
                 document.getElementById('stat-configurados').textContent = totalConfigurados;
@@ -288,7 +324,7 @@
 
             } catch (error) {
                 console.error('Erro ao carregar dados:', error);
-                showToast('Erro ao carregar dados', 'error');
+                showToast(`Erro ao carregar dados: ${error.message}`, 'error');
             }
         }
 
@@ -306,71 +342,88 @@
                 return;
             }
 
-            // Cria mapa de resumos
+            // Cria mapa de resumos (por tipo_peca e por titulo para fallback)
             const resumoMap = {};
-            resumoTipos.forEach(r => resumoMap[r.tipo_peca] = r);
+            resumoTipos.forEach(r => {
+                if (r.tipo_peca) resumoMap[r.tipo_peca] = r;
+                if (r.titulo) resumoMap[r.titulo] = r;
+            });
+
+            // Limpa os mapas de categoria/slug
+            categoriaParaSlug = {};
+            slugParaCategoria = {};
 
             let html = '';
             for (const tipo of tiposPeca) {
-                const resumo = resumoMap[tipo.categoria] || {
+                // Tenta encontrar resumo por categoria, titulo ou nome
+                const resumo = resumoMap[tipo.categoria] || resumoMap[tipo.titulo] || resumoMap[tipo.nome] || {
                     modulos_ativos: 0,
                     modulos_inativos: 0,
                     total_modulos: 0
                 };
 
+                // Gera slug único baseado no título (categoria pode ser null)
+                // Usa tipo.titulo como identificador primário
+                const identificador = tipo.titulo || tipo.categoria || tipo.nome || `tipo-${tipo.id}`;
+                const tipoSlug = slugify(identificador);
+
+                // Mapeia slug para identificador original (usado nas chamadas de API)
+                categoriaParaSlug[identificador] = tipoSlug;
+                slugParaCategoria[tipoSlug] = identificador;
+
                 html += `
-                    <div class="tipo-peca-card bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" data-tipo="${tipo.categoria}">
+                    <div class="tipo-peca-card bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden" data-tipo="${tipoSlug}" data-categoria="${escapeHtml(tipo.categoria)}">
                         <!-- Cabeçalho Colapsável -->
-                        <div class="px-6 py-4 cursor-pointer hover:bg-gray-50 transition-colors" onclick="toggleTipoPeca('${tipo.categoria}')">
+                        <div class="px-6 py-4 cursor-pointer hover:bg-gray-50 transition-colors" onclick="toggleTipoPeca('${tipoSlug}')">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-4">
                                     <div class="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center">
                                         <i class="fas fa-file-contract text-white text-lg"></i>
                                     </div>
                                     <div>
-                                        <h3 class="text-lg font-semibold text-gray-800">${tipo.titulo}</h3>
+                                        <h3 class="text-lg font-semibold text-gray-800">${escapeHtml(tipo.titulo)}</h3>
                                         <p class="text-sm text-gray-500">
-                                            <span class="text-green-600 font-medium">${resumo.modulos_ativos}</span> ativos · 
+                                            <span class="text-green-600 font-medium">${resumo.modulos_ativos}</span> ativos ·
                                             <span class="text-gray-400">${resumo.modulos_inativos}</span> inativos
                                         </p>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-3">
-                                    <span id="badge-${tipo.categoria}" class="hidden px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">
+                                    <span id="badge-${tipoSlug}" class="hidden px-2 py-1 text-xs rounded-full bg-amber-100 text-amber-700 font-medium">
                                         Alterações pendentes
                                     </span>
-                                    <i id="chevron-${tipo.categoria}" class="fas fa-chevron-down text-gray-400 chevron-icon"></i>
+                                    <i id="chevron-${tipoSlug}" class="fas fa-chevron-down text-gray-400 chevron-icon"></i>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Conteúdo Colapsável -->
-                        <div id="content-${tipo.categoria}" class="collapse-content border-t border-gray-100">
+                        <div id="content-${tipoSlug}" class="collapse-content border-t border-gray-100">
                             <div class="p-6">
                                 <!-- Ações em Lote -->
                                 <div class="flex items-center justify-between mb-4 pb-4 border-b border-gray-100">
                                     <div class="flex items-center gap-2">
-                                        <button onclick="selecionarTodos('${tipo.categoria}', true)" 
+                                        <button onclick="selecionarTodos('${tipoSlug}', true)"
                                             class="px-3 py-1.5 text-sm bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors">
                                             <i class="fas fa-check-double mr-1"></i> Ativar Todos
                                         </button>
-                                        <button onclick="selecionarTodos('${tipo.categoria}', false)" 
+                                        <button onclick="selecionarTodos('${tipoSlug}', false)"
                                             class="px-3 py-1.5 text-sm bg-red-50 text-red-700 rounded-lg hover:bg-red-100 transition-colors">
                                             <i class="fas fa-times mr-1"></i> Desativar Todos
                                         </button>
-                                        <button onclick="inverterSelecao('${tipo.categoria}')" 
+                                        <button onclick="inverterSelecao('${tipoSlug}')"
                                             class="px-3 py-1.5 text-sm bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
                                             <i class="fas fa-exchange-alt mr-1"></i> Inverter
                                         </button>
                                     </div>
-                                    <button onclick="salvarTipoPeca('${tipo.categoria}')" 
+                                    <button onclick="salvarTipoPeca('${tipoSlug}')"
                                         class="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 text-sm font-medium">
                                         <i class="fas fa-save mr-1"></i> Salvar
                                     </button>
                                 </div>
 
                                 <!-- Lista de Módulos -->
-                                <div id="modulos-${tipo.categoria}" class="space-y-2">
+                                <div id="modulos-${tipoSlug}" class="space-y-2">
                                     <div class="text-center py-4 text-gray-400">
                                         <i class="fas fa-spinner fa-spin"></i> Carregando módulos...
                                     </div>
@@ -384,10 +437,15 @@
             container.innerHTML = html;
         }
 
-        async function toggleTipoPeca(tipoPeca) {
-            const content = document.getElementById(`content-${tipoPeca}`);
-            const chevron = document.getElementById(`chevron-${tipoPeca}`);
-            
+        async function toggleTipoPeca(tipoSlug) {
+            const content = document.getElementById(`content-${tipoSlug}`);
+            const chevron = document.getElementById(`chevron-${tipoSlug}`);
+
+            if (!content || !chevron) {
+                console.error(`Elemento não encontrado para slug: ${tipoSlug}`);
+                return;
+            }
+
             if (content.classList.contains('expanded')) {
                 // Colapsa
                 content.classList.remove('expanded');
@@ -396,28 +454,32 @@
                 // Expande e carrega módulos se necessário
                 content.classList.add('expanded');
                 chevron.classList.add('rotated');
-                
-                if (!modulosPorTipo[tipoPeca]) {
-                    await carregarModulosTipoPeca(tipoPeca);
+
+                // Converte slug para categoria original para carregar dados
+                const tipoPecaCategoria = slugParaCategoria[tipoSlug];
+                if (!modulosPorTipo[tipoSlug] && tipoPecaCategoria) {
+                    await carregarModulosTipoPeca(tipoSlug, tipoPecaCategoria);
                 }
             }
         }
 
-        async function carregarModulosTipoPeca(tipoPeca) {
+        async function carregarModulosTipoPeca(tipoSlug, tipoPecaCategoria) {
             try {
                 const groupParam = selectedGroupId ? `?group_id=${selectedGroupId}` : '';
-                const response = await fetch(`${API_URL}/modulos-por-tipo-peca/${tipoPeca}${groupParam}`, {
+                // Usa a categoria original para a chamada da API (com encode para URL)
+                const encodedCategoria = encodeURIComponent(tipoPecaCategoria);
+                const response = await fetch(`${API_URL}/modulos-por-tipo-peca/${encodedCategoria}${groupParam}`, {
                     headers: { 'Authorization': `Bearer ${getToken()}` }
                 });
 
                 const data = await response.json();
-                modulosPorTipo[tipoPeca] = data.modulos;
+                modulosPorTipo[tipoSlug] = data.modulos;
 
-                renderizarModulos(tipoPeca, data.modulos);
+                renderizarModulos(tipoSlug, tipoPecaCategoria, data.modulos);
 
             } catch (error) {
                 console.error('Erro ao carregar módulos:', error);
-                document.getElementById(`modulos-${tipoPeca}`).innerHTML = `
+                document.getElementById(`modulos-${tipoSlug}`).innerHTML = `
                     <div class="text-center py-4 text-red-500">
                         <i class="fas fa-exclamation-circle mr-1"></i> Erro ao carregar módulos
                     </div>
@@ -425,9 +487,9 @@
             }
         }
 
-        function renderizarModulos(tipoPeca, modulos) {
-            const container = document.getElementById(`modulos-${tipoPeca}`);
-            
+        function renderizarModulos(tipoSlug, tipoPecaCategoria, modulos) {
+            const container = document.getElementById(`modulos-${tipoSlug}`);
+
             if (modulos.length === 0) {
                 container.innerHTML = `
                     <div class="text-center py-4 text-gray-400">
@@ -437,21 +499,23 @@
                 return;
             }
 
-            // Agrupa por categoria
-            const porCategoria = {};
+            // Agrupa por categoria do módulo (não confundir com tipo de peça)
+            const porCategoriaModulo = {};
             modulos.forEach(m => {
                 const cat = m.categoria || 'Sem categoria';
-                if (!porCategoria[cat]) porCategoria[cat] = [];
-                porCategoria[cat].push(m);
+                if (!porCategoriaModulo[cat]) porCategoriaModulo[cat] = [];
+                porCategoriaModulo[cat].push(m);
             });
 
             let html = '';
             let catIndex = 0;
-            for (const [categoria, modulosCategoria] of Object.entries(porCategoria)) {
-                const catId = `cat-${tipoPeca}-${catIndex}`;
+            for (const [categoriaModulo, modulosCategoria] of Object.entries(porCategoriaModulo)) {
+                // Slug para a categoria do módulo também (para IDs seguros)
+                const catSlug = slugify(categoriaModulo);
+                const catId = `cat-${tipoSlug}-${catSlug}-${catIndex}`;
                 const ativosCategoria = modulosCategoria.filter(m => m.ativo_tipo_peca).length;
                 const totalCategoria = modulosCategoria.length;
-                
+
                 html += `
                     <div class="mb-3 border border-gray-200 rounded-lg overflow-hidden">
                         <!-- Cabeçalho da Categoria (Colapsável) -->
@@ -459,39 +523,39 @@
                              onclick="toggleCategoria('${catId}')">
                             <div class="flex items-center gap-3">
                                 <i id="chevron-${catId}" class="fas fa-chevron-right text-gray-400 text-xs transition-transform duration-200"></i>
-                                <span class="font-medium text-gray-700">${categoria}</span>
+                                <span class="font-medium text-gray-700">${categoriaModulo}</span>
                                 <span class="text-xs text-gray-500">(${ativosCategoria}/${totalCategoria} ativos)</span>
                             </div>
                             <div class="flex items-center gap-2">
-                                <button type="button" onclick="event.stopPropagation(); selecionarCategoria('${tipoPeca}', '${categoria}', true)" 
+                                <button type="button" onclick="event.stopPropagation(); selecionarCategoriaModulo('${tipoSlug}', '${catSlug}', true)"
                                     class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200" title="Ativar todos desta categoria">
                                     <i class="fas fa-check"></i>
                                 </button>
-                                <button type="button" onclick="event.stopPropagation(); selecionarCategoria('${tipoPeca}', '${categoria}', false)" 
+                                <button type="button" onclick="event.stopPropagation(); selecionarCategoriaModulo('${tipoSlug}', '${catSlug}', false)"
                                     class="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200" title="Desativar todos desta categoria">
                                     <i class="fas fa-times"></i>
                                 </button>
                             </div>
                         </div>
-                        
+
                         <!-- Conteúdo da Categoria (Colapsável) -->
                         <div id="${catId}" class="hidden border-t border-gray-200">
                             <div class="p-3 space-y-1 bg-white">
                 `;
-                
+
                 for (const modulo of modulosCategoria) {
                     const checked = modulo.ativo_tipo_peca ? 'checked' : '';
                     html += `
-                                <div class="modulo-item flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50" data-categoria="${categoria}">
-                                    <input type="checkbox" 
-                                        id="modulo-${tipoPeca}-${modulo.modulo_id}"
+                                <div class="modulo-item flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50" data-categoria-slug="${catSlug}">
+                                    <input type="checkbox"
+                                        id="modulo-${tipoSlug}-${modulo.modulo_id}"
                                         class="checkbox-custom"
-                                        data-tipo="${tipoPeca}"
+                                        data-tipo-slug="${tipoSlug}"
                                         data-modulo="${modulo.modulo_id}"
-                                        data-categoria="${categoria}"
+                                        data-categoria-slug="${catSlug}"
                                         ${checked}
-                                        onchange="marcarAlteracao('${tipoPeca}', ${modulo.modulo_id}, this.checked)">
-                                    <label for="modulo-${tipoPeca}-${modulo.modulo_id}" class="flex-1 cursor-pointer">
+                                        onchange="marcarAlteracao('${tipoSlug}', ${modulo.modulo_id}, this.checked)">
+                                    <label for="modulo-${tipoSlug}-${modulo.modulo_id}" class="flex-1 cursor-pointer">
                                         <p class="text-sm font-medium text-gray-800">${modulo.titulo}</p>
                                         ${modulo.condicao_ativacao ? `<p class="text-xs text-gray-500 mt-0.5 line-clamp-2">${modulo.condicao_ativacao}</p>` : ''}
                                     </label>
@@ -499,7 +563,7 @@
                                 </div>
                     `;
                 }
-                
+
                 html += `
                             </div>
                         </div>
@@ -524,57 +588,102 @@
             }
         }
 
-        function selecionarCategoria(tipoPeca, categoria, ativo) {
-            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"][data-categoria="${categoria}"]`);
+        function selecionarCategoriaModulo(tipoSlug, categoriaSlug, ativo) {
+            const checkboxes = document.querySelectorAll(`input[data-tipo-slug="${tipoSlug}"][data-categoria-slug="${categoriaSlug}"]`);
             checkboxes.forEach(cb => {
                 cb.checked = ativo;
-                marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), ativo);
+                marcarAlteracao(tipoSlug, parseInt(cb.dataset.modulo), ativo);
             });
+            // Atualiza contagens no header
+            atualizarContagensHeader(tipoSlug);
         }
 
-        function marcarAlteracao(tipoPeca, moduloId, ativo) {
-            if (!alteracoesPendentes[tipoPeca]) {
-                alteracoesPendentes[tipoPeca] = {};
+        function atualizarContagensHeader(tipoSlug) {
+            // Conta ativos/inativos baseado nos checkboxes atuais
+            const checkboxes = document.querySelectorAll(`input[data-tipo-slug="${tipoSlug}"]`);
+            let ativos = 0;
+            let inativos = 0;
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    ativos++;
+                } else {
+                    inativos++;
+                }
+            });
+
+            // Atualiza o header do card (se os módulos estiverem carregados)
+            if (checkboxes.length > 0) {
+                const card = document.querySelector(`.tipo-peca-card[data-tipo="${tipoSlug}"]`);
+                if (card) {
+                    const statsP = card.querySelector('.text-sm.text-gray-500');
+                    if (statsP) {
+                        statsP.innerHTML = `
+                            <span class="text-green-600 font-medium">${ativos}</span> ativos ·
+                            <span class="text-gray-400">${inativos}</span> inativos
+                        `;
+                    }
+                }
             }
-            alteracoesPendentes[tipoPeca][moduloId] = ativo;
-            
+        }
+
+        function marcarAlteracao(tipoSlug, moduloId, ativo) {
+            if (!alteracoesPendentes[tipoSlug]) {
+                alteracoesPendentes[tipoSlug] = {};
+            }
+            alteracoesPendentes[tipoSlug][moduloId] = ativo;
+
             // Atualiza badge
-            document.getElementById(`badge-${tipoPeca}`).classList.remove('hidden');
-            
-            // Atualiza contador
+            document.getElementById(`badge-${tipoSlug}`).classList.remove('hidden');
+
+            // Atualiza contador de pendentes
             let total = 0;
             Object.keys(alteracoesPendentes).forEach(t => {
                 total += Object.keys(alteracoesPendentes[t]).length;
             });
             document.getElementById('stat-pendentes').textContent = total;
+
+            // Atualiza contagens no header em tempo real
+            atualizarContagensHeader(tipoSlug);
         }
 
-        function selecionarTodos(tipoPeca, ativo) {
-            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"]`);
+        function selecionarTodos(tipoSlug, ativo) {
+            const checkboxes = document.querySelectorAll(`input[data-tipo-slug="${tipoSlug}"]`);
             checkboxes.forEach(cb => {
                 cb.checked = ativo;
-                marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), ativo);
+                marcarAlteracao(tipoSlug, parseInt(cb.dataset.modulo), ativo);
             });
+            // Atualiza contagens no header
+            atualizarContagensHeader(tipoSlug);
         }
 
-        function inverterSelecao(tipoPeca) {
-            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"]`);
+        function inverterSelecao(tipoSlug) {
+            const checkboxes = document.querySelectorAll(`input[data-tipo-slug="${tipoSlug}"]`);
             checkboxes.forEach(cb => {
                 cb.checked = !cb.checked;
-                marcarAlteracao(tipoPeca, parseInt(cb.dataset.modulo), cb.checked);
+                marcarAlteracao(tipoSlug, parseInt(cb.dataset.modulo), cb.checked);
             });
+            // Atualiza contagens no header
+            atualizarContagensHeader(tipoSlug);
         }
 
-        async function salvarTipoPeca(tipoPeca) {
-            const checkboxes = document.querySelectorAll(`input[data-tipo="${tipoPeca}"]`);
+        async function salvarTipoPeca(tipoSlug) {
+            const checkboxes = document.querySelectorAll(`input[data-tipo-slug="${tipoSlug}"]`);
             const modulos = [];
-            
+
             checkboxes.forEach(cb => {
                 modulos.push({
                     modulo_id: parseInt(cb.dataset.modulo),
                     ativo: cb.checked
                 });
             });
+
+            // Converte slug para categoria original para a API
+            const tipoPecaCategoria = slugParaCategoria[tipoSlug];
+            if (!tipoPecaCategoria) {
+                console.error(`Categoria não encontrada para slug: ${tipoSlug}`);
+                showToast('Erro: tipo de peça não encontrado', 'error');
+                return;
+            }
 
             try {
                 const response = await fetch(`${API_URL}/configurar-modulos-tipo-peca`, {
@@ -584,7 +693,7 @@
                         'Authorization': `Bearer ${getToken()}`
                     },
                     body: JSON.stringify({
-                        tipo_peca: tipoPeca,
+                        tipo_peca: tipoPecaCategoria,
                         modulos: modulos
                     })
                 });
@@ -592,16 +701,19 @@
                 if (!response.ok) throw new Error('Erro ao salvar');
 
                 const result = await response.json();
-                
+
                 // Limpa alterações pendentes deste tipo
-                delete alteracoesPendentes[tipoPeca];
-                document.getElementById(`badge-${tipoPeca}`).classList.add('hidden');
-                
+                delete alteracoesPendentes[tipoSlug];
+                document.getElementById(`badge-${tipoSlug}`).classList.add('hidden');
+
                 // Limpa cache e recarrega os dados do servidor
-                delete modulosPorTipo[tipoPeca];
-                await carregarModulosTipoPeca(tipoPeca);
-                
-                // Atualiza contador
+                delete modulosPorTipo[tipoSlug];
+                await carregarModulosTipoPeca(tipoSlug, tipoPecaCategoria);
+
+                // Atualiza as contagens no header com base nos dados recarregados
+                atualizarContagensHeader(tipoSlug);
+
+                // Atualiza contador de pendentes
                 let total = 0;
                 Object.keys(alteracoesPendentes).forEach(t => {
                     total += Object.keys(alteracoesPendentes[t]).length;

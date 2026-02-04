@@ -421,5 +421,127 @@ class TestCasosEspeciais:
         assert len(candidatos) == 0  # Não deve quebrar
 
 
+# ============================================
+# Testes de Regressão
+# ============================================
+
+class TestRegressao:
+    """Testes de regressão para bugs conhecidos."""
+
+    def test_bug_processo_evoluido_detecta_agravo(self):
+        """
+        Testa que agravos são detectados em processos de conhecimento (evoluídos).
+
+        Bug corrigido: O sistema só buscava agravos em cumprimentos autônomos,
+        ignorando agravos mencionados em processos de conhecimento onde o
+        cumprimento ocorre no mesmo processo.
+
+        Caso real: Processo 0806261-10.2025.8.12.0018 (classe 7 - conhecimento)
+        com Agravo de Instrumento 1420866-63.2025.8.12.0000 mencionado em
+        movimento do tipo "Informação do Sistema".
+        """
+        xml_conhecimento = """<?xml version="1.0" encoding="UTF-8"?>
+        <processo>
+            <dadosBasicos numero="08062611020258120018" classeProcessual="7">
+                <polo polo="AT">
+                    <parte>
+                        <pessoa nome="Sirlene Francisca Rodrigues">
+                            <documento tipoDocumento="CMF" codigoDocumento="50197053149"/>
+                        </pessoa>
+                    </parte>
+                </polo>
+                <polo polo="PA">
+                    <parte>
+                        <pessoa nome="Estado de Mato Grosso do Sul">
+                            <documento tipoDocumento="CAN" codigoDocumento="15412257000128"/>
+                        </pessoa>
+                    </parte>
+                    <parte>
+                        <pessoa nome="Municipio de Paranamba">
+                            <documento tipoDocumento="CAN" codigoDocumento="03343118000100"/>
+                        </pessoa>
+                    </parte>
+                </polo>
+            </dadosBasicos>
+            <movimento dataHora="20251201130002" nivelSigilo="0">
+                <complemento>Agravo de Instrumento - 1420866-63.2025.8.12.0000</complemento>
+                <movimentoLocal codigoMovimento="50248" descricao="Informacao do Sistema"/>
+            </movimento>
+            <movimento dataHora="20251115100000" nivelSigilo="0">
+                <complemento>Juntada de peticao</complemento>
+            </movimento>
+        </processo>
+        """
+
+        # O sistema deve detectar o agravo mesmo em processo de conhecimento
+        candidatos = extract_agravo_candidates_from_xml(xml_conhecimento)
+
+        assert len(candidatos) == 1, "Agravo deve ser detectado em processo de conhecimento"
+        assert candidatos[0].numero_cnj == "14208666320258120000"
+        assert format_numero_cnj(candidatos[0].numero_cnj) == "1420866-63.2025.8.12.0000"
+        assert candidatos[0].fonte == "movimento"
+        assert candidatos[0].data_movimento.year == 2025
+
+    def test_bug_certidao_sistema_menciona_agravo(self):
+        """
+        Testa que agravo é detectado quando mencionado em movimento
+        do tipo "Informação do Sistema" (certidão de sistema).
+
+        Este tipo de movimento é comum quando o TJ-MS notifica sobre
+        interposição de agravo de instrumento.
+        """
+        xml_certidao = """<?xml version="1.0" encoding="UTF-8"?>
+        <processo>
+            <dadosBasicos numero="08000001020258120001" classeProcessual="7"/>
+            <movimento dataHora="20251201130002" nivelSigilo="0">
+                <complemento>Agravo de Instrumento - 1420866-63.2025.8.12.0000</complemento>
+                <movimentoLocal codigoMovimento="50248" descricao="Informacao do Sistema">
+                    <movimentoLocalPai codigoMovimento="50304"/>
+                </movimentoLocal>
+            </movimento>
+        </processo>
+        """
+
+        candidatos = extract_agravo_candidates_from_xml(xml_certidao)
+
+        assert len(candidatos) == 1
+        assert "14208666320258120000" in candidatos[0].numero_cnj
+
+    def test_fluxo_processo_nao_e_cumprimento_autonomo(self):
+        """
+        Verifica que a extração de candidatos funciona independentemente
+        do tipo de processo (cumprimento autônomo ou conhecimento).
+
+        A função extract_agravo_candidates_from_xml deve funcionar para
+        qualquer XML de processo, independentemente da classe processual.
+        """
+        # Classe 7 = processo de conhecimento (não é cumprimento autônomo)
+        xml_classe_7 = """<?xml version="1.0" encoding="UTF-8"?>
+        <processo>
+            <dadosBasicos numero="08000001020258120001" classeProcessual="7"/>
+            <movimento dataHora="20251201130002">
+                <complemento>Agravo de Instrumento - 1111111-11.2025.8.12.0000</complemento>
+            </movimento>
+        </processo>
+        """
+
+        # Classe 10980 = cumprimento de sentença contra fazenda (é autônomo)
+        xml_classe_10980 = """<?xml version="1.0" encoding="UTF-8"?>
+        <processo>
+            <dadosBasicos numero="08000002020258120001" classeProcessual="10980"/>
+            <movimento dataHora="20251201130002">
+                <complemento>Agravo de Instrumento - 2222222-22.2025.8.12.0000</complemento>
+            </movimento>
+        </processo>
+        """
+
+        # Ambos devem detectar o agravo
+        candidatos_7 = extract_agravo_candidates_from_xml(xml_classe_7)
+        candidatos_10980 = extract_agravo_candidates_from_xml(xml_classe_10980)
+
+        assert len(candidatos_7) == 1, "Agravo deve ser detectado em classe 7"
+        assert len(candidatos_10980) == 1, "Agravo deve ser detectado em classe 10980"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

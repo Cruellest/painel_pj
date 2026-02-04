@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1213,3 +1214,1937 @@
     </script>
 </body>
 </html>
+=======
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Feedbacks - Portal PGE</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { 50: '#eff6ff', 100: '#dbeafe', 200: '#bfdbfe', 300: '#93c5fd', 400: '#60a5fa', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 800: '#1e40af', 900: '#1e3a8a' },
+                        pge: { blue: '#1e3a5f', orange: '#e67e22' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Estilos para o conteúdo Markdown renderizado */
+        .prose h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; color: #1e3a5f; }
+        .prose h2 { font-size: 1.25rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #1e3a8a; }
+        .prose h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #374151; }
+        .prose p { margin-bottom: 0.75rem; line-height: 1.6; }
+        .prose ul, .prose ol { margin-left: 1.5rem; margin-bottom: 0.75rem; }
+        .prose li { margin-bottom: 0.25rem; }
+        .prose strong { font-weight: 600; color: #1f2937; }
+        .prose hr { margin: 1.5rem 0; border-color: #e5e7eb; }
+        .prose table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        .prose th, .prose td { border: 1px solid #e5e7eb; padding: 0.5rem; text-align: left; }
+        .prose th { background-color: #f9fafb; font-weight: 600; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <a href="/dashboard" class="text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-arrow-left"></i>
+                </a>
+                <img src="/logo/logo-pge.png" alt="PGE-MS" class="h-10 w-auto">
+                <div class="border-l border-gray-300 pl-4">
+                    <h1 class="text-lg font-bold text-gray-800">Dashboard de Feedbacks</h1>
+                    <p class="text-xs text-gray-500">Avaliações das análises de IA</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <button onclick="exportarDados()" class="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2">
+                    <i class="fas fa-download"></i>
+                    Exportar
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Filtros -->
+        <div class="bg-white rounded-xl shadow-sm p-4 border border-gray-200 mb-6">
+            <div class="flex flex-wrap items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-gray-700">Período:</label>
+                    <select id="filtro-mes" onchange="aplicarFiltros()" class="text-sm border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Todos os meses</option>
+                        <option value="1">Janeiro</option>
+                        <option value="2">Fevereiro</option>
+                        <option value="3">Março</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Maio</option>
+                        <option value="6">Junho</option>
+                        <option value="7">Julho</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Setembro</option>
+                        <option value="10">Outubro</option>
+                        <option value="11">Novembro</option>
+                        <option value="12">Dezembro</option>
+                    </select>
+                    <select id="filtro-ano" onchange="aplicarFiltros()" class="text-sm border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Todos os anos</option>
+                    </select>
+                </div>
+                <div class="flex items-center gap-2">
+                    <label class="text-sm font-medium text-gray-700">Sistema:</label>
+                    <select id="filtro-sistema" onchange="aplicarFiltros()" class="text-sm border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Todos os sistemas</option>
+                        <option value="assistencia_judiciaria">Assistência Judiciária</option>
+                        <option value="matriculas">Matrículas Confrontantes</option>
+                        <option value="gerador_pecas">Gerador de Peças</option>
+                        <option value="pedido_calculo">Pedido de Cálculo</option>
+                        <option value="prestacao_contas">Prestação de Contas</option>
+                        <option value="relatorio_cumprimento">Relatório de Cumprimento</option>
+                    </select>
+                </div>
+                <button onclick="limparFiltros()" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                    <i class="fas fa-times-circle"></i>
+                    Limpar filtros
+                </button>
+                <span id="filtro-info" class="text-xs text-gray-500 ml-auto"></span>
+            </div>
+        </div>
+
+        <!-- Cards de Estatísticas -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Total de Consultas</p>
+                        <p id="stat-total-consultas" class="text-3xl font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-search text-blue-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Feedbacks Recebidos</p>
+                        <p id="stat-total-feedbacks" class="text-3xl font-bold text-gray-800">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-comments text-purple-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Taxa de Acerto</p>
+                        <p id="stat-taxa-acerto" class="text-3xl font-bold text-green-600">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-check-circle text-green-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-500">Sem Avaliação</p>
+                        <p id="stat-sem-feedback" class="text-3xl font-bold text-orange-600">-</p>
+                    </div>
+                    <div class="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-clock text-orange-600 text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gráficos -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <!-- Gráfico de Pizza - Avaliações -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Distribuição de Avaliações</h3>
+                <div class="h-64">
+                    <canvas id="chart-avaliacoes"></canvas>
+                </div>
+            </div>
+            
+            <!-- Gráfico de Linha - Feedbacks por Dia -->
+            <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Feedbacks do Período</h3>
+                <div class="h-64">
+                    <canvas id="chart-timeline"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gráfico de Evolução por Sistema -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <i class="fas fa-chart-line text-blue-500"></i>
+                    Evolução da Taxa de Acerto por Sistema
+                </h3>
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-gray-500">Sistema:</label>
+                        <select id="evolucao-sistema" onchange="atualizarGraficoEvolucao()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                            <option value="">Todos os sistemas</option>
+                            <option value="assistencia_judiciaria">Assistência Judiciária</option>
+                            <option value="matriculas">Matrículas</option>
+                            <option value="gerador_pecas">Gerador de Peças</option>
+                            <option value="pedido_calculo">Pedido de Cálculo</option>
+                            <option value="prestacao_contas">Prestação de Contas</option>
+                            <option value="relatorio_cumprimento">Rel. Cumprimento</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-gray-500">Período:</label>
+                        <select id="evolucao-semanas" onchange="carregarDashboard()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                            <option value="8">Últimas 8 semanas</option>
+                            <option value="12" selected>Últimas 12 semanas</option>
+                            <option value="16">Últimas 16 semanas</option>
+                            <option value="24">Últimas 24 semanas</option>
+                            <option value="52">Último ano</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-gray-500">Métrica:</label>
+                        <select id="evolucao-tipo" onchange="atualizarGraficoEvolucao()" class="text-xs border border-gray-300 rounded px-2 py-1">
+                            <option value="taxa_acerto">Taxa de Acerto (%)</option>
+                            <option value="total">Total de Feedbacks</option>
+                            <option value="corretos">Feedbacks Corretos</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="h-80">
+                <canvas id="chart-evolucao"></canvas>
+            </div>
+            <p class="text-xs text-gray-500 mt-2">
+                <i class="fas fa-info-circle mr-1"></i>
+                Evolução independente do filtro de período do dashboard. Semanas sem avaliações aparecem como lacunas.
+            </p>
+        </div>
+
+        <!-- Modelos de IA Configurados -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-robot text-purple-500"></i>
+                Modelos de IA em Uso
+            </h3>
+            <div class="grid md:grid-cols-2 gap-4" id="modelos-ia-info">
+                <div class="flex items-center gap-3 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                    <i class="fas fa-gavel text-blue-600 text-xl"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Assistência Judiciária</p>
+                        <p id="modelo-aj" class="text-xs text-blue-600 font-mono">Carregando...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 p-4 bg-green-50 rounded-lg border border-green-100">
+                    <i class="fas fa-file-contract text-green-600 text-xl"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Matrículas Confrontantes</p>
+                        <p id="modelo-mat" class="text-xs text-green-600 font-mono">Carregando...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 p-4 bg-purple-50 rounded-lg border border-purple-100">
+                    <i class="fas fa-file-alt text-purple-600 text-xl"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Gerador de Peças</p>
+                        <p id="modelo-gp" class="text-xs text-purple-600 font-mono">Carregando...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 p-4 bg-amber-50 rounded-lg border border-amber-100">
+                    <i class="fas fa-calculator text-amber-600 text-xl"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-700">Pedido de Cálculo</p>
+                        <p id="modelo-pc" class="text-xs text-amber-600 font-mono">Carregando...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabela de Feedbacks por Usuário -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Feedbacks por Usuário (Top 10)</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Usuário</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Total</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Corretos</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Taxa</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-usuarios" class="divide-y divide-gray-100">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Pendentes de Feedback -->
+        <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-200 mb-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                <i class="fas fa-exclamation-circle text-orange-500"></i>
+                Pendentes de Avaliação (Últimos 20)
+            </h3>
+            <p class="text-sm text-gray-500 mb-4">Usuários que geraram relatório mas ainda não avaliaram a resposta da IA</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-orange-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Sistema</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Processo/Arquivo</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Usuário</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Data</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Relatório</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-pendentes" class="divide-y divide-gray-100">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Lista de Feedbacks Recentes -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="p-6 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-gray-800">Feedbacks Recentes</h3>
+                <div class="flex items-center gap-4">
+                    <select id="filtro-avaliacao" onchange="carregarFeedbacks()" class="text-sm border border-gray-200 rounded-lg px-3 py-2">
+                        <option value="">Todas avaliações</option>
+                        <option value="correto">Corretas</option>
+                        <option value="parcial">Parciais</option>
+                        <option value="incorreto">Incorretas</option>
+                        <option value="erro_ia">Erro da IA</option>
+                    </select>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Sistema</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Processo/Arquivo</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Usuário</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Modelo IA</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Modo</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Avaliação</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Comentário</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-600">Data</th>
+                            <th class="px-4 py-3 text-center font-medium text-gray-600">Relatório</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabela-feedbacks" class="divide-y divide-gray-100">
+                        <!-- Preenchido via JS -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Paginação -->
+            <div class="p-4 border-t border-gray-100 flex items-center justify-between">
+                <p id="paginacao-info" class="text-sm text-gray-500"></p>
+                <div class="flex gap-2">
+                    <button id="btn-prev" onclick="paginaAnterior()" class="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200 disabled:opacity-50" disabled>
+                        <i class="fas fa-chevron-left"></i> Anterior
+                    </button>
+                    <button id="btn-next" onclick="proximaPagina()" class="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded hover:bg-gray-200 disabled:opacity-50">
+                        Próximo <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal de Visualização do Comentário -->
+    <div id="modal-comentario" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" onclick="fecharModalComentario(event)">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] flex flex-col" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-purple-600 to-purple-700 rounded-t-xl">
+                <div class="text-white">
+                    <h3 class="text-lg font-bold">Comentário do Feedback</h3>
+                    <p id="modal-comentario-info" class="text-sm text-purple-100"></p>
+                </div>
+                <button onclick="fecharModalComentario()" class="text-white hover:text-gray-200">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-6">
+                <p id="modal-comentario-texto" class="text-gray-700 whitespace-pre-wrap"></p>
+            </div>
+            <div class="p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end">
+                <button onclick="fecharModalComentario()" class="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Visualização do Relatório -->
+    <div id="modal-relatorio" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" onclick="fecharModal(event)">
+        <div class="bg-white rounded-xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-600 to-blue-700 rounded-t-xl">
+                <div class="text-white">
+                    <h3 id="modal-titulo" class="text-lg font-bold">Relatório da Consulta</h3>
+                    <p id="modal-subtitulo" class="text-sm text-blue-100"></p>
+                </div>
+                <button onclick="fecharModal()" class="text-white hover:text-gray-200">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <div class="p-4 border-b border-gray-100 bg-gray-50">
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                    <div>
+                        <span class="text-gray-500">Usuário:</span>
+                        <p id="modal-usuario" class="font-medium text-gray-800">-</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Data:</span>
+                        <p id="modal-data" class="font-medium text-gray-800">-</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Modelo IA:</span>
+                        <p id="modal-modelo" class="font-medium text-purple-600">-</p>
+                    </div>
+                    <div id="modal-modo-container" class="hidden">
+                        <span class="text-gray-500">Modo:</span>
+                        <p id="modal-modo" class="font-medium">-</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-500">Avaliação:</span>
+                        <p id="modal-avaliacao" class="font-medium">-</p>
+                    </div>
+                </div>
+                <!-- Seção de detalhes do modo semi-automático (aparece apenas quando aplicável) -->
+                <div id="modal-curadoria-info" class="hidden mt-4 p-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-clipboard-check text-white"></i>
+                            </div>
+                            <div>
+                                <span class="font-semibold text-amber-800">Curadoria Humana</span>
+                                <p class="text-xs text-amber-600">Argumentos validados com tag [HUMAN_VALIDATED]</p>
+                            </div>
+                        </div>
+                        <button id="btn-ver-curadoria" onclick="verDetalhesCuradoria(consultaAtual)"
+                                class="px-3 py-1.5 bg-amber-600 text-white text-xs rounded-lg hover:bg-amber-700 transition-colors flex items-center gap-1.5">
+                            <i class="fas fa-search-plus"></i>
+                            Ver Auditoria Completa
+                        </button>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div class="bg-blue-100 rounded-lg p-3 text-center relative group cursor-help">
+                            <p id="modal-curadoria-preview" class="text-2xl font-bold text-blue-600">-</p>
+                            <span class="text-blue-700">Sugestões do Sistema</span>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                Argumentos sugeridos automaticamente antes da revisão humana
+                            </div>
+                        </div>
+                        <div class="bg-green-100 rounded-lg p-3 text-center relative group cursor-help">
+                            <p id="modal-curadoria-confirmados" class="text-2xl font-bold text-green-600">-</p>
+                            <span class="text-green-700">Confirmados</span>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                Sugestões do sistema que o usuário confirmou
+                            </div>
+                        </div>
+                        <div class="bg-amber-100 rounded-lg p-3 text-center relative group cursor-help">
+                            <p id="modal-curadoria-manuais" class="text-2xl font-bold text-amber-600">-</p>
+                            <span class="text-amber-700">Adicionados pelo Usuário</span>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                Argumentos que o usuário adicionou manualmente
+                            </div>
+                        </div>
+                        <div class="bg-red-100 rounded-lg p-3 text-center relative group cursor-help">
+                            <p id="modal-curadoria-excluidos" class="text-2xl font-bold text-red-600">-</p>
+                            <span class="text-red-700">Removidos</span>
+                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                Sugestões do sistema que o usuário removeu
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 flex items-center justify-between text-xs">
+                        <p class="text-gray-600 flex items-center gap-1">
+                            <i class="fas fa-shield-alt text-green-500"></i>
+                            <span>Todos os argumentos incluídos foram validados pelo usuário e utilizados integralmente na peça final.</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabs (apenas para gerador_pecas) -->
+            <div id="modal-tabs" class="hidden border-b border-gray-200 bg-white px-4">
+                <div class="flex gap-1">
+                    <button onclick="mostrarTabRelatorio('relatorio')" id="tab-relatorio" class="px-4 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600">
+                        <i class="fas fa-file-alt mr-1"></i>Relatório
+                    </button>
+                    <button onclick="mostrarTabRelatorio('chat')" id="tab-chat" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-comments mr-1"></i>Edições Chat <span id="chat-badge" class="hidden bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs ml-1">0</span>
+                    </button>
+                    <button onclick="mostrarTabRelatorio('versoes')" id="tab-versoes" class="px-4 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-history mr-1"></i>Versões <span id="versoes-badge" class="hidden bg-green-100 text-green-700 px-1.5 py-0.5 rounded text-xs ml-1">0</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6">
+                <div id="modal-loading" class="flex items-center justify-center py-12">
+                    <i class="fas fa-spinner fa-spin text-3xl text-blue-500"></i>
+                </div>
+
+                <!-- Tab: Relatório -->
+                <div id="conteudo-relatorio" class="modal-tab-content">
+                    <div id="modal-conteudo" class="prose prose-sm max-w-none hidden">
+                        <!-- Relatório renderizado aqui -->
+                    </div>
+                </div>
+
+                <!-- Tab: Edições Chat -->
+                <div id="conteudo-chat" class="modal-tab-content hidden">
+                    <div id="chat-container" class="space-y-4"></div>
+                </div>
+
+                <!-- Tab: Versões -->
+                <div id="conteudo-versoes" class="modal-tab-content hidden">
+                    <div id="versoes-container" class="space-y-4"></div>
+                </div>
+
+                <div id="modal-erro" class="hidden text-center py-12">
+                    <i class="fas fa-exclamation-triangle text-4xl text-red-400 mb-4"></i>
+                    <p class="text-gray-600">Erro ao carregar o relatório</p>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end gap-2">
+                <button onclick="fecharModal()" class="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                    Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/sistema/assistencia-judiciaria';
+        let currentPage = 1;
+        let dadosEvolucao = {}; // Armazena dados de evolução para o gráfico
+        let totalPages = 1;
+        let chartAvaliacoes = null;
+        let chartTimeline = null;
+        let chartEvolucao = null;
+
+        // Fuso horário de Mato Grosso do Sul (UTC-04:00)
+        const TIMEZONE = 'America/Campo_Grande';
+
+        function formatarData(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleDateString('pt-BR', { timeZone: TIMEZONE });
+        }
+
+        function formatarHora(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleTimeString('pt-BR', { timeZone: TIMEZONE, hour: '2-digit', minute: '2-digit' });
+        }
+
+        function formatarDataHora(dataISO) {
+            if (!dataISO) return '-';
+            return new Date(dataISO).toLocaleString('pt-BR', { timeZone: TIMEZONE });
+        }
+
+        function getAuthToken() {
+            return localStorage.getItem('access_token');
+        }
+
+        function checkAuth() {
+            const token = getAuthToken();
+            if (!token) {
+                window.location.href = '/login';
+                return false;
+            }
+            return true;
+        }
+
+        async function api(endpoint, options = {}) {
+            const token = getAuthToken();
+            const response = await fetch(endpoint, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    ...options.headers
+                }
+            });
+
+            if (response.status === 401) {
+                window.location.href = '/login';
+                return null;
+            }
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                console.error('Erro na API:', endpoint, response.status, errorData);
+                throw new Error(errorData.detail || `Erro ${response.status}`);
+            }
+
+            return response.json();
+        }
+
+        function inicializarFiltroAno() {
+            const selectAno = document.getElementById('filtro-ano');
+            const agora = new Date();
+            const anoAtual = agora.getFullYear();
+
+            // Popula anos
+            for (let ano = anoAtual; ano >= 2024; ano--) {
+                const option = document.createElement('option');
+                option.value = ano;
+                option.textContent = ano;
+                selectAno.appendChild(option);
+            }
+            // Seleciona apenas o ano atual por padrão (mês fica "Todos")
+            // Isso garante mais dados no dashboard sem limitar a apenas 1 mês
+            selectAno.value = anoAtual;
+        }
+
+        function getFiltros() {
+            const mes = document.getElementById('filtro-mes').value;
+            const ano = document.getElementById('filtro-ano').value;
+            const sistema = document.getElementById('filtro-sistema').value;
+            const semanasEvolucao = document.getElementById('evolucao-semanas')?.value || '12';
+
+            const params = new URLSearchParams();
+            if (mes) params.append('mes', mes);
+            if (ano) params.append('ano', ano);
+            if (sistema) params.append('sistema', sistema);
+            params.append('semanas_evolucao', semanasEvolucao);
+
+            return '?' + params.toString();
+        }
+
+        function aplicarFiltros() {
+            carregarDashboard();
+            carregarFeedbacks();
+            atualizarInfoFiltro();
+        }
+
+        function limparFiltros() {
+            document.getElementById('filtro-mes').value = '';
+            document.getElementById('filtro-ano').value = '';
+            document.getElementById('filtro-sistema').value = '';
+            aplicarFiltros();
+        }
+
+        function atualizarInfoFiltro() {
+            const mes = document.getElementById('filtro-mes').value;
+            const ano = document.getElementById('filtro-ano').value;
+            const sistema = document.getElementById('filtro-sistema').value;
+            
+            const partes = [];
+            if (mes) {
+                const meses = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
+                              'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+                partes.push(meses[parseInt(mes)]);
+            }
+            if (ano) partes.push(ano);
+            if (sistema) {
+                const sistemaNomes = {
+                    'assistencia_judiciaria': 'Assistência',
+                    'matriculas': 'Matrículas',
+                    'gerador_pecas': 'Gerador de Peças',
+                    'pedido_calculo': 'Pedido de Cálculo',
+                    'prestacao_contas': 'Prestação de Contas',
+                    'relatorio_cumprimento': 'Rel. Cumprimento'
+                };
+                partes.push(sistemaNomes[sistema] || sistema);
+            }
+            
+            const info = document.getElementById('filtro-info');
+            if (partes.length > 0) {
+                info.textContent = 'Filtro: ' + partes.join(' / ');
+            } else {
+                info.textContent = 'Mostrando todos os dados';
+            }
+        }
+
+        async function carregarDashboard() {
+            try {
+                const filtros = getFiltros();
+                const data = await api('/admin/feedbacks/dashboard' + filtros);
+                
+                if (!data) return;
+
+                // Atualiza cards
+                document.getElementById('stat-total-consultas').textContent = data.total_consultas || 0;
+                document.getElementById('stat-total-feedbacks').textContent = data.total_feedbacks || 0;
+                document.getElementById('stat-taxa-acerto').textContent = `${data.taxa_acerto || 0}%`;
+                document.getElementById('stat-sem-feedback').textContent = data.consultas_sem_feedback || 0;
+
+                // Gráfico de pizza
+                const ctxPie = document.getElementById('chart-avaliacoes').getContext('2d');
+                if (chartAvaliacoes) chartAvaliacoes.destroy();
+                chartAvaliacoes = new Chart(ctxPie, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Corretas', 'Parciais', 'Incorretas', 'Erro IA'],
+                        datasets: [{
+                            data: [
+                                data.avaliacoes?.correto || 0,
+                                data.avaliacoes?.parcial || 0,
+                                data.avaliacoes?.incorreto || 0,
+                                data.avaliacoes?.erro_ia || 0
+                            ],
+                            backgroundColor: ['#22c55e', '#eab308', '#ef4444', '#6b7280']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom' }
+                        }
+                    }
+                });
+
+                // Gráfico de linha
+                const ctxLine = document.getElementById('chart-timeline').getContext('2d');
+                if (chartTimeline) chartTimeline.destroy();
+                chartTimeline = new Chart(ctxLine, {
+                    type: 'line',
+                    data: {
+                        labels: (data.feedbacks_recentes || []).map(f => {
+                            const d = new Date(f.data);
+                            return `${d.getDate()}/${d.getMonth() + 1}`;
+                        }),
+                        datasets: [{
+                            label: 'Feedbacks',
+                            data: (data.feedbacks_recentes || []).map(f => f.count),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+
+                // Tabela de usuários
+                const tabelaUsuarios = document.getElementById('tabela-usuarios');
+                tabelaUsuarios.innerHTML = (data.feedbacks_por_usuario || []).map(u => {
+                    const taxa = u.total > 0 ? Math.round((u.corretos / u.total) * 100) : 0;
+                    return `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3">${u.nome}</td>
+                            <td class="px-4 py-3 text-center">${u.total}</td>
+                            <td class="px-4 py-3 text-center text-green-600">${u.corretos}</td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-1 rounded text-xs ${taxa >= 70 ? 'bg-green-100 text-green-700' : taxa >= 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}">
+                                    ${taxa}%
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="4" class="px-4 py-8 text-center text-gray-400">Nenhum dado disponível</td></tr>';
+
+                // Tabela de pendentes de feedback
+                const tabelaPendentes = document.getElementById('tabela-pendentes');
+                const sistemaLabels = {
+                    'assistencia_judiciaria': '<span class="text-blue-600"><i class="fas fa-gavel mr-1"></i>Assist. Jud.</span>',
+                    'matriculas': '<span class="text-green-600"><i class="fas fa-file-contract mr-1"></i>Matrículas</span>',
+                    'gerador_pecas': '<span class="text-purple-600"><i class="fas fa-file-alt mr-1"></i>Ger. Peças</span>',
+                    'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>',
+                    'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>',
+                    'relatorio_cumprimento': '<span class="text-indigo-600"><i class="fas fa-file-invoice mr-1"></i>Rel. Cumpr.</span>'
+                };
+                tabelaPendentes.innerHTML = (data.pendentes_feedback || []).map(p => {
+                    const dataFormatada = p.data ? formatarData(p.data) : '-';
+                    const horaFormatada = p.data ? formatarHora(p.data) : '';
+                    // Indicador de modo semi-automático para gerador_pecas
+                    let modoBadge = '';
+                    if (p.sistema === 'gerador_pecas' && p.modo_ativacao === 'semi_automatico') {
+                        modoBadge = '<span class="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium" title="Curadoria Humana"><i class="fas fa-clipboard-check"></i></span>';
+                    }
+                    return `
+                        <tr class="hover:bg-orange-50">
+                            <td class="px-4 py-3 text-xs">${sistemaLabels[p.sistema] || p.sistema}${modoBadge}</td>
+                            <td class="px-4 py-3 font-mono text-xs">${p.identificador || '-'}</td>
+                            <td class="px-4 py-3">${p.usuario}</td>
+                            <td class="px-4 py-3 text-gray-500">
+                                <div>${dataFormatada}</div>
+                                ${horaFormatada ? `<div class="text-xs text-gray-400">${horaFormatada}</div>` : ''}
+                            </td>
+                            <td class="px-4 py-3 text-center">
+                                <button onclick="verRelatorio(${p.id}, '${p.sistema}')" class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors" title="Ver relatório">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-400">Todos os relatórios foram avaliados!</td></tr>';
+
+                // Gráfico de Evolução por Sistema
+                dadosEvolucao = data.evolucao_por_sistema || {};
+                atualizarGraficoEvolucao();
+
+            } catch (error) {
+                console.error('Erro ao carregar dashboard:', error);
+                // Mostra erro no card de total
+                document.getElementById('stat-total-consultas').innerHTML = '<span class="text-red-500 text-xs">Erro</span>';
+                document.getElementById('stat-total-feedbacks').innerHTML = '<span class="text-red-500 text-xs">Erro</span>';
+                alert('Erro ao carregar dashboard: ' + error.message);
+            }
+        }
+
+        function atualizarGraficoEvolucao() {
+            const tipoVisualizacao = document.getElementById('evolucao-tipo').value;
+            const sistemaFiltro = document.getElementById('evolucao-sistema').value;
+            const ctxEvolucao = document.getElementById('chart-evolucao').getContext('2d');
+
+            if (chartEvolucao) chartEvolucao.destroy();
+
+            // Filtra os dados pelo sistema selecionado
+            let dadosFiltrados = dadosEvolucao;
+            if (sistemaFiltro) {
+                dadosFiltrados = {};
+                if (dadosEvolucao[sistemaFiltro]) {
+                    dadosFiltrados[sistemaFiltro] = dadosEvolucao[sistemaFiltro];
+                }
+            }
+
+            // Cores para cada sistema
+            const cores = {
+                'assistencia_judiciaria': { border: '#3b82f6', bg: 'rgba(59, 130, 246, 0.2)' },
+                'matriculas': { border: '#22c55e', bg: 'rgba(34, 197, 94, 0.2)' },
+                'gerador_pecas': { border: '#a855f7', bg: 'rgba(168, 85, 247, 0.2)' },
+                'pedido_calculo': { border: '#f59e0b', bg: 'rgba(245, 158, 11, 0.2)' },
+                'prestacao_contas': { border: '#14b8a6', bg: 'rgba(20, 184, 166, 0.2)' },
+                'relatorio_cumprimento': { border: '#6366f1', bg: 'rgba(99, 102, 241, 0.2)' }
+            };
+
+            const nomesSistemas = {
+                'assistencia_judiciaria': 'Assist. Judiciária',
+                'matriculas': 'Matrículas',
+                'gerador_pecas': 'Gerador de Peças',
+                'pedido_calculo': 'Pedido de Cálculo',
+                'prestacao_contas': 'Prestação de Contas',
+                'relatorio_cumprimento': 'Rel. Cumprimento'
+            };
+
+            // Coleta todas as semanas únicas (já vêm ordenadas do backend)
+            const todasSemanas = new Set();
+            Object.values(dadosFiltrados).forEach(dados => {
+                dados.forEach(d => todasSemanas.add(d.semana));
+            });
+            const semanas = Array.from(todasSemanas).sort();
+
+            // Verifica se há dados
+            if (semanas.length === 0 || Object.keys(dadosFiltrados).length === 0) {
+                // Mostra mensagem de sem dados
+                chartEvolucao = new Chart(ctxEvolucao, {
+                    type: 'line',
+                    data: { labels: [], datasets: [] },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            title: {
+                                display: true,
+                                text: sistemaFiltro
+                                    ? `Nenhum dado disponível para ${nomesSistemas[sistemaFiltro] || sistemaFiltro}`
+                                    : 'Nenhum dado de evolução disponível no período',
+                                color: '#6b7280',
+                                font: { size: 14 }
+                            }
+                        }
+                    }
+                });
+                return;
+            }
+
+            // Cria datasets para cada sistema
+            const datasets = [];
+            for (const [sistema, dados] of Object.entries(dadosFiltrados)) {
+                if (!dados || dados.length === 0) continue;
+
+                // Verifica se o sistema tem dados não-nulos
+                const temDados = dados.some(d =>
+                    tipoVisualizacao === 'taxa_acerto' ? d.taxa_acerto !== null :
+                    tipoVisualizacao === 'total' ? d.total > 0 :
+                    d.corretos > 0
+                );
+                if (!temDados) continue;
+
+                // Mapeia dados por semana
+                const dadosPorSemana = {};
+                dados.forEach(d => { dadosPorSemana[d.semana] = d; });
+
+                // Cria array de valores alinhados com as semanas
+                // Usa null para semanas sem dados (cria lacunas no gráfico)
+                const valores = semanas.map(semana => {
+                    const d = dadosPorSemana[semana];
+                    if (!d) return null;
+                    if (tipoVisualizacao === 'taxa_acerto') {
+                        return d.taxa_acerto; // Pode ser null se não houver feedbacks
+                    } else if (tipoVisualizacao === 'total') {
+                        return d.total > 0 ? d.total : null;
+                    } else {
+                        return d.corretos > 0 ? d.corretos : null;
+                    }
+                });
+
+                // Quando só um sistema, usa preenchimento para melhor visualização
+                const apenasUmSistema = Object.keys(dadosFiltrados).length === 1;
+
+                datasets.push({
+                    label: nomesSistemas[sistema] || sistema,
+                    data: valores,
+                    borderColor: cores[sistema]?.border || '#6b7280',
+                    backgroundColor: cores[sistema]?.bg || 'rgba(107, 114, 128, 0.2)',
+                    fill: apenasUmSistema, // Preenche área quando apenas 1 sistema
+                    tension: 0.3,
+                    spanGaps: false, // NÃO conecta pontos através de lacunas (mostra gaps)
+                    pointRadius: apenasUmSistema ? 5 : 4,
+                    pointHoverRadius: 7,
+                    borderWidth: apenasUmSistema ? 3 : 2
+                });
+            }
+
+            // Labels formatados (2026-S05 -> S05)
+            const labels = semanas.map(s => {
+                const match = s.match(/\d{4}-S(\d{2})/);
+                return match ? `S${match[1]}` : s;
+            });
+
+            chartEvolucao = new Chart(ctxEvolucao, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { usePointStyle: true, padding: 15 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null && context.parsed.y !== undefined) {
+                                        label += tipoVisualizacao === 'taxa_acerto'
+                                            ? context.parsed.y.toFixed(1) + '%'
+                                            : context.parsed.y;
+                                    } else {
+                                        label += 'Sem avaliações';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: tipoVisualizacao === 'taxa_acerto' ? 100 : undefined,
+                            title: {
+                                display: true,
+                                text: tipoVisualizacao === 'taxa_acerto' ? 'Taxa de Acerto (%)' :
+                                      tipoVisualizacao === 'total' ? 'Total de Feedbacks' : 'Feedbacks Corretos'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Semana'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function carregarFeedbacks() {
+            try {
+                const avaliacao = document.getElementById('filtro-avaliacao').value;
+                const mes = document.getElementById('filtro-mes').value;
+                const ano = document.getElementById('filtro-ano').value;
+                const sistema = document.getElementById('filtro-sistema').value;
+                
+                let url = `/admin/feedbacks/lista?page=${currentPage}&per_page=20`;
+                if (avaliacao) url += `&avaliacao=${avaliacao}`;
+                if (mes) url += `&mes=${mes}`;
+                if (ano) url += `&ano=${ano}`;
+                if (sistema) url += `&sistema=${sistema}`;
+                
+                const data = await api(url);
+                if (!data) return;
+
+                totalPages = data.total_pages || 1;
+
+                // Atualiza info de paginação
+                document.getElementById('paginacao-info').textContent = 
+                    `Mostrando página ${data.page} de ${totalPages} (${data.total} registros)`;
+                
+                // Atualiza botões
+                document.getElementById('btn-prev').disabled = currentPage <= 1;
+                document.getElementById('btn-next').disabled = currentPage >= totalPages;
+
+                // Renderiza tabela
+                const tabela = document.getElementById('tabela-feedbacks');
+                tabela.innerHTML = (data.feedbacks || []).map(fb => {
+                    const badges = {
+                        'correto': 'bg-green-100 text-green-700',
+                        'parcial': 'bg-yellow-100 text-yellow-700',
+                        'incorreto': 'bg-red-100 text-red-700',
+                        'erro_ia': 'bg-gray-100 text-gray-700'
+                    };
+                    const labels = {
+                        'correto': 'Correta',
+                        'parcial': 'Parcial',
+                        'incorreto': 'Incorreta',
+                        'erro_ia': 'Erro IA'
+                    };
+                    const sistemaLabels = {
+                        'assistencia_judiciaria': '<span class="text-blue-600"><i class="fas fa-gavel mr-1"></i>Assist. Jud.</span>',
+                        'matriculas': '<span class="text-green-600"><i class="fas fa-file-contract mr-1"></i>Matrículas</span>',
+                        'gerador_pecas': '<span class="text-purple-600"><i class="fas fa-file-alt mr-1"></i>Ger. Peças</span>',
+                        'pedido_calculo': '<span class="text-amber-600"><i class="fas fa-calculator mr-1"></i>Ped. Cálculo</span>',
+                        'prestacao_contas': '<span class="text-teal-600"><i class="fas fa-receipt mr-1"></i>Prest. Contas</span>',
+                        'relatorio_cumprimento': '<span class="text-indigo-600"><i class="fas fa-file-invoice mr-1"></i>Rel. Cumpr.</span>'
+                    };
+                    const dataFormatada = fb.criado_em ? formatarData(fb.criado_em) : '-';
+                    const horaFormatada = fb.criado_em ? formatarHora(fb.criado_em) : '';
+                    const modeloFormatado = fb.modelo ? `<span class="px-2 py-1 bg-purple-50 text-purple-700 rounded text-xs font-mono">${fb.modelo}</span>` : '<span class="text-gray-400">N/A</span>';
+
+                    // Formata badge do modo de ativação (apenas para gerador_pecas)
+                    let modoBadge = '<span class="text-gray-300">-</span>';
+                    if (fb.sistema === 'gerador_pecas' && fb.modo_ativacao) {
+                        const modo = fb.modo_ativacao;
+                        if (modo.modo === 'semi_automatico') {
+                            const manuais = modo.total_manuais || 0;
+                            const confirmados = (modo.total_curados || 0) - manuais;
+                            const excluidos = modo.total_excluidos || 0;
+                            const totalIncluidos = modo.total_curados || 0;
+                            let tooltip = `Curadoria Humana [HUMAN_VALIDATED]\n`;
+                            tooltip += `• ${confirmados} confirmado(s) pelo usuário\n`;
+                            tooltip += `• ${manuais} adicionado(s) manualmente\n`;
+                            tooltip += `• ${excluidos} removido(s) da sugestão`;
+                            modoBadge = `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs cursor-help inline-flex items-center gap-1" title="${tooltip}">
+                                <i class="fas fa-clipboard-check"></i>Curadoria
+                                <span class="bg-amber-500 text-white px-1 rounded text-xs">${totalIncluidos}</span>
+                            </span>`;
+                        } else if (modo.modo === 'fast_path') {
+                            modoBadge = `<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs" title="100% determinístico">
+                                <i class="fas fa-bolt mr-1"></i>Fast
+                            </span>`;
+                        } else if (modo.modo === 'misto') {
+                            modoBadge = `<span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs" title="Det: ${modo.modulos_det || 0}, LLM: ${modo.modulos_llm || 0}">
+                                <i class="fas fa-random mr-1"></i>Misto
+                            </span>`;
+                        } else if (modo.modo === 'llm') {
+                            modoBadge = `<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs" title="100% LLM">
+                                <i class="fas fa-brain mr-1"></i>LLM
+                            </span>`;
+                        }
+                    } else if (fb.sistema === 'gerador_pecas') {
+                        modoBadge = `<span class="px-2 py-1 bg-gray-100 text-gray-500 rounded text-xs" title="Modo não registrado (geração anterior)">
+                            <i class="fas fa-question-circle mr-1"></i>N/R
+                        </span>`;
+                    }
+
+                    return `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3 text-xs">${sistemaLabels[fb.sistema] || fb.sistema || '-'}</td>
+                            <td class="px-4 py-3 font-mono text-xs">${fb.identificador || fb.cnj || '-'}</td>
+                            <td class="px-4 py-3">${fb.usuario}</td>
+                            <td class="px-4 py-3 text-center">${modeloFormatado}</td>
+                            <td class="px-4 py-3 text-center">${modoBadge}</td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="px-2 py-1 rounded text-xs ${badges[fb.avaliacao] || 'bg-gray-100'}">
+                                    ${labels[fb.avaliacao] || fb.avaliacao}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-gray-600 max-w-xs">
+                                ${fb.comentario ? `
+                                    <div class="flex items-center gap-2">
+                                        <span class="truncate">${escapeHtml(fb.comentario)}</span>
+                                        <button onclick="verComentario(this)" data-usuario="${escapeHtml(fb.usuario)}" data-comentario="${escapeHtml(fb.comentario)}" class="flex-shrink-0 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors" title="Ver comentário completo">
+                                            <i class="fas fa-expand"></i>
+                                        </button>
+                                    </div>
+                                ` : '-'}
+                            </td>
+                            <td class="px-4 py-3 text-gray-500">
+                                <div>${dataFormatada}</div>
+                                ${horaFormatada ? `<div class="text-xs text-gray-400">${horaFormatada}</div>` : ''}
+                            </td>
+                            <td class="px-4 py-3 text-center">
+                                <button onclick="verRelatorio(${fb.consulta_id}, '${fb.sistema}')" class="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors" title="Ver relatório">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="9" class="px-4 py-8 text-center text-gray-400">Nenhum feedback encontrado</td></tr>';
+
+            } catch (error) {
+                console.error('Erro ao carregar feedbacks:', error);
+            }
+        }
+
+        async function carregarModelosIA() {
+            try {
+                const data = await api('/admin/modelos-ia');
+                if (!data) return;
+
+                document.getElementById('modelo-aj').textContent = data.assistencia_judiciaria?.modelo || 'Não configurado';
+                document.getElementById('modelo-mat').textContent = data.matriculas?.modelo || 'Não configurado';
+                document.getElementById('modelo-gp').textContent = data.gerador_pecas?.modelo || 'Não configurado';
+                document.getElementById('modelo-pc').textContent = data.pedido_calculo?.modelo || 'Não configurado';
+            } catch (error) {
+                console.error('Erro ao carregar modelos:', error);
+            }
+        }
+
+        function paginaAnterior() {
+            if (currentPage > 1) {
+                currentPage--;
+                carregarFeedbacks();
+            }
+        }
+
+        function proximaPagina() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                carregarFeedbacks();
+            }
+        }
+
+        async function exportarDados() {
+            try {
+                const data = await api('/admin/feedbacks/exportar');
+                if (!data) return;
+
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `feedbacks_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Erro ao exportar:', error);
+            }
+        }
+
+        // Funções do Modal de Relatório
+        let consultaAtual = null;
+        let sistemaAtual = null;
+
+        async function verRelatorio(consultaId, sistema) {
+            const modal = document.getElementById('modal-relatorio');
+            const loading = document.getElementById('modal-loading');
+            const conteudo = document.getElementById('modal-conteudo');
+            const erro = document.getElementById('modal-erro');
+            const tabs = document.getElementById('modal-tabs');
+
+            consultaAtual = consultaId;
+            sistemaAtual = sistema;
+
+            // Reset tabs
+            document.querySelectorAll('.modal-tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('conteudo-relatorio').classList.remove('hidden');
+            resetTabsState();
+
+            // Mostra modal com loading
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            loading.classList.remove('hidden');
+            conteudo.classList.add('hidden');
+            erro.classList.add('hidden');
+
+            // Mostrar tabs para sistemas com histórico de chat
+            if (sistema === 'gerador_pecas' || sistema === 'relatorio_cumprimento') {
+                tabs.classList.remove('hidden');
+            } else {
+                tabs.classList.add('hidden');
+            }
+
+            try {
+                const data = await api(`/admin/feedbacks/consulta/${consultaId}?sistema=${sistema}`);
+
+                if (!data) {
+                    throw new Error('Dados não retornados');
+                }
+
+                // Preenche informações do cabeçalho
+                const sistemaNomes = {
+                    'assistencia_judiciaria': 'Assistência Judiciária',
+                    'matriculas': 'Matrículas Confrontantes',
+                    'gerador_pecas': 'Gerador de Peças',
+                    'pedido_calculo': 'Pedido de Cálculo',
+                    'prestacao_contas': 'Prestação de Contas',
+                    'relatorio_cumprimento': 'Relatório de Cumprimento'
+                };
+                const sistemaLabel = sistemaNomes[sistema] || sistema;
+                document.getElementById('modal-titulo').textContent = `Relatório - ${sistemaLabel}`;
+                document.getElementById('modal-subtitulo').textContent = data.identificador || data.cnj || '-';
+                document.getElementById('modal-usuario').textContent = data.usuario || '-';
+
+                const dataConsulta = data.consultado_em || data.analisado_em || data.criado_em;
+                document.getElementById('modal-data').textContent = dataConsulta ? formatarDataHora(dataConsulta) : '-';
+                document.getElementById('modal-modelo').textContent = data.modelo || 'N/A';
+
+                // Avaliação do feedback
+                const avaliacaoEl = document.getElementById('modal-avaliacao');
+                if (data.feedback && data.feedback.avaliacao) {
+                    const badges = {
+                        'correto': 'bg-green-100 text-green-700',
+                        'parcial': 'bg-yellow-100 text-yellow-700',
+                        'incorreto': 'bg-red-100 text-red-700',
+                        'erro_ia': 'bg-gray-100 text-gray-700'
+                    };
+                    const labels = {
+                        'correto': 'Correta',
+                        'parcial': 'Parcial',
+                        'incorreto': 'Incorreta',
+                        'erro_ia': 'Erro IA'
+                    };
+                    avaliacaoEl.innerHTML = `<span class="px-2 py-1 rounded text-xs ${badges[data.feedback.avaliacao]}">${labels[data.feedback.avaliacao]}</span>`;
+                } else {
+                    avaliacaoEl.innerHTML = '<span class="text-orange-500"><i class="fas fa-clock mr-1"></i>Pendente</span>';
+                }
+
+                // Exibe informações do modo de ativação (apenas para gerador_pecas)
+                const modoContainer = document.getElementById('modal-modo-container');
+                const modoEl = document.getElementById('modal-modo');
+                const curadoriaInfo = document.getElementById('modal-curadoria-info');
+
+                if (sistema === 'gerador_pecas' && data.modo_ativacao) {
+                    modoContainer.classList.remove('hidden');
+                    const modo = data.modo_ativacao;
+
+                    if (modo.modo === 'semi_automatico') {
+                        const totalIncluidos = modo.total_curados || 0;
+                        modoEl.innerHTML = `<span class="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs inline-flex items-center gap-1">
+                            <i class="fas fa-clipboard-check"></i>Curadoria Humana
+                            <span class="bg-amber-500 text-white px-1 rounded">${totalIncluidos}</span>
+                        </span>`;
+
+                        // Mostra detalhes da curadoria com terminologia clara
+                        curadoriaInfo.classList.remove('hidden');
+                        const manuais = modo.total_manuais || 0;
+                        const confirmados = totalIncluidos - manuais;
+                        document.getElementById('modal-curadoria-preview').textContent = modo.total_preview || 0;
+                        document.getElementById('modal-curadoria-confirmados').textContent = confirmados;
+                        document.getElementById('modal-curadoria-manuais').textContent = manuais;
+                        document.getElementById('modal-curadoria-excluidos').textContent = modo.total_excluidos || 0;
+                    } else if (modo.modo === 'fast_path') {
+                        modoEl.innerHTML = '<span class="px-2 py-1 bg-green-100 text-green-700 rounded text-xs"><i class="fas fa-bolt mr-1"></i>Fast Path</span>';
+                        curadoriaInfo.classList.add('hidden');
+                    } else if (modo.modo === 'misto') {
+                        modoEl.innerHTML = `<span class="px-2 py-1 bg-yellow-100 text-yellow-700 rounded text-xs"><i class="fas fa-random mr-1"></i>Misto (${modo.modulos_det || 0}d + ${modo.modulos_llm || 0}l)</span>`;
+                        curadoriaInfo.classList.add('hidden');
+                    } else if (modo.modo === 'llm') {
+                        modoEl.innerHTML = '<span class="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"><i class="fas fa-brain mr-1"></i>LLM</span>';
+                        curadoriaInfo.classList.add('hidden');
+                    } else {
+                        modoEl.innerHTML = `<span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">${modo.modo || 'Desconhecido'}</span>`;
+                        curadoriaInfo.classList.add('hidden');
+                    }
+                } else if (sistema === 'gerador_pecas') {
+                    modoContainer.classList.remove('hidden');
+                    modoEl.innerHTML = '<span class="text-gray-400 text-xs">Não registrado</span>';
+                    curadoriaInfo.classList.add('hidden');
+                } else {
+                    modoContainer.classList.add('hidden');
+                    curadoriaInfo.classList.add('hidden');
+                }
+
+                // Renderiza o relatório em Markdown
+                if (data.relatorio) {
+                    conteudo.innerHTML = marked.parse(data.relatorio);
+                } else {
+                    conteudo.innerHTML = '<p class="text-gray-400 italic text-center py-8">Relatório não disponível para esta consulta.</p>';
+                }
+
+                loading.classList.add('hidden');
+                conteudo.classList.remove('hidden');
+
+                // Se for sistema com chat, carrega histórico e versões
+                if (sistema === 'gerador_pecas' || sistema === 'relatorio_cumprimento') {
+                    // Usa edicoes_chat (só mensagens do usuário) se disponível, senão filtra do historico_chat
+                    const edicoesChat = data.edicoes_chat || (data.historico_chat || []).filter(m => m.role === 'user');
+                    const totalEdicoes = data.total_edicoes_chat !== undefined ? data.total_edicoes_chat : edicoesChat.length;
+                    renderizarHistoricoChat(data.historico_chat || [], totalEdicoes);
+
+                    if (sistema === 'gerador_pecas') {
+                        // Usa versões já retornadas pelo endpoint se disponíveis
+                        if (data.versoes && data.versoes.length > 0) {
+                            renderizarVersoes(data.versoes);
+                            const badge = document.getElementById('versoes-badge');
+                            badge.textContent = data.total_versoes || data.versoes.length;
+                            badge.classList.remove('hidden');
+                        } else {
+                            // Fallback: carrega versões do endpoint separado
+                            carregarVersoes(consultaId);
+                        }
+                    } else {
+                        // Para relatorio_cumprimento, esconde a tab de versões
+                        document.getElementById('tab-versoes').classList.add('hidden');
+                        document.getElementById('versoes-badge').classList.add('hidden');
+                    }
+                }
+
+            } catch (error) {
+                console.error('Erro ao carregar relatório:', error);
+                loading.classList.add('hidden');
+                erro.classList.remove('hidden');
+            }
+        }
+
+        function resetTabsState() {
+            document.querySelectorAll('#modal-tabs button').forEach(btn => {
+                btn.classList.remove('border-blue-600', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+            document.getElementById('tab-relatorio').classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById('tab-relatorio').classList.add('border-blue-600', 'text-blue-600');
+        }
+
+        function mostrarTabRelatorio(tab) {
+            // Remove active de todas as tabs
+            document.querySelectorAll('#modal-tabs button').forEach(btn => {
+                btn.classList.remove('border-blue-600', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+
+            // Esconde todos os conteúdos
+            document.querySelectorAll('.modal-tab-content').forEach(el => el.classList.add('hidden'));
+
+            // Ativa a tab selecionada
+            document.getElementById(`tab-${tab}`).classList.remove('border-transparent', 'text-gray-500');
+            document.getElementById(`tab-${tab}`).classList.add('border-blue-600', 'text-blue-600');
+            document.getElementById(`conteudo-${tab}`).classList.remove('hidden');
+        }
+
+        function renderizarHistoricoChat(historico, totalEdicoes) {
+            const container = document.getElementById('chat-container');
+            const badge = document.getElementById('chat-badge');
+
+            // Conta apenas mensagens do usuário (pedidos de revisão)
+            const edicoesUsuario = (historico || []).filter(m => m.role === 'user');
+            const numEdicoes = totalEdicoes !== undefined ? totalEdicoes : edicoesUsuario.length;
+
+            if (!historico || historico.length === 0 || numEdicoes === 0) {
+                badge.classList.add('hidden');
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-comments text-4xl mb-4"></i>
+                        <p>Nenhuma edição via chat foi realizada</p>
+                        <p class="text-sm mt-2">O usuário não solicitou alterações após a geração inicial</p>
+                    </div>`;
+                return;
+            }
+
+            // Badge mostra apenas o número de pedidos de revisão (mensagens do usuário)
+            badge.textContent = numEdicoes;
+            badge.classList.remove('hidden');
+
+            let html = `
+                <div class="bg-purple-50 rounded-lg p-4 mb-4 border border-purple-200">
+                    <p class="text-purple-800 font-medium"><i class="fas fa-info-circle mr-2"></i>Histórico de Edições</p>
+                    <p class="text-purple-600 text-sm mt-1">O usuário solicitou ${numEdicoes} alteração(ões) via chat após a geração inicial.</p>
+                </div>
+            `;
+
+            historico.forEach((msg, index) => {
+                const isUser = msg.role === 'user';
+                const bgClass = isUser ? 'bg-blue-50 border-blue-200' : 'bg-green-50 border-green-200';
+                const iconClass = isUser ? 'fa-user text-blue-600' : 'fa-robot text-green-600';
+                const labelClass = isUser ? 'text-blue-700' : 'text-green-700';
+                const label = isUser ? 'Usuário' : 'Assistente IA';
+
+                html += `
+                    <div class="rounded-lg border p-4 ${bgClass}">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fas ${iconClass}"></i>
+                            <span class="font-medium ${labelClass}">${label}</span>
+                            <span class="text-xs text-gray-400 ml-auto">#${index + 1}</span>
+                        </div>
+                        <div class="text-gray-700 text-sm whitespace-pre-wrap">${escapeHtml(msg.content)}</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function carregarVersoes(geracaoId) {
+            const container = document.getElementById('versoes-container');
+            const badge = document.getElementById('versoes-badge');
+
+            container.innerHTML = `
+                <div class="text-center py-8 text-gray-400">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>Carregando versões...</p>
+                </div>`;
+
+            try {
+                const data = await api(`/admin/api/gerador-pecas-admin/geracoes/${geracaoId}/versoes`);
+
+                if (!data) throw new Error('Sem dados');
+
+                // Atualiza badge
+                if (data.total_versoes > 0) {
+                    badge.textContent = data.total_versoes;
+                    badge.classList.remove('hidden');
+                } else {
+                    badge.classList.add('hidden');
+                }
+
+                renderizarVersoes(data.versoes);
+            } catch (error) {
+                console.error('Erro ao carregar versões:', error);
+                badge.classList.add('hidden');
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-history text-4xl mb-4"></i>
+                        <p>Nenhuma versão disponível</p>
+                    </div>`;
+            }
+        }
+
+        function renderizarVersoes(versoes) {
+            const container = document.getElementById('versoes-container');
+
+            if (!versoes || versoes.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fas fa-history text-4xl mb-4"></i>
+                        <p>Nenhuma versão salva</p>
+                        <p class="text-sm mt-2">As versões são criadas quando o usuário edita a peça via chat</p>
+                    </div>`;
+                return;
+            }
+
+            let html = `
+                <div class="bg-green-50 rounded-lg p-4 mb-4 border border-green-200">
+                    <p class="text-green-800 font-medium"><i class="fas fa-info-circle mr-2"></i>Histórico de Versões</p>
+                    <p class="text-green-600 text-sm mt-1">Esta geração possui ${versoes.length} versão(ões) salva(s).</p>
+                </div>
+            `;
+
+            const tipoLabels = {
+                'geracao_inicial': 'Versão Inicial',
+                'edicao_chat': 'Edição via Chat',
+                'edicao_manual': 'Edição Manual',
+                'restauracao': 'Restauração'
+            };
+
+            const tipoClasses = {
+                'geracao_inicial': 'bg-green-100 text-green-700',
+                'edicao_chat': 'bg-blue-100 text-blue-700',
+                'edicao_manual': 'bg-amber-100 text-amber-700',
+                'restauracao': 'bg-purple-100 text-purple-700'
+            };
+
+            versoes.forEach((versao) => {
+                // Suporta tanto 'tipo_alteracao' quanto 'origem' (campos diferentes dos endpoints)
+                const tipo = versao.tipo_alteracao || versao.origem || 'geracao_inicial';
+                const tipoLabel = tipoLabels[tipo] || tipo;
+                const tipoClass = tipoClasses[tipo] || 'bg-gray-100 text-gray-700';
+                const dataFormatada = versao.criado_em
+                    ? formatarDataHora(versao.criado_em)
+                    : 'Data não disponível';
+                // Suporta tanto 'descricao' quanto 'descricao_alteracao'
+                const descricao = versao.descricao || versao.descricao_alteracao;
+
+                html += `
+                    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <div class="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+                            <div class="flex items-center gap-3">
+                                <span class="text-lg font-semibold text-gray-700">v${versao.numero_versao}</span>
+                                <span class="px-2 py-1 text-xs rounded-full ${tipoClass}">${tipoLabel}</span>
+                            </div>
+                            <div class="text-sm text-gray-500">
+                                <i class="fas fa-clock mr-1"></i>${dataFormatada}
+                            </div>
+                        </div>
+                        ${descricao ? `
+                            <div class="px-4 py-2 bg-blue-50 border-b border-blue-100">
+                                <p class="text-sm text-blue-700"><i class="fas fa-comment mr-1"></i>${escapeHtml(descricao)}</p>
+                            </div>
+                        ` : ''}
+                        <div class="p-4">
+                            <button onclick="verConteudoVersao(${versao.id}, ${versao.numero_versao})"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">
+                                <i class="fas fa-eye mr-1"></i>Ver Conteúdo
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        async function verConteudoVersao(versaoId, numeroVersao) {
+            try {
+                const data = await api(`/admin/api/gerador-pecas-admin/geracoes/${consultaAtual}/versoes/${versaoId}`);
+
+                if (!data) throw new Error('Sem dados');
+
+                const conteudo = data.conteudo_markdown || 'Conteúdo não disponível';
+
+                // Mostra na tab de relatório
+                const modalConteudo = document.getElementById('modal-conteudo');
+                modalConteudo.innerHTML = `
+                    <div class="mb-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <p class="text-purple-800 font-medium"><i class="fas fa-history mr-2"></i>Visualizando: Versão ${numeroVersao}</p>
+                        <button onclick="voltarParaRelatorioAtual()" class="mt-2 px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700">
+                            <i class="fas fa-arrow-left mr-1"></i>Voltar para versão atual
+                        </button>
+                    </div>
+                ` + marked.parse(conteudo);
+
+                mostrarTabRelatorio('relatorio');
+
+            } catch (error) {
+                console.error('Erro ao ver versão:', error);
+                alert('Erro ao carregar conteúdo da versão');
+            }
+        }
+
+        async function voltarParaRelatorioAtual() {
+            if (consultaAtual && sistemaAtual) {
+                const data = await api(`/admin/feedbacks/consulta/${consultaAtual}?sistema=${sistemaAtual}`);
+                if (data && data.relatorio) {
+                    document.getElementById('modal-conteudo').innerHTML = marked.parse(data.relatorio);
+                }
+            }
+        }
+        
+        function fecharModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            const modal = document.getElementById('modal-relatorio');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // Função auxiliar para escapar HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Funções do Modal de Comentário
+        function verComentario(btn) {
+            const usuario = btn.dataset.usuario;
+            const comentario = btn.dataset.comentario;
+            const modal = document.getElementById('modal-comentario');
+            document.getElementById('modal-comentario-info').textContent = `Usuário: ${usuario}`;
+            document.getElementById('modal-comentario-texto').textContent = comentario;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function fecharModalComentario(event) {
+            if (event && event.target !== event.currentTarget) return;
+            const modal = document.getElementById('modal-comentario');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // Fecha modal com ESC
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                fecharModal();
+                fecharModalComentario();
+                const modalCuradoria = document.getElementById('modal-curadoria-detalhes');
+                if (modalCuradoria) modalCuradoria.remove();
+            }
+        });
+
+        // ======================================================
+        // AUDITORIA DE CURADORIA - MODO SEMI-AUTOMÁTICO
+        // ======================================================
+
+        async function verDetalhesCuradoria(geracaoId) {
+            // Endpoint correto: /admin/api/gerador-pecas-admin/geracoes/{id}/curadoria
+            const endpoint = `/admin/api/gerador-pecas-admin/geracoes/${geracaoId}/curadoria`;
+
+            try {
+                console.log(`[Auditoria] Buscando curadoria para geração ID: ${geracaoId}`);
+                const response = await fetch(endpoint, {
+                    headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                });
+
+                if (!response.ok) {
+                    let errorDetail = '';
+                    try {
+                        const errorData = await response.json();
+                        errorDetail = errorData.detail || '';
+                    } catch { /* ignore parse error */ }
+
+                    if (response.status === 404) {
+                        // Mensagem específica baseada no detalhe retornado
+                        if (errorDetail.includes('não foi feita no modo semi-automático')) {
+                            alert(`Esta geração (ID: ${geracaoId}) não foi feita no modo semi-automático.\n\nA auditoria de curadoria está disponível apenas para gerações com curadoria humana ativa.`);
+                        } else if (errorDetail.includes('não encontrada')) {
+                            alert(`Geração não encontrada (ID: ${geracaoId}).\n\nVerifique se a geração ainda existe no sistema.`);
+                        } else {
+                            alert(`Auditoria não disponível para esta geração (ID: ${geracaoId}).\n\n${errorDetail || 'Detalhes de curadoria não encontrados.'}`);
+                        }
+                        console.warn(`[Auditoria] 404 para geração ${geracaoId}: ${errorDetail}`);
+                        return;
+                    }
+
+                    if (response.status === 403) {
+                        alert('Você não tem permissão para ver a auditoria desta geração.');
+                        return;
+                    }
+
+                    if (response.status === 500) {
+                        console.error(`[Auditoria] Erro 500 ao buscar curadoria: ${errorDetail}`);
+                        alert(`Erro interno do servidor ao buscar auditoria (ID: ${geracaoId}).\n\nTente novamente em alguns instantes.`);
+                        return;
+                    }
+
+                    throw new Error(`Status ${response.status}: ${errorDetail || 'Erro desconhecido'}`);
+                }
+
+                const dados = await response.json();
+                console.log(`[Auditoria] Curadoria carregada: ${dados.modulos_incluidos?.length || 0} incluídos, ${dados.modulos_excluidos?.length || 0} excluídos`);
+                mostrarModalCuradoria(dados);
+            } catch (error) {
+                console.error('[Auditoria] Erro ao carregar detalhes de curadoria:', error);
+                alert(`Erro ao carregar auditoria (ID: ${geracaoId}):\n${error.message}`);
+            }
+        }
+
+        function mostrarModalCuradoria(dados) {
+            // Remove modal existente se houver
+            let modal = document.getElementById('modal-curadoria-detalhes');
+            if (modal) modal.remove();
+
+            modal = document.createElement('div');
+            modal.id = 'modal-curadoria-detalhes';
+            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4';
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+            const metadata = dados.metadata || {};
+            const modulosIncluidos = dados.modulos_incluidos || [];
+            const modulosExcluidos = dados.modulos_excluidos || [];
+            const glossario = dados.glossario || {};
+            const explicacao = dados.explicacao_processo || {};
+
+            // Separa módulos por tipo de decisão
+            const confirmados = modulosIncluidos.filter(m => m.tipo_decisao === 'confirmado');
+            const manuais = modulosIncluidos.filter(m => m.tipo_decisao === 'manual');
+
+            // Função para gerar HTML de um módulo expandível
+            const renderModulo = (m, corBg, corText, corBadge) => `
+                <div class="border ${corBg} rounded-lg mb-2 overflow-hidden">
+                    <div class="p-3 cursor-pointer flex items-start justify-between gap-2 hover:bg-opacity-80"
+                         onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('.expand-icon').classList.toggle('fa-chevron-down'); this.querySelector('.expand-icon').classList.toggle('fa-chevron-up');">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-medium ${corText}">${escapeHtml(m.titulo)}</span>
+                                <span class="${corBadge} px-2 py-0.5 rounded text-xs font-mono">${escapeHtml(m.tag || '')}</span>
+                            </div>
+                            <div class="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                                <span class="bg-gray-200 px-2 py-0.5 rounded">${escapeHtml(m.categoria || 'Outros')}</span>
+                                ${m.subcategoria ? `<span class="bg-gray-100 px-2 py-0.5 rounded">${escapeHtml(m.subcategoria)}</span>` : ''}
+                                ${m.ordem ? `<span class="text-gray-400">#${m.ordem}</span>` : ''}
+                            </div>
+                            <p class="text-xs ${corText} mt-1 opacity-75">${escapeHtml(m.decisao_explicacao || '')}</p>
+                        </div>
+                        <i class="fas fa-chevron-down expand-icon text-gray-400 mt-1"></i>
+                    </div>
+                    <div class="hidden border-t border-gray-200 p-3 bg-white">
+                        <div class="mb-2">
+                            <span class="text-xs font-semibold text-gray-600">Por que ${m.status_final === 'incluido' ? 'incluído' : 'excluído'}:</span>
+                            <p class="text-xs text-gray-700 mt-1">${escapeHtml(m.motivo_inclusao || m.motivo_exclusao || '-')}</p>
+                        </div>
+                        <div>
+                            <span class="text-xs font-semibold text-gray-600">Conteúdo do argumento:</span>
+                            <div class="mt-1 p-2 bg-gray-50 rounded text-xs text-gray-700 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono">${escapeHtml(m.conteudo || '(Conteúdo não disponível)')}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            modal.innerHTML = `
+                <div class="bg-white rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden" onclick="event.stopPropagation()">
+                    <!-- Header -->
+                    <div class="p-5 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center shadow-lg">
+                                <i class="fas fa-clipboard-check text-white text-xl"></i>
+                            </div>
+                            <div>
+                                <h2 class="text-xl font-bold text-gray-800">Auditoria da Curadoria</h2>
+                                <p class="text-sm text-amber-700">Modo Semi-Automático — Validação Humana</p>
+                            </div>
+                        </div>
+                        <button onclick="document.getElementById('modal-curadoria-detalhes').remove()" class="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-5 overflow-y-auto flex-1">
+                        <!-- Explicação do Processo (colapsável) -->
+                        <div class="mb-5 bg-blue-50 border border-blue-200 rounded-xl overflow-hidden">
+                            <div class="p-4 cursor-pointer flex items-center justify-between hover:bg-blue-100"
+                                 onclick="document.getElementById('explicacao-processo-curadoria').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-info-circle text-blue-600"></i>
+                                    <span class="font-semibold text-blue-800">${escapeHtml(explicacao.titulo || 'Como funciona o Modo Semi-Automático')}</span>
+                                </div>
+                                <i class="fas fa-chevron-down toggle-icon text-blue-400"></i>
+                            </div>
+                            <div id="explicacao-processo-curadoria" class="hidden border-t border-blue-200 p-4 bg-white">
+                                <ol class="space-y-2 text-sm text-gray-700">
+                                    ${(explicacao.etapas || [
+                                        "1. O sistema analisa o processo e sugere argumentos relevantes (Preview)",
+                                        "2. O usuário revisa a sugestão, podendo confirmar, remover ou adicionar argumentos",
+                                        "3. Argumentos confirmados recebem a tag [HUMAN_VALIDATED]",
+                                        "4. Argumentos adicionados manualmente recebem [HUMAN_VALIDATED:MANUAL]",
+                                        "5. A IA recebe instrução de usar estes argumentos integralmente, sem modificação"
+                                    ]).map(e => `<li class="flex items-start gap-2"><i class="fas fa-arrow-right text-blue-400 mt-1"></i><span>${escapeHtml(e)}</span></li>`).join('')}
+                                </ol>
+                                <div class="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                                    <p class="text-sm text-green-800 font-medium">
+                                        <i class="fas fa-shield-alt mr-2"></i>${escapeHtml(explicacao.garantia || 'Todos os argumentos marcados como HUMAN_VALIDATED são incluídos na peça final exatamente como validados pelo usuário.')}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Estatísticas Resumidas -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                            <div class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center relative group">
+                                <p class="text-3xl font-bold text-blue-600">${metadata.total_preview || 0}</p>
+                                <p class="text-xs text-blue-700 font-medium">Sugestões do Sistema</p>
+                                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                    Argumentos sugeridos automaticamente pelo sistema antes da revisão
+                                </div>
+                            </div>
+                            <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center relative group">
+                                <p class="text-3xl font-bold text-green-600">${metadata.total_confirmados || 0}</p>
+                                <p class="text-xs text-green-700 font-medium">Confirmados</p>
+                                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                    Sugestões do sistema que o usuário confirmou
+                                </div>
+                            </div>
+                            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center relative group">
+                                <p class="text-3xl font-bold text-amber-600">${metadata.total_manuais || 0}</p>
+                                <p class="text-xs text-amber-700 font-medium">Adicionados pelo Usuário</p>
+                                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                    Argumentos que o usuário adicionou manualmente
+                                </div>
+                            </div>
+                            <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-center relative group">
+                                <p class="text-3xl font-bold text-red-600">${metadata.total_excluidos || 0}</p>
+                                <p class="text-xs text-red-700 font-medium">Removidos pelo Usuário</p>
+                                <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                    Sugestões do sistema que o usuário removeu
+                                </div>
+                            </div>
+                        </div>
+
+                        ${metadata.preview_timestamp ? `
+                            <p class="text-xs text-gray-500 mb-4 flex items-center gap-2">
+                                <i class="fas fa-clock"></i>
+                                <span>Sugestões geradas em: <strong>${escapeHtml(formatarDataHora(metadata.preview_timestamp))}</strong></span>
+                            </p>
+                        ` : ''}
+
+                        <!-- Seção: INCLUÍDOS NA PEÇA FINAL -->
+                        <div class="mb-5">
+                            <div class="flex items-center gap-2 mb-3 pb-2 border-b border-green-200">
+                                <div class="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+                                    <i class="fas fa-check text-white"></i>
+                                </div>
+                                <div>
+                                    <h3 class="font-bold text-green-800">INCLUÍDOS NA PEÇA FINAL</h3>
+                                    <p class="text-xs text-green-600">${modulosIncluidos.length} argumento(s) validado(s) pelo usuário</p>
+                                </div>
+                            </div>
+
+                            ${confirmados.length > 0 ? `
+                                <!-- Confirmados (sugestões aceitas) -->
+                                <div class="mb-4">
+                                    <div class="flex items-center gap-2 mb-2 cursor-pointer"
+                                         onclick="document.getElementById('secao-confirmados-fb').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                        <i class="fas fa-thumbs-up text-green-500"></i>
+                                        <span class="text-sm font-semibold text-gray-700">Sugestões Confirmadas (${confirmados.length})</span>
+                                        <span class="text-xs text-gray-400">— O usuário aceitou estas sugestões do sistema</span>
+                                        <i class="fas fa-chevron-up toggle-icon text-gray-400 ml-auto"></i>
+                                    </div>
+                                    <div id="secao-confirmados-fb" class="ml-6">
+                                        ${confirmados.map(m => renderModulo(m, 'border-green-200 bg-green-50', 'text-green-800', 'bg-green-200 text-green-800')).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${manuais.length > 0 ? `
+                                <!-- Adicionados manualmente -->
+                                <div class="mb-4">
+                                    <div class="flex items-center gap-2 mb-2 cursor-pointer"
+                                         onclick="document.getElementById('secao-manuais-fb').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                        <i class="fas fa-plus-circle text-amber-500"></i>
+                                        <span class="text-sm font-semibold text-gray-700">Adicionados Manualmente (${manuais.length})</span>
+                                        <span class="text-xs text-gray-400">— O usuário incluiu estes argumentos que não estavam na sugestão</span>
+                                        <i class="fas fa-chevron-up toggle-icon text-gray-400 ml-auto"></i>
+                                    </div>
+                                    <div id="secao-manuais-fb" class="ml-6">
+                                        ${manuais.map(m => renderModulo(m, 'border-amber-200 bg-amber-50', 'text-amber-800', 'bg-amber-200 text-amber-800')).join('')}
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            ${modulosIncluidos.length === 0 ? `
+                                <p class="text-sm text-gray-500 italic ml-6">Nenhum argumento incluído</p>
+                            ` : ''}
+                        </div>
+
+                        <!-- Seção: EXCLUÍDOS DA PEÇA FINAL -->
+                        ${modulosExcluidos.length > 0 ? `
+                            <div class="mb-5">
+                                <div class="flex items-center gap-2 mb-3 pb-2 border-b border-red-200">
+                                    <div class="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-times text-white"></i>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold text-red-800">EXCLUÍDOS DA PEÇA FINAL</h3>
+                                        <p class="text-xs text-red-600">${modulosExcluidos.length} argumento(s) removido(s) pelo usuário</p>
+                                    </div>
+                                </div>
+
+                                <div class="mb-4">
+                                    <div class="flex items-center gap-2 mb-2 cursor-pointer"
+                                         onclick="document.getElementById('secao-excluidos-fb').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                        <i class="fas fa-ban text-red-500"></i>
+                                        <span class="text-sm font-semibold text-gray-700">Sugestões Removidas (${modulosExcluidos.length})</span>
+                                        <span class="text-xs text-gray-400">— O usuário rejeitou estas sugestões do sistema</span>
+                                        <i class="fas fa-chevron-down toggle-icon text-gray-400 ml-auto"></i>
+                                    </div>
+                                    <div id="secao-excluidos-fb" class="ml-6 hidden">
+                                        ${modulosExcluidos.map(m => renderModulo(m, 'border-red-200 bg-red-50', 'text-red-800', 'bg-red-200 text-red-800')).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <!-- Glossário -->
+                        <div class="mb-4 bg-gray-50 border border-gray-200 rounded-xl overflow-hidden">
+                            <div class="p-4 cursor-pointer flex items-center justify-between hover:bg-gray-100"
+                                 onclick="document.getElementById('glossario-curadoria').classList.toggle('hidden'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-down'); this.querySelector('.toggle-icon').classList.toggle('fa-chevron-up');">
+                                <div class="flex items-center gap-2">
+                                    <i class="fas fa-book text-gray-600"></i>
+                                    <span class="font-semibold text-gray-800">Glossário de Termos</span>
+                                </div>
+                                <i class="fas fa-chevron-down toggle-icon text-gray-400"></i>
+                            </div>
+                            <div id="glossario-curadoria" class="hidden border-t border-gray-200 p-4 bg-white">
+                                <dl class="space-y-3 text-sm">
+                                    <div>
+                                        <dt class="font-mono text-green-700 font-semibold">[HUMAN_VALIDATED]</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['HUMAN_VALIDATED'] || 'Argumento validado pelo usuário - será incluído integralmente na peça final sem modificação pela IA')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="font-mono text-amber-700 font-semibold">[HUMAN_VALIDATED:MANUAL]</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['HUMAN_VALIDATED:MANUAL'] || 'Argumento adicionado manualmente pelo usuário - não estava na sugestão automática')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="font-semibold text-gray-700">Confirmado</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['confirmado'] || 'Argumento sugerido pelo sistema e confirmado pelo usuário')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="font-semibold text-gray-700">Manual</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['manual'] || 'Argumento adicionado pelo usuário durante a revisão')}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="font-semibold text-gray-700">Removido</dt>
+                                        <dd class="text-gray-600 ml-4">${escapeHtml(glossario['removido'] || 'Argumento sugerido pelo sistema mas removido pelo usuário')}</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </div>
+
+                        <!-- Ordem das Categorias -->
+                        ${metadata.categorias_ordem && metadata.categorias_ordem.length > 0 ? `
+                            <div class="mb-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <i class="fas fa-sort-amount-down text-purple-500"></i>
+                                    <span class="text-sm font-semibold text-gray-700">Ordem das Seções na Peça</span>
+                                </div>
+                                <div class="flex flex-wrap gap-2 ml-6">
+                                    ${metadata.categorias_ordem.map((cat, i) => `
+                                        <span class="bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-2">
+                                            <span class="w-5 h-5 bg-purple-500 text-white rounded-full flex items-center justify-center text-xs font-bold">${i + 1}</span>
+                                            ${escapeHtml(cat)}
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="p-4 border-t border-gray-200 bg-gray-50 rounded-b-xl flex justify-end gap-2">
+                        <button onclick="document.getElementById('modal-curadoria-detalhes').remove()" class="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
+                            Fechar
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+        }
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!checkAuth()) return;
+            
+            inicializarFiltroAno();
+            atualizarInfoFiltro();
+            carregarDashboard();
+            carregarFeedbacks();
+            carregarModelosIA();
+        });
+    </script>
+</body>
+</html>
+>>>>>>> origin/main

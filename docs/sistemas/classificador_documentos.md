@@ -145,6 +145,14 @@ O visualizador PDF permite navegar pelas paginas do documento ao lado do resulta
 |--------|------|-----------|
 | POST | `/classificador/api/classificar-avulso` | Classificar documento (upload) |
 
+### Endpoints de Execucoes
+
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| GET | `/classificador/api/execucoes-em-andamento` | Lista execucoes em andamento/travadas com info de heartbeat |
+| GET | `/classificador/api/execucoes/{id}` | Obtem detalhes de uma execucao |
+| GET | `/classificador/api/execucoes/{id}/resultados` | Lista resultados de uma execucao |
+
 ### Endpoints de Exportacao
 
 | Metodo | Rota | Descricao |
@@ -152,6 +160,18 @@ O visualizador PDF permite navegar pelas paginas do documento ao lado do resulta
 | GET | `/classificador/api/execucoes/{id}/exportar/excel` | Exportar Excel |
 | GET | `/classificador/api/execucoes/{id}/exportar/csv` | Exportar CSV |
 | GET | `/classificador/api/execucoes/{id}/exportar/json` | Exportar JSON |
+
+### Endpoints de Recuperacao (ADR-0010)
+
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| GET | `/classificador/api/execucoes/{id}/status-detalhado` | Status com heartbeat, erros, rota origem |
+| GET | `/classificador/api/execucoes/{id}/erros` | Lista documentos com erro e detalhes |
+| GET | `/classificador/api/execucoes/{id}/retomar` | Retoma execucao de onde parou (SSE) |
+| GET | `/classificador/api/execucoes/{id}/reprocessar-erros` | Reprocessa apenas itens com erro (SSE) |
+| POST | `/classificador/api/execucoes/{id}/cancelar` | Cancela execucao em andamento ou travada |
+| DELETE | `/classificador/api/execucoes/{id}` | Arquiva (soft-delete) execucao finalizada |
+| POST | `/classificador/api/watchdog/verificar` | Executa verificacao manual do watchdog (admin) |
 
 ## F) Dados e Persistencia
 
@@ -239,10 +259,81 @@ pytest tests/classificador_documentos/ -v
 | `sistemas/classificador_documentos/models.py` | Modelos SQLAlchemy |
 | `sistemas/classificador_documentos/schemas.py` | Schemas Pydantic |
 | `sistemas/classificador_documentos/templates/index.html` | Frontend SPA |
+| `sistemas/classificador_documentos/watchdog.py` | Watchdog para deteccao de travamento |
 
-## J) Historico de Alteracoes
+## J) Recuperacao de Execucoes Travadas (ADR-0010)
+
+### J.1) Problema
+
+Execucoes de classificacao podem travar sem feedback (ex: parar em 80/2000 documentos). Causas:
+- Timeout na API OpenRouter
+- Erro nao tratado em documento especifico
+- Desconexao SSE do cliente
+- PDF corrompido causando crash no PyMuPDF
+
+### J.2) Solucao
+
+Sistema de deteccao automatica de travamento com recuperacao:
+
+| Componente | Descricao |
+|------------|-----------|
+| Heartbeat | Campo `ultimo_heartbeat` atualizado a cada documento processado |
+| Watchdog | Detecta execucoes sem heartbeat por > 5 minutos |
+| Status TRAVADO | Novo status na maquina de estados |
+| Status CANCELADO | Status para execucoes canceladas manualmente |
+| Retomada | Endpoint para continuar de onde parou (idempotente) |
+| Reprocessar erros | Endpoint para reprocessar apenas documentos com erro |
+| Cancelamento | Endpoint para cancelar execucoes em andamento ou travadas |
+| Arquivamento | Endpoint para ocultar execucoes finalizadas da lista |
+
+### J.3) Maquina de Estados
+
+```
+PENDENTE -> EM_ANDAMENTO -> CONCLUIDO
+               |     \          ^
+               v      \         |
+           TRAVADO ----+--------+
+               |    (retomar)
+               v
+             ERRO
+
+EM_ANDAMENTO/TRAVADO -> CANCELADO (via cancelamento manual)
+```
+
+### J.4) Campos Novos no Banco
+
+**execucoes_classificacao:**
+- `ultimo_heartbeat` (DateTime) - Atualizado a cada documento
+- `ultimo_codigo_processado` (String) - Codigo do ultimo documento
+- `tentativas_retry` (Integer) - Quantas vezes foi retomada
+- `max_retries` (Integer, default=3) - Limite de retomadas
+- `rota_origem` (String, default="/classificador/") - Rota que iniciou
+
+**resultados_classificacao:**
+- `erro_stack` (Text) - Stack trace para debug
+- `tentativas` (Integer) - Contador de tentativas
+- `ultimo_erro_em` (DateTime) - Timestamp do ultimo erro
+
+### J.5) Frontend
+
+- Timeout de 60s no EventSource detecta travamento
+- Alerta amarelo para travamento com botoes de recuperacao
+- Alerta vermelho para erros com opcao de reprocessar
+- Barra de progresso muda de cor (azul -> amarelo/vermelho)
+
+### J.6) Arquivos Relacionados
+
+| Arquivo | Descricao |
+|---------|-----------|
+| `sistemas/classificador_documentos/watchdog.py` | Watchdog para deteccao de travamento |
+| `docs/decisoes/ADR-0010-sistema-recuperacao-execucoes-travadas.md` | Decisao arquitetural |
+| `tests/classificador_documentos/test_watchdog.py` | Testes automatizados |
+
+## K) Historico de Alteracoes
 
 | Data | Alteracao |
 |------|-----------|
+| 2026-01 | Sistema de recuperacao de execucoes travadas (ADR-0010) |
+| 2026-01 | Limite de upload aumentado para 2.000 arquivos |
 | 2025-01 | Redesign completo: Lotes, TJ-MS, Teste Rapido com visualizador PDF |
 | 2025-01 | Campo `codigos_documento` nos prompts para pre-selecao de tipos |

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cumprimento de Sentenca (Beta) - Portal PGE-MS</title>
+    <link rel="icon" type="image/png" href="/logo/logo-pge.png">
+
+    <!-- Tailwind CDN (para classes utilitárias básicas) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+
+    <!-- Marked.js for Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                        },
+                        pge: {
+                            blue: '#1e3a5f',
+                            orange: '#e67e22'
+                        },
+                        beta: {
+                            50: '#faf5ff',
+                            100: '#f3e8ff',
+                            500: '#a855f7',
+                            600: '#9333ea',
+                            700: '#7c3aed'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Minimal base styles - most styles come from the TypeScript bundle */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Markdown rendering styles */
+        .markdown-body {
+            font-size: 15px;
+            line-height: 1.7;
+            color: #374151;
+        }
+        .markdown-body h1 { font-size: 1.5em; font-weight: 700; margin-top: 1.5em; margin-bottom: 0.5em; color: #111827; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.3em; }
+        .markdown-body h2 { font-size: 1.25em; font-weight: 600; margin-top: 1.25em; margin-bottom: 0.5em; color: #1f2937; }
+        .markdown-body h3 { font-size: 1.1em; font-weight: 600; margin-top: 1em; margin-bottom: 0.5em; color: #374151; }
+        .markdown-body p { margin-bottom: 1em; }
+        .markdown-body ul, .markdown-body ol { margin: 1em 0; padding-left: 1.5em; }
+        .markdown-body li { margin-bottom: 0.5em; }
+        .markdown-body blockquote { margin: 1em 0; padding: 0.75em 1em; border-left: 4px solid #a855f7; background: #faf5ff; border-radius: 0 8px 8px 0; }
+        .markdown-body code { background: #f3f4f6; padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.9em; }
+        .markdown-body pre { background: #1f2937; color: #f9fafb; padding: 1em; border-radius: 8px; overflow-x: auto; }
+        .markdown-body pre code { background: transparent; padding: 0; color: inherit; }
+
+        /* Loading state */
+        #app-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: #f8fafc;
+        }
+
+        .loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #e2e8f0;
+            border-top-color: #a855f7;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Hide loading when app is ready */
+        #app:not(:empty) + #app-loading {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- App Container -->
+    <div id="app"></div>
+
+    <!-- Loading State (shown while TypeScript app initializes) -->
+    <div id="app-loading">
+        <div>
+            <div class="loading-spinner"></div>
+            <p style="margin-top: 16px; color: #64748b; font-size: 14px;">Carregando...</p>
+        </div>
+    </div>
+
+    <!-- TypeScript Bundle -->
+    <script src="app.js"></script>
+</body>
+</html>

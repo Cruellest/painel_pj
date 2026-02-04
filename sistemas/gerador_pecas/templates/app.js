@@ -1,6 +1,6 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\sistemas\gerador_pecas\app.ts
-// Built at: 2026-01-24T19:56:06.920Z
+// Built at: 2026-01-30T21:41:45.439Z
 
 "use strict";
 (() => {
@@ -1738,6 +1738,50 @@
       };
       return labels[opcao || ""] || opcao || "Nao definido";
     }
+    // ============================================
+    // Modo Semi-Automatico (Curadoria)
+    // ============================================
+    async iniciarModoSemiAutomatico() {
+      const tipoPecaSelect = document.getElementById("tipo-peca");
+      const tipoPeca = tipoPecaSelect?.value;
+      if (!tipoPeca) {
+        this.mostrarErro("Selecione o tipo de peca antes de usar o modo semi-automatico.");
+        tipoPecaSelect?.focus();
+        return;
+      }
+      if (this.modoEntrada === "pdf") {
+        this.mostrarErro("O modo semi-automatico ainda nao suporta PDFs anexados. Use o modo CNJ.");
+        return;
+      }
+      const numeroCnjInput = document.getElementById("numero-cnj");
+      const numeroCnj = numeroCnjInput?.value;
+      if (!numeroCnj) {
+        this.mostrarErro("Informe o numero do processo.");
+        numeroCnjInput?.focus();
+        return;
+      }
+      if (this.requiresGroupSelection && !this.groupId) {
+        this.mostrarErro("Selecione o grupo de conteudo antes de usar o modo semi-automatico.");
+        return;
+      }
+      if (!this.groupId) {
+        this.mostrarErro("Nenhum grupo de conteudo disponivel.");
+        return;
+      }
+      if (typeof window.curadoria !== "undefined") {
+        await window.curadoria.iniciarModoSemiAutomatico(
+          numeroCnj,
+          tipoPeca,
+          this.groupId,
+          this.subcategoriaIds
+        );
+      } else {
+        this.mostrarErro("Modulo de curadoria nao carregado. Recarregue a pagina.");
+      }
+    }
+    getSubcategoriasIds() {
+      return this.subcategoriaIds;
+    }
     getToken() {
       return localStorage.getItem("access_token") || "";
     }
@@ -2217,7 +2261,7 @@
   var app;
   document.addEventListener("DOMContentLoaded", () => {
     app = new GeradorPecasApp();
-    window.app = app;  // Expor globalmente para handlers onclick
+    window.app = app;
   });
   window.toggleHistorico = toggleHistorico;
   window.fecharModalEditor = fecharModalEditor;

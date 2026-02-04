@@ -124,6 +124,45 @@ def _extrair_json_de_resumo_consolidado(resumo_consolidado: str) -> Dict[str, An
     return dados_consolidados
 
 
+def _identificar_fonte_verdade_por_prefixo(slug: str) -> Optional[str]:
+    """
+    Identifica a categoria fonte de verdade de uma variável pelo prefixo.
+
+    Variáveis com prefixo específico devem vir apenas do documento correspondente,
+    não de um OR de todos os documentos.
+
+    Returns:
+        Nome da categoria fonte de verdade (lowercase para matching), ou None se não tem fonte específica
+    """
+    PREFIXOS_FONTE_VERDADE = {
+        'peticao_inicial_': ['petição inicial', 'peticao inicial', 'inicial'],
+        'pareceres_': ['parecer', 'nat', 'natjus', 'parecer técnico'],
+        'laudo_': ['laudo', 'laudo médico', 'laudo pericial'],
+        'prescricao_': ['prescrição', 'prescricao', 'receita', 'receituário'],
+        'decisoes_': ['decisão', 'decisao', 'despacho decisório'],
+        'despacho_': ['despacho', 'despacho inicial', 'despacho liminar'],
+        'documento_': None,  # Sem fonte específica, usa qualquer documento
+    }
+
+    for prefixo, categorias in PREFIXOS_FONTE_VERDADE.items():
+        if slug.startswith(prefixo):
+            return categorias  # Retorna lista de categorias aceitas ou None
+
+    return None  # Sem fonte específica
+
+
+def _categoria_corresponde_fonte(categoria_doc: str, fontes_aceitas: List[str]) -> bool:
+    """Verifica se a categoria do documento corresponde a uma das fontes aceitas."""
+    if not categoria_doc or not fontes_aceitas:
+        return False
+
+    categoria_lower = categoria_doc.lower()
+    for fonte in fontes_aceitas:
+        if fonte.lower() in categoria_lower or categoria_lower in fonte.lower():
+            return True
+    return False
+
+
 def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, Any]:
     """
     Consolida dados extraídos dos resumos JSON dos documentos.
@@ -134,8 +173,10 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
     Se a extração dos documentos individuais falhar, tenta extrair
     do resumo_consolidado como fallback.
 
-    Regras de consolidação:
-    - Para booleanos: lógica OR (se qualquer documento tem True, resultado é True)
+    Regras de consolidação (CORRIGIDAS - respeitam fonte de verdade):
+    - Para variáveis com prefixo específico (peticao_inicial_, pareceres_, etc):
+      usa APENAS o valor do documento fonte de verdade correspondente
+    - Para booleanos sem fonte específica: lógica OR
     - Para listas: concatena valores únicos
     - Para strings/números: mantém o primeiro valor encontrado (ou lista se múltiplos)
 
@@ -221,16 +262,45 @@ def consolidar_dados_extracao(resultado_agente1: ResultadoAgente1) -> Dict[str, 
                 if slug.startswith('_'):  # Ignora campos internos/metadata
                     continue
 
+                # Verifica se a variável tem fonte de verdade específica
+                fontes_aceitas = _identificar_fonte_verdade_por_prefixo(slug)
+                categoria_doc = doc.categoria_nome or ''
+
+                # Se tem fonte de verdade e este documento NÃO é a fonte correta, ignora
+                if fontes_aceitas is not None and not _categoria_corresponde_fonte(categoria_doc, fontes_aceitas):
+                    # Log quando ignoramos valor de documento errado
+                    if slug not in dados_consolidados:
+                        # Ainda não temos valor - aceita mesmo assim (fallback)
+                        print(f"[EXTRAÇÃO] WARN: {slug} extraído de '{categoria_doc}' (fonte preferida: {fontes_aceitas}) - usando como fallback")
+                        dados_consolidados[slug] = valor
+                    else:
+                        # Já temos valor de fonte correta - ignora este
+                        print(f"[EXTRAÇÃO] IGNORANDO {slug}={valor} de '{categoria_doc}' (já tem valor da fonte correta)")
+                    continue
+
                 if slug not in dados_consolidados:
-                    # Primeira ocorrência
+                    # Primeira ocorrência (ou de fonte correta)
                     dados_consolidados[slug] = valor
+                    if fontes_aceitas is not None:
+                        print(f"[EXTRAÇÃO] {slug}={valor} de '{categoria_doc}' (fonte correta)")
                 else:
                     # Consolidação
                     valor_existente = dados_consolidados[slug]
 
-                    # Booleanos: lógica OR
+                    # Se este documento é fonte de verdade e o valor existente pode ser de outro lugar,
+                    # sobrescreve com o valor da fonte correta
+                    if fontes_aceitas is not None and _categoria_corresponde_fonte(categoria_doc, fontes_aceitas):
+                        if valor != valor_existente:
+                            print(f"[EXTRAÇÃO] SOBRESCREVENDO {slug}: {valor_existente} -> {valor} (fonte correta: '{categoria_doc}')")
+                        dados_consolidados[slug] = valor
+                        continue
+
+                    # Booleanos SEM fonte específica: lógica OR (comportamento original)
                     if isinstance(valor, bool) and isinstance(valor_existente, bool):
-                        dados_consolidados[slug] = valor_existente or valor
+                        novo_valor = valor_existente or valor
+                        if novo_valor != valor_existente:
+                            print(f"[EXTRAÇÃO] OR: {slug} {valor_existente} OR {valor} = {novo_valor}")
+                        dados_consolidados[slug] = novo_valor
                     # Listas: concatena valores únicos
                     elif isinstance(valor, list):
                         if isinstance(valor_existente, list):
@@ -680,6 +750,20 @@ class OrquestradorAgentes:
 
             # Consolida dados extraídos dos resumos JSON para avaliação determinística
             dados_extracao = consolidar_dados_extracao(resultado.agente1)
+
+            # VALIDADOR DESATIVADO - usar extração bruta da IA
+            # O validador causava falsos positivos ao corrigir variáveis baseado em
+            # termos encontrados fora de contexto (ex: "tratamento medicamentoso"
+            # interpretado como "pedido de medicamento")
+            # Ref: investigação processo 08053502820258120008
+            #
+            # from sistemas.gerador_pecas.services_extraction_validator import validar_extracao
+            # texto_pedidos = dados_extracao.get('peticao_inicial_pedidos', '')
+            # dados_extracao = validar_extracao(
+            #     dados_extracao,
+            #     texto_pedidos,
+            #     texto_completo=resumo_consolidado
+            # )
 
             resultado.agente2 = await self._executar_agente2(
                 resumo_consolidado,

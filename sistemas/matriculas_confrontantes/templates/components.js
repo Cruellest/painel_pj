@@ -1,6 +1,6 @@
 // Generated from TypeScript - DO NOT EDIT DIRECTLY
 // Source: src\sistemas\matriculas_confrontantes\components.ts
-// Built at: 2026-01-24T19:56:06.799Z
+// Built at: 2026-01-30T21:41:45.467Z
 
 "use strict";
 (() => {

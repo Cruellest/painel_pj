@@ -146,7 +146,7 @@ texto_extraido = Column(Text, nullable=True)  # Cache do texto
 |  |                                              |   |
 |  |     ou clique para selecionar               |   |
 |  |                                              |   |
-|  |     PDF, TXT ou ZIP (max 500 arquivos)       |   |
+|  |     PDF, TXT ou ZIP (max 2000 arquivos)      |   |
 |  |                                              |   |
 |  +----------------------------------------------+   |
 |                                                      |

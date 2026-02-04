@@ -248,8 +248,12 @@ class PromptSubgroupBase(BaseModel):
     order: int = 0
 
 
-class PromptSubgroupCreate(PromptSubgroupBase):
-    pass
+class PromptSubgroupCreate(BaseModel):
+    """Schema para criacao de subgrupo (group_id vem da URL, nao do body)."""
+    name: str
+    slug: str
+    active: bool = True
+    order: int = 0
 
 
 class PromptSubgroupUpdate(BaseModel):
@@ -376,7 +380,7 @@ async def listar_modulos(
         )
 
     if subgroup_id:
-        # Subgrupo só filtra módulos de conteúdo
+        # Subgrupo operacional - filtra apenas módulos de conteúdo
         query = query.filter(
             (PromptModulo.subgroup_id == subgroup_id) |
             (PromptModulo.tipo.in_(["peca", "base"]))
@@ -561,14 +565,25 @@ async def resumo_configuracao_tipos_peca(
     total_modulos = query_conteudo.count()
 
     # Query única para contar ativos/inativos por tipo_peca (evita N+1)
-    contagens = db.query(
+    # Importante: filtra por group_id quando especificado para manter consistência
+    # com total_modulos que também é filtrado
+    query_contagens = db.query(
         ModuloTipoPeca.tipo_peca,
         func.sum(case((ModuloTipoPeca.ativo == True, 1), else_=0)).label('ativos'),
         func.sum(case((ModuloTipoPeca.ativo == False, 1), else_=0)).label('inativos')
-    ).group_by(ModuloTipoPeca.tipo_peca).all()
+    ).join(
+        PromptModulo,
+        ModuloTipoPeca.modulo_id == PromptModulo.id
+    ).filter(
+        PromptModulo.tipo == "conteudo",
+        PromptModulo.ativo == True
+    )
+    if group_id:
+        query_contagens = query_contagens.filter(PromptModulo.group_id == group_id)
+    contagens = query_contagens.group_by(ModuloTipoPeca.tipo_peca).all()
 
     # Mapeia resultados
-    contagens_map = {c.tipo_peca: {'ativos': c.ativos or 0, 'inativos': c.inativos or 0} for c in contagens}
+    contagens_map = {c.tipo_peca: {'ativos': int(c.ativos or 0), 'inativos': int(c.inativos or 0)} for c in contagens}
 
     resultado = []
     for tipo in tipos_peca:
@@ -682,6 +697,12 @@ async def listar_subgrupos(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Lista subgrupos operacionais de um grupo.
+
+    Subgrupos sao recortes operacionais (ex: Conhecimento, Cumprimento).
+    NAO confundir com Categorias (Preliminar, Merito, Eventualidade).
+    """
     query = db.query(PromptSubgroup).filter(PromptSubgroup.group_id == group_id)
     if apenas_ativos:
         query = query.filter(PromptSubgroup.active == True)
@@ -696,6 +717,12 @@ async def criar_subgrupo(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Cria um subgrupo operacional para um grupo.
+
+    Subgrupos sao recortes operacionais (ex: Conhecimento, Cumprimento).
+    NAO use para categorias juridicas (Preliminar, Merito) - use o campo 'categoria' do modulo.
+    """
     verificar_permissao_prompts(current_user, "criar")
 
     grupo = db.query(PromptGroup).filter(PromptGroup.id == group_id).first()
@@ -733,6 +760,7 @@ async def atualizar_subgrupo(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
+    """Atualiza um subgrupo operacional."""
     verificar_permissao_prompts(current_user, "editar")
 
     subgrupo = db.query(PromptSubgroup).filter(PromptSubgroup.id == subgroup_id).first()
@@ -1714,7 +1742,12 @@ def _obter_ou_criar_grupo(db: Session, grupo_slug: str, grupo_name: str = None) 
 
 
 def _obter_ou_criar_subgrupo(db: Session, grupo: PromptGroup, subgrupo_slug: str, subgrupo_name: str = None) -> PromptSubgroup:
-    """Obtém um subgrupo existente ou cria um novo se não existir."""
+    """
+    Obtém um subgrupo existente ou cria um novo se não existir.
+
+    Subgrupos sao recortes operacionais (ex: Conhecimento, Cumprimento).
+    NAO confundir com Categorias (Preliminar, Merito, Eventualidade).
+    """
     slug_normalizado = str(subgrupo_slug).lower().strip()
     subgrupo = db.query(PromptSubgroup).filter(
         PromptSubgroup.group_id == grupo.id,
@@ -1773,6 +1806,11 @@ async def importar_modulos(
     Importa módulos de prompts a partir de arquivo JSON.
     Cria automaticamente grupos, subgrupos e subcategorias que não existirem.
 
+    IMPORTANTE:
+    - 'categoria': agrupamento juridico (Preliminar, Merito, Eventualidade)
+    - 'subgroup_slug': recorte operacional (Conhecimento, Cumprimento)
+    NAO confundir esses conceitos!
+
     Formato esperado do JSON (versão 2.0):
     {
         "modulos": [
@@ -1782,8 +1820,8 @@ async def importar_modulos(
                 "subcategoria": "Competência",
                 "group_slug": "ps",
                 "group_name": "Prestação de Saúde",
-                "subgroup_slug": "medicamentos",
-                "subgroup_name": "Medicamentos",
+                "subgroup_slug": "conhecimento",
+                "subgroup_name": "Conhecimento",
                 "subcategorias_associadas": [
                     {"slug": "alto_custo", "nome": "Alto Custo"}
                 ],
@@ -1886,7 +1924,7 @@ async def importar_modulos(
                     erros.append(f"Módulo {i+1} ({nome}): não foi possível obter/criar grupo")
                     continue
 
-                # Obtém ou cria o subgrupo (se informado)
+                # Obtém ou cria o subgrupo operacional (se informado)
                 if subgrupo_slug and grupo:
                     cache_key = f"{grupo.id}:{subgrupo_slug.lower()}"
                     if cache_key in subgrupos_cache:
