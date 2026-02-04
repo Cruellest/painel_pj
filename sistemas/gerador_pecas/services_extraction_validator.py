@@ -186,21 +186,26 @@ class ExtractionValidator:
         dados: Dict[str, Any],
         texto_lower: str
     ) -> Optional[str]:
-        """Valida variável de medicamentos."""
-        var = 'peticao_inicial_pedido_medicamento'
-        valor_atual = dados.get(var)
+        """
+        Valida variável de medicamentos.
 
-        termo_encontrado = self._encontrar_termo(texto_lower, TERMOS_MEDICAMENTOS)
+        IMPORTANTE: Esta validação foi DESATIVADA pois causava falsos positivos.
 
-        if termo_encontrado and valor_atual is False:
-            alerta = (
-                f"{var}: False mas texto menciona '{termo_encontrado}' "
-                f"-> corrigido para True"
-            )
-            if self.auto_corrigir:
-                dados[var] = True
-            return alerta
+        Problema identificado:
+        - Texto menciona "tratamento medicamentoso" (paciente usa medicamentos)
+        - Validador interpretava como "pedido de medicamento"
+        - Corrigia erroneamente False -> True
 
+        Exemplo real (processo 08053502820258120008):
+        - Pedido era de CIRURGIA (DBS para Parkinson)
+        - Texto mencionava "tratamento medicamentoso rigoroso (levodopa)"
+        - Validador forçou pedido_medicamento=True incorretamente
+
+        A extração por IA é mais confiável para esta variável pois entende
+        o CONTEXTO (pedido vs histórico de tratamento).
+        """
+        # VALIDAÇÃO DESATIVADA - mantida apenas para documentação
+        # A IA já extrai corretamente baseado no contexto
         return None
 
     def _validar_cirurgia(

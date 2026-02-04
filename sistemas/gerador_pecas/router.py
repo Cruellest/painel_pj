@@ -2416,14 +2416,15 @@ async def curation_preview(
         # Consolida dados extraidos
         dados_extracao = consolidar_dados_extracao(resultado_agente1)
 
-        # Valida e corrige inconsistencias
-        from sistemas.gerador_pecas.services_extraction_validator import validar_extracao
-        texto_pedidos = dados_extracao.get('peticao_inicial_pedidos', '')
-        dados_extracao = validar_extracao(
-            dados_extracao,
-            texto_pedidos,
-            texto_completo=resultado_agente1.resumo_consolidado
-        )
+        # VALIDADOR DESATIVADO - usar extração bruta da IA
+        # Ref: investigação processo 08053502820258120008
+        # from sistemas.gerador_pecas.services_extraction_validator import validar_extracao
+        # texto_pedidos = dados_extracao.get('peticao_inicial_pedidos', '')
+        # dados_extracao = validar_extracao(
+        #     dados_extracao,
+        #     texto_pedidos,
+        #     texto_completo=resultado_agente1.resumo_consolidado
+        # )
 
         # ====== AGENTE 2: Detector de Modulos ======
         print(f"[CURADORIA] Iniciando Agente 2...")
