@@ -175,8 +175,6 @@ class SafeRateLimitMiddleware(BaseHTTPMiddleware):
     """
     
     async def dispatch(self, request: Request, call_next):
-        # Substitui o handler padrão do slowapi no limiter
-        # para evitar o erro de AttributeError com ValueError
         original_handler = None
         if hasattr(limiter, '_default_handler'):
             original_handler = limiter._default_handler
@@ -231,7 +229,7 @@ class SafeRateLimitMiddleware(BaseHTTPMiddleware):
             # Rate limit exceedido - usa handler customizado
             return await rate_limit_exceeded_handler(request, e)
         finally:
-            # Restaura o handler original (se havia)
+            # Restaura o handler original
             if original_handler is not None and hasattr(limiter, '_default_handler'):
                 limiter._default_handler = original_handler
 
