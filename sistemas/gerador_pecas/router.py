@@ -9,7 +9,7 @@ import json
 import uuid
 import asyncio
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File, Form, status
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File, Form, status, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, AsyncGenerator
@@ -26,6 +26,7 @@ from services.performance_tracker import (
     create_tracker, get_tracker, mark, record_chunk, PerformanceTracker
 )
 from services.config_cache import config_cache
+from utils.rate_limit import limiter, limit_ai_request, LIMITS, get_user_identifier, limit_upload, limit_export, limit_default
 from admin.services_request_perf import log_request_perf
 from sistemas.gerador_pecas.models import GeracaoPeca, FeedbackPeca, VersaoPeca
 from sistemas.gerador_pecas.services import GeradorPecasService
@@ -188,7 +189,9 @@ class BuscarArgumentosRequest(BaseModel):
 
 
 @router.get("/tipos-peca")
+@limit_default
 async def listar_tipos_peca(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -234,7 +237,9 @@ async def listar_tipos_peca(
 
 
 @router.post("/buscar-argumentos")
+@limit_ai_request
 async def buscar_argumentos(
+    request: Request,
     req: BuscarArgumentosRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -280,7 +285,9 @@ async def buscar_argumentos(
 
 
 @router.get("/grupos-disponiveis")
+@limit_default
 async def listar_grupos_disponiveis(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -300,7 +307,9 @@ async def listar_grupos_disponiveis(
 
 
 @router.get("/grupos/{group_id}/subgrupos")
+@limit_default
 async def listar_subgrupos_por_grupo(
+    request: Request,
     group_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -326,7 +335,9 @@ async def listar_subgrupos_por_grupo(
 
 
 @router.post("/processar")
+@limit_ai_request
 async def processar_processo(
+    request: Request,
     req: ProcessarProcessoRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -397,7 +408,9 @@ async def processar_processo(
 
 
 @router.post("/processar-stream")
+@limit_ai_request
 async def processar_processo_stream(
+    request: Request,
     req: ProcessarProcessoRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -827,7 +840,9 @@ def _extrair_texto_pdf(pdf_bytes: bytes) -> str:
 
 
 @router.post("/processar-pdfs-stream")
+@limit_upload
 async def processar_pdfs_stream(
+    request: Request,
     arquivos: List[UploadFile] = File(..., description="Arquivos PDF a serem analisados"),
     tipo_peca: Optional[str] = Form(None, description="Tipo de peça a gerar"),
     observacao_usuario: Optional[str] = Form(None, description="Observações do usuário para a IA"),
@@ -1435,7 +1450,9 @@ def _montar_resumo_pdfs(documentos: List[Dict]) -> str:
 
 
 @router.post("/editar-minuta")
+@limit_ai_request
 async def editar_minuta(
+    request: Request,
     req: EditarMinutaRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1506,7 +1523,9 @@ async def editar_minuta(
 
 
 @router.post("/editar-minuta-stream")
+@limit_ai_request
 async def editar_minuta_stream(
+    request: Request,
     req: EditarMinutaRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1590,7 +1609,9 @@ async def editar_minuta_stream(
 
 
 @router.post("/exportar-docx")
+@limit_export
 async def exportar_docx(
+    request: Request,
     req: ExportarDocxRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1665,7 +1686,9 @@ async def exportar_docx(
 
 
 @router.get("/download/{filename}")
+@limit_export
 async def download_documento(
+    request: Request,
     filename: str,
     current_user: User = Depends(get_current_user_from_token_or_query)
 ):
@@ -1697,7 +1720,9 @@ async def download_documento(
 
 
 @router.get("/historico")
+@limit_default
 async def listar_historico(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -1723,7 +1748,9 @@ async def listar_historico(
 
 
 @router.delete("/historico/{geracao_id}")
+@limit_default
 async def excluir_historico(
+    request: Request,
     geracao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1757,7 +1784,9 @@ async def excluir_historico(
 
 
 @router.get("/historico/{geracao_id}")
+@limit_default
 async def obter_geracao(
+    request: Request,
     geracao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1812,7 +1841,9 @@ class SalvarMinutaComVersaoRequest(BaseModel):
 
 
 @router.put("/historico/{geracao_id}")
+@limit_default
 async def salvar_geracao(
+    request: Request,
     geracao_id: int,
     req: SalvarMinutaComVersaoRequest,
     current_user: User = Depends(get_current_active_user),
@@ -1899,7 +1930,9 @@ async def salvar_geracao(
 # ============================================
 
 @router.get("/historico/{geracao_id}/versoes")
+@limit_default
 async def listar_versoes(
+    request: Request,
     geracao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1932,7 +1965,9 @@ async def listar_versoes(
 
 
 @router.get("/historico/{geracao_id}/versoes/comparar")
+@limit_default
 async def comparar_versoes_endpoint(
+    request: Request,
     geracao_id: int,
     v1: int = Query(..., description="ID da primeira versão"),
     v2: int = Query(..., description="ID da segunda versão"),
@@ -1965,7 +2000,9 @@ async def comparar_versoes_endpoint(
 
 
 @router.get("/historico/{geracao_id}/versoes/{versao_id}")
+@limit_default
 async def obter_versao(
+    request: Request,
     geracao_id: int,
     versao_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -1997,7 +2034,9 @@ async def obter_versao(
 
 
 @router.post("/historico/{geracao_id}/versoes/{versao_id}/restaurar")
+@limit_default
 async def restaurar_versao_endpoint(
+    request: Request,
     geracao_id: int,
     versao_id: int,
     current_user: User = Depends(get_current_active_user),
@@ -2042,7 +2081,9 @@ async def restaurar_versao_endpoint(
 # ============================================
 
 @router.post("/feedback")
+@limit_default
 async def enviar_feedback(
+    request: Request,
     req: FeedbackRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -2088,7 +2129,9 @@ async def enviar_feedback(
 
 
 @router.get("/feedback/{geracao_id}")
+@limit_default
 async def obter_feedback(
+    request: Request,
     geracao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -2164,7 +2207,9 @@ def _agrupar_documentos_por_descricao(docs: List) -> List:
 
 
 @router.get("/autos/{numero_cnj}")
+@limit_default
 async def listar_documentos_processo(
+    request: Request,
     numero_cnj: str,
     token: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user_from_token_or_query),
@@ -2246,7 +2291,9 @@ async def listar_documentos_processo(
 
 
 @router.get("/autos/{numero_cnj}/documento/{doc_id}")
+@limit_export
 async def baixar_documento_processo(
+    request: Request,
     numero_cnj: str,
     doc_id: str,
     ids: Optional[str] = Query(None, description="Lista de IDs separados por vírgula para merge"),
@@ -2383,7 +2430,9 @@ class CurationGenerateRequest(BaseModel):
 
 
 @router.post("/curadoria/preview")
+@limit_ai_request
 async def curation_preview(
+    request: Request,
     req: CurationPreviewRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -2513,7 +2562,9 @@ async def curation_preview(
 
 
 @router.post("/curadoria/buscar")
+@limit_ai_request
 async def curation_search(
+    request: Request,
     req: CurationSearchRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -2560,7 +2611,9 @@ async def curation_search(
 
 
 @router.post("/curadoria/gerar-stream")
+@limit_ai_request
 async def curation_generate_stream(
+    request: Request,
     req: CurationGenerateRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)

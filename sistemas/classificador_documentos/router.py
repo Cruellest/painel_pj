@@ -31,6 +31,7 @@ from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
 from utils.timezone import to_iso_utc, get_utc_now
+from utils.rate_limit import limiter, limit_ai_request, LIMITS, get_user_identifier, limit_upload, limit_default
 
 from .models import (
     ProjetoClassificacao,
@@ -84,7 +85,8 @@ def sanitizar_nome_arquivo(nome: str) -> str:
 # ============================================
 
 @router.get("/status", response_model=StatusAPIResponse)
-async def verificar_status_api():
+@limit_default
+async def verificar_status_api(request: Request):
     """Verifica status da API OpenRouter"""
     service = get_openrouter_service()
     disponivel = await service.verificar_disponibilidade()
@@ -107,7 +109,9 @@ async def verificar_status_api():
 # ============================================
 
 @router.get("/prompts")
+@limit_default
 async def listar_prompts(
+    request: Request,
     apenas_ativos: bool = True,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -131,7 +135,9 @@ async def listar_prompts(
 
 
 @router.post("/prompts")
+@limit_default
 async def criar_prompt(
+    request: Request,
     req: PromptCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -152,7 +158,9 @@ async def criar_prompt(
 
 
 @router.get("/prompts/{prompt_id}")
+@limit_default
 async def obter_prompt(
+    request: Request,
     prompt_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -175,7 +183,9 @@ async def obter_prompt(
 
 
 @router.put("/prompts/{prompt_id}")
+@limit_default
 async def atualizar_prompt(
+    request: Request,
     prompt_id: int,
     req: PromptUpdate,
     current_user: User = Depends(get_current_active_user),
@@ -200,7 +210,9 @@ async def atualizar_prompt(
 
 
 @router.delete("/prompts/{prompt_id}")
+@limit_default
 async def deletar_prompt(
+    request: Request,
     prompt_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -218,7 +230,9 @@ async def deletar_prompt(
 # ============================================
 
 @router.get("/projetos")
+@limit_default
 async def listar_projetos(
+    request: Request,
     apenas_ativos: bool = True,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -248,7 +262,9 @@ async def listar_projetos(
 
 
 @router.post("/projetos")
+@limit_default
 async def criar_projeto(
+    request: Request,
     req: ProjetoCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -273,7 +289,9 @@ async def criar_projeto(
 
 
 @router.get("/projetos/{projeto_id}")
+@limit_default
 async def obter_projeto(
+    request: Request,
     projeto_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -314,7 +332,9 @@ async def obter_projeto(
 
 
 @router.put("/projetos/{projeto_id}")
+@limit_default
 async def atualizar_projeto(
+    request: Request,
     projeto_id: int,
     req: ProjetoUpdate,
     current_user: User = Depends(get_current_active_user),
@@ -340,7 +360,9 @@ async def atualizar_projeto(
 
 
 @router.delete("/projetos/{projeto_id}")
+@limit_default
 async def deletar_projeto(
+    request: Request,
     projeto_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -362,7 +384,9 @@ async def deletar_projeto(
 # ============================================
 
 @router.post("/projetos/{projeto_id}/codigos")
+@limit_default
 async def adicionar_codigos(
+    request: Request,
     projeto_id: int,
     req: CodigoDocumentoBulkCreate,
     current_user: User = Depends(get_current_active_user),
@@ -389,7 +413,9 @@ async def adicionar_codigos(
 
 
 @router.get("/projetos/{projeto_id}/codigos")
+@limit_default
 async def listar_codigos(
+    request: Request,
     projeto_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -418,7 +444,9 @@ async def listar_codigos(
 
 
 @router.delete("/codigos/{codigo_id}")
+@limit_default
 async def remover_codigo(
+    request: Request,
     codigo_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -435,7 +463,9 @@ async def remover_codigo(
 # ============================================
 
 @router.get("/projetos/{projeto_id}/executar")
+@limit_ai_request
 async def executar_projeto(
+    request: Request,
     projeto_id: int,
     codigos_ids: Optional[List[int]] = Query(None),
     current_user: User = Depends(get_current_active_user),
@@ -488,7 +518,9 @@ async def executar_projeto(
 
 
 @router.get("/projetos/{projeto_id}/execucoes")
+@limit_default
 async def listar_execucoes(
+    request: Request,
     projeto_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -521,7 +553,9 @@ async def listar_execucoes(
 
 
 @router.get("/execucoes/{execucao_id}")
+@limit_default
 async def obter_execucao(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -559,7 +593,9 @@ async def obter_execucao(
 # ============================================
 
 @router.get("/execucoes-em-andamento")
+@limit_default
 async def listar_execucoes_em_andamento(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -614,7 +650,9 @@ async def listar_execucoes_em_andamento(
 # ============================================
 
 @router.get("/execucoes/{execucao_id}/status-detalhado")
+@limit_default
 async def obter_status_detalhado(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -645,7 +683,9 @@ async def obter_status_detalhado(
 
 
 @router.get("/execucoes/{execucao_id}/erros")
+@limit_default
 async def listar_erros_execucao(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -677,7 +717,9 @@ async def listar_erros_execucao(
 
 
 @router.get("/execucoes/{execucao_id}/retomar")
+@limit_ai_request
 async def retomar_execucao(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -729,7 +771,9 @@ async def retomar_execucao(
 
 
 @router.get("/execucoes/{execucao_id}/reprocessar-erros")
+@limit_ai_request
 async def reprocessar_erros(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -781,7 +825,9 @@ async def reprocessar_erros(
 
 
 @router.post("/watchdog/verificar")
+@limit_default
 async def executar_verificacao_watchdog(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -805,7 +851,9 @@ async def executar_verificacao_watchdog(
 
 
 @router.post("/execucoes/{execucao_id}/cancelar")
+@limit_default
 async def cancelar_execucao(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -853,7 +901,9 @@ async def cancelar_execucao(
 
 
 @router.delete("/execucoes/{execucao_id}")
+@limit_default
 async def arquivar_execucao(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -904,7 +954,9 @@ async def arquivar_execucao(
 # ============================================
 
 @router.get("/execucoes/{execucao_id}/resultados")
+@limit_default
 async def listar_resultados(
+    request: Request,
     execucao_id: int,
     categoria: Optional[str] = None,
     confianca: Optional[str] = None,
@@ -955,7 +1007,9 @@ async def listar_resultados(
 # ============================================
 
 @router.get("/execucoes/{execucao_id}/exportar/excel")
+@limit_default
 async def exportar_excel(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -988,7 +1042,9 @@ async def exportar_excel(
 
 
 @router.get("/execucoes/{execucao_id}/exportar/csv")
+@limit_default
 async def exportar_csv(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1020,7 +1076,9 @@ async def exportar_csv(
 
 
 @router.get("/execucoes/{execucao_id}/exportar/json")
+@limit_default
 async def exportar_json(
+    request: Request,
     execucao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1056,7 +1114,9 @@ async def exportar_json(
 # ============================================
 
 @router.post("/classificar-avulso")
+@limit_ai_request
 async def classificar_documento_avulso(
+    request: Request,
     arquivo: UploadFile = File(...),
     prompt_id: Optional[int] = Form(None),
     prompt_texto: Optional[str] = Form(None),
@@ -1137,7 +1197,9 @@ class AdicionarCodigosTJRequest(BaseModel):
 
 
 @router.post("/tjms/consultar-processo")
+@limit_default
 async def consultar_processo_tjms(
+    request: Request,
     req: ConsultaProcessoRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1158,7 +1220,9 @@ async def consultar_processo_tjms(
 
 
 @router.post("/tjms/baixar-documento")
+@limit_default
 async def baixar_documento_tjms(
+    request: Request,
     req: BaixarDocumentoTJRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1183,7 +1247,9 @@ async def baixar_documento_tjms(
 
 
 @router.post("/projetos/{projeto_id}/codigos-tjms")
+@limit_default
 async def adicionar_codigos_tjms(
+    request: Request,
     projeto_id: int,
     req: AdicionarCodigosTJRequest,
     current_user: User = Depends(get_current_active_user),
@@ -1240,6 +1306,7 @@ class ExecutarLoteSincronoRequest(BaseModel):
 
 
 @router.post("/lotes/{lote_id}/upload")
+@limit_upload
 async def upload_arquivos_lote(
     lote_id: int,
     request: Request,
@@ -1346,7 +1413,9 @@ async def upload_arquivos_lote(
 
 
 @router.post("/lotes/{lote_id}/tjms-lote")
+@limit_upload
 async def importar_tjms_lote(
+    request: Request,
     lote_id: int,
     req: TJMSLoteRequest,
     current_user: User = Depends(get_current_active_user),
@@ -1405,7 +1474,9 @@ async def importar_tjms_lote(
 
 
 @router.get("/lotes/{lote_id}/executar-sincrono")
+@limit_ai_request
 async def executar_lote_sincrono(
+    request: Request,
     lote_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)

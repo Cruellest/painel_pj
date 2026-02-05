@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -23,6 +23,7 @@ from utils.timezone import to_iso_utc, now_utc
 from auth.dependencies import get_current_active_user, get_current_user_from_token_or_query
 from auth.models import User
 from utils.security_sanitizer import validate_file_signature # SECURITY: Magic numbers
+from utils.rate_limit import limit_ai_request, limit_upload, limit_export, limit_default
 from config import UPLOAD_FOLDER, ALLOWED_EXTENSIONS, DEFAULT_MODEL, FULL_REPORT_MODEL
 
 from sistemas.matriculas_confrontantes.models import Analise, Registro, LogSistema, FeedbackMatricula, GrupoAnalise, ArquivoUpload
@@ -108,7 +109,9 @@ def add_log(db: Session, message: str, status: str = "info"):
 # ============================================
 
 @router.get("/files", response_model=List[FileInfo])
+@limit_default
 async def list_files(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -146,7 +149,9 @@ async def list_files(
 
 
 @router.get("/files/{file_id}/view")
+@limit_export
 async def view_file(
+    request: Request,
     file_id: str,
     current_user: User = Depends(get_current_user_from_token_or_query),
     db: Session = Depends(get_db)
@@ -171,7 +176,9 @@ async def view_file(
 
 
 @router.get("/files/{file_id}/content")
+@limit_export
 async def get_file_content(
+    request: Request,
     file_id: str,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -203,7 +210,9 @@ async def get_file_content(
 
 
 @router.get("/files/check-duplicate/{filename}")
+@limit_default
 async def check_duplicate_file(
+    request: Request,
     filename: str,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -228,7 +237,9 @@ async def check_duplicate_file(
 
 
 @router.post("/files/upload", response_model=FileUploadResponse)
+@limit_upload
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
@@ -328,7 +339,9 @@ async def upload_file(
 
 
 @router.delete("/files/{file_id}")
+@limit_default
 async def delete_file(
+    request: Request,
     file_id: str,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -369,7 +382,9 @@ async def delete_file(
 # ============================================
 
 @router.get("/analyses", response_model=List[AnaliseResponse])
+@limit_default
 async def list_analyses(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -421,7 +436,9 @@ async def list_analyses(
 
 
 @router.post("/analisar/{file_id}")
+@limit_ai_request
 async def analisar_documento(
+    request: Request,
     file_id: str,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
@@ -480,8 +497,10 @@ async def analisar_documento(
 
 
 @router.post("/analisar-lote")
+@limit_ai_request
 async def analisar_lote(
-    request: AnaliseLoteRequest,
+    request: Request,
+    lote_request: AnaliseLoteRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -489,12 +508,12 @@ async def analisar_lote(
     """Inicia análise conjunta de múltiplos documentos"""
     from admin.models import ConfiguracaoIA
     
-    if not request.file_ids or len(request.file_ids) == 0:
+    if not lote_request.file_ids or len(lote_request.file_ids) == 0:
         raise HTTPException(status_code=400, detail="Nenhum arquivo selecionado")
     
     # Verifica se todos os arquivos existem
     file_paths = []
-    for file_id in request.file_ids:
+    for file_id in lote_request.file_ids:
         filepath = UPLOAD_FOLDER / file_id
         if not filepath.exists():
             raise HTTPException(status_code=404, detail=f"Arquivo não encontrado: {file_id}")
@@ -516,7 +535,7 @@ async def analisar_lote(
     
     # Cria grupo de análise
     grupo = GrupoAnalise(
-        nome=request.nome_grupo or f"Análise de {len(request.file_ids)} documentos",
+        nome=lote_request.nome_grupo or f"Análise de {len(lote_request.file_ids)} documentos",
         status="processando",
         usuario_id=current_user.id
     )
@@ -525,32 +544,34 @@ async def analisar_lote(
     db.refresh(grupo)
     
     # Marca arquivos como em processamento
-    for file_id in request.file_ids:
+    for file_id in lote_request.file_ids:
         state.processing[file_id] = True
     
-    add_log(db, f"Iniciando análise em lote: {len(request.file_ids)} arquivos (grupo {grupo.id})", "info")
+    add_log(db, f"Iniciando análise em lote: {len(lote_request.file_ids)} arquivos (grupo {grupo.id})", "info")
     
     # Executa análise em background
     background_tasks.add_task(
         run_batch_analysis_task,
         grupo.id,
-        request.file_ids,
+        lote_request.file_ids,
         file_paths,
         state.model,
         api_key,
         current_user.id,
-        request.matricula_principal
+        lote_request.matricula_principal
     )
     
     return {
         "success": True, 
-        "message": f"Análise em lote iniciada com {len(request.file_ids)} arquivos",
+        "message": f"Análise em lote iniciada com {len(lote_request.file_ids)} arquivos",
         "grupo_id": grupo.id
     }
 
 
 @router.get("/grupo/{grupo_id}/status")
+@limit_default
 async def status_grupo(
+    request: Request,
     grupo_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -575,7 +596,9 @@ async def status_grupo(
 
 
 @router.get("/grupo/{grupo_id}/resultado")
+@limit_default
 async def resultado_grupo(
+    request: Request,
     grupo_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -887,7 +910,9 @@ def run_analysis_task(file_id: str, file_path: str, model: str, api_key: str, us
 
 
 @router.get("/analisar/{file_id}/status", response_model=AnaliseStatusResponse)
+@limit_default
 async def status_analise(
+    request: Request,
     file_id: str,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -904,7 +929,9 @@ async def status_analise(
 
 
 @router.get("/resultado/{file_id}")
+@limit_default
 async def get_resultado(
+    request: Request,
     file_id: str,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -937,7 +964,9 @@ async def get_resultado(
 # ============================================
 
 @router.get("/registros", response_model=List[RegistroResponse])
+@limit_default
 async def list_registros(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -955,7 +984,9 @@ async def list_registros(
 
 
 @router.post("/registros", response_model=RegistroResponse, status_code=201)
+@limit_default
 async def create_registro(
+    request: Request,
     registro_data: RegistroCreate,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -982,7 +1013,9 @@ async def create_registro(
 
 
 @router.get("/registros/{registro_id}", response_model=RegistroResponse)
+@limit_default
 async def get_registro(
+    request: Request,
     registro_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1009,7 +1042,9 @@ async def get_registro(
 
 
 @router.put("/registros/{registro_id}", response_model=RegistroResponse)
+@limit_default
 async def update_registro(
+    request: Request,
     registro_id: int,
     registro_data: RegistroUpdate,
     current_user: User = Depends(get_current_active_user),
@@ -1037,7 +1072,9 @@ async def update_registro(
 
 
 @router.delete("/registros/{registro_id}")
+@limit_default
 async def delete_registro(
+    request: Request,
     registro_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1062,7 +1099,9 @@ async def delete_registro(
 # ============================================
 
 @router.get("/config", response_model=ConfigResponse)
+@limit_default
 async def get_config(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -1097,7 +1136,9 @@ async def get_config(
 # ============================================
 
 @router.get("/logs", response_model=List[LogEntry])
+@limit_default
 async def get_logs(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -1110,7 +1151,9 @@ async def get_logs(
 
 
 @router.delete("/logs")
+@limit_default
 async def clear_logs(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -1128,7 +1171,9 @@ async def clear_logs(
 # ============================================
 
 @router.post("/relatorio/gerar", response_model=RelatorioResponse)
+@limit_ai_request
 async def gerar_relatorio(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -1236,7 +1281,9 @@ async def gerar_relatorio(
 
 
 @router.get("/relatorio/download")
+@limit_export
 async def download_relatorio_docx(
+    request: Request,
     analise_id: Optional[int] = None,
     file_id: Optional[str] = None,
     current_user: User = Depends(get_current_active_user),
@@ -1397,7 +1444,9 @@ async def download_relatorio_docx(
 # ============================================
 
 @router.post("/feedback")
+@limit_default
 async def enviar_feedback_matricula(
+    request: Request,
     req: FeedbackMatriculaRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1446,7 +1495,9 @@ async def enviar_feedback_matricula(
 
 
 @router.get("/feedback/{analise_id}")
+@limit_default
 async def obter_feedback_matricula(
+    request: Request,
     analise_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
