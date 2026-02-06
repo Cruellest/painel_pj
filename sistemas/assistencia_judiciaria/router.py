@@ -9,7 +9,7 @@ import re
 import json
 import tempfile
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -20,6 +20,7 @@ from auth.models import User
 from database.connection import get_db
 from utils.security_sanitizer import sanitize_html # SECURITY: Sanitização de XSS
 from utils.timezone import to_iso_utc
+from utils.rate_limit import limit_ai_request, limit_export, limit_default
 from sistemas.assistencia_judiciaria.core.logic import full_flow, DEFAULT_MODEL
 from sistemas.assistencia_judiciaria.core.document import markdown_to_docx, docx_to_pdf
 from sistemas.assistencia_judiciaria.models import ConsultaProcesso, FeedbackAnalise
@@ -76,7 +77,11 @@ def save_settings(settings: dict):
 
 
 @router.get("/settings")
-async def get_settings(current_user: User = Depends(get_current_active_user)):
+@limit_default
+async def get_settings(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """Retorna as configurações atuais (com API key mascarada)"""
     settings = load_settings()
     api_key = settings.get("openrouter_api_key", "")
@@ -91,7 +96,9 @@ async def get_settings(current_user: User = Depends(get_current_active_user)):
 
 
 @router.post("/settings")
+@limit_default
 async def update_settings(
+    request: Request,
     req: SettingsRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -122,7 +129,11 @@ async def update_settings(
 
 
 @router.get("/test-tjms")
-async def test_tjms_connection(current_user: User = Depends(get_current_active_user)):
+@limit_default
+async def test_tjms_connection(
+    request: Request,
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Testa conexão com o TJ-MS (endpoint de debug - REQUER ADMIN).
     SECURITY: Endpoint protegido por autenticação e role admin.
@@ -211,7 +222,9 @@ async def test_tjms_connection(current_user: User = Depends(get_current_active_u
 
 
 @router.post("/consultar")
+@limit_ai_request
 async def consultar_processo(
+    request: Request,
     req: ConsultationRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -303,7 +316,9 @@ async def consultar_processo(
 
 
 @router.get("/historico")
+@limit_default
 async def listar_historico(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -330,7 +345,9 @@ async def listar_historico(
 
 
 @router.delete("/historico/{consulta_id}")
+@limit_default
 async def excluir_historico(
+    request: Request,
     consulta_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -365,7 +382,9 @@ async def excluir_historico(
 
 
 @router.post("/generate-doc")
+@limit_export
 async def generate_document(
+    request: Request,
     req: DocumentRequest, 
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_active_user)
@@ -424,7 +443,9 @@ async def generate_document(
 # ============================================
 
 @router.post("/feedback")
+@limit_default
 async def enviar_feedback(
+    request: Request,
     req: FeedbackRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -477,7 +498,9 @@ async def enviar_feedback(
 
 
 @router.get("/feedback/{consulta_id}")
+@limit_default
 async def obter_feedback(
+    request: Request,
     consulta_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -503,7 +526,9 @@ async def obter_feedback(
 
 
 @router.get("/feedback/pendentes/count")
+@limit_default
 async def contar_feedbacks_pendentes(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):

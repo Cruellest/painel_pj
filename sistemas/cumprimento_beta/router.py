@@ -16,7 +16,7 @@ import json
 import logging
 from typing import Optional, List
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,7 @@ from sistemas.cumprimento_beta.services_chatbot import (
 from sistemas.cumprimento_beta.services_geracao_peca import (
     gerar_peca, obter_peca, listar_pecas_sessao
 )
+from utils.rate_limit import limit_ai_request, limit_default, limit_export
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,9 @@ def _formatar_cnj(numero_limpo: str) -> str:
 # ==========================================
 
 @router.get("/acesso")
+@limit_default
 async def verificar_acesso(
+    request: Request,
     acesso: dict = Depends(get_user_pode_acessar_beta)
 ):
     """
@@ -91,8 +94,10 @@ async def verificar_acesso(
 # ==========================================
 
 @router.post("/sessoes", response_model=IniciarSessaoResponse)
+@limit_ai_request
 async def criar_sessao(
-    request: IniciarSessaoRequest,
+    request: Request,
+    req: IniciarSessaoRequest,
     current_user: User = Depends(require_beta_access),
     db: Session = Depends(get_db)
 ):
@@ -101,7 +106,7 @@ async def criar_sessao(
 
     Requer acesso ao beta (admin ou grupo PS).
     """
-    numero_limpo = _limpar_cnj(request.numero_processo)
+    numero_limpo = _limpar_cnj(req.numero_processo)
 
     if len(numero_limpo) != 20:
         raise HTTPException(
@@ -133,7 +138,9 @@ async def criar_sessao(
 
 
 @router.get("/sessoes", response_model=ListaSessoesResponse)
+@limit_default
 async def listar_sessoes(
+    request: Request,
     pagina: int = Query(1, ge=1),
     por_pagina: int = Query(10, ge=1, le=50),
     current_user: User = Depends(require_beta_access),
@@ -164,7 +171,9 @@ async def listar_sessoes(
 
 
 @router.get("/sessoes/{sessao_id}", response_model=StatusSessaoResponse)
+@limit_default
 async def obter_sessao(
+    request: Request,
     sessao_id: int,
     current_user: User = Depends(require_beta_access),
     db: Session = Depends(get_db)
@@ -233,7 +242,9 @@ def _sessao_para_response(sessao: SessaoCumprimentoBeta, db: Session) -> StatusS
 # ==========================================
 
 @router.post("/sessoes/{sessao_id}/processar")
+@limit_ai_request
 async def processar_sessao(
+    request: Request,
     sessao_id: int,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(require_beta_access),
@@ -286,7 +297,9 @@ async def _processar_agente1_background(sessao_id: int):
 
 
 @router.get("/sessoes/{sessao_id}/documentos")
+@limit_default
 async def listar_documentos(
+    request: Request,
     sessao_id: int,
     status: Optional[str] = None,
     current_user: User = Depends(require_beta_access),
@@ -324,7 +337,9 @@ async def listar_documentos(
 # ==========================================
 
 @router.get("/sessoes/{sessao_id}/consolidacao")
+@limit_default
 async def obter_consolidacao(
+    request: Request,
     sessao_id: int,
     current_user: User = Depends(require_beta_access),
     db: Session = Depends(get_db)
@@ -352,7 +367,9 @@ async def obter_consolidacao(
 
 
 @router.post("/sessoes/{sessao_id}/consolidar")
+@limit_ai_request
 async def iniciar_consolidacao(
+    request: Request,
     sessao_id: int,
     streaming: bool = Query(True),
     current_user: User = Depends(require_beta_access),
@@ -392,9 +409,11 @@ async def _consolidar_streaming(db: Session, sessao: SessaoCumprimentoBeta):
 # ==========================================
 
 @router.post("/sessoes/{sessao_id}/chat")
+@limit_ai_request
 async def enviar_mensagem(
+    request: Request,
     sessao_id: int,
-    request: MensagemChatRequest,
+    req: MensagemChatRequest,
     streaming: bool = Query(True),
     current_user: User = Depends(require_beta_access),
     db: Session = Depends(get_db)
@@ -413,15 +432,15 @@ async def enviar_mensagem(
         )
 
     # Sanitiza conteúdo da mensagem
-    request.conteudo = sanitize_html(request.conteudo)
+    req.conteudo = sanitize_html(req.conteudo)
 
     if streaming:
         return StreamingResponse(
-            _chat_streaming(db, sessao, request.conteudo),
+            _chat_streaming(db, sessao, req.conteudo),
             media_type="text/event-stream"
         )
 
-    mensagem = await enviar_mensagem_chat(db, sessao, request.conteudo)
+    mensagem = await enviar_mensagem_chat(db, sessao, req.conteudo)
     return MensagemChatResponse(
         id=mensagem.id,
         role=mensagem.role,
@@ -440,7 +459,9 @@ async def _chat_streaming(db: Session, sessao: SessaoCumprimentoBeta, mensagem: 
 
 
 @router.get("/sessoes/{sessao_id}/conversas")
+@limit_default
 async def listar_conversas(
+    request: Request,
     sessao_id: int,
     current_user: User = Depends(require_beta_access),
     db: Session = Depends(get_db)
@@ -472,9 +493,11 @@ async def listar_conversas(
 # ==========================================
 
 @router.post("/sessoes/{sessao_id}/gerar-peca")
+@limit_ai_request
 async def criar_peca(
+    request: Request,
     sessao_id: int,
-    request: GerarPecaRequest,
+    req: GerarPecaRequest,
     current_user: User = Depends(require_beta_access),
     db: Session = Depends(get_db)
 ):
@@ -490,8 +513,8 @@ async def criar_peca(
     peca = await gerar_peca(
         db=db,
         sessao=sessao,
-        tipo_peca=request.tipo_peca,
-        instrucoes=request.instrucoes_adicionais
+        tipo_peca=req.tipo_peca,
+        instrucoes=req.instrucoes_adicionais
     )
 
     download_url = f"/api/cumprimento-beta/sessoes/{sessao_id}/pecas/{peca.id}/download"
@@ -509,7 +532,9 @@ async def criar_peca(
 
 
 @router.get("/sessoes/{sessao_id}/pecas")
+@limit_default
 async def listar_pecas(
+    request: Request,
     sessao_id: int,
     current_user: User = Depends(require_beta_access),
     db: Session = Depends(get_db)
@@ -535,7 +560,9 @@ async def listar_pecas(
 
 
 @router.get("/sessoes/{sessao_id}/pecas/{peca_id}/download")
+@limit_export
 async def download_peca(
+    request: Request,
     sessao_id: int,
     peca_id: int,
     current_user: User = Depends(require_beta_access),

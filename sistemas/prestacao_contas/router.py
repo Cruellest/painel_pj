@@ -19,7 +19,7 @@ import base64
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Depends, Query, File, UploadFile, Form
+from fastapi import APIRouter, HTTPException, Depends, Query, File, UploadFile, Form, Request
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -39,6 +39,7 @@ from sistemas.prestacao_contas.schemas import (
     HistoricoResponse,
 )
 from sistemas.prestacao_contas.services import OrquestradorPrestacaoContas
+from utils.rate_limit import limiter, limit_ai_request, LIMITS, get_user_identifier, limit_upload, limit_export, limit_default
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,10 @@ router = APIRouter(tags=["Prestação de Contas"])
 # =====================================================
 
 @router.post("/analisar-stream")
+@limit_ai_request
 async def analisar_processo_stream(
-    request: AnalisarProcessoRequest,
+    request: Request,
+    req: AnalisarProcessoRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -62,7 +65,7 @@ async def analisar_processo_stream(
     """
 
     async def gerar_eventos():
-        logger.debug(f"SSE: Iniciando stream para {request.numero_cnj}")
+        logger.debug(f"SSE: Iniciando stream para {req.numero_cnj}")
         orquestrador = OrquestradorPrestacaoContas(
             db=db,
             usuario_id=current_user.id
@@ -70,8 +73,8 @@ async def analisar_processo_stream(
 
         try:
             async for evento in orquestrador.processar_completo(
-                numero_cnj=request.numero_cnj,
-                sobrescrever=request.sobrescrever_existente
+                numero_cnj=req.numero_cnj,
+                sobrescrever=req.sobrescrever_existente
             ):
                 evento_json = evento.model_dump_json()
                 yield f"data: {evento_json}\n\n"
@@ -99,8 +102,10 @@ async def analisar_processo_stream(
 # =====================================================
 
 @router.post("/responder-duvida")
+@limit_ai_request
 async def responder_duvida(
-    request: ResponderDuvidaRequest,
+    request: Request,
+    req: ResponderDuvidaRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -109,8 +114,8 @@ async def responder_duvida(
     Reavalia a prestação de contas com as novas informações.
     """
     # SECURITY: Sanitização de respostas de texto livre
-    if request.respostas:
-        request.respostas = {k: sanitize_html(v) for k, v in request.respostas.items()}
+    if req.respostas:
+        req.respostas = {k: sanitize_html(v) for k, v in req.respostas.items()}
 
     orquestrador = OrquestradorPrestacaoContas(
         db=db,
@@ -119,8 +124,8 @@ async def responder_duvida(
 
     try:
         resultado = await orquestrador.responder_duvida(
-            geracao_id=request.geracao_id,
-            respostas=request.respostas
+            geracao_id=req.geracao_id,
+            respostas=req.respostas
         )
 
         return {
@@ -143,8 +148,10 @@ async def responder_duvida(
 # =====================================================
 
 @router.post("/feedback", response_model=FeedbackResponse)
+@limit_default
 async def registrar_feedback(
-    request: FeedbackRequest,
+    request: Request,
+    feedback_req: FeedbackRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -152,7 +159,7 @@ async def registrar_feedback(
 
     # Verifica se geração existe
     geracao = db.query(GeracaoAnalise).filter(
-        GeracaoAnalise.id == request.geracao_id
+        GeracaoAnalise.id == feedback_req.geracao_id
     ).first()
 
     if not geracao:
@@ -160,14 +167,14 @@ async def registrar_feedback(
 
     # Cria feedback
     feedback = FeedbackPrestacao(
-        geracao_id=request.geracao_id,
+        geracao_id=feedback_req.geracao_id,
         usuario_id=current_user.id,
-        avaliacao=request.avaliacao,
-        nota=request.nota,
-        comentario=sanitize_html(request.comentario),  # SECURITY: Sanitização de XSS
-        parecer_correto=request.parecer_correto,
-        valores_corretos=request.valores_corretos,
-        medicamento_correto=request.medicamento_correto,
+        avaliacao=feedback_req.avaliacao,
+        nota=feedback_req.nota,
+        comentario=sanitize_html(feedback_req.comentario),  # SECURITY: Sanitização de XSS
+        parecer_correto=feedback_req.parecer_correto,
+        valores_corretos=feedback_req.valores_corretos,
+        medicamento_correto=feedback_req.medicamento_correto,
     )
 
     db.add(feedback)
@@ -190,8 +197,10 @@ class ExportarParecerRequest(BaseModel):
 
 
 @router.post("/exportar-parecer")
+@limit_export
 async def exportar_parecer(
-    request: ExportarParecerRequest,
+    request: Request,
+    req: ExportarParecerRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -199,7 +208,7 @@ async def exportar_parecer(
     from sistemas.prestacao_contas.docx_converter import converter_parecer_docx
 
     geracao = db.query(GeracaoAnalise).filter(
-        GeracaoAnalise.id == request.geracao_id
+        GeracaoAnalise.id == req.geracao_id
     ).first()
 
     if not geracao:
@@ -232,7 +241,9 @@ async def exportar_parecer(
 # =====================================================
 
 @router.post("/upload-documentos-faltantes")
+@limit_upload
 async def upload_documentos_faltantes(
+    request: Request,
     geracao_id: int = Form(...),
     numero_cnj: Optional[str] = Form(default=None),
     arquivos: List[UploadFile] = File(default=[]),
@@ -377,8 +388,10 @@ class CancelarPorFaltaRequest(BaseModel):
 
 
 @router.post("/cancelar-por-falta-documentos")
+@limit_default
 async def cancelar_por_falta_documentos(
-    request: CancelarPorFaltaRequest,
+    request: Request,
+    cancelar_req: CancelarPorFaltaRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -387,7 +400,7 @@ async def cancelar_por_falta_documentos(
     A análise é salva no histórico com status de erro.
     """
     geracao = db.query(GeracaoAnalise).filter(
-        GeracaoAnalise.id == request.geracao_id
+        GeracaoAnalise.id == cancelar_req.geracao_id
     ).first()
 
     if not geracao:
@@ -399,13 +412,13 @@ async def cancelar_por_falta_documentos(
 
     # Atualiza status para erro
     geracao.status = "erro"
-    geracao.erro = f"Análise cancelada: {request.motivo}"
+    geracao.erro = f"Análise cancelada: {cancelar_req.motivo}"
     geracao.parecer = None
     geracao.fundamentacao = None
 
     db.commit()
 
-    logger.info(f"Análise {request.geracao_id} cancelada por falta de documentos: {request.motivo}")
+    logger.info(f"Análise {cancelar_req.geracao_id} cancelada por falta de documentos: {cancelar_req.motivo}")
 
     return {
         "sucesso": True,
@@ -422,8 +435,10 @@ class ContinuarSemNotaFiscalRequest(BaseModel):
 
 
 @router.post("/continuar-sem-nota-fiscal")
+@limit_ai_request
 async def continuar_sem_nota_fiscal(
-    request: ContinuarSemNotaFiscalRequest,
+    request: Request,
+    continuar_req: ContinuarSemNotaFiscalRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -432,7 +447,7 @@ async def continuar_sem_nota_fiscal(
     a nota fiscal. A análise continuará com os documentos disponíveis.
     """
     geracao = db.query(GeracaoAnalise).filter(
-        GeracaoAnalise.id == request.geracao_id
+        GeracaoAnalise.id == continuar_req.geracao_id
     ).first()
 
     if not geracao:
@@ -453,7 +468,7 @@ async def continuar_sem_nota_fiscal(
     geracao.status = "continuando_sem_nota_fiscal"
     db.commit()
 
-    logger.info(f"Usuário optou por continuar análise {request.geracao_id} sem nota fiscal")
+    logger.info(f"Usuário optou por continuar análise {continuar_req.geracao_id} sem nota fiscal")
 
     # Continua a análise
     async def continuar_analise():
@@ -462,7 +477,7 @@ async def continuar_sem_nota_fiscal(
             usuario_id=current_user.id
         )
 
-        async for evento in orquestrador.continuar_com_documentos_manuais(request.geracao_id):
+        async for evento in orquestrador.continuar_com_documentos_manuais(continuar_req.geracao_id):
             evento_json = evento.model_dump_json()
             yield f"data: {evento_json}\n\n"
 
@@ -486,8 +501,10 @@ class ReprocessarComDocumentosRequest(BaseModel):
 
 
 @router.post("/reprocessar-com-documentos")
+@limit_ai_request
 async def reprocessar_com_documentos(
-    request: ReprocessarComDocumentosRequest,
+    request: Request,
+    reproc_req: ReprocessarComDocumentosRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -496,7 +513,7 @@ async def reprocessar_com_documentos(
     Não deleta o registro, apenas continua a análise de onde parou.
     """
     geracao = db.query(GeracaoAnalise).filter(
-        GeracaoAnalise.id == request.geracao_id
+        GeracaoAnalise.id == reproc_req.geracao_id
     ).first()
 
     if not geracao:
@@ -521,7 +538,7 @@ async def reprocessar_com_documentos(
     geracao.erro = None
     db.commit()
 
-    logger.info(f"Reprocessando análise {request.geracao_id} com documentos salvos")
+    logger.info(f"Reprocessando análise {reproc_req.geracao_id} com documentos salvos")
 
     # Continua a análise
     async def continuar_analise():
@@ -530,7 +547,7 @@ async def reprocessar_com_documentos(
             usuario_id=current_user.id
         )
 
-        async for evento in orquestrador.continuar_com_documentos_manuais(request.geracao_id):
+        async for evento in orquestrador.continuar_com_documentos_manuais(reproc_req.geracao_id):
             evento_json = evento.model_dump_json()
             yield f"data: {evento_json}\n\n"
 
@@ -550,7 +567,9 @@ async def reprocessar_com_documentos(
 # =====================================================
 
 @router.get("/extrato-subconta/{geracao_id}")
+@limit_export
 async def obter_extrato_subconta(
+    request: Request,
     geracao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -584,7 +603,9 @@ async def obter_extrato_subconta(
 # =====================================================
 
 @router.get("/documento/{numero_processo}/{id_documento}")
+@limit_export
 async def obter_documento(
+    request: Request,
     numero_processo: str,
     id_documento: str,
     current_user: User = Depends(get_current_active_user),
@@ -636,7 +657,9 @@ async def obter_documento(
 # =====================================================
 
 @router.get("/verificar-existente")
+@limit_default
 async def verificar_processo_existente(
+    request: Request,
     numero_cnj: str,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -715,7 +738,9 @@ def _pode_anexar_documentos(geracao: GeracaoAnalise) -> bool:
 
 
 @router.get("/historico", response_model=HistoricoResponse)
+@limit_default
 async def listar_historico(
+    request: Request,
     limit: int = Query(default=20, le=100),
     offset: int = Query(default=0),
     parecer: Optional[str] = Query(default=None),
@@ -771,7 +796,9 @@ async def listar_historico(
 
 
 @router.get("/historico/{geracao_id}", response_model=GeracaoDetalhadaResponse)
+@limit_default
 async def obter_geracao(
+    request: Request,
     geracao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)

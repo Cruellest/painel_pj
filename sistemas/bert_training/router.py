@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -26,6 +26,7 @@ from auth.dependencies import get_current_active_user
 from auth.models import User
 from database.connection import get_db
 from utils.security_sanitizer import validate_file_signature # SECURITY: Validação de Magic Number
+from utils.rate_limit import limit_ai_request, limit_upload, limit_export, limit_default
 
 from sistemas.bert_training.models import (
     BertDataset, BertRun, BertJob, BertMetric, BertLog, BertWorker, BertTestHistory,
@@ -57,7 +58,9 @@ router = APIRouter(prefix="/bert-training", tags=["BERT Training"])
 # ==================== Preset Endpoints ====================
 
 @router.get("/api/presets")
+@limit_default
 async def list_presets(
+    request: Request,
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -73,7 +76,9 @@ async def list_presets(
 
 
 @router.get("/api/presets/{preset_name}")
+@limit_default
 async def get_preset(
+    request: Request,
     preset_name: str,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -88,7 +93,9 @@ async def get_preset(
 # ==================== Dataset Endpoints ====================
 
 @router.post("/api/datasets/preview")
+@limit_upload
 async def preview_dataset(
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -167,7 +174,9 @@ async def preview_dataset(
 
 
 @router.post("/api/datasets/validate", response_model=ExcelValidationResult)
+@limit_upload
 async def validate_dataset(
+    request: Request,
     file: UploadFile = File(...),
     task_type: TaskTypeEnum = Form(...),
     text_column: str = Form(...),
@@ -200,7 +209,9 @@ async def validate_dataset(
 
 
 @router.post("/api/datasets/upload", response_model=DatasetUploadResponse)
+@limit_upload
 async def upload_dataset(
+    request: Request,
     file: UploadFile = File(...),
     task_type: TaskTypeEnum = Form(...),
     text_column: str = Form(...),
@@ -333,7 +344,9 @@ async def upload_dataset(
 
 
 @router.get("/api/datasets", response_model=List[DatasetListItem])
+@limit_default
 async def list_datasets(
+    request: Request,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -366,7 +379,9 @@ async def list_datasets(
 
 
 @router.get("/api/datasets/{dataset_id}", response_model=DatasetDetail)
+@limit_default
 async def get_dataset(
+    request: Request,
     dataset_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -400,7 +415,9 @@ async def get_dataset(
 
 
 @router.post("/api/datasets/analyze-quality")
+@limit_upload
 async def analyze_dataset_quality(
+    request: Request,
     file: UploadFile = File(...),
     text_column: str = Form(...),
     label_column: str = Form(...),
@@ -457,7 +474,9 @@ async def analyze_dataset_quality(
 
 
 @router.get("/api/datasets/{dataset_id}/quality")
+@limit_default
 async def get_dataset_quality(
+    request: Request,
     dataset_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -485,7 +504,9 @@ async def get_dataset_quality(
 
 
 @router.get("/api/datasets/{dataset_id}/download")
+@limit_export
 async def download_dataset(
+    request: Request,
     dataset_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -510,9 +531,10 @@ async def download_dataset(
 # ==================== Run Endpoints ====================
 
 @router.post("/api/runs", response_model=RunResponse, status_code=status.HTTP_201_CREATED)
+@limit_ai_request
 async def create_run(
+    request: Request,
     run_data: RunCreate,
-    request: "Request" = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -591,9 +613,10 @@ async def create_run(
 
 
 @router.post("/api/runs/simple", response_model=RunResponse, status_code=status.HTTP_201_CREATED)
+@limit_ai_request
 async def create_run_simple(
+    request: Request,
     run_data: RunCreateSimple,
-    request: "Request" = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -666,7 +689,9 @@ async def create_run_simple(
 
 
 @router.get("/api/runs", response_model=List[RunListItem])
+@limit_default
 async def list_runs(
+    request: Request,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     status: Optional[str] = None,
@@ -704,7 +729,9 @@ async def list_runs(
 
 
 @router.get("/api/runs/{run_id}", response_model=RunDetailResponse)
+@limit_default
 async def get_run(
+    request: Request,
     run_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -784,7 +811,9 @@ async def get_run(
 
 
 @router.get("/api/runs/{run_id}/progress")
+@limit_default
 async def get_run_progress(
+    request: Request,
     run_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -871,7 +900,9 @@ def _translate_status(status: str) -> str:
 
 
 @router.get("/api/runs/{run_id}/metrics", response_model=List[MetricResponse])
+@limit_default
 async def get_run_metrics(
+    request: Request,
     run_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -905,7 +936,9 @@ async def get_run_metrics(
 
 
 @router.get("/api/runs/{run_id}/logs")
+@limit_default
 async def get_run_logs_sse(
+    request: Request,
     run_id: int,
     last_id: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -967,7 +1000,9 @@ async def get_run_logs_sse(
 
 
 @router.post("/api/runs/{run_id}/reproduce", response_model=RunResponse)
+@limit_ai_request
 async def reproduce_run(
+    request: Request,
     run_id: int,
     new_name: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -1024,7 +1059,9 @@ async def reproduce_run(
 # ==================== Job Endpoints (Worker API) ====================
 
 @router.post("/api/jobs/claim", response_model=JobClaimResponse)
+@limit_default
 async def claim_job(
+    req_obj: Request,
     request: JobClaimRequest,
     db: Session = Depends(get_db)
 ):
@@ -1074,7 +1111,9 @@ async def claim_job(
 
 
 @router.post("/api/jobs/{job_id}/progress")
+@limit_default
 async def update_job_progress(
+    request: Request,
     job_id: int,
     update: JobProgressUpdate,
     db: Session = Depends(get_db)
@@ -1109,7 +1148,9 @@ async def update_job_progress(
 
 
 @router.post("/api/jobs/{job_id}/complete")
+@limit_default
 async def complete_job(
+    request: Request,
     job_id: int,
     worker_token: str,
     final_accuracy: float,
@@ -1161,7 +1202,9 @@ async def complete_job(
 # ==================== Metric Endpoints (Worker API) ====================
 
 @router.post("/api/metrics")
+@limit_default
 async def record_metric(
+    request: Request,
     metric: MetricCreate,
     db: Session = Depends(get_db)
 ):
@@ -1196,7 +1239,9 @@ async def record_metric(
 # ==================== Log Endpoints (Worker API) ====================
 
 @router.post("/api/logs")
+@limit_default
 async def record_log(
+    request: Request,
     log: LogCreate,
     db: Session = Depends(get_db)
 ):
@@ -1222,7 +1267,9 @@ async def record_log(
 
 
 @router.post("/api/logs/batch")
+@limit_default
 async def record_logs_batch(
+    request: Request,
     batch: LogBatchCreate,
     db: Session = Depends(get_db)
 ):
@@ -1251,7 +1298,9 @@ async def record_logs_batch(
 # ==================== Worker Management ====================
 
 @router.post("/api/workers/register", response_model=WorkerRegisterResponse)
+@limit_default
 async def register_worker(
+    request: Request,
     worker: WorkerRegister,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -1285,7 +1334,9 @@ async def register_worker(
 
 
 @router.get("/api/workers", response_model=List[WorkerResponse])
+@limit_default
 async def list_workers(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1315,7 +1366,9 @@ async def list_workers(
 
 
 @router.post("/api/workers/heartbeat")
+@limit_default
 async def worker_heartbeat(
+    request: Request,
     heartbeat: WorkerHeartbeat,
     db: Session = Depends(get_db)
 ):
@@ -1332,7 +1385,9 @@ async def worker_heartbeat(
 # ==================== Queue Status ====================
 
 @router.get("/api/queue/status")
+@limit_default
 async def get_queue_status(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1359,7 +1414,9 @@ async def get_queue_status(
 # ==================== Watchdog & Health ====================
 
 @router.get("/api/system/health")
+@limit_default
 async def get_system_health(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1373,7 +1430,9 @@ async def get_system_health(
 
 
 @router.post("/api/system/watchdog/run")
+@limit_default
 async def run_watchdog(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1392,7 +1451,9 @@ async def run_watchdog(
 
 
 @router.get("/api/system/calculate-batch")
+@limit_default
 async def calculate_optimal_batch(
+    request: Request,
     vram_gb: float = Query(..., description="VRAM disponivel em GB"),
     max_length: int = Query(512, description="Tamanho maximo de sequencia"),
     model: str = Query("neuralmind/bert-base-portuguese-cased", description="Nome do modelo"),
@@ -1421,7 +1482,9 @@ async def calculate_optimal_batch(
 # ==================== Modelos para Teste ====================
 
 @router.get("/api/models/completed")
+@limit_default
 async def get_completed_models(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1454,7 +1517,9 @@ async def get_completed_models(
 # ==================== Historico de Testes ====================
 
 @router.get("/api/tests")
+@limit_default
 async def get_test_history(
+    request: Request,
     limit: int = Query(50, le=200),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -1481,7 +1546,9 @@ async def get_test_history(
 
 
 @router.post("/api/tests")
+@limit_default
 async def create_test_record(
+    request: Request,
     run_id: int = Form(...),
     input_type: str = Form(...),
     input_text: str = Form(...),
@@ -1518,7 +1585,9 @@ async def create_test_record(
 
 
 @router.delete("/api/tests/{test_id}")
+@limit_default
 async def delete_test_record(
+    request: Request,
     test_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -1539,7 +1608,9 @@ async def delete_test_record(
 
 
 @router.delete("/api/tests")
+@limit_default
 async def clear_test_history(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):

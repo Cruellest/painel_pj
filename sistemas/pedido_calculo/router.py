@@ -20,7 +20,7 @@ import asyncio
 from datetime import datetime
 from typing import Optional, List, Dict, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -31,6 +31,7 @@ from database.connection import get_db
 from utils.timezone import to_iso_utc
 from utils.security_sanitizer import sanitize_html
 from admin.models import ConfiguracaoIA, PromptConfig
+from utils.rate_limit import limiter, limit_ai_request, LIMITS, get_user_identifier, limit_default, limit_export
 
 from .services import PedidoCalculoService
 from .models import ResultadoAgente1, ResultadoAgente2
@@ -185,7 +186,9 @@ class FeedbackRequest(BaseModel):
 # ============================================
 
 @router.post("/processar-xml")
+@limit_default
 async def processar_xml(
+    request: Request,
     req: ProcessarXMLRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -214,7 +217,9 @@ async def processar_xml(
 
 
 @router.post("/baixar-documentos")
+@limit_default
 async def baixar_documentos(
+    request: Request,
     req: BaixarDocumentosRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -246,7 +251,9 @@ async def baixar_documentos(
 
 
 @router.post("/extrair-informacoes")
+@limit_ai_request
 async def extrair_informacoes(
+    request: Request,
     req: ExtrairInformacoesRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -274,7 +281,9 @@ async def extrair_informacoes(
 
 
 @router.post("/gerar-pedido")
+@limit_ai_request
 async def gerar_pedido(
+    request: Request,
     req: GerarPedidoRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -387,7 +396,9 @@ async def gerar_pedido(
 
 
 @router.post("/processar-stream")
+@limit_ai_request
 async def processar_stream(
+    request: Request,
     req: ProcessarStreamRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1205,7 +1216,9 @@ async def processar_stream(
 
 
 @router.post("/exportar-docx")
+@limit_export
 async def exportar_docx(
+    request: Request,
     req: ExportarDocxRequest,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1245,7 +1258,9 @@ async def exportar_docx(
 
 
 @router.get("/download/{filename}")
+@limit_export
 async def download_documento(
+    request: Request,
     filename: str,
     token: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user_from_token_or_query)
@@ -1266,7 +1281,9 @@ async def download_documento(
 
 
 @router.get("/documento/{numero_processo}/{id_documento}")
+@limit_export
 async def obter_documento(
+    request: Request,
     numero_processo: str,
     id_documento: str,
     token: Optional[str] = Query(None),
@@ -1321,7 +1338,9 @@ async def obter_documento(
 
 
 @router.get("/verificar-existente")
+@limit_default
 async def verificar_processo_existente(
+    request: Request,
     numero_cnj: str,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1365,7 +1384,9 @@ async def verificar_processo_existente(
 
 
 @router.get("/historico")
+@limit_default
 async def listar_historico(
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -1399,7 +1420,9 @@ async def listar_historico(
 
 
 @router.get("/historico/{id}")
+@limit_default
 async def obter_historico(
+    request: Request,
     id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1442,7 +1465,9 @@ class EditarPedidoRequest(BaseModel):
 
 
 @router.post("/editar-pedido")
+@limit_ai_request
 async def editar_pedido(
+    request: Request,
     req: EditarPedidoRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1550,7 +1575,9 @@ class ConfiguracaoRequest(BaseModel):
 
 
 @router.get("/config/prompts")
+@limit_default
 async def listar_prompts(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1575,7 +1602,9 @@ async def listar_prompts(
 
 
 @router.get("/config/prompts/{tipo}")
+@limit_default
 async def obter_prompt(
+    request: Request,
     tipo: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -1602,7 +1631,9 @@ async def obter_prompt(
 
 
 @router.put("/config/prompts/{tipo}")
+@limit_default
 async def atualizar_prompt(
+    request: Request,
     tipo: str,
     req: PromptConfigRequest,
     db: Session = Depends(get_db),
@@ -1629,7 +1660,9 @@ async def atualizar_prompt(
 
 
 @router.get("/config/modelos")
+@limit_default
 async def listar_modelos(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
@@ -1651,7 +1684,9 @@ async def listar_modelos(
 
 
 @router.get("/config/modelos/{chave}")
+@limit_default
 async def obter_modelo(
+    request: Request,
     chave: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -1675,7 +1710,9 @@ async def obter_modelo(
 
 
 @router.put("/config/modelos/{chave}")
+@limit_default
 async def atualizar_modelo(
+    request: Request,
     chave: str,
     req: ConfiguracaoRequest,
     db: Session = Depends(get_db),
@@ -1711,7 +1748,9 @@ async def atualizar_modelo(
 # ============================================
 
 @router.post("/feedback")
+@limit_default
 async def enviar_feedback(
+    request: Request,
     req: FeedbackRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
@@ -1759,7 +1798,9 @@ async def enviar_feedback(
 
 
 @router.get("/feedback/{geracao_id}")
+@limit_default
 async def obter_feedback(
+    request: Request,
     geracao_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)

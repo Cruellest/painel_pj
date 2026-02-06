@@ -55,8 +55,7 @@ from users.router import router as users_router
 
 # SECURITY: Rate Limiting
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware  # Adicionado middleware
-from utils.rate_limit import limiter, rate_limit_exceeded_handler
+from utils.rate_limit import limiter, rate_limit_exceeded_handler, SafeRateLimitMiddleware
 
 # SECURITY: Exception handling
 from fastapi.responses import JSONResponse
@@ -335,7 +334,7 @@ app.add_middleware(
 
 # SECURITY: Rate Limiting
 app.state.limiter = limiter
-app.add_middleware(SlowAPIMiddleware)  # Registra middleware global
+app.add_middleware(SafeRateLimitMiddleware)  # Middleware seguro (substitui SlowAPIMiddleware)
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
 # PERFORMANCE: Middleware de timing (apenas para admin quando ativado)

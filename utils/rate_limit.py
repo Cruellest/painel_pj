@@ -31,6 +31,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,9 @@ RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
 RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "100/minute")
 RATE_LIMIT_LOGIN = os.getenv("RATE_LIMIT_LOGIN", "5/minute")
 RATE_LIMIT_AI = os.getenv("RATE_LIMIT_AI", "10/minute")
+RATE_LIMIT_EXPORT = os.getenv("RATE_LIMIT_EXPORT", "3/minute")
+RATE_LIMIT_HEAVY = os.getenv("RATE_LIMIT_HEAVY", "5/minute")
+RATE_LIMIT_UPLOAD = os.getenv("RATE_LIMIT_UPLOAD", "10/minute")
 
 # Storage: memória por padrão, Redis em produção
 RATE_LIMIT_STORAGE = os.getenv("RATE_LIMIT_STORAGE", "memory://")
@@ -112,28 +116,122 @@ limiter = Limiter(
 # HANDLERS
 # ==================================================
 
-async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+async def rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONResponse:
     """
     Handler customizado para rate limit excedido.
 
     Retorna resposta JSON amigável em português.
+    Trata tanto RateLimitExceeded quanto outras exceções.
     """
+    # Extrai informações da exceção de forma segura
+    exc_detail = getattr(exc, 'detail', str(exc))
+    exc_type = type(exc).__name__
+    
     logger.warning(
-        f"Rate limit excedido: {get_real_ip(request)} - {request.url.path} - {exc.detail}"
+        f"Rate limit exceeded: {get_real_ip(request)} - {request.url.path} - {exc_type}: {exc_detail}"
     )
+
+    # Tenta extrair o tempo de retry de forma segura
+    retry_after = "60"
+    try:
+        if hasattr(exc, 'detail') and exc.detail:
+            # Se temos detail, tenta extrair o tempo
+            detail_str = str(exc.detail)
+            if "per" in detail_str:
+                retry_after = detail_str.split("per")[0].strip()
+    except Exception as parse_error:
+        logger.debug(f"Could not parse retry_after from exception: {parse_error}")
 
     return JSONResponse(
         status_code=429,
         content={
             "detail": "Limite de requisições excedido. Tente novamente em alguns minutos.",
             "error": "rate_limit_exceeded",
-            "retry_after": str(exc.detail).split("per")[0].strip() if exc.detail else "60 seconds"
+            "retry_after": retry_after
         },
         headers={
-            "Retry-After": "60",
+            "Retry-After": retry_after,
             "X-RateLimit-Limit": RATE_LIMIT_DEFAULT,
         }
     )
+
+
+# ==================================================
+# MIDDLEWARE CUSTOMIZADO
+# ==================================================
+
+
+class SafeRateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware que intercepta erros do slowapi e trata ValueError corretamente.
+    
+    Este middleware:
+    1. Substitui a função handler padrão do slowapi por uma segura
+    2. Captura ValueError e RateLimitExceeded
+    3. Retorna respostas JSON amigáveis
+    
+    IMPORTANTE: Deve ser registrado ANTES de SlowAPIMiddleware (se usado)
+    ou SOZINHO sem SlowAPIMiddleware.
+    """
+    
+    async def dispatch(self, request: Request, call_next):
+        original_handler = None
+        if hasattr(limiter, '_default_handler'):
+            original_handler = limiter._default_handler
+        
+        # Define um handler seguro
+        async def safe_handler(request: Request, exc: Exception):
+            exc_detail = getattr(exc, 'detail', str(exc))
+            exc_type = type(exc).__name__
+            
+            logger.warning(
+                f"Rate limit {exc_type}: {get_real_ip(request)} - {request.url.path}"
+            )
+            
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Limite de requisições excedido. Tente novamente em alguns minutos.",
+                    "error": "rate_limit_exceeded",
+                    "retry_after": "60"
+                },
+                headers={
+                    "Retry-After": "60",
+                    "X-RateLimit-Limit": RATE_LIMIT_DEFAULT,
+                }
+            )
+        
+        # Tenta usar o handler seguro
+        if hasattr(limiter, '_default_handler'):
+            limiter._default_handler = safe_handler
+        
+        try:
+            response = await call_next(request)
+            return response
+        except ValueError as e:
+            # Rate limit ValueError - trata com nosso handler
+            logger.warning(
+                f"Rate limit ValueError caught: {get_real_ip(request)} - {request.url.path} - {str(e)}"
+            )
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "detail": "Limite de requisições excedido. Tente novamente em alguns minutos.",
+                    "error": "rate_limit_exceeded",
+                    "retry_after": "60"
+                },
+                headers={
+                    "Retry-After": "60",
+                    "X-RateLimit-Limit": RATE_LIMIT_DEFAULT,
+                }
+            )
+        except RateLimitExceeded as e:
+            # Rate limit exceedido - usa handler customizado
+            return await rate_limit_exceeded_handler(request, e)
+        finally:
+            # Restaura o handler original
+            if original_handler is not None and hasattr(limiter, '_default_handler'):
+                limiter._default_handler = original_handler
 
 
 # ==================================================
@@ -142,7 +240,7 @@ async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) 
 
 def limit_login(func):
     """Decorator para limitar tentativas de login."""
-    return limiter.limit(RATE_LIMIT_LOGIN)(func)
+    return limiter.limit(RATE_LIMIT_LOGIN, key_func=get_user_identifier)(func)
 
 
 def limit_ai_request(func):
@@ -152,7 +250,20 @@ def limit_ai_request(func):
 
 def limit_default(func):
     """Decorator para limite padrão."""
-    return limiter.limit(RATE_LIMIT_DEFAULT)(func)
+    return limiter.limit(RATE_LIMIT_DEFAULT, key_func=get_user_identifier)(func)
+
+
+def limit_export(func):
+    """Decorator para limitar exportação de documentos (por usuário)."""
+    return limiter.limit(RATE_LIMIT_EXPORT, key_func=get_user_identifier)(func)
+
+def limit_heavy(func):
+    """Decorator para operações pesadas."""
+    return limiter.limit(RATE_LIMIT_HEAVY, key_func=get_user_identifier)(func)
+
+def limit_upload(func):
+    """Decorator para uploads de arquivos."""
+    return limiter.limit(RATE_LIMIT_UPLOAD, key_func=get_user_identifier)(func)
 
 
 # ==================================================
@@ -164,7 +275,7 @@ LIMITS = {
     "login": RATE_LIMIT_LOGIN,           # 5/minute
     "ai": RATE_LIMIT_AI,                  # 10/minute
     "default": RATE_LIMIT_DEFAULT,        # 100/minute
-    "heavy": "5/minute",                  # Operações pesadas
-    "upload": "10/minute",                # Upload de arquivos
-    "export": "3/minute",                 # Exportação de documentos
+    "heavy": RATE_LIMIT_HEAVY,                  # Operações pesadas
+    "upload": RATE_LIMIT_UPLOAD,                # Upload de arquivos
+    "export": RATE_LIMIT_EXPORT,                 # Exportação de documentos
 }
